@@ -9,13 +9,23 @@
  * signal that is actually available, with a one-tap flip when it guesses wrong.
  */
 
-import { useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 import { countdown, formatClock, localParts, minutesFromSeconds, pickDeparture } from '../lib/time'
 import { clock, useDepartureBoard, useOnline, useTick, pollIntervalMs } from '../lib/live'
-import { routes, t as translate } from '../lib/store'
+import {
+  clearActiveTrip,
+  currentTrip,
+  logRide,
+  markIntendedTrip,
+  routes,
+  t as translate,
+} from '../lib/store'
+import { tripKey as buildTripKey } from '../lib/inspections'
+import { InspectionPanel } from '../ui/InspectionPanel'
+import { TicketView } from '../ui/TicketView'
 import { Countdown, CountdownAnnouncer } from '../ui/Countdown'
 import { Banner, DelayBadge, formatAge } from '../ui/status'
-import type { Departure, SavedRoute } from '../lib/types'
+import type { ActiveTrip, Departure, Direction, SavedRoute } from '../lib/types'
 import type { Translate } from '../lib/i18n'
 
 /** Morning runs outbound; from midday onward, inbound. */
@@ -54,6 +64,7 @@ export function Now() {
       onFlip={() => setFlipped((f) => !f)}
       online={online}
       now={tick}
+      direction={direction}
       t={t}
     />
   )
@@ -67,10 +78,22 @@ type StopProps = {
   onFlip: () => void
   online: boolean
   now: number
+  direction: Direction
   t: Translate
 }
 
-function NowForStop({ route, originId, originName, destinationName, onFlip, online, now, t }: StopProps) {
+function NowForStop({
+  route,
+  originId,
+  originName,
+  destinationName,
+  onFlip,
+  online,
+  now,
+  direction,
+  t,
+}: StopProps) {
+  const [showTicket, setShowTicket] = useState(false)
   // Poll cadence follows urgency, but urgency comes from the board — so we seed
   // a slow poll and tighten it once we know. We store the *bucketed interval*
   // rather than the raw seconds: seconds change every tick, whereas the bucket
@@ -105,6 +128,50 @@ function NowForStop({ route, originId, originName, destinationName, onFlip, onli
   const age = board === null ? 0 : now - board.fetchedAt
   const stale = age > 120_000
 
+  const destinationId = direction === 'outbound' ? route.destination.id : route.origin.id
+
+  // The train you are on, if its departure has passed and it is still within
+  // the journey window. This is the key to the inspection log being correct:
+  // mid-journey the board below shows the *next* train, so logging against
+  // that would attach the inspection to a train you were never on.
+  const onBoard = currentTrip(now)
+
+  // Remember the departure being counted down to, so it can be recognised as
+  // the boarded train after it leaves — including across an app close, which
+  // is the normal case.
+  useEffect(() => {
+    if (leading === null) return
+    void markIntendedTrip({
+      tripKey: buildTripKey({
+        line: leading.line,
+        routeId: route.id,
+        direction,
+        scheduled: leading.timing.scheduled,
+      }),
+      routeId: route.id,
+      direction,
+      line: leading.line,
+      destination: leading.destination,
+      departedAt: leading.timing.actual,
+      segment: [originId, destinationId],
+    }, now)
+    // Deliberately not keyed on `now`: this fires when the leading departure
+    // changes, not every tick.
+  }, [leading?.key, leading?.timing.actual, onBoard === null])
+
+  // The ride is logged once you are actually on board, not when the app is
+  // merely opened. recordRide dedupes per service day, so this is idempotent.
+  useEffect(() => {
+    if (onBoard === null) return
+    void logRide({
+      ts: now,
+      tripKey: onBoard.tripKey,
+      routeId: onBoard.routeId,
+      direction: onBoard.direction,
+    })
+    // Keyed on the trip, not on `now`: once per trip, not once per tick.
+  }, [onBoard?.tripKey])
+
   return (
     <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5">
       <header class="safe-top flex items-baseline justify-between gap-3 pb-2">
@@ -138,7 +205,9 @@ function NowForStop({ route, originId, originName, destinationName, onFlip, onli
       )}
 
       <main class="flex flex-1 flex-col justify-center py-6">
-        {state.loading && board === null ? (
+        {onBoard !== null ? (
+          <OnBoardHero trip={onBoard} onNotThisTrain={() => void clearActiveTrip()} t={t} />
+        ) : state.loading && board === null ? (
           <LoadingSkeleton label={t('state.loading')} />
         ) : board === null ? (
           <Banner
@@ -178,6 +247,28 @@ function NowForStop({ route, originId, originName, destinationName, onFlip, onli
           <Banner tone="info" title={t('state.droppedSome', { count: state.dropped })} />
         )}
       </div>
+
+      {(onBoard !== null || leading !== null) && (
+        <InspectionPanel
+          tripKey={
+            onBoard !== null
+              ? onBoard.tripKey
+              : buildTripKey({
+                  line: leading?.line ?? '',
+                  routeId: route.id,
+                  direction,
+                  scheduled: leading?.timing.scheduled ?? now,
+                })
+          }
+          routeId={route.id}
+          direction={onBoard?.direction ?? direction}
+          segment={onBoard?.segment ?? [originId, destinationId]}
+          now={now}
+          onShowTicket={() => setShowTicket(true)}
+        />
+      )}
+
+      {showTicket && <TicketView onClose={() => setShowTicket(false)} />}
 
       {followUps.length > 0 && (
         <section class="safe-bottom border-t border-line pt-3">
@@ -255,6 +346,47 @@ function Lead({
         {departure.platform !== null && <span>{t('now.platform', { platform: departure.platform })}</span>}
         <DelayBadge timing={departure.timing} t={t} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * Shown while a journey is under way.
+ *
+ * Replaces the leave-by countdown rather than sitting alongside it: telling
+ * someone to leave in twelve minutes while they are already on the train is a
+ * contradiction, and the next departure is still listed below.
+ */
+function OnBoardHero({
+  trip,
+  onNotThisTrain,
+  t,
+}: {
+  trip: ActiveTrip
+  onNotThisTrain: () => void
+  t: Translate
+}) {
+  return (
+    <div class="animate-rise">
+      <p class="pb-1 text-sm font-medium tracking-wide text-muted uppercase">
+        {t('onboard.title')}
+      </p>
+      <p class="text-4xl leading-tight font-bold">{trip.line}</p>
+      <p class="pt-1 text-lg text-muted">
+        {t('now.toward', { destination: trip.destination })}
+      </p>
+      <p class="pt-3 text-sm text-muted">
+        {t('onboard.since', { time: formatClock(trip.departedAt) })}
+      </p>
+      <button
+        type="button"
+        // An escape hatch: you checked the app, then took a different train.
+        // Without this the log would quietly record a ride you never took.
+        onClick={onNotThisTrain}
+        class="mt-2 min-h-[var(--tap)] text-sm font-semibold text-accent"
+      >
+        {t('onboard.notMyTrain')}
+      </button>
     </div>
   )
 }

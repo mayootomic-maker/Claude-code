@@ -149,6 +149,180 @@ async function drive(browser) {
       deliberateFailure = false
     }
 
+    // --- Tabs -------------------------------------------------------------
+    await seedRoute(page, '8502113', 8)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_200)
+
+    for (const [index, name] of [[1, 'board'], [2, 'routes'], [3, 'settings']]) {
+      await page.click(`nav button >> nth=${index}`)
+      await page.waitForTimeout(900)
+      const heading = (await page.textContent('h1').catch(() => '')) ?? ''
+      findings.push(`[${theme}] tab ${name.padEnd(9)} heading=${JSON.stringify(heading.trim())}`)
+      if (heading.trim() === '') problems.push(`[${theme}] tab "${name}" rendered no heading`)
+      await shot(page, `${theme}-tab-${name}`)
+    }
+
+    // --- Inspection capture and the ticket shortcut ------------------------
+    await page.click('nav button >> nth=0')
+    await page.waitForTimeout(1_000)
+
+    const panelBefore = (await page.textContent('body')) ?? ''
+    if (!/Zu wenig Daten|Bisher keine Kontrolle/.test(panelBefore)) {
+      problems.push(`[${theme}] inspection panel did not render its low-data state`)
+    }
+    findings.push(`[${theme}] inspection panel OK (low-data state shown)`)
+
+    // Log one inspection; the panel must still refuse to give a percentage.
+    await page.click('button:has-text("Kontrolle")')
+    await page.waitForTimeout(600)
+    const afterLog = (await page.textContent('body')) ?? ''
+    const stillHonest = /Zu wenig Daten/.test(afterLog)
+    findings.push(`[${theme}] after 1 inspection ${stillHonest ? 'OK  ' : 'MISS'} (still refuses a percentage)`)
+    if (!stillHonest) {
+      problems.push(`[${theme}] showed an estimate from a single data point`)
+    }
+    await shot(page, `${theme}-inspection-panel`)
+
+    // Ticket view opens with nothing stored and says so, rather than blank.
+    await page.click('button:has-text("Billett zeigen")')
+    await page.waitForTimeout(600)
+    const ticketBody = (await page.textContent('[role="dialog"]').catch(() => '')) ?? ''
+    const ticketOk = /Kein Billett hinterlegt/.test(ticketBody)
+    findings.push(`[${theme}] ticket view    ${ticketOk ? 'OK  ' : 'MISS'} ${JSON.stringify(ticketBody.trim().slice(0, 60))}`)
+    if (!ticketOk) problems.push(`[${theme}] ticket view empty state missing`)
+    await shot(page, `${theme}-ticket-view`)
+    await page.click('[role="dialog"] button:has-text("Schliessen")')
+    await page.waitForTimeout(300)
+
+    // --- On board: the inspection must bind to the train you are ON --------
+    // Mid-journey the board shows the *next* train. Without active-trip
+    // tracking an inspection logged here would attach to a train never
+    // boarded, and the ride count would never grow.
+    await page.evaluate(() => {
+      return new Promise((resolve, reject) => {
+        const open = indexedDB.open('pendlo', 1)
+        open.onupgradeneeded = () => {
+          if (!open.result.objectStoreNames.contains('kv')) open.result.createObjectStore('kv')
+        }
+        open.onsuccess = () => {
+          const tx = open.result.transaction('kv', 'readwrite')
+          const store = tx.objectStore('kv')
+          const get = store.get('app-data')
+          get.onsuccess = () => {
+            const data = get.result
+            // A train that left eight minutes ago: you are on it right now.
+            data.activeTrip = {
+              tripKey: 'test-route|outbound|S29|500',
+              routeId: 'test-route',
+              direction: 'outbound',
+              line: 'S 29',
+              destination: 'Turgi',
+              departedAt: Date.now() - 8 * 60_000,
+              segment: ['8502113', '8503000'],
+            }
+            store.put(data, 'app-data')
+          }
+          tx.oncomplete = () => resolve(true)
+          tx.onerror = () => reject(tx.error)
+        }
+        open.onerror = () => reject(open.error)
+      })
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_400)
+
+    const onboardBody = (await page.textContent('body')) ?? ''
+    const onboardOk = /Du bist unterwegs/.test(onboardBody) && /S 29/.test(onboardBody)
+    findings.push(`[${theme}] on board      ${onboardOk ? 'OK  ' : 'MISS'} (bound to the boarded train)`)
+    if (!onboardOk) problems.push(`[${theme}] on-board mode did not render`)
+    await shot(page, `${theme}-onboard`)
+
+    // A ride must have been logged for the boarded trip, not for the next one.
+    const rideCheck = await page.evaluate(() => {
+      return new Promise((resolve, reject) => {
+        const open = indexedDB.open('pendlo', 1)
+        open.onsuccess = () => {
+          const tx = open.result.transaction('kv', 'readonly')
+          const get = tx.objectStore('kv').get('app-data')
+          get.onsuccess = () => {
+            const rides = get.result?.log?.rides ?? []
+            resolve({ count: rides.length, keys: rides.map((r) => r.tripKey) })
+          }
+          get.onerror = () => reject(get.error)
+        }
+        open.onerror = () => reject(open.error)
+      })
+    })
+    const rideOk = rideCheck.count >= 1 && rideCheck.keys.includes('test-route|outbound|S29|500')
+    findings.push(`[${theme}] ride logged   ${rideOk ? 'OK  ' : 'MISS'} ${JSON.stringify(rideCheck)}`)
+    if (!rideOk) problems.push(`[${theme}] boarded ride was not logged against the boarded trip`)
+
+    // --- Export -> wipe -> restore fidelity --------------------------------
+    // Simulates iOS evicting our data: the stored payload disappears, and the
+    // exported file is the only way back. Deletes the key rather than the
+    // database, because the running app holds an open connection and
+    // deleteDatabase would block on it indefinitely.
+    const readKey = async () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const open = indexedDB.open('pendlo', 1)
+            open.onupgradeneeded = () => {
+              if (!open.result.objectStoreNames.contains('kv')) open.result.createObjectStore('kv')
+            }
+            open.onsuccess = () => {
+              const tx = open.result.transaction('kv', 'readonly')
+              const get = tx.objectStore('kv').get('app-data')
+              get.onsuccess = () => resolve(JSON.stringify(get.result ?? null))
+              get.onerror = () => reject(get.error)
+            }
+            open.onerror = () => reject(open.error)
+          }),
+      )
+
+    const writeKey = async (json) =>
+      page.evaluate(
+        (payload) =>
+          new Promise((resolve, reject) => {
+            const open = indexedDB.open('pendlo', 1)
+            open.onupgradeneeded = () => {
+              if (!open.result.objectStoreNames.contains('kv')) open.result.createObjectStore('kv')
+            }
+            open.onsuccess = () => {
+              const tx = open.result.transaction('kv', 'readwrite')
+              const store = tx.objectStore('kv')
+              if (payload === null) store.delete('app-data')
+              else store.put(JSON.parse(payload), 'app-data')
+              tx.oncomplete = () => resolve(true)
+              tx.onerror = () => reject(tx.error)
+            }
+            open.onerror = () => reject(open.error)
+          }),
+        json,
+      )
+
+    const exported = await readKey()
+    const hasRoutes = exported !== null && exported.includes('walkSeconds')
+    if (!hasRoutes) problems.push(`[${theme}] nothing to export — the app stored no routes`)
+
+    await writeKey(null)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_000)
+    const wiped = (await page.textContent('body')) ?? ''
+    const wipedOk = /Willkommen/.test(wiped)
+    findings.push(`[${theme}] after wipe    ${wipedOk ? 'OK  ' : 'MISS'} (onboarding returns)`)
+    if (!wipedOk) problems.push(`[${theme}] wipe did not reset the app to onboarding`)
+
+    await writeKey(exported)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_200)
+    const restoredBody = (await page.textContent('body')) ?? ''
+    const restoredOk = !/Willkommen/.test(restoredBody) && /Richtung/.test(restoredBody)
+    findings.push(`[${theme}] after restore ${restoredOk ? 'OK  ' : 'MISS'} (route survived)`)
+    if (!restoredOk) problems.push(`[${theme}] data did not survive wipe and restore`)
+
     // --- Offline ---------------------------------------------------------
     await seedRoute(page, '8502113', 8)
     await page.reload({ waitUntil: 'domcontentloaded' })

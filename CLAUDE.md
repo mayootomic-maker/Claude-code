@@ -67,6 +67,17 @@ with reality in two places.
 **Correctness**
 - Never call `Date.now()` outside `createClock` in `lib/time.ts`. A device
   clock three minutes fast makes every countdown three minutes wrong, silently.
+- **Inspections bind to the trip you are ON, not the one on screen.** Mid-journey
+  the board shows the *next* train. `activeTrip` in `lib/store.ts` records the
+  departure being counted down to and reads it back after it leaves, so a
+  mid-journey inspection attaches to the right train and the ride count grows.
+  `markIntendedTrip` must never overwrite a journey already under way — that
+  guard is the whole reason the feature works when the app is opened on board.
+- **Trip identity uses nearest-match, never buckets.** `tripKey` is exact;
+  tolerance lives in `resolveTripKey`. Rounding into buckets only moves the
+  history-splitting problem to the bucket edges (07:44 vs 07:46).
+- Prediction refuses to show a percentage below `MIN_RIDES_FOR_ESTIMATE`.
+  A rate from three rides is invented confidence.
 - Unknown is never rendered as fine. `delayMinutes: null` means no data.
 - A cancelled service never renders a countdown, and never silently disappears —
   if one is skipped, it is announced (`skippedCancelled` in `routes/Now.tsx`).
@@ -84,7 +95,7 @@ with reality in two places.
 8. Every number on screen traces to a real API field. Nothing invented.
 
 **Budget** (CI-enforced later)
-- JS ≤ 50 KB gzip for the `Now` route · CSS ≤ 10 KB. Currently ~17.6 KB / 4.6 KB.
+- JS ≤ 50 KB gzip for the `Now` route · CSS ≤ 10 KB. Currently ~25.8 KB / 5.3 KB.
 - No animation library, no charting library, no zod. Hand-rolled beats a
   dependency at this scale — zod alone would be a quarter of the JS budget.
 
@@ -103,6 +114,11 @@ with reality in two places.
 - **Background geolocation does not exist in a PWA.** Direction inference is
   time-of-day first, GPS only as refinement while the app is open.
 - **iOS Web Push** requires home-screen install and is best-effort.
+- **There is no web API to set screen brightness.** The ticket view holds a
+  Screen Wake Lock and renders on pure white; that is all that is achievable.
+- **PDFs cannot be rasterised in-browser** without `pdf.js` (~7× this app).
+  Images are the first-class ticket path; PDFs go to the browser's own viewer
+  and the UI says so.
 
 ## Testing
 
@@ -113,7 +129,14 @@ live API and include the null-delay case.
 
 `e2e/drive.mjs` drives the built app in Chromium at iPhone dimensions across
 both themes, forcing each state: normal, no-realtime, cancelled, go-now, empty,
-error, malformed, offline. It fails on any console error or page error.
+error, malformed, offline. It also walks all four tabs, logs an inspection,
+opens the ticket view, exercises the on-board flow (asserting the ride is
+logged against the *boarded* trip), and runs an export → wipe → restore cycle.
+It fails on any console error or page error.
+
+Two bugs were found by driving the app that unit tests passed clean on: a
+cancelled train vanishing instead of being announced, and the intended-trip
+marker overwriting the boarded trip. Run it after UI changes, not just tests.
 
 It runs against `e2e/stub-server.mjs` rather than the live API for two reasons:
 **the browser in this container has no outbound network access** (the shell

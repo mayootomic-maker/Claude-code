@@ -1,6 +1,7 @@
 /** Domain model. Nothing upstream-shaped survives past the source adapters. */
 
 import type { DepartureTiming } from './time'
+import type { InspectionLog } from './inspections'
 
 export type SourceId = 'opendata' | 'ojp'
 
@@ -71,11 +72,37 @@ export type SavedRoute = {
   note: string
 }
 
+/**
+ * The train you are currently on.
+ *
+ * Recorded when the Now screen leads with a departure, and read back after its
+ * departure time passes. This exists because of how the app is actually used:
+ * you check it at home, close it, board, and only open it again when an
+ * inspector appears — by which point the Now screen is showing the *next*
+ * train. Without this, an inspection logged mid-journey would be attached to a
+ * train you were never on, and the ride count would never grow.
+ */
+export type ActiveTrip = {
+  tripKey: string
+  routeId: string
+  direction: Direction
+  line: string
+  destination: string
+  /** Realtime-adjusted departure, epoch ms. */
+  departedAt: number
+  /** Segment travelled, for inspection heat mapping. */
+  segment: [fromStopId: string, toStopId: string]
+}
+
 /** Everything the app knows, as written to disk and to an export file. */
 export type AppData = {
   version: number
   routes: SavedRoute[]
   settings: Settings
+  log: InspectionLog
+  /** Epoch ms of the last export; null when never backed up. */
+  lastBackupAt: number | null
+  activeTrip: ActiveTrip | null
 }
 
 export type Settings = {
