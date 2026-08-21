@@ -1,0 +1,14 @@
+name = "pendlo-solo"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Upstream responses are cached here so repeat app opens make zero upstream
+# calls, which also keeps us clear of opendata.ch's 3 req/s ceiling.
+# Create with: wrangler kv namespace create CACHE
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "<filled in after creation>"
+
+# Secrets (never in this file, never in the client bundle):
+#   wrangler secret put OJP_API_KEY     # from api-manager.opentransportdata.swiss
+#   wrangler secret put DEVICE_TOKEN    # shared with the app; see auth note in src/index.ts
