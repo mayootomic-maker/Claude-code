@@ -409,6 +409,12 @@ class VoiceChanger:
         t0 = time.perf_counter()
         fx: VoiceFx = self.config.voice.fx
         audio = fx.apply(audio)
+        # The comms link goes last: it models everything between the
+        # speaker's mouth and your ears, so it has to see the finished voice.
+        comms = self.config.voice.comms_profile
+        if comms.enabled:
+            audio = Audio(comms.apply(audio.samples, audio.sample_rate),
+                          audio.sample_rate)
         self.stats.fx_ms = (time.perf_counter() - t0) * 1000
         return accented, audio
 

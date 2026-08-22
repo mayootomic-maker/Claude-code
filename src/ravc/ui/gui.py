@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .. import APP_TITLE, __version__
+from .. import APP_TITLE, __version__, diagnostics
 from ..accent.languages import available as available_languages
 from ..accent.languages import get_pack
 from ..asr.whisper_asr import MODEL_SIZES, WhisperAsr
@@ -51,6 +51,11 @@ class AccentApp:
         root.minsize(880, 620)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        self._events: "queue.Queue" = queue.Queue(maxsize=2048)
+        self._pending_level: Optional[float] = None
+        self._pump_job: Optional[str] = None
+        self._closing = False
+        self._calibrating = False
         self._save_job: Optional[str] = None
         self._downloading = False
         self._preview_player = None
@@ -61,7 +66,7 @@ class AccentApp:
 
         self.changer = VoiceChanger(self.config, Events(
             on_state=lambda s: self._ui(self._on_state, s),
-            on_level=lambda v: self._ui(self.meter.set_level, min(1.0, v * 2.2)),
+            on_level=self._set_level,
             on_utterance=lambda src, acc: self._ui(self._on_utterance, src, acc),
             on_error=lambda m: self._ui(self._on_error, m),
             on_log=lambda m: self._ui(self._log, m),
@@ -70,6 +75,8 @@ class AccentApp:
 
         self._build()
         self._load_into_widgets()
+        diagnostics.add_listener(self._on_log_line)
+        self._pump()                      # started from the Tk thread
         self.root.after(200, self._refresh_devices)
         if self.config.behaviour.autostart_pipeline:
             self.root.after(900, self.toggle_pipeline)
@@ -85,10 +92,61 @@ class AccentApp:
             pass
 
     def _ui(self, fn, *args) -> None:
+        """Queue work to run on the Tk thread.
+
+        This must not call into Tk at all. Tkinter is not thread-safe, and
+        that includes ``after()``: it mutates the Tcl interpreter's event
+        queue, and calling it from another thread corrupts interpreter
+        state. The microphone level callback runs on PortAudio's realtime
+        thread about fifty times a second, so the previous version was
+        reaching into Tcl from a foreign thread constantly -- which is
+        exactly the kind of thing that crashes on Windows.
+
+        Instead: producers append here, and _pump drains it from a timer
+        owned by the Tk thread.
+        """
         try:
-            self.root.after(0, lambda: fn(*args))
-        except (RuntimeError, tk.TclError):
-            pass  # window already gone
+            self._events.put_nowait((fn, args))
+        except queue.Full:
+            pass
+
+    def _set_level(self, value: float) -> None:
+        """Record the newest microphone level. Safe from any thread.
+
+        Deliberately not queued: levels arrive far faster than the UI can
+        redraw, and a queue of them would only build a backlog of stale
+        values. A plain assignment is atomic under the GIL, and the pump
+        reads whatever the latest one is.
+        """
+        self._pending_level = value
+
+    def _pump(self) -> None:
+        """Drain queued work. Runs on the Tk thread, scheduled by itself."""
+        try:
+            for _ in range(64):        # bounded, so the UI stays responsive
+                try:
+                    fn, args = self._events.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    fn(*args)
+                except Exception as exc:  # noqa: BLE001
+                    diagnostics.log_exception("UI callback", exc)
+
+            level = self._pending_level
+            if level is not None:
+                self._pending_level = None
+                target = self.calibrate_meter if self._calibrating else self.meter
+                try:
+                    target.set_level(min(1.0, level * 2.2))
+                except tk.TclError:
+                    pass
+        finally:
+            if not self._closing:
+                try:
+                    self._pump_job = self.root.after(40, self._pump)
+                except tk.TclError:
+                    pass
 
     # ------------------------------------------------------------------
     # Layout
@@ -647,8 +705,7 @@ class AccentApp:
     def _record_and_calibrate(self) -> None:
         try:
             samples, sample_rate = self.changer.record(
-                6.0, on_level=lambda v: self._ui(
-                    self.calibrate_meter.set_level, min(1.0, v * 2.2)))
+                6.0, on_level=self._set_level)
             self._ui(self.calibrate_note.configure,
                      {"text": "Measuring…"})
             self._apply_calibration(samples, sample_rate)
@@ -1059,7 +1116,19 @@ class AccentApp:
         except Exception as exc:  # noqa: BLE001
             self._log(f"Could not save settings: {exc}")
 
+    def _on_log_line(self, line: str) -> None:
+        """Diagnostics listener; called from arbitrary threads."""
+        if " ERROR " in line:
+            self._ui(self._log, line.split(" ERROR ", 1)[-1].splitlines()[0])
+
     def on_close(self) -> None:
+        self._closing = True
+        diagnostics.remove_listener(self._on_log_line)
+        if self._pump_job is not None:
+            try:
+                self.root.after_cancel(self._pump_job)
+            except tk.TclError:
+                pass
         try:
             self.config.save()
         except Exception:
@@ -1136,10 +1205,19 @@ def run_gui() -> int:
               '  ravc say "hello there" --out hello.wav', file=sys.stderr)
         return 1
 
+    diagnostics.install()
+    diagnostics.log_environment()
+
+    def report_callback_exception(kind, value, tb) -> None:
+        diagnostics.log_exception("Tk callback", value)
+
+    root.report_callback_exception = report_callback_exception
+
     try:
         AccentApp(root)
     except Exception:  # noqa: BLE001
         traceback.print_exc()
+        diagnostics.write("failed to build the window", level="ERROR")
         try:
             messagebox.showerror(APP_TITLE, traceback.format_exc())
         except Exception:

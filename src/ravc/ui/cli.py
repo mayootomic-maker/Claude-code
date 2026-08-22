@@ -22,6 +22,8 @@ from ..asr.whisper_asr import MODEL_SIZES, WhisperAsr
 from ..audio import devices as audio_devices
 from ..config import AppConfig, config_path
 from ..dsp.chain import PRESETS, preset_names
+from ..dsp.comms import PROFILES as COMMS_PROFILES
+from ..dsp.comms import profile_names as comms_names
 from ..pipeline import Events, VoiceChanger
 from ..tts import voices as voice_catalogue
 from ..tts.registry import VoiceRegistry
@@ -48,6 +50,8 @@ def _load_config(args) -> AppConfig:
         config.accent.grammar_strength = args.grammar
     if getattr(args, "preset", None):
         config.apply_preset(args.preset)
+    if getattr(args, "comms", None):
+        config.apply_comms(args.comms)
     if getattr(args, "voice", None):
         config.voice.set_voice(config.accent.language, args.voice)
     if getattr(args, "speaker", None):
@@ -347,11 +351,22 @@ def cmd_models(args) -> int:
 
 
 def cmd_presets(args) -> int:
+    print("Character presets (-p):")
     for name in preset_names():
         fx = PRESETS[name]
         print(f"  {name:14s} pitch {fx.pitch_semitones:+.1f} st, "
               f"formant {fx.formant_semitones:+.1f} st, "
               f"bass {fx.bass_db:+.1f} dB, drive {fx.drive:.2f}")
+    print("\nVoice-chat links (-c):")
+    for name in comms_names():
+        profile = COMMS_PROFILES[name]
+        if not profile.enabled:
+            print(f"  {name:26s} no processing")
+            continue
+        noise = ", ".join(sorted(profile.noise)) or "none"
+        print(f"  {name:26s} {profile.codec_rate or 'full'} Hz codec, "
+              f"{profile.band_low_hz:.0f}-{profile.band_high_hz:.0f} Hz, "
+              f"noise: {noise}")
     return 0
 
 
@@ -415,6 +430,8 @@ def build_parser() -> argparse.ArgumentParser:
                                              "model, e.g. angry, whisper")
             p.add_argument("-p", "--preset", choices=preset_names(),
                            help="voice-character preset")
+            p.add_argument("-c", "--comms", choices=comms_names(),
+                           help="voice-chat link to push the result through")
             p.add_argument("-r", "--rate", type=float,
                            help="speaking rate, 1.0 is natural")
 

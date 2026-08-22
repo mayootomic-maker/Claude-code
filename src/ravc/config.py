@@ -14,6 +14,8 @@ from .accent.languages import DEFAULT_LANGUAGE, get_pack
 from .accent.languages.base import AccentProfile
 from .asr.whisper_asr import DEFAULT_MODEL
 from .dsp.chain import DEFAULT_PRESET, VoiceFx, get_preset
+from .dsp.comms import DEFAULT_PROFILE as DEFAULT_COMMS
+from .dsp.comms import CommsProfile, get_profile
 from .tts.voices import default_voice
 
 APP_NAME = "AccentVoiceChanger"
@@ -98,6 +100,11 @@ class VoiceSettings:
     preset: str = DEFAULT_PRESET
     speaking_rate: float = 1.0
     fx: VoiceFx = field(default_factory=lambda: get_preset(DEFAULT_PRESET))
+    # The voice-chat link the output is pushed through, after the character
+    # effects: narrowband codec, cheap mic, room noise.
+    comms: str = DEFAULT_COMMS
+    comms_profile: CommsProfile = field(
+        default_factory=lambda: get_profile(DEFAULT_COMMS))
 
     def voice_for(self, language: str) -> str:
         return self.voice_keys.get(language) or f"piper:{default_voice(language)}"
@@ -179,6 +186,10 @@ class AppConfig:
     def apply_preset(self, name: str) -> None:
         self.voice.preset = name
         self.voice.fx = get_preset(name)
+
+    def apply_comms(self, name: str) -> None:
+        self.voice.comms = name
+        self.voice.comms_profile = get_profile(name)
 
     @property
     def language(self) -> str:
