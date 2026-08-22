@@ -157,13 +157,13 @@ it, and the r rolls.
 | substitution | accent | why the language forces it | measured effect |
 |---|---|---|---|
 | /ɹ/ → rolled r | Russian | Russian /r/ is an alveolar trill | 27 Hz modulation 8× deeper; the English /ɹ/ signature drops 5 dB |
-| /ɹ/ → uvular [ʁ] | German | German /r/ is uvular and fricated, with no contact — so no roll | +4 dB of friction at 1.6–2.6 kHz, and no modulation |
+| /ɹ/ → uvular [ʁ] | German | German /r/ is uvular and fricated, with no contact — so no roll | +7 dB of friction at 1.6–2.6 kHz, and no modulation |
 | /w/ → /v/ | both | neither language has /w/ — "water" → "vater" | +6.6 dB of frication in the labiodental band |
-| /l/ → hard l | Russian | Russian /l/ is heavily velarised — the "miluk" in stage-Russian "milk" | F2 pulled from 1159 Hz to 768 |
+| /l/ → hard l | Russian | Russian /l/ is heavily velarised — the "miluk" in stage-Russian "milk" | F2 pulled from 1158 Hz to 766 |
 
 Each is a separate switch, and none of them touches a vowel: run the
-consonant stage alone over a sustained /ɑ/ and its formants move by under
-80 Hz. German declines the hard /l/ — its /l/ is close to the English one
+consonant stage alone over a sustained /ɑ/ and its formants do not move at
+all, because the detector never calls it a consonant. German declines the hard /l/ — its /l/ is close to the English one
 — and switching a substitution off leaves that consonant alone rather than
 handing it to the vowel stage, which would velarise it anyway.
 
