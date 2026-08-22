@@ -7,6 +7,7 @@ import {
   recordInspection,
   recordRide,
   resolveTripKey,
+  summarise,
   tripKey,
   type InspectionLog,
 } from './inspections'
@@ -336,5 +337,83 @@ describe('migrateLog', () => {
 
     expect(result.rides).toHaveLength(1)
     expect(result.inspections).toHaveLength(1)
+  })
+})
+
+describe('summarise', () => {
+  const now = at('2026-08-21T12:00:00Z') // a Friday
+  const trip = key('2026-08-21T05:42:00Z')
+
+  it('reports an empty log without inventing structure', () => {
+    const stats = summarise(EMPTY_LOG)
+    expect(stats.totalRides).toBe(0)
+    expect(stats.totalInspections).toBe(0)
+    expect(stats.trips).toBe(0)
+    expect(stats.since).toBeNull()
+    // Every weekday is present so the chart has a stable shape.
+    expect(stats.byWeekday).toHaveLength(7)
+    // Hours are only included where there is data, so the chart is not mostly empty.
+    expect(stats.byHour).toEqual([])
+  })
+
+  it('counts rides and inspections without recency weighting', () => {
+    // Prediction discounts old rides because it forecasts. A history view must
+    // not, or the chart would disagree with the totals beside it.
+    const log = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    const stats = summarise(log)
+
+    expect(stats.totalRides).toBe(20)
+    expect(stats.totalInspections).toBe(5)
+    expect(stats.trips).toBe(1)
+  })
+
+  it('groups by service weekday, so a post-midnight ride counts as the evening', () => {
+    // 00:30 local on Saturday belongs to Friday's service.
+    const lateFriday = at('2026-08-21T22:30:00Z')
+    const log = recordRide(EMPTY_LOG, {
+      ts: lateFriday,
+      tripKey: trip,
+      routeId: 'r1',
+      direction: 'outbound',
+    })
+
+    const friday = summarise(log).byWeekday[5]
+    const saturday = summarise(log).byWeekday[6]
+    expect(friday?.rides).toBe(1)
+    expect(saturday?.rides).toBe(0)
+  })
+
+  it('breaks down by hour only where the hour was recorded', () => {
+    let log = recordRide(EMPTY_LOG, {
+      ts: now, tripKey: trip, routeId: 'r1', direction: 'outbound', hour: 7,
+    })
+    log = recordRide(log, {
+      ts: now + DAY, tripKey: trip, routeId: 'r1', direction: 'outbound', hour: 7,
+    })
+    // An older entry with no hour still counts toward the totals.
+    log = recordRide(log, {
+      ts: now + 2 * DAY, tripKey: trip, routeId: 'r1', direction: 'outbound',
+    })
+
+    const stats = summarise(log)
+    expect(stats.totalRides).toBe(3)
+    expect(stats.byHour).toEqual([{ hour: 7, rides: 2, inspections: 0 }])
+  })
+
+  it('reports the oldest entry as the start of the record', () => {
+    const log = buildLog({ rides: 5, checked: 1, tripKeyValue: trip, endingAt: now })
+    expect(summarise(log).since).toBe(now - 4 * DAY)
+  })
+
+  it('counts distinct trips, tolerating a shifted timetable', () => {
+    let log = buildLog({ rides: 3, checked: 0, tripKeyValue: trip, endingAt: now })
+    // The same train three minutes later must not read as a second service.
+    log = recordRide(log, {
+      ts: now + 10 * DAY,
+      tripKey: key('2026-08-21T05:45:00Z'),
+      routeId: 'r1',
+      direction: 'outbound',
+    })
+    expect(summarise(log).trips).toBe(1)
   })
 })

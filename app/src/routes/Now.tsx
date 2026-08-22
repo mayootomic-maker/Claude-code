@@ -170,6 +170,8 @@ function NowForStop({
       tripKey: onBoard.tripKey,
       routeId: onBoard.routeId,
       direction: onBoard.direction,
+      ...(onBoard.category === undefined ? {} : { category: onBoard.category }),
+      hour: localParts(onBoard.departedAt).hour,
     })
     // Keyed on the trip, not on `now`: once per trip, not once per tick.
   }, [onBoard?.tripKey])

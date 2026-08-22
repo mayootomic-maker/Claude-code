@@ -15,7 +15,8 @@
 import { useState } from 'preact/hooks'
 import { predict, type Prediction } from '../lib/inspections'
 import { log, logInspection, settings, t as translate } from '../lib/store'
-import { serviceDayOfWeek } from '../lib/time'
+import { StatsSheet } from './StatsSheet'
+import { localParts, serviceDayOfWeek } from '../lib/time'
 import type { Direction } from '../lib/types'
 
 /** Above this, the ticket shortcut becomes the primary action. */
@@ -42,6 +43,7 @@ export function InspectionPanel({
   const t = translate.value
   const [justLogged, setJustLogged] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [showSheet, setShowSheet] = useState(false)
 
   const prediction = predict(
     log.value,
@@ -63,6 +65,7 @@ export function InspectionPanel({
       segment,
       note: '',
       ...(category === undefined ? {} : { category }),
+      hour: localParts(now).hour,
     })
     setJustLogged(true)
     setTimeout(() => setJustLogged(false), 2000)
@@ -84,7 +87,22 @@ export function InspectionPanel({
         </span>
       </button>
 
-      {showStats && <Stats prediction={prediction} category={category} />}
+      {showStats && (
+        <>
+          <Stats prediction={prediction} category={category} />
+          <button
+            type="button"
+            onClick={() => setShowSheet(true)}
+            class="min-h-[var(--tap)] text-sm font-semibold text-accent"
+          >
+            {t('insp.stats')} →
+          </button>
+        </>
+      )}
+
+      {showSheet && (
+        <StatsSheet onClose={() => setShowSheet(false)} language={settings.value.language} />
+      )}
 
       <div class="mt-2 flex gap-2">
         <button

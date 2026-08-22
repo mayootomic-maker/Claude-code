@@ -11,6 +11,7 @@
 
 import { chromium, devices } from 'playwright'
 import { mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4174'
 const OUT = new URL('./shots/', import.meta.url).pathname
@@ -405,9 +406,14 @@ async function drive(browser) {
 async function run() {
   await mkdir(OUT, { recursive: true })
 
+  // In CI, Playwright resolves its own browser; locally this container ships a
+  // preinstalled one at a fixed path.
+  const local = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
+  const useLocal = process.env.CI !== 'true' && existsSync(local)
+
   const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-    // Running as root in the container: Chromium's sandbox cannot initialise.
+    ...(useLocal ? { executablePath: local } : {}),
+    // Running as root in a container: Chromium's sandbox cannot initialise.
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   })
 

@@ -456,3 +456,75 @@ export function migrateLog(raw: unknown): InspectionLog {
     inspections: inspections.filter(validInspection),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Statistics
+// ---------------------------------------------------------------------------
+
+export type WeekdayStat = { weekday: number; rides: number; inspections: number }
+export type HourStat = { hour: number; rides: number; inspections: number }
+
+export type LogStats = {
+  totalRides: number
+  totalInspections: number
+  /** Sunday-first, matching Date.getUTCDay, so the UI can label them directly. */
+  byWeekday: WeekdayStat[]
+  /** Only hours with at least one ride, so the chart is not mostly empty. */
+  byHour: HourStat[]
+  /** Distinct trips with any history. */
+  trips: number
+  /** Oldest entry, epoch ms, or null for an empty log. */
+  since: number | null
+}
+
+/**
+ * Aggregates the log for display.
+ *
+ * Raw counts, deliberately unweighted: the prediction applies recency decay
+ * because it is forecasting, but a history view showing "you have ridden this
+ * 34 times" must not quietly discount older rides — that would be a chart that
+ * disagrees with itself.
+ */
+export function summarise(log: InspectionLog): LogStats {
+  const byWeekday: WeekdayStat[] = Array.from({ length: 7 }, (_, weekday) => ({
+    weekday,
+    rides: 0,
+    inspections: 0,
+  }))
+  const hourMap = new Map<number, HourStat>()
+
+  let since: number | null = null
+
+  for (const ride of log.rides) {
+    const day = byWeekday[serviceDayOfWeek(ride.ts)]
+    if (day !== undefined) day.rides++
+
+    if (ride.hour !== undefined) {
+      const entry = hourMap.get(ride.hour) ?? { hour: ride.hour, rides: 0, inspections: 0 }
+      entry.rides++
+      hourMap.set(ride.hour, entry)
+    }
+    if (since === null || ride.ts < since) since = ride.ts
+  }
+
+  for (const inspection of log.inspections) {
+    const day = byWeekday[serviceDayOfWeek(inspection.ts)]
+    if (day !== undefined) day.inspections++
+
+    if (inspection.hour !== undefined) {
+      const entry = hourMap.get(inspection.hour) ?? { hour: inspection.hour, rides: 0, inspections: 0 }
+      entry.inspections++
+      hourMap.set(inspection.hour, entry)
+    }
+    if (since === null || inspection.ts < since) since = inspection.ts
+  }
+
+  return {
+    totalRides: log.rides.length,
+    totalInspections: log.inspections.length,
+    byWeekday,
+    byHour: [...hourMap.values()].sort((a, b) => a.hour - b.hour),
+    trips: knownTripKeys(log).size,
+    since,
+  }
+}

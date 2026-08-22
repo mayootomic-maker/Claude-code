@@ -30,11 +30,17 @@ npm test             # vitest (unit + boundary)
 npm run typecheck    # tsc, strict
 npm run build        # production bundle
 
+npm run budget       # fails the build if the bundle budget is breached
+npm run verify       # typecheck + tests + build + budget
+
 # End-to-end against a local fixture server (see "Testing" below)
 node e2e/stub-server.mjs &
-VITE_TRANSPORT_BASE=http://127.0.0.1:4174/v1 npm run build
-node e2e/drive.mjs
+npm run e2e          # builds against the stub, then drives Chromium
 ```
+
+`npm run e2e` builds with `VITE_TRANSPORT_BASE` pointed at the stub. That
+bundle must never be deployed — run `npm run build` again before shipping.
+Keeping it behind its own script is why `build` stays production-only.
 
 ## API facts learned the hard way
 
@@ -117,7 +123,7 @@ POST XML, `Authorization: Bearer <key>`. Verified working; the Worker uses it.
 7. Comments explain *why*, never *what*.
 8. Every number on screen traces to a real API field. Nothing invented.
 
-**Budget** (CI-enforced later)
+**Budget** (enforced by `npm run budget`, and in CI on every push)
 - JS ≤ 50 KB gzip for the `Now` route · CSS ≤ 10 KB. Currently ~25.8 KB / 5.3 KB.
 - No animation library, no charting library, no zod. Hand-rolled beats a
   dependency at this scale — zod alone would be a quarter of the JS budget.
