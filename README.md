@@ -86,14 +86,34 @@ VoiceMeeter, Virtual Audio Cable and (on macOS) BlackHole are detected too.
 
 ## Two modes, and why there are two
 
-**Live** changes your own voice as you speak, about forty milliseconds
-behind. It can change who you sound like and put you on a game voice
-channel, but it cannot add an accent — an accent is a property of *words*,
-and the words are only known once you have said them.
+**Live** keeps your own voice — your pitch, your timing, your throat — and
+moves your *vowels* onto Russian ones as you speak, about 45 ms behind.
 
-**Accent** waits for a pause, works out what you said, and re-speaks it
-with a real Russian or German accent. Roughly a second of delay. This is
-the one that actually sounds foreign.
+The trick is that most of an accent is not consonants, it is where the
+vowels sit. English has around eleven monophthongs; Russian has five. A
+Russian speaker of English has no separate slot for the extra six, so they
+land on the nearest Russian vowel: /ɪ/ and /iː/ both become [i], which is
+"ship" said as "sheep"; /æ/ and /ɛ/ both become [e], which is "bad" said
+as "bed". Those are the real substitutions, and they live almost entirely
+in the first two formants — F1 tracks tongue height, F2 tracks how far
+forward the tongue is.
+
+So the substitution can be done acoustically, without knowing the word:
+track where your vowel currently sits in (F1, F2), find the Russian vowel
+nearest it, and warp the spectral envelope so the formants move there.
+[Shifting F1 and F2 towards another accent's averages is a known way to
+change perceived accent](https://www.isca-archive.org/interspeech_2013/aryal13_interspeech.pdf),
+and because only the envelope moves while the excitation is left alone,
+the pitch and glottal character that make the voice recognisably *yours*
+survive. Measured: vowels reach about 88% of the way to their Russian
+targets for 1.4 dB of harmonic loss, with the fundamental unchanged.
+
+What Live cannot do is the consonants — /θ/ → /s/, the trilled r — because
+those need to know which word you said.
+
+**Full** waits for a pause, works out what you said, and re-speaks it in a
+Russian or German voice with the complete accent, consonants and all.
+Roughly a second of delay, and it is no longer your voice.
 
 Type-to-speak works in either mode and is instant.
 

@@ -21,6 +21,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+from .accentfx import AccentFxSettings, VowelSpaceWarper
 from .comms import CommsProfile, NOISE_SOURCES
 from .filters import Biquad, db_to_linear
 
@@ -164,6 +165,9 @@ class LiveSettings:
     comms: Optional[CommsProfile] = None
     output_db: float = 0.0
     noise_gate_db: float = -55.0
+    # The live accent: moves your vowels onto Russian ones without
+    # replacing your voice. See dsp/accentfx.py.
+    accent: Optional[AccentFxSettings] = None
 
 
 class LiveProcessor:
@@ -174,6 +178,8 @@ class LiveProcessor:
         self.settings = settings
         self._shifter = GranularPitchShifter(sample_rate,
                                              settings.pitch_semitones)
+        self._warper = VowelSpaceWarper(sample_rate,
+                                        settings.accent or AccentFxSettings())
         self._stages: List[Biquad] = []
         self._noise: Optional[NoiseBed] = None
         self._gate_state = 0.0
@@ -203,10 +209,12 @@ class LiveProcessor:
     def update(self, settings: LiveSettings) -> None:
         self.settings = settings
         self._shifter.semitones = settings.pitch_semitones
+        self._warper.settings = settings.accent or AccentFxSettings()
         self._configure()
 
     def reset(self) -> None:
         self._shifter.reset()
+        self._warper.reset()
         for stage in self._stages:
             stage.reset()
         self._gate_state = 0.0
@@ -217,6 +225,13 @@ class LiveProcessor:
             return arr
 
         arr = self._gate(arr)
+        # The accent goes first, on the cleanest version of the voice: the
+        # formant tracker needs an unprocessed signal to find the vowel.
+        accent = self.settings.accent
+        if accent is not None and accent.enabled and accent.strength > 0.01:
+            arr = self._warper.process(arr)
+            if arr.size == 0:
+                return arr
         arr = self._shifter.process(arr)
 
         profile = self.settings.comms

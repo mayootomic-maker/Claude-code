@@ -47,8 +47,8 @@ from .widgets import (Card, LevelMeter, NavButton, SegmentedControl, Slider,
 SYSTEM_DEFAULT = "System default"
 
 MODE_OFF = "Off"
-MODE_LIVE = "Live"
-MODE_ACCENT = "Accent"
+MODE_LIVE = "Live · your voice"
+MODE_ACCENT = "Full · re-spoken"
 
 PAGES = [
     ("home", "Home", "◉"),
@@ -287,15 +287,22 @@ class AccentApp:
         page = self._page("home")
 
         mode_card = Card(page, "Mode",
-                         "Live changes your voice as you speak. Accent "
-                         "transcribes each sentence and re-speaks it, which "
-                         "sounds far more Russian but adds about a second.")
+                         "Live keeps your own voice and moves your vowels "
+                         "onto Russian ones as you speak — about 45 ms "
+                         "behind. Full re-speaks each sentence in a Russian "
+                         "voice: a much heavier accent, about a second late.")
         mode_card.pack(fill="x")
         body = mode_card.body()
         self.mode_control = SegmentedControl(
-            body, [MODE_OFF, MODE_LIVE, MODE_ACCENT], command=self.on_mode_change,
-            height=42, width=380)
-        self.mode_control.pack(anchor="w", pady=(2, 12))
+            body, [MODE_OFF, MODE_LIVE, MODE_ACCENT],
+            command=self.on_mode_change, height=42, width=460)
+        self.mode_control.pack(fill="x", pady=(2, 14))
+
+        self.live_accent_slider = Slider(
+            body, "Accent strength (Live)", 0.0, 1.0,
+            self.config.voice.live_accent.strength,
+            on_change=self.on_live_accent_change, fmt="{:.0%}")
+        self.live_accent_slider.pack(fill="x", pady=(0, 12))
 
         row = tk.Frame(body, bg=theme.BG_CARD)
         row.pack(fill="x")
@@ -751,6 +758,7 @@ class AccentApp:
         self.comms_combo.set(self.config.voice.comms)
         self.rate_slider.set(self.config.voice.speaking_rate)
         self.gate_slider.set(self.config.voice.live_gate_db)
+        self.live_accent_slider.set(self.config.voice.live_accent.strength)
         for field, slider in self.fx_sliders.items():
             slider.set(getattr(self.config.voice.fx, field))
         for index, (key, _n, _d) in enumerate(MODEL_SIZES):
@@ -890,6 +898,12 @@ class AccentApp:
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
+
+    def on_live_accent_change(self, value: float) -> None:
+        accent = self.config.voice.live_accent
+        accent.strength = float(value)
+        accent.enabled = value > 0.01
+        self._apply_config()
 
     def on_mode_change(self, mode: str) -> None:
         self.changer.stop()

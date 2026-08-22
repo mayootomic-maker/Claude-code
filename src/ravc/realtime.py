@@ -64,6 +64,7 @@ class LiveMode:
             comms=voice.comms_profile,
             output_db=voice.fx.output_db,
             noise_gate_db=voice.live_gate_db,
+            accent=voice.live_accent,
         )
 
     def update_config(self, config: AppConfig) -> None:

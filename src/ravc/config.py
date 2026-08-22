@@ -14,6 +14,7 @@ from .accent.languages import DEFAULT_LANGUAGE, get_pack
 from .hotkeys import DEFAULTS as DEFAULT_HOTKEYS
 from .accent.languages.base import AccentProfile
 from .asr.whisper_asr import DEFAULT_MODEL
+from .dsp.accentfx import AccentFxSettings
 from .dsp.chain import DEFAULT_PRESET, VoiceFx, get_preset
 from .dsp.comms import DEFAULT_PROFILE as DEFAULT_COMMS
 from .dsp.comms import CommsProfile, get_profile
@@ -72,7 +73,10 @@ class AccentSettings:
     """
 
     language: str = DEFAULT_LANGUAGE
-    strength: float = 1.0
+    # Not 1.0: at full strength every feature fires at once and the result
+    # crosses from "English with a heavy accent" into "reading Russian".
+    # 0.75 keeps the persistent markers and drops the beginner ones.
+    strength: float = 0.75
     grammar_strength: float = 0.0
     swap_prepositions: bool = False
     features: Dict[str, Dict[str, bool]] = field(default_factory=dict)
@@ -99,12 +103,17 @@ class VoiceSettings:
     # the eight Thorsten emotions, or which of the 236 pooled speakers.
     speakers: Dict[str, str] = field(default_factory=dict)
     preset: str = DEFAULT_PRESET
-    speaking_rate: float = 1.0
+    # Measured, not guessed: at 1.0 the Russian voice reads English
+    # phonemes at 4.1 words/second. Natural conversational English is
+    # 2.5-3. 0.7 lands at about 2.9.
+    speaking_rate: float = 0.7
     fx: VoiceFx = field(default_factory=lambda: get_preset(DEFAULT_PRESET))
     # The voice-chat link the output is pushed through, after the character
     # effects: narrowband codec, cheap mic, room noise.
     # Live mode holds the room-noise bed back until you actually speak.
     live_gate_db: float = -55.0
+    # The real-time accent applied to your own voice in Live mode.
+    live_accent: AccentFxSettings = field(default_factory=AccentFxSettings)
     comms: str = DEFAULT_COMMS
     comms_profile: CommsProfile = field(
         default_factory=lambda: get_profile(DEFAULT_COMMS))

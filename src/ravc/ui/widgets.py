@@ -284,7 +284,16 @@ class StatusDot(tk.Canvas):
 
 
 class Slider(tk.Frame):
-    """A labelled slider with a live readout."""
+    """A labelled slider with a live readout.
+
+    Drawn on a canvas rather than using ttk.Scale: clam's scale renders as
+    a bare rectangle on a trough with no way to round it or colour the
+    filled portion, and it is the single element that most gives away a Tk
+    interface.
+    """
+
+    TRACK_HEIGHT = 5
+    KNOB_RADIUS = 8
 
     def __init__(self, master: tk.Misc, label: str, minimum: float,
                  maximum: float, value: float,
@@ -295,7 +304,11 @@ class Slider(tk.Frame):
         self._on_change = on_change
         self._fmt = fmt
         self._suffix = suffix
-        self.var = tk.DoubleVar(value=value)
+        self._min = float(minimum)
+        self._max = float(maximum)
+        self._value = float(value)
+        self._background = background
+        self._dragging = False
 
         header = tk.Frame(self, bg=background, highlightthickness=0, bd=0)
         header.pack(fill="x")
@@ -306,24 +319,88 @@ class Slider(tk.Frame):
                                  font=theme.Fonts.code)
         self._readout.pack(side="right")
 
-        ttk.Scale(self, from_=minimum, to=maximum, variable=self.var,
-                  command=self._changed).pack(fill="x", pady=(3, 0))
+        self._canvas = tk.Canvas(self, height=self.KNOB_RADIUS * 2 + 6,
+                                 bg=background, highlightthickness=0, bd=0)
+        self._canvas.pack(fill="x", pady=(4, 0))
+        self._canvas.bind("<Configure>", lambda _e: self._draw())
+        self._canvas.bind("<Button-1>", self._press)
+        self._canvas.bind("<B1-Motion>", self._drag)
+        self._canvas.bind("<ButtonRelease-1>", self._release)
+        self._draw()
+
+    # -- geometry ---------------------------------------------------------
+
+    @property
+    def _span(self) -> float:
+        return max(1e-9, self._max - self._min)
+
+    def _usable_width(self) -> float:
+        return max(1.0, (self._canvas.winfo_width() or 200)
+                   - self.KNOB_RADIUS * 2)
+
+    def _value_to_x(self, value: float) -> float:
+        fraction = (value - self._min) / self._span
+        return self.KNOB_RADIUS + fraction * self._usable_width()
+
+    def _x_to_value(self, x: float) -> float:
+        fraction = (x - self.KNOB_RADIUS) / self._usable_width()
+        return self._min + max(0.0, min(1.0, fraction)) * self._span
+
+    # -- drawing ----------------------------------------------------------
+
+    def _draw(self) -> None:
+        canvas = self._canvas
+        canvas.delete("all")
+        width = canvas.winfo_width() or 200
+        height = canvas.winfo_height() or (self.KNOB_RADIUS * 2 + 6)
+        middle = height / 2
+        half = self.TRACK_HEIGHT / 2
+
+        rounded_rect(canvas, self.KNOB_RADIUS, middle - half,
+                     width - self.KNOB_RADIUS, middle + half, half,
+                     fill=theme.BG_INPUT, outline="")
+        knob_x = self._value_to_x(self._value)
+        if knob_x > self.KNOB_RADIUS + 1:
+            rounded_rect(canvas, self.KNOB_RADIUS, middle - half, knob_x,
+                         middle + half, half, fill=theme.ACCENT, outline="")
+        radius = self.KNOB_RADIUS + (1 if self._dragging else 0)
+        canvas.create_oval(knob_x - radius, middle - radius,
+                           knob_x + radius, middle + radius,
+                           fill="#ffffff", outline="")
+
+    # -- interaction ------------------------------------------------------
+
+    def _press(self, event) -> None:
+        self._dragging = True
+        self._apply(self._x_to_value(event.x))
+
+    def _drag(self, event) -> None:
+        if self._dragging:
+            self._apply(self._x_to_value(event.x))
+
+    def _release(self, _event) -> None:
+        self._dragging = False
+        self._draw()
+
+    def _apply(self, value: float) -> None:
+        self._value = max(self._min, min(self._max, float(value)))
+        self._readout.configure(text=self._format(self._value))
+        self._draw()
+        if self._on_change:
+            self._on_change(self._value)
+
+    # -- api --------------------------------------------------------------
 
     def _format(self, value: float) -> str:
         return self._fmt.format(value) + self._suffix
 
-    def _changed(self, _value) -> None:
-        current = self.var.get()
-        self._readout.configure(text=self._format(current))
-        if self._on_change:
-            self._on_change(current)
-
     def set(self, value: float) -> None:
-        self.var.set(value)
-        self._readout.configure(text=self._format(value))
+        self._value = max(self._min, min(self._max, float(value)))
+        self._readout.configure(text=self._format(self._value))
+        self._draw()
 
     def get(self) -> float:
-        return self.var.get()
+        return self._value
 
 
 def scrollable(master: tk.Misc, background: str = theme.BG) -> ttk.Frame:
