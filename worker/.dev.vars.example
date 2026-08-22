@@ -1,0 +1,13 @@
+# Copy to worker/.dev.vars for local `wrangler dev`. That file is gitignored.
+# In production these are set with `wrangler secret put <NAME>` instead, which
+# stores them encrypted at Cloudflare — never in the repo, never in the bundle.
+
+# From https://api-manager.opentransportdata.swiss/ — subscribe an Application
+# to OJP 2.0. Sent upstream as `Authorization: Bearer <key>`.
+OJP_API_KEY=paste-your-ojp-key-here
+
+# A secret you invent, shared between the app and the Worker so the endpoint is
+# not open to the world. Without it anyone who found the URL could exhaust the
+# 20k/day OJP quota or push notifications to your phone.
+# Generate one with:  openssl rand -base64 32
+DEVICE_TOKEN=generate-with-openssl-rand-base64-32

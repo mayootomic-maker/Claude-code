@@ -144,8 +144,27 @@ does, via a proxy — that is how the API was verified and the fixtures
 captured), and live data cannot be made to produce cancellations or missing
 realtime on demand. Those are the states that most need testing.
 
-## Worker
+## Worker and secrets
 
 Not deployed yet. `worker/src/index.ts` is a working cache + token-auth proxy.
-Before deploying: create the KV namespace and set `DEVICE_TOKEN`; set
-`OJP_API_KEY` when Phase 3 lands. The API key must never reach the browser.
+
+**The OJP key must never reach the browser.** Anything bundled into `app/` is
+publicly readable. The key lives only in the Worker:
+
+```bash
+cd worker
+cp .dev.vars.example .dev.vars     # local dev; gitignored
+npx wrangler kv namespace create CACHE   # then paste the id into wrangler.toml
+npx wrangler secret put OJP_API_KEY      # production
+npx wrangler secret put DEVICE_TOKEN     # openssl rand -base64 32
+npx wrangler deploy
+```
+
+Get the OJP key at `api-manager.opentransportdata.swiss`: register, create an
+Application, then "read more" → "access with this plan" → "Select an App" on
+OJP 2.0. One key per API. It is a Bearer token (`Authorization: Bearer <key>`),
+free for private use at 50 req/min and 20 000 req/day.
+
+`DEVICE_TOKEN` is a secret you invent, shared between app and Worker. Without
+it the endpoint is open: anyone who found the URL could exhaust the daily OJP
+quota or push notifications to your phone.
