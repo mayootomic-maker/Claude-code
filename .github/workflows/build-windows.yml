@@ -121,12 +121,19 @@ jobs:
           path: dist/*-portable-win64.zip
           if-no-files-found: error
 
+      # The session that builds this cannot push tags, so a release is asked
+      # for with a "[release]" marker in the commit message instead; the
+      # action's own token creates the tag.
       - name: Attach to a release
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release
+        if: >
+          startsWith(github.ref, 'refs/tags/v') || inputs.make_release
+          || contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
           name: Accent Voice Changer ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: |
             dist/AccentVoiceChanger-Setup-*.exe
             dist/*-portable-win64.zip
