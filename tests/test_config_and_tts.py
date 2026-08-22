@@ -154,21 +154,26 @@ def test_registry_key_splitting():
 
 
 def test_registry_either_speaks_or_explains_why_not():
-    """With no Piper model downloaded the outcome is platform-dependent.
+    """The outcome depends on the machine, but the contract does not.
 
-    On Windows the SAPI fallback can still speak, which is the point of
-    having it; everywhere else there is nothing left to fall back to and
-    the error has to name the engines it tried.
+    With no Piper model downloaded, Windows can still speak through SAPI,
+    which is the point of having a fallback chain. Elsewhere there may be
+    nothing left. And "available" only means installed -- an online engine
+    can be present but unreachable -- so the guarantee is not "an available
+    engine succeeds", it is: either audio comes out, or the error names
+    every engine that was tried and why each one declined.
     """
     registry = VoiceRegistry()
     request = SynthRequest(text="тест", ipa=[["t"], ["e"], ["s"], ["t"]])
-    if registry.available_engines():
+    try:
         registry.synthesize(request)
-        assert registry.last_engine_used in ENGINE_ORDER
+    except Exception as exc:
+        message = str(exc).lower()
+        assert "engine" in message
+        for name in registry.available_engines():
+            assert name in message, (name, message)
     else:
-        with pytest.raises(Exception) as excinfo:
-            registry.synthesize(request)
-        assert "engine" in str(excinfo.value).lower()
+        assert registry.last_engine_used in ENGINE_ORDER
 
 
 def test_status_lines_never_raise():

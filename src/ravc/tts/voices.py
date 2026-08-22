@@ -30,6 +30,16 @@ class VoiceModel:
     approx_mb: int
     language: str = "russian"
     locale: str = "ru_RU"
+    # Multi-speaker models carry several voices (or, for the emotional
+    # model, several deliveries of one voice) behind a single file. The
+    # authoritative label->id map lives in the model's own config; these
+    # two fields only say how to present it and which one to start on.
+    speaker_kind: str = ""        # "" | "emotion" | "voice"
+    default_speaker: str = ""
+
+    @property
+    def multi_speaker(self) -> bool:
+        return bool(self.speaker_kind)
 
     @property
     def lang_dir(self) -> str:
@@ -69,6 +79,17 @@ CATALOGUE: Dict[str, VoiceModel] = {
         VoiceModel("de_DE-thorsten-medium", "thorsten", "medium", "Thorsten",
                    "male", "Deep, precise male voice. The default.", 61,
                    "german", "de_DE"),
+        VoiceModel("de_DE-thorsten-high", "thorsten", "high", "Thorsten HQ",
+                   "male", "The same voice at higher quality. Slower, "
+                   "clearly better.", 114, "german", "de_DE"),
+        VoiceModel("de_DE-thorsten_emotional-medium", "thorsten_emotional",
+                   "medium", "Thorsten (emotional)", "male",
+                   "Eight deliveries: neutral, angry, amused, surprised, "
+                   "sleepy, drunk, disgusted, whisper.", 74, "german",
+                   "de_DE", speaker_kind="emotion", default_speaker="neutral"),
+        VoiceModel("de_DE-mls-medium", "mls", "medium", "German voice pool",
+                   "mixed", "236 different speakers in one model.", 74,
+                   "german", "de_DE", speaker_kind="voice"),
         VoiceModel("de_DE-karlsson-low", "karlsson", "low", "Karlsson", "male",
                    "Gruff male voice, smaller and faster model.", 28,
                    "german", "de_DE"),

@@ -92,6 +92,9 @@ class VoiceSettings:
     """Voice choice is per accent language; the character FX are shared."""
 
     voice_keys: Dict[str, str] = field(default_factory=dict)
+    # Chosen sub-voice per multi-speaker model, keyed by voice key: which of
+    # the eight Thorsten emotions, or which of the 236 pooled speakers.
+    speakers: Dict[str, str] = field(default_factory=dict)
     preset: str = DEFAULT_PRESET
     speaking_rate: float = 1.0
     fx: VoiceFx = field(default_factory=lambda: get_preset(DEFAULT_PRESET))
@@ -101,6 +104,15 @@ class VoiceSettings:
 
     def set_voice(self, language: str, key: str) -> None:
         self.voice_keys[language] = key
+
+    def speaker_for(self, voice_key: str) -> str:
+        return self.speakers.get(voice_key, "")
+
+    def set_speaker(self, voice_key: str, speaker: str) -> None:
+        if speaker:
+            self.speakers[voice_key] = speaker
+        else:
+            self.speakers.pop(voice_key, None)
 
 
 @dataclass

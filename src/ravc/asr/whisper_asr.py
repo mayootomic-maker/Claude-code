@@ -150,10 +150,8 @@ class WhisperAsr:
         if audio.size == 0:
             return Transcript(rejected_reason="empty")
         if sample_rate != ASR_RATE:
-            ratio = ASR_RATE / float(sample_rate)
-            out_len = max(1, int(round(audio.size * ratio)))
-            audio = np.interp(np.linspace(0.0, audio.size - 1.0, out_len),
-                              np.arange(audio.size), audio).astype(np.float32)
+            from ..dsp.pitch import resample_to
+            audio = resample_to(audio, sample_rate, ASR_RATE)
 
         duration = audio.size / float(ASR_RATE)
         self.load()

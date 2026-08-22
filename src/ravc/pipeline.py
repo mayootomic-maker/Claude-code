@@ -38,6 +38,7 @@ from .audio.devices import (AudioUnavailable, find_device_by_name,
 from .audio.playback import OutputRouter, PlaybackConfig
 from .audio.vad import Endpointer, Utterance, VadConfig
 from .config import AppConfig
+from .dsp.calibrate import VoiceFingerprint, fingerprint, match
 from .dsp.chain import VoiceFx
 from .tts.base import Audio, SynthRequest
 from .tts.registry import VoiceRegistry
@@ -399,6 +400,7 @@ class VoiceChanger:
             text=accented.native_text,
             ipa=self.accent.flat_ipa(accented),
             voice_key=voice_key,
+            speaker=self.config.voice.speaker_for(voice_key),
             rate=self.config.voice.speaking_rate,
             plain_text=text), language=language)
         self.stats.tts_ms = (time.perf_counter() - t0) * 1000
@@ -433,6 +435,88 @@ class VoiceChanger:
             while time.monotonic() < deadline and not self._stop.is_set():
                 time.sleep(0.05)
         return accented
+
+    # -- calibration -----------------------------------------------------
+
+    CALIBRATION_LINE = ("The quick brown fox jumps over the lazy dog. "
+                        "I am recording my voice so it can be measured.")
+
+    def voice_fingerprint(self) -> VoiceFingerprint:
+        """Measure the *raw* character voice, before any effects.
+
+        The effects chain is what calibration solves for, so the reference
+        has to be taken upstream of it -- fingerprinting the processed
+        output would measure the shift already applied and converge on
+        doing nothing.
+        """
+        accented = self.accent.accentify(self.CALIBRATION_LINE)
+        language = self.config.accent.language
+        voice_key = self.config.active_voice_key
+        audio = self.registry.synthesize(SynthRequest(
+            text=accented.native_text,
+            ipa=self.accent.flat_ipa(accented),
+            voice_key=voice_key,
+            speaker=self.config.voice.speaker_for(voice_key),
+            rate=self.config.voice.speaking_rate), language=language)
+        return fingerprint(audio.samples, audio.sample_rate)
+
+    def calibrate(self, samples: np.ndarray, sample_rate: int,
+                  apply: bool = True) -> tuple:
+        """Match the character voice to the speaker in ``samples``.
+
+        Returns ``(pitch_semitones, formant_semitones, message)``. On a
+        recording with too little voiced speech the shifts come back zero
+        and nothing is changed, rather than the settings being wrecked by a
+        measurement of room noise.
+        """
+        target = fingerprint(samples, sample_rate)
+        if not target.usable:
+            return 0.0, 0.0, ("Could not measure that recording — "
+                              "too little clear speech. Try again, speaking "
+                              "normally for about five seconds.")
+        source = self.voice_fingerprint()
+        if not source.usable:
+            return 0.0, 0.0, ("Could not measure the character voice. "
+                              "Check that a voice model is downloaded.")
+
+        pitch, formant = match(source, target)
+        if apply:
+            self.config.voice.fx.pitch_semitones = pitch
+            self.config.voice.fx.formant_semitones = formant
+        return pitch, formant, (
+            f"Matched to your voice: pitch {pitch:+.1f} semitones, "
+            f"formant {formant:+.1f}. "
+            f"You: {target.describe()}. Voice: {source.describe()}.")
+
+    def record(self, seconds: float = 6.0,
+               on_level: Optional[Callable[[float], None]] = None) -> tuple:
+        """Capture a short mono clip from the configured microphone."""
+        audio_config = self.config.audio
+        index = None
+        if audio_config.input_device:
+            device = find_device_by_name(audio_config.input_device,
+                                         want_input=True)
+            if device is not None:
+                index = device.index
+
+        capture = MicrophoneCapture(
+            CaptureConfig(device_index=index, sample_rate=ASR_RATE,
+                          block_ms=audio_config.mic_block_ms,
+                          gain_db=audio_config.input_gain_db),
+            on_level=on_level)
+        capture.start()
+        collected: List[np.ndarray] = []
+        deadline = time.monotonic() + seconds
+        try:
+            while time.monotonic() < deadline:
+                block = capture.read(timeout=0.3)
+                if block is not None:
+                    collected.append(block)
+        finally:
+            capture.stop()
+        if not collected:
+            return np.zeros(0, dtype=np.float32), ASR_RATE
+        return np.concatenate(collected), ASR_RATE
 
     # -- offline ---------------------------------------------------------
 

@@ -60,6 +60,9 @@ class AccentedWord:
     original: str
     phones: List[Phone] = field(default_factory=list)
     trailing_punct: str = ""
+    # What the phoneme-driven synthesiser gets. Identical to `phones` unless
+    # the pack has audio-only processes (see LanguagePack.audio_post_processes).
+    audio_phones: List[Phone] = field(default_factory=list)
 
 
 def default_profile(language: str = DEFAULT_LANGUAGE,
@@ -109,6 +112,24 @@ def accentify_word(word: str, phones: Sequence[str],
         long = sym.endswith(":")
         out.append(Phone(sym=sym.rstrip(":"), stress=st, long=long))
     for process in pack.post_processes:
+        out = process(out, profile)
+    return out
+
+
+def to_audio_phones(phones: Sequence[Phone],
+                    pack: Optional[LanguagePack] = None,
+                    profile: Optional[AccentProfile] = None) -> List[Phone]:
+    """Apply the pack's audio-only stage, for the phoneme-driven path.
+
+    A text-driven voice runs its own phonology over whatever it is given:
+    hand a Russian TTS "компьютер" and it applies Russian vowel reduction
+    itself, so writing the reduction into the spelling would apply it twice.
+    The phoneme path has no such front-end, so there it must be explicit.
+    """
+    pack = pack or get_pack(DEFAULT_LANGUAGE)
+    profile = profile or pack.profile()
+    out = list(phones)
+    for process in pack.audio_post_processes:
         out = process(out, profile)
     return out
 

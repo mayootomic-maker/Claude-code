@@ -303,7 +303,7 @@ _DE_VOWEL = {
     "a": ("a", "ah"), "e": ("e", "eh"), "i": ("i", "ie"),
     "o": ("o", "oh"), "u": ("u", "uh"), "y": ("i", "ie"),
     "oe": ("ö", "öh"), "ue": ("ü", "üh"),
-    "sch": ("e", "e"), "ar": ("er", "er"),
+    "sch": ("e", "e"), "ax": ("a", "a"), "ar": ("er", "er"),
 }
 
 
@@ -359,7 +359,7 @@ IPA_MAP: Dict[str, List[str]] = {
     "r": ["r", "ʁ"], "R": ["ʁ", "ʀ", "r"], "j": ["j"],
     "a": ["a", "ɐ"], "e": ["ɛ", "e"], "i": ["ɪ", "i"],
     "o": ["ɔ", "o"], "u": ["ʊ", "u"], "y": ["ɪ", "i"],
-    "sch": ["ə"], "ar": ["ɐ", "a"], "oe": ["ø", "œ"], "ue": ["y", "ʏ"],
+    "sch": ["ə"], "ax": ["ɐ", "a"], "ar": ["ɐ", "a"], "oe": ["ø", "œ"], "ue": ["y", "ʏ"],
 }
 
 # Long vowels use a different base symbol in the espeak German inventory.
@@ -375,7 +375,7 @@ LATIN_MAP: Dict[str, str] = {
     "m": "m", "n": "n", "ng": "ng", "l": "l", "r": "r", "R": "r",
     "h": "h", "j": "y",
     "a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "i",
-    "sch": "uh", "ar": "ah", "oe": "oe", "ue": "ue",
+    "sch": "uh", "ax": "a", "ar": "ah", "oe": "oe", "ue": "ue",
 }
 
 

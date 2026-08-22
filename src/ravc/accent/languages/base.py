@@ -88,6 +88,15 @@ class LanguagePack:
     # length flag has to pick a different candidate, not just add a colon.
     ipa_long: Dict[str, List[str]] = field(default_factory=dict)
 
+    # Processes applied only on the way to IPA, not to the written form.
+    #
+    # A text-driven voice runs its own phonology over whatever it is given:
+    # hand a Russian TTS "компьютер" and it applies Russian vowel reduction
+    # itself. Encoding the reduction in the spelling too would apply it
+    # twice. The phoneme path has no such front-end, so there the reduction
+    # has to be written out explicitly.
+    audio_post_processes: Sequence[PostProcess] = ()
+
     # Optional: eye-dialect spelling for phonemically long vowels, so the
     # subtitles can show "sheep" for /iː/ and "ship" for /ɪ/.
     latin_long: Dict[str, str] = field(default_factory=dict)

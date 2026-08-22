@@ -53,22 +53,22 @@ def test_start_without_audio_backend_reports_a_clear_error(monkeypatch):
 
 
 def test_render_without_a_voice_model_is_actionable_or_falls_back():
-    """No Piper model: speak via a system voice if there is one, else say so.
+    """No Piper model: speak via another engine if one works, else say so.
 
     Windows always has SAPI, so the app can talk before anything is
-    downloaded; on other platforms the failure must name the engines tried
-    rather than blowing up with something opaque.
+    downloaded. An engine being installed is not a promise that it works
+    right now -- an online voice may have no network -- so the assertion is
+    on the contract: audio, or an error naming what was tried.
     """
     changer = VoiceChanger(AppConfig())
     try:
-        if changer.registry.available_engines():
+        try:
             _accented, audio = changer.render("hello there")
+        except Exception as exc:
+            assert "engine" in str(exc).lower()
+        else:
             assert audio.samples.size >= 0
             assert changer.stats.engine
-        else:
-            with pytest.raises(Exception) as excinfo:
-                changer.render("hello there")
-            assert "engine" in str(excinfo.value).lower()
     finally:
         changer.close()
 

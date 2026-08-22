@@ -8,6 +8,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from ..dsp.pitch import resample_to
 from .devices import AudioUnavailable, _sd
 
 
@@ -151,10 +152,7 @@ class AudioPlayer:
         if arr.size == 0:
             return
         if sample_rate != self.config.sample_rate:
-            ratio = self.config.sample_rate / float(sample_rate)
-            out_len = max(1, int(round(arr.size * ratio)))
-            arr = np.interp(np.linspace(0.0, arr.size - 1.0, out_len),
-                            np.arange(arr.size), arr).astype(np.float32)
+            arr = resample_to(arr, sample_rate, self.config.sample_rate)
         self._ring.write(arr)
 
     def flush(self) -> None:

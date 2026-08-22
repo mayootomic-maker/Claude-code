@@ -52,7 +52,8 @@ THRESHOLDS: Dict[str, float] = {
     "th_to_s": 0.34,
     "dh_to_z": 0.40,
     "ae_to_e": 0.48,
-    "no_vowel_reduction": 0.58,
+    "akanye": 0.24,
+    "spelling_vowels": 0.58,
     "tense_short_vowels": 0.68,
     "h_to_kh": 0.76,
     "ng_to_nk": 0.84,
@@ -73,7 +74,8 @@ DEFAULT_FEATURES: Dict[str, bool] = {
     "h_to_kh": True,
     "ng_to_nk": True,
     "final_devoicing": True,
-    "no_vowel_reduction": True,
+    "akanye": True,
+    "spelling_vowels": True,
     "ae_to_e": True,
     "tense_short_vowels": True,
     "palatalise": True,
@@ -90,7 +92,8 @@ FEATURE_LABELS = (
     ("h_to_kh", "hello → khello  (/h/ → /x/)"),
     ("ng_to_nk", "going → goink"),
     ("final_devoicing", "dog → dok  (final devoicing)"),
-    ("no_vowel_reduction", "problem stays 'problem'  (spelling vowels)"),
+    ("spelling_vowels", "problem stays 'problem'  (reads the spelling)"),
+    ("akanye", "unstressed a/o → [ɐ]/[ə]  (Russian vowel reduction)"),
     ("ae_to_e", "bad → bed  (/æ/ → /ɛ/)"),
     ("tense_short_vowels", "ship → sheep"),
     ("palatalise", "soft consonants before /i/"),
@@ -140,8 +143,11 @@ def map_consonant(base: str, profile: AccentProfile,
 def map_vowel(base: str, stress: int, profile: AccentProfile,
               ctx: Context) -> List[str]:
     spelling = ctx.spelling_vowel
-    # Restore the spelling vowel for reduced syllables: this single rule is
-    # what turns "problem" into "prob-LEM" instead of English "prob-lm".
+    # Restore the spelling vowel for reduced syllables. This does not mean
+    # the syllable ends up unreduced -- `reduce_unstressed` below then
+    # applies *Russian* reduction to it. The two stages together are what
+    # turn "computer" into [kɐmˈpʲjutər], the way a Russian actually says it,
+    # rather than either English [kəmˈpjuːtɚ] or a robotic full [komputer].
     if stress == 0 and base in {"AH", "IH", "UH", "ER"} and spelling:
         if fires(profile, "no_vowel_reduction"):
             return [spelling, "r"] if base == "ER" else [spelling]
@@ -152,7 +158,7 @@ def map_vowel(base: str, stress: int, profile: AccentProfile,
     # Spelling pronunciation of stressed <o>: English "problem"/"stop"/"job"
     # have /ɑ/, but a Russian reads the letter and says [o].
     if base in {"AA", "AO"} and spelling == "o" and fires(
-            profile, "no_vowel_reduction"):
+            profile, "spelling_vowels"):
         return ["o"]
     if base in {"IH", "UH"} and fires(profile, "tense_short_vowels"):
         return ["i:"] if base == "IH" else ["u:"]
@@ -162,6 +168,61 @@ def map_vowel(base: str, stress: int, profile: AccentProfile,
 # --------------------------------------------------------------------------
 # Post-processes
 # --------------------------------------------------------------------------
+
+def reduce_unstressed(phones: List[Phone],
+                      profile: AccentProfile) -> List[Phone]:
+    """Russian vowel reduction -- akanye and ikanye -- applied to English.
+
+    Standard (Moscow) Russian reduces every unstressed vowel, and the habit
+    transfers wholesale into English. The rule is positional:
+
+    * after a hard consonant, unstressed /a/ and /o/ merge and surface as
+      [ɐ] in the syllable immediately before the stress and word-initially,
+      and as a weak [ə] everywhere else (akanye);
+    * after a soft consonant, unstressed /e/ merges with /i/ as [ɪ] (ikanye);
+    * after the always-hard sibilants ʂ ʐ ts it backs to [ɨ] instead.
+
+    This is why a Russian speaker does not say a flat, fully-articulated
+    "com-pu-ter" -- they reduce, just not in the places English does.
+    """
+    if not fires(profile, "akanye"):
+        return phones
+
+    vowels = [i for i, p in enumerate(phones) if p.is_vowel]
+    if len(vowels) < 2:
+        return phones  # a monosyllable carries the stress
+
+    stressed = next((i for i in vowels if phones[i].stress == 1), vowels[0])
+    position = vowels.index(stressed)
+    pretonic = vowels[position - 1] if position > 0 else None
+
+    out = list(phones)
+    for index in vowels:
+        phone = out[index]
+        if phone.stress >= 1:
+            continue
+        nxt = out[index + 1] if index + 1 < len(out) else None
+        # The nucleus of a diphthong is not an independent reducible vowel.
+        if nxt is not None and nxt.sym in {"j", "u"} and phone.sym in {"a", "o", "e"}:
+            continue
+
+        prev = out[index - 1] if index > 0 else None
+        soft_environment = prev is not None and (prev.soft or prev.sym == "j")
+        hard_sibilant = prev is not None and prev.sym in ALWAYS_HARD
+
+        if hard_sibilant:
+            reduced = "y"
+        elif soft_environment:
+            reduced = "i"
+        elif phone.sym in {"a", "o"}:
+            reduced = "ax" if (index == pretonic or index == 0) else "sch"
+        elif phone.sym == "e":
+            reduced = "sch" if index > stressed else "i"
+        else:
+            continue  # /i/ and /u/ are already their centralised selves
+        out[index] = Phone(sym=reduced, stress=0)
+    return out
+
 
 def assimilate_voicing(phones: List[Phone],
                        profile: AccentProfile) -> List[Phone]:
@@ -257,7 +318,7 @@ _CYR_CONSONANT = {
 _CYR_VOWEL = {
     "a": ("а", "я"), "e": ("э", "е"), "i": ("и", "и"),
     "o": ("о", "ё"), "u": ("у", "ю"), "y": ("ы", "и"),
-    "sch": ("а", "я"), "ar": ("ар", "яр"),
+    "sch": ("а", "я"), "ax": ("а", "я"), "ar": ("ар", "яр"),
     "oe": ("ё", "ё"), "ue": ("ю", "ю"),
 }
 
@@ -321,7 +382,8 @@ IPA_MAP: Dict[str, List[str]] = {
     "l": ["l", "ɫ"], "r": ["r", "ɾ"], "R": ["r"], "j": ["j"], "h": ["h", "x"],
     "a": ["a", "ɐ"], "e": ["e", "ɛ"], "i": ["ɪ", "i"],
     "o": ["o", "ɔ"], "u": ["ʊ", "u"], "y": ["ɨ", "i"],
-    "sch": ["ə", "a"], "ar": ["ar", "ɐ"], "oe": ["ø", "o"], "ue": ["y", "u"],
+    "sch": ["ə", "a"], "ax": ["ɐ", "a"], "ar": ["ɐ", "a"],
+    "oe": ["ø", "o"], "ue": ["y", "u"],
 }
 
 # Long counterparts: the tense vowels use the plain cardinal symbols.
@@ -336,7 +398,10 @@ LATIN_MAP: Dict[str, str] = {
     "m": "m", "n": "n", "ng": "ng", "l": "l", "r": "r", "R": "r",
     "j": "y", "h": "h",
     "a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "y",
-    "sch": "e", "ar": "ar", "oe": "yo", "ue": "yu",
+    # The eye-dialect strip is a readability aid, not a transcription: [ɐ]
+    # really does sound like "a", and spelling the weak [ə] "uh" everywhere
+    # would make the subtitles unreadable.
+    "sch": "e", "ax": "a", "ar": "ar", "oe": "yo", "ue": "yu",
 }
 
 LATIN_LONG: Dict[str, str] = {"i": "ee", "u": "oo"}
@@ -352,6 +417,9 @@ PACK = LanguagePack(
     map_vowel=map_vowel,
     post_processes=(assimilate_voicing, palatalise, back_after_hard_sibilant,
                     tidy),
+    # Reduction runs after palatalisation, because whether a vowel reduces
+    # to [ɪ] or to [ə] depends on the softness of the consonant before it.
+    audio_post_processes=(reduce_unstressed,),
     ipa_map=IPA_MAP,
     latin_map=LATIN_MAP,
     render_text=render_cyrillic,

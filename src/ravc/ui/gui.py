@@ -308,6 +308,39 @@ class AccentApp:
                                     wraplength=560, justify="left")
         self.voice_note.pack(anchor="w", pady=(6, 0))
 
+        # Only shown for models that carry several voices or deliveries.
+        self.variant_frame = ttk.Frame(vbody, style="Panel.TFrame")
+        self.variant_label = ttk.Label(self.variant_frame, text="Variant",
+                                       style="Panel.TLabel")
+        self.variant_label.pack(anchor="w", pady=(10, 2))
+        self.variant_combo = ttk.Combobox(self.variant_frame, state="readonly",
+                                          width=30)
+        self.variant_combo.pack(anchor="w")
+        self.variant_combo.bind("<<ComboboxSelected>>", self.on_variant_change)
+
+        cal = Card(pad, "Match my voice",
+                   "Records a few seconds of you speaking, measures your "
+                   "pitch and vocal tract length, and shifts the character "
+                   "voice to sit where yours does. Re-run it after changing "
+                   "voice.")
+        cal.pack(fill="x", pady=(12, 0))
+        cbody = cal.body()
+        crow = ttk.Frame(cbody, style="Panel.TFrame")
+        crow.pack(fill="x")
+        self.calibrate_button = ttk.Button(crow, text="Record 6 seconds",
+                                           style="Small.TButton",
+                                           command=self.start_calibration)
+        self.calibrate_button.pack(side="left")
+        ttk.Button(crow, text="Use a recording…", style="Small.TButton",
+                   command=self.calibrate_from_file).pack(side="left", padx=8)
+        ttk.Button(crow, text="Clear", style="Small.TButton",
+                   command=self.clear_calibration).pack(side="left")
+        self.calibrate_meter = LevelMeter(crow, width=150)
+        self.calibrate_meter.pack(side="right")
+        self.calibrate_note = ttk.Label(cbody, text="", style="PanelDim.TLabel",
+                                        wraplength=620, justify="left")
+        self.calibrate_note.pack(anchor="w", pady=(8, 0))
+
         pcard = Card(pad, "Character preset")
         pcard.pack(fill="x", pady=(12, 0))
         pbody = pcard.body()
@@ -536,6 +569,7 @@ class AccentApp:
             self.voice_combo.current(0)
             self.config.voice.set_voice(language, keys[0])
 
+        self._rebuild_variants()
         installed = [v for v in voices if v.installed]
         if installed:
             self.voice_note.configure(
@@ -545,6 +579,124 @@ class AccentApp:
             self.voice_note.configure(
                 text=f"No {get_pack(language).name} voice downloaded yet — "
                      f"open the Models tab and download one.")
+
+    def _rebuild_variants(self) -> None:
+        """Show the sub-voice picker only for multi-speaker models."""
+        key = self.config.active_voice_key
+        engine_name, model_key = self.changer.registry.split_key(key)
+        model = voice_catalogue.CATALOGUE.get(model_key)
+        piper = self.changer.registry.engine("piper")
+
+        speakers = []
+        if (engine_name == "piper" and model is not None
+                and model.multi_speaker and piper is not None):
+            try:
+                speakers = piper.speakers(model_key)
+            except Exception:
+                speakers = []
+
+        if not speakers:
+            self.variant_frame.pack_forget()
+            self._variant_labels = []
+            return
+
+        self._variant_labels = [label for label, _sid in speakers]
+        self.variant_label.configure(
+            text="Emotion" if model.speaker_kind == "emotion" else "Voice")
+        self.variant_combo.configure(values=self._variant_labels)
+        current = (self.config.voice.speaker_for(key)
+                   or model.default_speaker or self._variant_labels[0])
+        if current in self._variant_labels:
+            self.variant_combo.current(self._variant_labels.index(current))
+        else:
+            self.variant_combo.current(0)
+        self.variant_frame.pack(fill="x")
+
+    def on_variant_change(self, _event=None) -> None:
+        if _event is not None:
+            self._clear_selection(_event)
+        index = self.variant_combo.current()
+        if 0 <= index < len(getattr(self, "_variant_labels", [])):
+            self.config.voice.set_speaker(self.config.active_voice_key,
+                                          self._variant_labels[index])
+            self._apply_config()
+
+    # -- calibration ------------------------------------------------------
+
+    def start_calibration(self) -> None:
+        if getattr(self, "_calibrating", False):
+            return
+        if not audio_devices.sounddevice_available():
+            self.calibrate_note.configure(
+                text="No microphone available. Use 'Use a recording…' instead.")
+            return
+        self._calibrating = True
+        self.calibrate_button.configure(state="disabled")
+        self._countdown(3)
+
+    def _countdown(self, remaining: int) -> None:
+        if remaining > 0:
+            self.calibrate_note.configure(
+                text=f"Recording in {remaining}… then speak normally.")
+            self.root.after(1000, lambda: self._countdown(remaining - 1))
+            return
+        self.calibrate_note.configure(text="Recording — speak now.")
+        threading.Thread(target=self._record_and_calibrate,
+                         daemon=True).start()
+
+    def _record_and_calibrate(self) -> None:
+        try:
+            samples, sample_rate = self.changer.record(
+                6.0, on_level=lambda v: self._ui(
+                    self.calibrate_meter.set_level, min(1.0, v * 2.2)))
+            self._ui(self.calibrate_note.configure,
+                     {"text": "Measuring…"})
+            self._apply_calibration(samples, sample_rate)
+        except Exception as exc:  # noqa: BLE001
+            self._ui(self._finish_calibration, f"Calibration failed: {exc}")
+
+    def _apply_calibration(self, samples, sample_rate) -> None:
+        pitch, formant, message = self.changer.calibrate(samples, sample_rate)
+        if pitch or formant:
+            self._ui(self._sync_fx_sliders)
+        self._ui(self._finish_calibration, message)
+
+    def _sync_fx_sliders(self) -> None:
+        for field, slider in self.fx_sliders.items():
+            slider.set(getattr(self.config.voice.fx, field))
+        self._apply_config()
+
+    def _finish_calibration(self, message: str) -> None:
+        self._calibrating = False
+        self.calibrate_button.configure(state="normal")
+        self.calibrate_meter.reset()
+        self.calibrate_note.configure(text=message)
+        self._log(message)
+
+    def calibrate_from_file(self) -> None:
+        path = filedialog.askopenfilename(
+            filetypes=[("Audio", "*.wav *.flac *.ogg *.mp3 *.m4a"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        self.calibrate_note.configure(text="Measuring…")
+
+        def work() -> None:
+            try:
+                import soundfile as sf
+                data, sample_rate = sf.read(path, dtype="float32",
+                                            always_2d=True)
+                self._apply_calibration(data.mean(axis=1), sample_rate)
+            except Exception as exc:  # noqa: BLE001
+                self._ui(self._finish_calibration, f"Could not read: {exc}")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def clear_calibration(self) -> None:
+        self.config.voice.fx.pitch_semitones = 0.0
+        self.config.voice.fx.formant_semitones = 0.0
+        self._sync_fx_sliders()
+        self.calibrate_note.configure(text="Cleared.")
 
     def _refresh_devices(self) -> None:
         if not audio_devices.sounddevice_available():

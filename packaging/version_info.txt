@@ -2,8 +2,8 @@
 # Windows version resource, consumed by PyInstaller.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,13 +18,13 @@ VSVersionInfo(
         [StringStruct('CompanyName', 'Accent Voice Changer'),
          StringStruct('FileDescription',
                       'Speak English with a Russian or German accent'),
-         StringStruct('FileVersion', '1.0.0'),
+         StringStruct('FileVersion', '1.1.0'),
          StringStruct('InternalName', 'ravc'),
          StringStruct('LegalCopyright',
                       'MIT licensed. See LICENSE.'),
          StringStruct('OriginalFilename', 'AccentVoiceChanger.exe'),
          StringStruct('ProductName', 'Accent Voice Changer'),
-         StringStruct('ProductVersion', '1.0.0')])
+         StringStruct('ProductVersion', '1.1.0')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

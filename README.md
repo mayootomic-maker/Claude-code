@@ -122,6 +122,16 @@ plus `beam`.
 the ones a native speaker of that language would actually produce, and then
 applies that language's real phonological rules. This is where the accent lives.
 
+The same approach — intercept the phonemes between the dictionary and the
+synthesiser, and rewrite them — is what [Learning-free L2-Accented Speech
+Generation using Phonological Rules](https://arxiv.org/abs/2603.07550) does,
+and their evaluation is a good sanity check that it works. Their stated
+limitation is that prosody still comes from the underlying English voice. This
+project avoids that by synthesising with a *native Russian or German* voice
+reading the accented phonemes, so the rhythm, the vowel durations and the
+missing aspiration on stops come from a model that was trained on the real
+thing rather than being bolted on.
+
 <details>
 <summary><b>Russian</b> — what gets changed and why</summary>
 
@@ -134,7 +144,9 @@ applies that language's real phonological rules. This is where the accent lives.
 | /ŋ/ | /n/, /nk/ finally | going → goin**k** |
 | /æ/ | /ɛ/ | bad → b**e**d |
 | /ɪ/ | /i/ | ship → sh**ee**p |
-| unstressed vowels | the *spelling* vowel | problem stays "pr**o**bl**e**m", not "probl'm" |
+| stressed ⟨o⟩ | read as spelt | st**o**p, j**o**b, pr**o**blem — not English /ɑ/ |
+| unstressed a/o | [ɐ] before the stress, [ə] elsewhere | c**o**mputer → [k**ɐ**mˈpʲjut**ə**r] |
+| unstressed after a soft consonant | [ɪ] | hello → [x**ɪ**ˈlo] |
 | final voiced stops | devoiced | dog → do**k**, was → va**s** |
 | /dʒ/ | /dʐ/, devoiced finally | job → dzho**p** |
 | /r/ | apical trill | |
@@ -145,6 +157,22 @@ Plus genuine Russian phonotactics: regressive voicing assimilation (`vodka` →
 permanently hard sibilants (`ship` → `shyp`). One detail worth calling out:
 Russian /v/ undergoes voicing assimilation but never *triggers* it — which is
 why `question` comes out `kvestion` and not `gvestion`.
+
+The vowel handling is two stages, and it is worth being precise about, because
+the obvious version is wrong. A Russian speaker does **not** simply articulate
+every vowel fully — Russian reduces unstressed vowels at least as hard as
+English does, just by different rules. So the pack first reads the *spelling*
+to decide what the vowel is (English ⟨o⟩ is taken as /o/, which is why `stop`
+is not "stap"), and then applies **akanye and ikanye** to whatever that
+produced: unstressed /a/ and /o/ merge to [ɐ] in the syllable before the stress
+and to a weak [ə] elsewhere, and unstressed vowels after a soft consonant go to
+[ɪ]. Together those give `computer` → [kɐmˈpʲjutər], which is exactly how the
+Russian loanword is said.
+
+One consequence: the Cyrillic shown in the UI is deliberately *not* reduced,
+while the phonemes sent to the voice are. A Russian text-to-speech voice runs
+its own reduction over whatever text you give it, so writing the reduction into
+the spelling as well would apply it twice.
 
 The spellings above isolate one substitution each. In practice they compound —
 *"I think this water is bad, and the dog is going to the station."* comes out as:
@@ -203,6 +231,35 @@ vocoder with cepstral envelope warping shifts pitch and formants *independently*
 large rather than slowed down), then EQ, saturation, compression and a limiter.
 
 ---
+
+## Matching your own voice
+
+The honest limitation of any accent changer built on text-to-speech is that it
+replaces you: whatever you sound like, out comes Dmitri. **Voice → Match my
+voice** narrows that. It records a few seconds of you talking and measures the
+two things that carry most of a speaker's identity:
+
+- **pitch**, the median fundamental frequency over the voiced frames;
+- **vocal tract length**, which shows up as a near-uniform scaling of all the
+  formants — a long tract puts them low, a short one high. It is measured by
+  taking the spectral envelope onto a log-frequency axis, where a change of
+  tract length is a pure translation, and cross-correlating yours against the
+  character voice's. (This is vocal-tract-length normalisation, as used in
+  speech recognition, run backwards.)
+
+It then solves for the pitch and formant shift that put the character voice
+where yours sits. Measured against the real voice models this lands within
+about 0.2 semitones. It is not neural voice conversion and will not make the
+output sound like *you* — but it stops a 1.9 m baritone coming out as a light
+tenor, which is most of the uncanny-valley effect.
+
+If the recording has too little clear speech it changes nothing and says so,
+rather than calibrating to the sound of your fan.
+
+```
+ravc calibrate                     # record from the microphone
+ravc calibrate my-voice.wav        # or measure a recording
+```
 
 ## Command line
 

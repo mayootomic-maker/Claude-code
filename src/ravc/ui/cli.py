@@ -12,7 +12,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .. import __version__
 from ..accent.engine import AccentEngine
@@ -50,6 +50,8 @@ def _load_config(args) -> AppConfig:
         config.apply_preset(args.preset)
     if getattr(args, "voice", None):
         config.voice.set_voice(config.accent.language, args.voice)
+    if getattr(args, "speaker", None):
+        config.voice.set_speaker(config.active_voice_key, args.speaker)
     if getattr(args, "rate", None) is not None:
         config.voice.speaking_rate = args.rate
     return config
@@ -146,6 +148,42 @@ def cmd_live(args) -> int:
     return 0
 
 
+def cmd_calibrate(args) -> int:
+    """Match the character voice to the user's own voice."""
+    import soundfile as sf
+
+    config = _load_config(args)
+    changer = VoiceChanger(config)
+    try:
+        if args.source:
+            data, sample_rate = sf.read(args.source, dtype="float32",
+                                        always_2d=True)
+            samples = data.mean(axis=1).astype("float32")
+            print(f"Measuring {args.source}…")
+        else:
+            if not audio_devices.sounddevice_available():
+                print("No microphone available. Pass a recording instead:\n"
+                      "  ravc calibrate my-voice.wav", file=sys.stderr)
+                return 1
+            print(f"Recording {args.seconds:.0f} seconds — speak normally now.")
+            for count in range(3, 0, -1):
+                print(f"  {count}…", end="\r", flush=True)
+                time.sleep(1)
+            print("  recording…   ")
+            samples, sample_rate = changer.record(args.seconds)
+            print(f"  captured {len(samples) / sample_rate:.1f}s")
+
+        pitch, formant, message = changer.calibrate(samples, sample_rate)
+        print(message)
+        if pitch == 0.0 and formant == 0.0:
+            return 1
+        config.save()
+        print(f"Saved to {config_path()}")
+    finally:
+        changer.close()
+    return 0
+
+
 def cmd_voices(args) -> int:
     config = AppConfig.load()
     language = _resolve_language(args.language, config) if args.language else None
@@ -172,9 +210,26 @@ def cmd_voices(args) -> int:
             where = "offline" if voice.offline else "online"
             print(f"  {voice.key:34s} {voice.gender:6s} {where:7s} "
                   f"{mark:14s} {voice.description}")
+            for label, _sid in _sub_voices(registry, voice):
+                print(f"      --speaker {label}")
     print(f"\nModels are stored in: {voice_catalogue.models_dir()}")
     print("Install one with:  ravc voices --install de_DE-thorsten-medium")
     return 0
+
+
+def _sub_voices(registry: VoiceRegistry, voice) -> List[Tuple[str, int]]:
+    """Named sub-voices of a multi-speaker model, if it is installed."""
+    engine, key = registry.split_key(voice.key)
+    if engine != "piper" or not voice.installed:
+        return []
+    model = voice_catalogue.CATALOGUE.get(key)
+    if model is None or not model.multi_speaker:
+        return []
+    piper = registry.engine("piper")
+    try:
+        return piper.speakers(key) if piper is not None else []
+    except Exception:
+        return []
 
 
 def _download_with_bar(key: str) -> None:
@@ -356,6 +411,8 @@ def build_parser() -> argparse.ArgumentParser:
         if with_voice:
             p.add_argument("-v", "--voice", help="voice key, e.g. "
                                                  "piper:de_DE-thorsten-medium")
+            p.add_argument("--speaker", help="sub-voice of a multi-speaker "
+                                             "model, e.g. angry, whisper")
             p.add_argument("-p", "--preset", choices=preset_names(),
                            help="voice-character preset")
             p.add_argument("-r", "--rate", type=float,
@@ -384,6 +441,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_voices.add_argument("--install", nargs="+", metavar="KEY",
                           help="download voice models ('all' for every one)")
     p_voices.set_defaults(func=cmd_voices)
+
+    p_cal = sub.add_parser(
+        "calibrate",
+        help="match the character voice to your own pitch and build")
+    p_cal.add_argument("source", nargs="?",
+                       help="a recording of your voice; omit to use the mic")
+    p_cal.add_argument("--seconds", type=float, default=6.0,
+                       help="how long to record from the microphone")
+    add_accent_options(p_cal)
+    p_cal.set_defaults(func=cmd_calibrate)
 
     sub.add_parser("devices", help="list audio devices").set_defaults(
         func=cmd_devices)

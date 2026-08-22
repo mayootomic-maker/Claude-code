@@ -425,3 +425,84 @@ def test_readme_headline_example_matches():
     headline = "This is the best voice changer in the world!"
     for language in ("russian", "german"):
         assert accentify(headline, language).native_text in readme, language
+
+
+# --------------------------------------------------------------------------
+# Russian vowel reduction (akanye / ikanye)
+# --------------------------------------------------------------------------
+
+def _ipa(word: str, language: str = "russian") -> str:
+    from ravc.accent.engine import accentify
+    from ravc.accent.languages import get_pack
+    from ravc.accent.render import to_ipa
+    result = accentify(word, language)
+    pack = get_pack(language)
+    return "".join(c[0] for c in to_ipa(result.words[0].audio_phones, pack))
+
+
+def test_unstressed_a_and_o_reduce_to_the_russian_vowels():
+    """Standard Moscow reduction: [ɐ] before the stress, weak [ə] elsewhere.
+
+    A Russian speaker does reduce English vowels -- just not where English
+    does. "computer" comes out [kɐmˈpʲjutər], which is exactly how the
+    Russian loanword is pronounced.
+    """
+    assert _ipa("computer") == "kɐmˈpʲjutər"
+    assert _ipa("banana").startswith("bɐ")
+    assert _ipa("professor").startswith("prɐ")
+    # Post-tonic reduces further, to the weaker schwa.
+    assert _ipa("problem").endswith("ləm")
+
+
+def test_reduction_leaves_the_stressed_vowel_alone():
+    from ravc.accent.engine import accentify
+    phones = accentify("problem").words[0].audio_phones
+    stressed = [p for p in phones if p.stress == 1]
+    assert stressed and stressed[0].sym == "o"
+
+
+def test_monosyllables_are_not_reduced():
+    """A one-syllable word carries the stress, so nothing reduces."""
+    from ravc.accent.engine import accentify as _accentify
+    for word in ("stop", "talk", "job", "cold"):
+        phones = _accentify(word).words[0].audio_phones
+        assert not any(p.sym in ("sch", "ax") for p in phones), word
+
+
+def test_i_backs_to_the_hard_sibilant_vowel():
+    """Russian has no [ʃi]; after ʂ ʐ ts an unstressed /i/ becomes [ɨ]."""
+    assert _ipa("information").endswith("ʂɨn")
+
+
+def test_written_form_is_not_reduced_but_the_phonemes_are():
+    """The two paths diverge on purpose.
+
+    A Russian TTS applies its own reduction to whatever text it is given,
+    so the Cyrillic must stay unreduced or the reduction happens twice.
+    The phoneme path has no such front-end and needs it written out.
+    """
+    from ravc.accent.engine import accentify
+    result = accentify("computer")
+    assert result.native_text == "компьютэр"          # unreduced
+    assert _ipa("computer") == "kɐmˈpʲjutər"           # reduced
+    word = result.words[0]
+    assert [p.sym for p in word.phones] != [p.sym for p in word.audio_phones]
+
+
+def test_german_keeps_english_schwa_rather_than_russian_reduction():
+    """German has a schwa of its own; copying Russian akanye over would
+    make a German speaker sound Slavic."""
+    from ravc.accent.engine import accentify
+    from ravc.accent.languages import get_pack
+    assert get_pack("german").audio_post_processes == ()
+    german = accentify("computer", "german")
+    assert german.words[0].phones == german.words[0].audio_phones
+
+
+def test_reduction_switches_off_with_the_strength_slider():
+    from ravc.accent.engine import AccentEngine
+    from ravc.accent.languages import get_pack
+    pack = get_pack("russian")
+    weak = AccentEngine(language="russian", profile=pack.profile(0.1))
+    phones = weak.accentify("computer").words[0].audio_phones
+    assert not any(p.sym in ("sch", "ax") for p in phones)

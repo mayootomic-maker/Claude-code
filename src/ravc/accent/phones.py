@@ -21,6 +21,7 @@ VOWELS: Set[str] = {
     "oe",   # German  ö  /ø/
     "ue",   # German  ü  /y/
     "sch",  # schwa   ə
+    "ax",   # near-open central ɐ (Russian pre-tonic reduction)
     "ar",   # German vocalised r  /ɐ/
 }
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -124,7 +124,8 @@ class PiperEngine(TtsEngine):
         with self._lock:
             self._ensure_loaded(key)
             try:
-                self._infer([self._id_map[_BOS][0], self._id_map[_EOS][0]], 1.0)
+                self._infer([self._id_map[_BOS][0], self._id_map[_EOS][0]], 1.0,
+                            self._resolve_speaker_locked(key, ""))
             except Exception:  # pragma: no cover - warm-up must never fail loudly
                 pass
 
@@ -165,6 +166,19 @@ class PiperEngine(TtsEngine):
 
     # -- synthesis -------------------------------------------------------
 
+    def _resolve_speaker_locked(self, key: str, wanted: str) -> int:
+        """resolve_speaker, for callers that already hold the lock."""
+        mapping = {label: int(sid) for label, sid
+                   in (self._config.get("speaker_id_map") or {}).items()}
+        if not mapping:
+            return 0
+        if wanted and wanted in mapping:
+            return mapping[wanted]
+        model = voice_catalogue.CATALOGUE.get(key)
+        if model is not None and model.default_speaker in mapping:
+            return mapping[model.default_speaker]
+        return 0
+
     def synthesize(self, request: SynthRequest) -> Audio:
         key = _strip_prefix(request.voice_key or self.voice_key)
         if key not in voice_catalogue.CATALOGUE:
@@ -177,13 +191,50 @@ class PiperEngine(TtsEngine):
             if len(ids) <= 2:
                 return Audio(np.zeros(0, dtype=np.float32), sample_rate)
             rate = max(0.35, min(3.0, request.rate or 1.0))
-            samples = self._infer(ids, rate)
+            speaker_id = self._resolve_speaker_locked(key, request.speaker)
+            samples = self._infer(ids, rate, speaker_id)
 
         if request.volume != 1.0:
             samples = samples * float(request.volume)
         return Audio(samples, sample_rate)
 
-    def _infer(self, ids: List[int], rate: float) -> np.ndarray:
+    def speakers(self, key: Optional[str] = None) -> List[Tuple[str, int]]:
+        """The sub-voices a model offers, as ``(label, id)``, in id order.
+
+        Read from the model's own config rather than hardcoded, so a model
+        gaining speakers does not need a code change.
+        """
+        key = _strip_prefix(key or self.voice_key)
+        if not voice_catalogue.is_installed(key):
+            return []
+        try:
+            with self._lock:
+                self._ensure_loaded(key)
+                mapping = dict(self._config.get("speaker_id_map") or {})
+        except Exception:
+            return []
+        return sorted(((label, int(sid)) for label, sid in mapping.items()),
+                      key=lambda pair: pair[1])
+
+    def resolve_speaker(self, key: str, wanted: str) -> int:
+        """Map a speaker label to its id.
+
+        Falls back to the model's declared default and only then to id 0 --
+        never to "whichever the dictionary happened to yield first", which
+        for the emotional voice meant every utterance came out `amused`.
+        """
+        available = dict(self.speakers(key))
+        if not available:
+            return 0
+        if wanted and wanted in available:
+            return available[wanted]
+        model = voice_catalogue.CATALOGUE.get(key)
+        if model is not None and model.default_speaker in available:
+            return available[model.default_speaker]
+        return 0
+
+    def _infer(self, ids: List[int], rate: float,
+               speaker_id: int = 0) -> np.ndarray:
         assert self._session is not None and self._config is not None
         inference = self._config.get("inference", {})
         noise_scale = float(inference.get("noise_scale", 0.667))
@@ -198,11 +249,7 @@ class PiperEngine(TtsEngine):
                                  dtype=np.float32),
         }
         if "sid" in self._input_names:
-            speaker = 0
-            speaker_map = self._config.get("speaker_id_map") or {}
-            if speaker_map:
-                speaker = int(next(iter(speaker_map.values())))
-            feeds["sid"] = np.asarray([speaker], dtype=np.int64)
+            feeds["sid"] = np.asarray([speaker_id], dtype=np.int64)
 
         feeds = {k: v for k, v in feeds.items() if k in self._input_names}
         out = self._session.run(None, feeds)[0]

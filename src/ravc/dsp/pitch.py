@@ -69,8 +69,42 @@ def istft(spec: np.ndarray, n_fft: int = N_FFT, hop: int = HOP,
     return out
 
 
-def phase_vocoder(spec: np.ndarray, rate: float, hop: int = HOP) -> np.ndarray:
-    """Time-stretch an STFT by ``rate`` (>1 = faster/shorter)."""
+def _peak_regions(magnitude: np.ndarray) -> np.ndarray:
+    """For each bin, the index of the spectral peak that owns it.
+
+    A partial of a voiced sound occupies several bins around its peak. Those
+    bins have to keep their phase relationship to the peak, or the partial
+    smears -- which is exactly what "phasiness" is.
+    """
+    n = magnitude.size
+    interior = np.arange(1, n - 1)
+    is_peak = np.zeros(n, dtype=bool)
+    is_peak[interior] = ((magnitude[interior] > magnitude[interior - 1])
+                         & (magnitude[interior] > magnitude[interior + 1]))
+    peaks = np.flatnonzero(is_peak)
+    if peaks.size == 0:
+        return np.arange(n)
+    # Assign every bin to the nearer of the two peaks surrounding it.
+    right = np.searchsorted(peaks, np.arange(n))
+    right = np.clip(right, 0, peaks.size - 1)
+    left = np.clip(right - 1, 0, peaks.size - 1)
+    choose_left = (np.abs(np.arange(n) - peaks[left])
+                   <= np.abs(np.arange(n) - peaks[right]))
+    return np.where(choose_left, peaks[left], peaks[right])
+
+
+def phase_vocoder(spec: np.ndarray, rate: float, hop: int = HOP,
+                  phase_lock: bool = True) -> np.ndarray:
+    """Time-stretch an STFT by ``rate`` (>1 = faster/shorter).
+
+    With ``phase_lock`` the bins around each spectral peak are given phases
+    rigidly tied to that peak's, rather than each advancing independently.
+    A plain phase vocoder lets the bins of one partial drift apart, which
+    smears the waveform within every pitch period and is heard as the
+    hollow, robotic "phasiness" the algorithm is notorious for. This is
+    Laroche and Dolson's identity phase locking, and it costs one extra
+    gather per frame.
+    """
     if abs(rate - 1.0) < 1e-6:
         return spec
     n_bins, n_frames = spec.shape
@@ -90,10 +124,20 @@ def phase_vocoder(spec: np.ndarray, rate: float, hop: int = HOP) -> np.ndarray:
         left = int(np.floor(step))
         frac = step - left
         mag = (1.0 - frac) * padded_mag[:, left] + frac * padded_mag[:, left + 1]
-        out[:, i] = mag * np.exp(1j * acc)
+
+        if phase_lock:
+            owner = _peak_regions(mag)
+            current = padded_phase[:, left]
+            locked = acc[owner] + (current - current[owner])
+        else:
+            locked = acc
+        out[:, i] = mag * np.exp(1j * locked)
+
         delta = padded_phase[:, left + 1] - padded_phase[:, left] - expected
         delta = delta - 2.0 * np.pi * np.round(delta / (2.0 * np.pi))
-        acc = acc + expected + delta
+        # Carry the locked phase forward, not the free-running one, or the
+        # locking is undone on the very next frame.
+        acc = locked + expected + delta
     return out
 
 
@@ -274,3 +318,127 @@ def estimate_f0(x: np.ndarray, sr: int, fmin: float = 60.0,
             tau = tau + (y0 - y2) / denominator
 
     return float(sr) / tau if tau > 0 else 0.0
+
+
+# --------------------------------------------------------------------------
+# Sample-rate conversion
+# --------------------------------------------------------------------------
+
+def resample_to(x: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
+    """Band-limited sample-rate conversion.
+
+    Linear interpolation is not good enough here. Resampling 22.05 kHz
+    speech up to a 48 kHz device with ``np.interp`` leaves the spectral
+    image of every partial only about 30 dB down -- for a 3 kHz component,
+    a spurious tone at 19 kHz -- which is what makes otherwise clean
+    synthesis sound thin and metallic.
+
+    Truncating or zero-padding the spectrum instead is ideal band-limited
+    interpolation: zero-padding adds no images when upsampling, and
+    truncation is a brick-wall anti-alias filter when downsampling. The
+    whole utterance is converted in one transform, so this is also faster
+    than a time-domain polyphase filter of comparable quality.
+    """
+    arr = np.asarray(x, dtype=np.float32).reshape(-1)
+    if src_rate == dst_rate or arr.size == 0:
+        return arr
+    out_len = int(round(arr.size * dst_rate / float(src_rate)))
+    if out_len < 1:
+        return np.zeros(0, dtype=np.float32)
+
+    # Taper the ends: the transform treats the buffer as one period, so a
+    # discontinuity between the last and first sample would ring across the
+    # whole spectrum.
+    fade = min(64, arr.size // 8)
+    if fade > 1:
+        arr = arr.copy()
+        ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+        arr[:fade] *= ramp
+        arr[-fade:] *= ramp[::-1]
+
+    spectrum = np.fft.rfft(arr)
+    out_bins = out_len // 2 + 1
+    resampled = np.zeros(out_bins, dtype=complex)
+    keep = min(spectrum.size, out_bins)
+    resampled[:keep] = spectrum[:keep]
+    # A retained Nyquist bin is real and shared between positive and
+    # negative frequencies; halve it or it doubles in amplitude.
+    if keep == out_bins and out_len % 2 == 0 and keep > 1:
+        resampled[-1] = resampled[-1].real * 0.5
+    out = np.fft.irfft(resampled, out_len) * (out_len / float(arr.size))
+    return out.astype(np.float32)
+
+
+# --------------------------------------------------------------------------
+# WSOLA time stretching
+# --------------------------------------------------------------------------
+
+def wsola(x: np.ndarray, rate: float, sr: int = 22050,
+          frame_ms: float = 40.0, search_ms: float = 12.0) -> np.ndarray:
+    """Time-stretch by ``rate`` (>1 = shorter) in the time domain.
+
+    Waveform-similarity overlap-add. For each output frame it takes the
+    input segment near the ideal read position, searches a small window for
+    the offset whose waveform best continues what has already been written,
+    and overlap-adds there.
+
+    For speech this beats a phase vocoder: it never separates a partial's
+    bins, so it cannot smear a pitch period, and it keeps the glottal pulse
+    shape intact. That pulse shape is most of what makes a voice sound like
+    a person rather than a machine.
+    """
+    arr = np.asarray(x, dtype=np.float32).reshape(-1)
+    if abs(rate - 1.0) < 1e-6 or arr.size == 0:
+        return arr
+
+    frame = max(128, int(sr * frame_ms / 1000))
+    frame += frame % 2
+    hop_out = frame // 2
+    hop_in = int(round(hop_out * rate))
+    search = max(1, int(sr * search_ms / 1000))
+    window = np.hanning(frame).astype(np.float32)
+
+    out_len = int(np.ceil(arr.size / rate)) + frame
+    out = np.zeros(out_len, dtype=np.float32)
+    norm = np.zeros(out_len, dtype=np.float32)
+
+    # What the previous frame predicts the next one should continue with.
+    natural = arr[:frame].copy()
+    read = 0
+    write = 0
+
+    while read + frame + search < arr.size and write + frame < out_len:
+        lo = max(0, read - search)
+        hi = min(arr.size - frame, read + search)
+        if hi <= lo:
+            offset = read
+        else:
+            candidates = np.arange(lo, hi + 1)
+            # Normalised cross-correlation against the predicted waveform.
+            scores = np.empty(candidates.size, dtype=np.float64)
+            for index, start in enumerate(candidates):
+                segment = arr[start:start + frame]
+                denominator = np.linalg.norm(segment) * np.linalg.norm(natural)
+                scores[index] = (float(np.dot(segment, natural)) / denominator
+                                 if denominator > 1e-9 else 0.0)
+            offset = int(candidates[int(np.argmax(scores))])
+
+        segment = arr[offset:offset + frame]
+        if segment.size < frame:
+            break
+        out[write:write + frame] += segment * window
+        norm[write:write + frame] += window
+
+        natural_start = offset + hop_out
+        natural = arr[natural_start:natural_start + frame]
+        if natural.size < frame:
+            natural = np.pad(natural, (0, frame - natural.size))
+
+        read += hop_in
+        write += hop_out
+
+    used = write + frame
+    out = out[:used]
+    norm = norm[:used]
+    out = np.divide(out, norm, out=np.zeros_like(out), where=norm > 1e-6)
+    return out.astype(np.float32)

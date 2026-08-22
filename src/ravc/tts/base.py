@@ -68,6 +68,7 @@ class SynthRequest:
     text: str                    # already spelled for the target TTS language
     ipa: Sequence[Sequence[str]] = field(default_factory=list)
     voice_key: Optional[str] = None
+    speaker: str = ""            # sub-voice / emotion within a multi-speaker model
     rate: float = 1.0        # 1.0 = natural; <1 slower
     pitch: float = 0.0       # semitones
     volume: float = 1.0
@@ -103,14 +104,9 @@ class TtsEngine(ABC):
 
 
 def resample(audio: Audio, target_rate: int) -> Audio:
-    """Good-enough linear resampling (backends differ; the mixer needs one rate)."""
+    """Band-limited resampling; backends differ, the mixer needs one rate."""
     if audio.sample_rate == target_rate or len(audio.samples) == 0:
         return Audio(audio.samples, target_rate)
-    ratio = target_rate / float(audio.sample_rate)
-    out_len = int(round(len(audio.samples) * ratio))
-    if out_len <= 1:
-        return Audio(np.zeros(0, dtype=np.float32), target_rate)
-    src_idx = np.linspace(0.0, len(audio.samples) - 1.0, out_len,
-                          dtype=np.float64)
-    out = np.interp(src_idx, np.arange(len(audio.samples)), audio.samples)
-    return Audio(out.astype(np.float32), target_rate)
+    from ..dsp.pitch import resample_to
+    return Audio(resample_to(audio.samples, audio.sample_rate, target_rate),
+                 target_rate)

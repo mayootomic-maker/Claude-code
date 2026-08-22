@@ -10,7 +10,7 @@ from ..phonetics.g2p import word_to_phonemes
 from . import grammar, normalize
 from .languages import DEFAULT_LANGUAGE, get_pack
 from .languages.base import AccentProfile, LanguagePack
-from .phonology import AccentedWord, accentify_word
+from .phonology import AccentedWord, accentify_word, to_audio_phones
 from .render import to_eye_dialect, to_ipa, to_native_text
 
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z']*|[0-9]+|[^\sA-Za-z0-9]")
@@ -87,12 +87,17 @@ class AccentEngine:
                                         self._pack, self.profile)
                 if not phones:
                     continue
-                result.words.append(AccentedWord(original=token, phones=phones))
+                # The written form and the phoneme form diverge: a text-driven
+                # voice applies its own reduction, a phoneme-driven one needs
+                # it spelled out. See LanguagePack.audio_post_processes.
+                audio = to_audio_phones(phones, self._pack, self.profile)
+                result.words.append(AccentedWord(
+                    original=token, phones=phones, audio_phones=audio))
                 result.ipa_words.append(
-                    to_ipa(phones, self._pack, self.mark_stress))
+                    to_ipa(audio, self._pack, self.mark_stress))
                 native_parts.append(
                     to_native_text(phones, self._pack, self.mark_stress))
-                eye_parts.append(to_eye_dialect(phones, self._pack))
+                eye_parts.append(to_eye_dialect(audio, self._pack))
             elif token in _SPEAKABLE_PUNCT:
                 # Punctuation carries the prosody; glue it to the last word.
                 if native_parts:
