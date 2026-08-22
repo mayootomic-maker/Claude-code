@@ -1,5 +1,7 @@
 """The accent engine: substitutions, phonology, rendering, both languages."""
 
+import pathlib
+
 import pytest
 
 from ravc.accent import grammar, normalize
@@ -397,3 +399,29 @@ def test_german_only_sp_and_st_become_sh():
 def test_german_v_still_devoices_word_finally():
     assert syms(de("brave"))[-1] == "f"
     assert syms(de("have"))[-1] == "f"
+
+
+# --------------------------------------------------------------------------
+# Documentation
+# --------------------------------------------------------------------------
+
+README_SENTENCE = ("I think this water is bad, and the dog is going to the "
+                   "station.")
+
+
+def test_readme_examples_match_the_engine():
+    """The worked examples in README.md must be what the engine produces."""
+    readme = (pathlib.Path(__file__).resolve().parents[1] / "README.md"
+              ).read_text(encoding="utf-8")
+    for language in ("russian", "german"):
+        result = accentify(README_SENTENCE, language)
+        assert result.eye_dialect in readme, (language, result.eye_dialect)
+        assert result.native_text in readme, (language, result.native_text)
+
+
+def test_readme_headline_example_matches():
+    readme = (pathlib.Path(__file__).resolve().parents[1] / "README.md"
+              ).read_text(encoding="utf-8")
+    headline = "This is the best voice changer in the world!"
+    for language in ("russian", "german"):
+        assert accentify(headline, language).native_text in readme, language

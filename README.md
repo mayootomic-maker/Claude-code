@@ -9,8 +9,10 @@ so Discord, Zoom, OBS, or a game hears it instead of you.
 
 ```
 "This is the best voice changer in the world!"
-  Russian →  зис ис зэ бэст войс чейнджэр ин зэ ворлт    ("zis is ze best voys chenjer in ze vorlt")
-  German  →  sis is se best weus tschehntscher in se weerlt  ("zis is ze best voys tschentschah in ze veahlt")
+  Russian →  зис ис зэ бэст войс чейнджэр ин зэ ворлт!
+             (zees ees ze best voys cheynjer in ze vorlt!)
+  German  →  sis is se best weus tschehntscher in se weerlt!
+             (zis is zuh best voys tschentschah in zuh veahlt!)
 ```
 
 Everything runs on your own machine. Nothing is uploaded unless you deliberately
@@ -142,6 +144,14 @@ Plus genuine Russian phonotactics: regressive voicing assimilation (`vodka` →
 permanently hard sibilants (`ship` → `shyp`). One detail worth calling out:
 Russian /v/ undergoes voicing assimilation but never *triggers* it — which is
 why `question` comes out `kvestion` and not `gvestion`.
+
+The spellings above isolate one substitution each. In practice they compound —
+*"I think this water is bad, and the dog is going to the station."* comes out as:
+
+```
+ay seenk zees voter ees bet, ant ze dok ees goeenk too ze steyshyn.
+ай синк зис вотэр ис бэт, ант зэ док ис гоинк ту зэ стэйшын.
+```
 </details>
 
 <details>
@@ -162,6 +172,14 @@ why `question` comes out `kvestion` and not `gvestion`.
 | /r/ | uvular [ʁ] | |
 | coda /r/ | vocalised to [ɐ] | better → bett**uh** |
 | /l/ | always clear, never dark | |
+
+The same sentence, *"I think this water is bad, and the dog is going to the
+station."*, through the German pack:
+
+```
+ay singk zis votah is bet, uhnt zuh dok is going tu zuh shtetsion.
+ei singk sis wohter is bet, ent se dok is gohing tuh se schtehzion.
+```
 
 Note what is deliberately **absent**. German has a schwa and a lax /ɪ/, so the
 German pack keeps English vowel reduction and does *not* turn "ship" into
