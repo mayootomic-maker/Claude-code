@@ -94,15 +94,27 @@ for _ in range(40):
 check("save", app._save_now)
 check("close", app.on_close)
 
+# A build machine has no sound card, so opening an output device fails.
+# That is the app correctly reporting a missing device, not a defect -- and
+# exercising the audio modes anyway is worth more than the noise it makes.
+# Everything else in the log is a real problem.
+EXPECTED = ("AudioUnavailable",)
+
 log = diagnostics.log_path()
 if log.exists():
     text = log.read_text(encoding="utf-8", errors="replace")
     errors = [line for line in text.splitlines() if " ERROR " in line]
-    if errors:
-        print("\nERRORS RECORDED IN THE LOG:")
-        for line in errors[:20]:
+    expected = [l for l in errors if any(e in l for e in EXPECTED)]
+    unexpected = [l for l in errors if l not in expected]
+    if expected:
+        print(f"\n{len(expected)} expected error(s) (no audio hardware here):")
+        for line in expected[:5]:
             print("  " + line)
-        failures.append(("log", errors[0]))
+    if unexpected:
+        print("\nUNEXPECTED ERRORS IN THE LOG:")
+        for line in unexpected[:20]:
+            print("  " + line)
+        failures.append(("log", unexpected[0]))
 
 print(f"\n{len(failures)} failures")
 sys.exit(1 if failures else 0)

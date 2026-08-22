@@ -78,6 +78,7 @@ class AccentApp:
         self._events: "queue.Queue" = queue.Queue(maxsize=2048)
         self._pending_level: Optional[float] = None
         self._pump_job: Optional[str] = None
+        self._timers: List[str] = []
         self._closing = False
         self._calibrating = False
 
@@ -114,7 +115,7 @@ class AccentApp:
         self._start_hotkeys()
         diagnostics.add_listener(self._on_log_line)
         self._pump()
-        self.root.after(200, self._refresh_devices)
+        self._after(200, self._refresh_devices)
 
     # ------------------------------------------------------------------
     # Cross-thread plumbing
@@ -165,11 +166,39 @@ class AccentApp:
                     except tk.TclError:
                         pass
         finally:
+            # Cancel any timer already pending before arming the next one.
+            # Without this, calling _pump directly (as the tests and the
+            # smoke check do) leaves an orphaned job behind each time, and
+            # those fire after the window is destroyed.
+            if self._pump_job is not None:
+                try:
+                    self.root.after_cancel(self._pump_job)
+                except tk.TclError:
+                    pass
+                self._pump_job = None
             if not self._closing:
                 try:
                     self._pump_job = self.root.after(40, self._pump)
                 except tk.TclError:
                     pass
+
+    def _after(self, delay_ms: int, fn: Callable) -> Optional[str]:
+        """Schedule on the Tk thread and remember the job.
+
+        Anything still pending when the window is destroyed fires against a
+        dead interpreter and prints a Tcl traceback, so every timer is
+        tracked and cancelled on close.
+        """
+        if self._closing:
+            return None
+        try:
+            job = self.root.after(delay_ms, fn)
+        except tk.TclError:
+            return None
+        self._timers.append(job)
+        if len(self._timers) > 64:
+            self._timers = self._timers[-64:]
+        return job
 
     def _active_meters(self) -> List[LevelMeter]:
         if self._calibrating:
@@ -809,6 +838,8 @@ class AccentApp:
                   f"{bits}, {profile.packet_loss * 100:.1f}% packet loss."))
 
     def _refresh_devices(self) -> None:
+        if self._closing:
+            return
         if not audio_devices.sounddevice_available():
             for combo in self.device_combos.values():
                 combo.configure(values=["(audio backend not installed)"])
@@ -1213,7 +1244,7 @@ class AccentApp:
         if remaining > 0:
             self.calibrate_note.configure(
                 text=f"Recording in {remaining}… then talk normally.")
-            self.root.after(1000, lambda: self._countdown(remaining - 1))
+            self._after(1000, lambda: self._countdown(remaining - 1))
             return
         self.calibrate_note.configure(text="Recording — talk now.")
         threading.Thread(target=self._record_and_calibrate,
@@ -1319,7 +1350,7 @@ class AccentApp:
                 self.root.after_cancel(self._save_job)
             except tk.TclError:
                 pass
-        self._save_job = self.root.after(700, self._save_now)
+        self._save_job = self._after(700, self._save_now)
 
     def _save_now(self) -> None:
         self._save_job = None
@@ -1332,11 +1363,14 @@ class AccentApp:
     def on_close(self) -> None:
         self._closing = True
         diagnostics.remove_listener(self._on_log_line)
-        if self._pump_job is not None:
+        for job in [self._pump_job, self._save_job] + self._timers:
+            if job is None:
+                continue
             try:
-                self.root.after_cancel(self._pump_job)
+                self.root.after_cancel(job)
             except tk.TclError:
                 pass
+        self._timers = []
         for closer in (self.config.save, self.hotkeys.stop, self.live.stop,
                        self.changer.close):
             try:

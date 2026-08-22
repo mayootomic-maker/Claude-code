@@ -38,7 +38,7 @@ jobs:
 
       - name: Download voice models for the integration tests
         run: |
-          python -m ravc voices --install ru_RU-dmitri-medium de_DE-thorsten-medium
+          python -m ravc voices --install ru_RU-dmitri-medium de_DE-thorsten-medium de_DE-thorsten_emotional-medium
 
       - name: Run integration tests against the real voice models
         shell: pwsh
