@@ -9,10 +9,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ravc.dsp.accentfx import (ENGLISH_VOWELS, RUSSIAN_VOWELS, SUBSTITUTIONS,
+from ravc.dsp.accentfx import (ENGLISH_VOWELS, GERMAN_SUBSTITUTIONS,
+                               GERMAN_VOWELS, RUSSIAN_VOWELS, SUBSTITUTIONS,
                                AccentFxSettings, VowelSpaceWarper,
                                nearest_target, plausible_vowel)
 from ravc.dsp.filters import Biquad, apply_offline
+from ravc.dsp.phones import fit_lpc, formants_from_lpc
 
 SR = 22050
 
@@ -39,15 +41,23 @@ def run(x: np.ndarray, settings: AccentFxSettings) -> np.ndarray:
 
 
 def track(x: np.ndarray):
-    """Median (F1, F2), using the warper's own tracker."""
-    probe = VowelSpaceWarper(SR, AccentFxSettings(enabled=False))
+    """Median (F1, F2), measured independently of the code under test.
+
+    This used to call the warper's own tracker, and so measured the input
+    and the output with the same ruler. That hid the fact that the ruler
+    was wrong -- it reported /æ/ (860, 1550) as (216, 858) -- and the
+    movement tests passed on self-consistency while the accent warped every
+    vowel towards the wrong target. Measuring with `phones.fit_lpc`, which
+    is tested directly against known formants, is the point.
+    """
     f1s, f2s = [], []
-    for i in range(SR // 4, len(x) - probe.n_fft, 512):
-        frame = x[i:i + probe.n_fft].astype(np.float64)
-        power = np.abs(np.fft.rfft(frame * probe._window)) ** 2
-        coefficients = probe._lpc(power)
-        found = probe._formants(coefficients) if coefficients is not None else None
-        if found:
+    window = 2048
+    for i in range(SR // 4, len(x) - window, 512):
+        coefficients = fit_lpc(x[i:i + window], SR)
+        if coefficients is None:
+            continue
+        found = formants_from_lpc(coefficients)
+        if len(found) >= 2:
             f1s.append(found[0])
             f2s.append(found[1])
     return (float(np.median(f1s)), float(np.median(f2s))) if f1s else (0.0, 0.0)
@@ -211,3 +221,24 @@ def test_silence_and_noise_do_not_explode():
 def test_empty_block_is_handled():
     warper = VowelSpaceWarper(SR, AccentFxSettings())
     assert warper.process(np.zeros(0, dtype=np.float32)).size == 0
+
+
+# --------------------------------------------------------------------------
+# The two accents are different accents
+# --------------------------------------------------------------------------
+
+def test_german_keeps_the_vowels_russian_collapses():
+    """Russian has five monophthongs; German has more than English.
+
+    So a German accent is not a weaker Russian one. Almost nothing
+    collapses -- what marks it out is the two vowels German lacks.
+    """
+    assert len(set(GERMAN_SUBSTITUTIONS.values())) == 9
+    assert len(set(SUBSTITUTIONS.values())) == 5
+    # ship / sheep merge in Russian and stay apart in German.
+    assert SUBSTITUTIONS["ɪ"] == SUBSTITUTIONS["i"]
+    assert GERMAN_SUBSTITUTIONS["ɪ"] != GERMAN_SUBSTITUTIONS["i"]
+    # The German markers: no /æ/ ("bad" -> "bed") and no /ʌ/.
+    assert GERMAN_SUBSTITUTIONS["æ"] == GERMAN_SUBSTITUTIONS["ɛ"] == "ɛ"
+    assert GERMAN_SUBSTITUTIONS["ʌ"] == GERMAN_SUBSTITUTIONS["ɑ"] == "a"
+    assert set(GERMAN_SUBSTITUTIONS.values()) <= set(GERMAN_VOWELS)

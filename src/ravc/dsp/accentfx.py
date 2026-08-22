@@ -34,9 +34,11 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .calibrate import levinson
 from .consonants import ConsonantSettings, ConsonantShaper
-from .phones import Frame, Phone, PhoneAnalyser
+from .phones import (Frame, Phone, PhoneAnalyser,
+                     lpc_envelope)
+from .phones import PhoneAnalyser as _Analyser
+PHONE_ANALYSIS_HZ = _Analyser.ANALYSIS_HZ
 
 # --------------------------------------------------------------------------
 # Vowel targets
@@ -81,29 +83,73 @@ SUBSTITUTIONS: dict = {
 }
 
 
-def _build_target_table() -> List[Tuple[float, float, float, float]]:
+# German is a different problem from Russian, and treating it as the same
+# one would be wrong. Russian's five vowels swallow eleven English ones;
+# German has *more* monophthongs than English, so almost nothing collapses.
+# What makes a German accent is the two vowels German simply does not have:
+# /æ/, so "bad" comes out "bed", and /ʌ/, so "but" moves towards "bat".
+# Everything else lands on a German vowel close to where it started.
+GERMAN_VOWELS: dict = {
+    "iː": (280, 2200),   # Liebe
+    "ɪ":  (400, 2000),   # bitte
+    "eː": (350, 2100),   # See
+    "ɛ":  (550, 1800),   # Bett
+    "a":  (730, 1300),   # Mann
+    "ɔ":  (550, 900),    # Sonne
+    "oː": (400, 750),    # Boot
+    "ʊ":  (400, 900),    # Mutter
+    "uː": (300, 700),    # Buch
+}
+
+GERMAN_SUBSTITUTIONS: dict = {
+    "i": "iː", "ɪ": "ɪ",           # both survive -- German has both
+    "e": "eː", "ɛ": "ɛ",
+    "æ": "ɛ",                      # no /æ/ in German: "bad" -> "bed"
+    "ɑ": "a", "ʌ": "a",            # no /ʌ/ either
+    "ɔ": "ɔ", "o": "oː",
+    "ʊ": "ʊ", "u": "uː",
+}
+
+
+def _build_target_table(vowels: dict, substitutions: dict
+                        ) -> List[Tuple[float, float, float, float]]:
     """``[(source F1, source F2, target F1, target F2), ...]``."""
     table = []
-    for english, russian in SUBSTITUTIONS.items():
+    for english, mapped in substitutions.items():
         source = ENGLISH_VOWELS[english]
-        target = RUSSIAN_VOWELS[russian]
+        target = vowels[mapped]
         table.append((float(source[0]), float(source[1]),
                       float(target[0]), float(target[1])))
     return table
 
 
-TARGETS = _build_target_table()
+TARGET_TABLES: dict = {
+    "russian": _build_target_table(RUSSIAN_VOWELS, SUBSTITUTIONS),
+    "german": _build_target_table(GERMAN_VOWELS, GERMAN_SUBSTITUTIONS),
+}
+DEFAULT_TARGET_LANGUAGE = "russian"
+TARGETS = TARGET_TABLES[DEFAULT_TARGET_LANGUAGE]
 
-# Classes the consonant stage owns. Everything else falls through to the
-# vowel warp, nasals included -- they were treated as vowels before this
-# existed and moving their formants does them no harm.
+
+def targets_for(language: str) -> List[Tuple[float, float, float, float]]:
+    return TARGET_TABLES.get(language, TARGETS)
+
+# Classes the consonant stage can own -- whether it does depends on which
+# substitutions are switched on and which accent is selected, so the shaper
+# is asked. Everything else falls through to the vowel warp, nasals
+# included: they were treated as vowels before this existed and moving
+# their formants does them no harm.
 CONSONANT_PHONES = frozenset({Phone.R, Phone.W, Phone.L})
 
-# Formant tracking. Speech formants live below about 4 kHz, so the analysis
-# is band-limited there and the model order chosen to give roughly two
-# poles per expected formant.
-ANALYSIS_BAND_HZ = 4000.0
-LPC_ORDER = 12
+# Formant tracking is not done here any more. It used to be, with its own
+# all-pole fit, and that fit was wrong: it had no pre-emphasis, so it put a
+# spurious wide pole at about 210 Hz in front of every real formant and
+# reported F1 as F2. Measured against vowels with known formants it gave
+# /æ/ (860, 1550) as (216, 858) and could not find /ɪ/ or /u/ at all --
+# which meant every vowel was matched to the wrong English vowel and warped
+# towards the wrong Russian one. Both stages now share the fit in
+# `phones.py`, which is tested against known formants at four pitches.
+ANALYSIS_BAND_HZ = PHONE_ANALYSIS_HZ / 2.0
 MIN_FORMANT_HZ = 180.0
 MAX_FORMANT_HZ = 3400.0
 
@@ -126,8 +172,10 @@ def plausible_vowel(f1: float, f2: float) -> bool:
     return f2 <= 3000.0 - 1.5 * f1
 
 
-def nearest_target(f1: float, f2: float) -> Tuple[float, float]:
-    """The Russian vowel position nearest to ``(f1, f2)``.
+def nearest_target(f1: float, f2: float,
+                   language: str = DEFAULT_TARGET_LANGUAGE
+                   ) -> Tuple[float, float]:
+    """The accent's vowel position nearest to ``(f1, f2)``.
 
     Distance is measured in log-frequency, because that is much closer to
     how the ear judges vowel similarity than raw Hz -- 100 Hz matters
@@ -137,7 +185,7 @@ def nearest_target(f1: float, f2: float) -> Tuple[float, float]:
         return f1, f2
     best = None
     log1, log2 = math.log(f1), math.log(f2)
-    for source_f1, source_f2, target_f1, target_f2 in TARGETS:
+    for source_f1, source_f2, target_f1, target_f2 in targets_for(language):
         distance = ((log1 - math.log(source_f1)) ** 2
                     + 0.6 * (log2 - math.log(source_f2)) ** 2)
         if best is None or distance < best[0]:
@@ -158,6 +206,9 @@ class AccentFxSettings:
     # Russian targets while costing only 1.4 dB of harmonic structure; at
     # 0.6 the damage nearly doubles for almost no extra movement.
     max_shift: float = 0.4
+    # Which accent. Drives both the vowel targets and how /ɹ/ is treated:
+    # Russian rolls it, German makes it uvular.
+    language: str = DEFAULT_TARGET_LANGUAGE
     # The consonant substitutions -- the rolled r above all. See
     # dsp/consonants.py.
     consonants: ConsonantSettings = field(default_factory=ConsonantSettings)
@@ -192,29 +243,33 @@ class VowelSpaceWarper:
         self._output = np.zeros(n_fft, dtype=np.float64)
         self._norm = np.zeros(n_fft, dtype=np.float64)
         self._freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
-        self._analysis_rate = 2.0 * ANALYSIS_BAND_HZ
         # Fade the correction out over the top octave of the modelled band.
         self._band_taper = np.clip(
             (ANALYSIS_BAND_HZ * 1.05 - self._freqs) / (ANALYSIS_BAND_HZ * 0.25),
             0.0, 1.0)
         self._smoothed: Optional[Tuple[float, float]] = None
         self._scale = self.settings.scale
+        self._language = self.settings.language
         self._analyser = PhoneAnalyser(sample_rate, scale=self._scale)
         self._shaper = ConsonantShaper(sample_rate, self._freqs,
-                                       self.settings.consonants, self._scale)
+                                       self.settings.consonants, self._scale,
+                                       self._language)
 
     def _rescale(self) -> None:
-        """Rebuild the detector when calibration changes the tract size.
+        """Rebuild the detector when the tract size or the accent changes.
 
         Both objects precompute frequency masks from the scale, so a change
         has to be applied by rebuilding them, not by assignment.
         """
-        if abs(self.settings.scale - self._scale) < 1e-6:
+        if (abs(self.settings.scale - self._scale) < 1e-6
+                and self.settings.language == self._language):
             return
         self._scale = self.settings.scale
+        self._language = self.settings.language
         self._analyser = PhoneAnalyser(self.sample_rate, scale=self._scale)
         self._shaper = ConsonantShaper(self.sample_rate, self._freqs,
-                                       self.settings.consonants, self._scale)
+                                       self.settings.consonants, self._scale,
+                                       self._language)
 
     def reset(self) -> None:
         self._input = np.zeros(0, dtype=np.float32)
@@ -230,77 +285,20 @@ class VowelSpaceWarper:
 
     # -- analysis ---------------------------------------------------------
 
-    def _lpc(self, power: np.ndarray) -> Optional[np.ndarray]:
-        """All-pole coefficients for one frame, from its power spectrum.
-
-        The autocorrelation comes free from the power spectrum by the
-        Wiener-Khinchin theorem; zeroing the band above the analysis limit
-        and then resampling the lags is equivalent to decimating, which is
-        what lets a low model order spend all its poles on speech.
-        """
-        band_limited = power.copy()
-        band_limited[self._freqs > ANALYSIS_BAND_HZ] = 0.0
-        autocorrelation = np.fft.irfft(band_limited)
-
-        step = self.sample_rate / self._analysis_rate
-        lags = np.arange(LPC_ORDER + 1) * step
-        if lags[-1] >= autocorrelation.size:
-            return None
-        r = np.interp(lags, np.arange(autocorrelation.size), autocorrelation)
-        if r[0] <= 1e-12:
-            return None
-        return levinson(r, LPC_ORDER)
-
     def _envelope_from_lpc(self, coefficients: np.ndarray) -> np.ndarray:
-        """The all-pole model's own magnitude response, on the FFT grid.
+        return lpc_envelope(coefficients, self._freqs, PHONE_ANALYSIS_HZ)
 
-        The envelope has to come from the *same* model as the formants.
-        A cepstral envelope was used at first and its peaks sit in different
-        places from the LPC roots -- warping one model's curve using the
-        other model's landmarks tears the spectrum apart, which is what made
-        vowels needing an upward F2 move end up far below where they started.
+
+    def _vowel_formants(self, frame: Frame) -> Optional[Tuple[float, float]]:
+        """F1 and F2 for the vowel warp, from the shared fit.
+
+        Only a pair that could actually be a vowel is accepted: the tracker
+        does fail, and when it does it fails confidently rather than noisily,
+        so a frame that fails this is left unwarped rather than warped to a
+        guess.
         """
-        # The model was fitted to a signal decimated to _analysis_rate, so
-        # its frequency axis runs 0..analysis_rate/2 = ANALYSIS_BAND_HZ.
-        omega = np.pi * np.clip(self._freqs / ANALYSIS_BAND_HZ, 0.0, 1.0)
-        z = np.exp(-1j * omega)
-        response = np.zeros_like(z)
-        for power_index, coefficient in enumerate(coefficients):
-            response = response + coefficient * z ** power_index
-        return 1.0 / np.maximum(np.abs(response), 1e-9)
-
-    def _formants(self, coefficients: np.ndarray) -> Optional[Tuple[float, float]]:
-        """F1 and F2 from the all-pole model's roots.
-
-        Peak-picking a cepstral envelope was tried first and is not good
-        enough: its ripple throws up spurious maxima between the real
-        formants, and picking one of those puts the vowel in completely the
-        wrong place -- /ɪ/ was read as F2 = 1200 Hz instead of 2090, which
-        mapped it to /u/ and warped it away from its target. Linear
-        prediction is the tool actually designed for this.
-        """
-        target_rate = self._analysis_rate
-        try:
-            roots = np.roots(coefficients)
-        except (np.linalg.LinAlgError, ValueError):
-            return None
-
-        candidates = []
-        for root in roots:
-            if root.imag <= 0:
-                continue
-            magnitude = abs(root)
-            if magnitude >= 1.0 or magnitude <= 1e-9:
-                continue
-            frequency = math.atan2(root.imag, root.real) * target_rate / (2 * math.pi)
-            bandwidth = -math.log(magnitude) * target_rate / math.pi
-            if MIN_FORMANT_HZ <= frequency <= MAX_FORMANT_HZ and bandwidth < 500:
-                candidates.append(frequency)
-        if len(candidates) < 2:
-            return None
-        candidates.sort()
-        f1, f2 = candidates[0], candidates[1]
-        if f2 <= f1 * 1.15:
+        f1, f2 = frame.f1, frame.f2
+        if f1 <= 0 or f2 <= 0 or f2 <= f1 * 1.15:
             return None
         if not plausible_vowel(f1, f2):
             return None
@@ -316,7 +314,7 @@ class VowelSpaceWarper:
         rather than jumping, which would tear the envelope apart.
         """
         settings = self.settings
-        target_f1, target_f2 = nearest_target(f1, f2)
+        target_f1, target_f2 = nearest_target(f1, f2, settings.language)
         strength = float(np.clip(settings.strength, 0.0, 1.0))
 
         def blend(current: float, target: float) -> float:
@@ -348,9 +346,12 @@ class VowelSpaceWarper:
 
         # A consonant is not a vowel: warping /r/ towards /a/ because its
         # formants happen to sit near one is exactly the artefact the phone
-        # detector exists to prevent. Consonants get their own substitution
-        # and skip the vowel stage entirely -- including its all-pole fit,
-        # which they have no use for.
+        # detector exists to prevent. So consonants skip the vowel stage --
+        # including its all-pole fit, which they have no use for -- whether
+        # or not a substitution is switched on for them. Switching one off
+        # means that consonant is left alone, not that it is treated as a
+        # vowel instead; German declines the dark /l/ for that reason, and
+        # letting the vowel stage have it would velarise it anyway.
         if measured.phone in CONSONANT_PHONES:
             self._smoothed = None
             return np.fft.irfft(
@@ -358,10 +359,10 @@ class VowelSpaceWarper:
                 self.n_fft)
         self._shaper.spectrum(spectrum, measured)
 
-        coefficients = self._lpc(magnitude ** 2)
+        coefficients = self._analyser.coefficients
         envelope = (self._envelope_from_lpc(coefficients)
                     if coefficients is not None else None)
-        formants = self._formants(coefficients) if coefficients is not None else None
+        formants = self._vowel_formants(measured) if envelope is not None else None
         if formants is None:
             self._smoothed = None
             return np.fft.irfft(spectrum, self.n_fft)
@@ -378,7 +379,6 @@ class VowelSpaceWarper:
             )
         f1, f2 = self._smoothed
 
-        assert envelope is not None
         source_positions = self._warp_map(f1, f2)
         warped = np.interp(source_positions, self._freqs, envelope)
         # Divide the old envelope out and multiply the new one in, leaving

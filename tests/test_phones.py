@@ -12,7 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ravc.dsp.accentfx import AccentFxSettings, VowelSpaceWarper
+from ravc.dsp.accentfx import (AccentFxSettings, ENGLISH_VOWELS,
+                               VowelSpaceWarper, nearest_target)
 from ravc.dsp.consonants import (ConsonantSettings, ConsonantShaper,
                                  TRILL_HZ, _move_resonance, _resonance)
 from ravc.dsp.phones import (Frame, Phone, PhoneAnalyser, scale_from_formants,
@@ -475,3 +476,138 @@ def test_modulation_is_a_no_op_when_nothing_is_rolling():
     block = np.ones(512, dtype=np.float32)
     assert np.allclose(shaper.modulate(block), block)
     assert shaper.modulate(np.zeros(0, dtype=np.float32)).size == 0
+
+
+# --------------------------------------------------------------------------
+# The vowel warp, measured with the tracker that is tested above
+# --------------------------------------------------------------------------
+
+VOWEL_TESTS = {
+    "ɪ bit":   [370.0, 2090.0, 2600.0, 3400.0, 4400.0],
+    "æ bad":   [860.0, 1550.0, 2400.0, 3400.0, 4400.0],
+    "ʌ but":   [680.0, 1310.0, 2400.0, 3400.0, 4400.0],
+    "u boot":  [300.0, 870.0, 2240.0, 3400.0, 4400.0],
+    "ɔ bought": [570.0, 840.0, 2410.0, 3400.0, 4400.0],
+}
+VOWELS_ONLY = ConsonantSettings(enabled=False)
+
+
+@pytest.mark.parametrize("language", ["russian", "german"])
+def test_vowels_land_on_the_target_this_accent_uses(language):
+    """The test that would have caught the formant tracker being broken.
+
+    It was: the warper had its own all-pole fit with no pre-emphasis, which
+    reported /æ/ (860, 1550) as (216, 858) -- F1 read as F2, behind an
+    invented pole at 210 Hz. Every vowel was therefore matched to the wrong
+    English vowel and warped towards the wrong target, and nothing caught
+    it, because the tests measured the input and the output with that same
+    tracker and so only ever checked it was self-consistent.
+    """
+    for name, formants in VOWEL_TESTS.items():
+        signal = sustain(formants)
+        source = measured_formants(run(signal, OFF))
+        target = nearest_target(source[0], source[1], language)
+        settings = AccentFxSettings(strength=1.0, language=language,
+                                    consonants=VOWELS_ONLY)
+        got = measured_formants(run(signal, settings))
+        assert len(got) >= 2, (name, language, got)
+        if abs(target[1] - source[1]) > 100.0:
+            reached = ((got[1] - source[1]) / (target[1] - source[1]))
+            assert reached > 0.7, (name, language, source, target, got)
+        assert abs(got[1] - target[1]) < 220.0, (name, language, source,
+                                                 target, got)
+
+
+def test_the_two_accents_send_the_same_vowel_to_different_places():
+    """/ɪ/ is the clearest case, and it is the accent difference itself.
+
+    Russian has five vowels and merges /ɪ/ with /i/ -- "ship" said as
+    "sheep". German has a slot for /ɪ/ and leaves it broadly alone.
+    """
+    signal = sustain(VOWEL_TESTS["ɪ bit"])
+
+    def out(language):
+        return measured_formants(run(signal, AccentFxSettings(
+            strength=1.0, language=language, consonants=VOWELS_ONLY)))
+
+    russian, german = out("russian"), out("german")
+    assert russian[0] < german[0] - 60.0, (russian, german)
+    assert russian[1] > german[1] + 100.0, (russian, german)
+
+
+def test_every_english_vowel_has_a_target_in_both_accents():
+    for vowel_symbol, (f1, f2) in ENGLISH_VOWELS.items():
+        for language in ("russian", "german"):
+            target = nearest_target(f1, f2, language)
+            assert 200.0 < target[0] < 900.0, (vowel_symbol, language, target)
+            assert 600.0 < target[1] < 2400.0, (vowel_symbol, language, target)
+    # An unknown language falls back rather than raising in the audio thread.
+    assert nearest_target(860.0, 1550.0, "klingon") == nearest_target(
+        860.0, 1550.0, "russian")
+
+
+# --------------------------------------------------------------------------
+# German is a different accent, not a weaker Russian one
+# --------------------------------------------------------------------------
+
+def german(strength: float = 0.85) -> AccentFxSettings:
+    return AccentFxSettings(strength=0.8, language="german",
+                            consonants=ConsonantSettings(strength=strength))
+
+
+def test_german_does_not_roll_the_r():
+    """German /r/ is uvular. Rolling it would be a Russian speaking German."""
+    signal = sustain(SOUNDS["r"])
+    rolled = modulation_depth(run(signal, ON), TRILL_HZ)
+    uvular = modulation_depth(run(signal, german()), TRILL_HZ)
+    assert rolled > 6.0
+    assert uvular < rolled / 3.0, (rolled, uvular)
+
+
+def test_german_fricates_the_r_instead():
+    """[ʁ] is a fricative, and a uvular constriction puts its noise low."""
+    signal = sustain(SOUNDS["r"])
+    plain = band_db(run(signal, OFF), 1600.0, 2600.0)
+    uvular = band_db(run(signal, german()), 1600.0, 2600.0)
+    assert uvular > plain + 3.0, (plain, uvular)
+
+
+def test_both_accents_turn_w_into_v():
+    """Neither language has /w/, so this one is shared."""
+    signal = sustain(SOUNDS["w"])
+    plain = band_db(run(signal, OFF), 1500.0, 6000.0)
+    for settings in (ON, german()):
+        assert band_db(run(signal, settings), 1500.0, 6000.0) > plain + 4.0
+
+
+def test_german_leaves_the_l_clear():
+    """German /l/ is close to the English one; velarising it would be wrong."""
+    signal = sustain(SOUNDS["l"])
+    plain = measured_formants(run(signal, OFF))[1]
+    assert measured_formants(run(signal, ON))[1] < plain - 200.0
+    assert measured_formants(run(signal, german()))[1] > plain - 100.0
+
+
+def test_a_declined_consonant_is_left_alone_not_treated_as_a_vowel():
+    """Switching a substitution off must not hand the sound to the vowel warp.
+
+    A consonant is not a vowel whether or not there is a substitution for
+    it, and the difference is audible: /l/ handed to the vowel stage lands
+    on the nearest back vowel, which velarises it -- exactly the change
+    German is declining to make.
+    """
+    for phone_name, off in (("r", ConsonantSettings(trill=False)),
+                            ("l", ConsonantSettings(dark_l=False)),
+                            ("w", ConsonantSettings(w_to_v=False))):
+        signal = sustain(SOUNDS[phone_name])
+        plain = measured_formants(run(signal, OFF))
+        got = measured_formants(run(
+            signal, AccentFxSettings(strength=1.0, consonants=off)))
+        assert abs(got[1] - plain[1]) < 60.0, (phone_name, plain, got)
+
+    # And the shaper still reports what it would do, for the caller's sake.
+    shaper = ConsonantShaper(RATE, np.fft.rfftfreq(1024, 1.0 / RATE),
+                             ConsonantSettings(trill=False))
+    assert not shaper.handles(Phone.R)
+    assert shaper.handles(Phone.W)
+    assert not shaper.handles(Phone.VOWEL)

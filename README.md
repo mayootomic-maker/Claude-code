@@ -105,8 +105,34 @@ nearest it, and warp the spectral envelope so the formants move there.
 change perceived accent](https://www.isca-archive.org/interspeech_2013/aryal13_interspeech.pdf),
 and because only the envelope moves while the excitation is left alone,
 the pitch and glottal character that make the voice recognisably *yours*
-survive. Measured: vowels reach about 88% of the way to their Russian
-targets for 1.4 dB of harmonic loss, with the fundamental unchanged.
+survive.
+
+That is the design, and for a long time it did not work. The warper had
+its own formant tracker, and the tracker was broken: with no pre-emphasis
+it put a spurious wide pole at about 210 Hz in front of every real
+formant, so it read /æ/ (860, 1550 Hz) as (216, 858) — F1 mistaken for F2
+— and could not find /ɪ/ or /u/ at all. Every vowel was therefore matched
+to the wrong English vowel and warped towards the wrong target. Nothing
+caught it, because the tests measured the input and the output with that
+same tracker, and so only ever confirmed it was self-consistent.
+
+Both stages now share one tested fit, and the tests measure with an
+independent ruler. Vowels land on their targets:
+
+| vowel | you say | Russian target | comes out | German target | comes out |
+|---|---|---|---|---|---|
+| bit /ɪ/ | 362 / 2084 | 240 / 2250 | 287 / 2233 | 400 / 2000 | 409 / 1998 |
+| bad /æ/ | 869 / 1549 | 440 / 1800 | 573 / 1777 | 550 / 1800 | 594 / 1777 |
+| but /ʌ/ | 659 / 1303 | 700 / 1080 | 658 / 1124 | 730 / 1300 | 711 / 1308 |
+| boot /u/ | 321 / 882 | 300 / 700 | 274 / 684 | 300 / 700 | 282 / 720 |
+
+Note the first row: Russian merges "bit" into "beat", German does not.
+Russian has five monophthongs for English's eleven, so six distinctions
+disappear; German has more monophthongs than English, so almost nothing
+collapses and the accent comes from the two vowels German lacks — /æ/, so
+"bad" comes out "bed", and /ʌ/. Live uses whichever accent is selected,
+so the two sound genuinely different rather than one being a weaker
+version of the other.
 
 ### The consonants, live
 
@@ -128,15 +154,18 @@ airflow briefly each time, so the sound gets an amplitude modulation at
 about 27 Hz. Impose that, put F3 back where an unrolled Russian /r/ has
 it, and the r rolls.
 
-| substitution | why Russian forces it | measured effect |
-|---|---|---|
-| /ɹ/ → rolled r | Russian /r/ is an alveolar trill | 27 Hz modulation 8× deeper; the English /ɹ/ signature drops 5 dB |
-| /w/ → /v/ | Russian has no /w/ — "water" → "vater" | +6.6 dB of frication in the labiodental band |
-| /l/ → hard l | Russian /l/ is heavily velarised — the "miluk" in stage-Russian "milk" | F2 pulled from 1159 Hz to 768 |
+| substitution | accent | why the language forces it | measured effect |
+|---|---|---|---|
+| /ɹ/ → rolled r | Russian | Russian /r/ is an alveolar trill | 27 Hz modulation 8× deeper; the English /ɹ/ signature drops 5 dB |
+| /ɹ/ → uvular [ʁ] | German | German /r/ is uvular and fricated, with no contact — so no roll | +4 dB of friction at 1.6–2.6 kHz, and no modulation |
+| /w/ → /v/ | both | neither language has /w/ — "water" → "vater" | +6.6 dB of frication in the labiodental band |
+| /l/ → hard l | Russian | Russian /l/ is heavily velarised — the "miluk" in stage-Russian "milk" | F2 pulled from 1159 Hz to 768 |
 
 Each is a separate switch, and none of them touches a vowel: run the
 consonant stage alone over a sustained /ɑ/ and its formants move by under
-80 Hz.
+80 Hz. German declines the hard /l/ — its /l/ is close to the English one
+— and switching a substitution off leaves that consonant alone rather than
+handing it to the vowel stage, which would velarise it anyway.
 
 **/θ/ → /s/ is still not there, and cannot be.** /θ/ and /f/ are the
 classic confusable pair — near chance from spectral cues, which is why

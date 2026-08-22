@@ -8,13 +8,21 @@ frame, so these can run live, on your own voice, without knowing the word.
 Three substitutions are implemented, each because Russian phonology forces
 it and each because the sound it applies to can be identified acoustically:
 
-*The trill.* Russian /r/ is an alveolar trill: the tongue tip vibrates
-against the ridge, 2-3 contacts per segment, and each contact briefly shuts
-the airflow. That gives a deep amplitude modulation at roughly 25-30 Hz,
-which is the acoustic definition of a trill and is what the ear hears as
-"rolled". English /ɹ/ has no contact at all, and instead a very low F3.
-So the substitution is two changes: impose the modulation, and put F3 back
-where an unrolled Russian /r/ has it, around 2400 Hz.
+*The r.* Neither language has the English one, and they replace it with
+opposite things, so this is two substitutions sharing a detector.
+
+Russian /r/ is an alveolar trill: the tongue tip vibrates against the ridge,
+2-3 contacts per segment, each briefly shutting the airflow. That is an
+amplitude modulation at roughly 25-30 Hz -- the acoustic definition of a
+trill, and what the ear hears as "rolled".
+
+German /r/ is uvular, [ʁ]: a constriction right at the back of the mouth,
+with audible friction and no contact at all. So it gets no modulation --
+imposing one would make it Russian -- and instead gains turbulence low in
+the spectrum, where a uvular constriction puts it.
+
+Both share one change. The English /ɹ/'s signature is its very low F3, and
+neither replacement has that, so both put F3 back up around 2400 Hz.
 
 */w/ becoming /v/.* Russian has no /w/, and the nearest thing in its
 inventory is /v/, so "water" comes out "vater". /w/ is a voiced glide with
@@ -45,6 +53,9 @@ import numpy as np
 
 from .phones import Frame, Phone
 
+RUSSIAN = "russian"
+GERMAN = "german"
+
 # Russian trill rate. Published measurements put the tongue-tip contact rate
 # at roughly 25-30 Hz; below about 20 Hz it stops fusing into a roll and is
 # heard as separate taps.
@@ -57,6 +68,11 @@ ENGLISH_R_F3_HZ = 1600.0    # fallback when the fit did not return an F3
 # /v/ frication: a labiodental has a broad, weak, high-passed noise.
 V_NOISE_BAND_HZ = (1500.0, 6000.0)
 V_NOISE_LEVEL = 0.35        # relative to the frame's own magnitude
+
+# The German uvular [ʁ]: friction from a constriction at the back of the
+# mouth, which puts it far lower than any front fricative.
+UVULAR_NOISE_BAND_HZ = (1000.0, 2600.0)
+UVULAR_NOISE_LEVEL = 0.55
 V_F2_LIFT = 1.35            # /w/'s F2 is ~610; /v/ has no such low resonance
 
 # Velarisation. A Russian hard /l/ sits near 700 Hz where an English clear
@@ -69,9 +85,9 @@ class ConsonantSettings:
     """Which substitutions to apply, and how hard."""
 
     enabled: bool = True
-    trill: bool = True          # /ɹ/ -> rolled Russian /r/
-    w_to_v: bool = True         # /w/ -> /v/
-    dark_l: bool = True         # /l/ -> velarised hard /l/
+    trill: bool = True          # /ɹ/ -> rolled Russian /r/, or German [ʁ]
+    w_to_v: bool = True         # /w/ -> /v/ (both languages lack /w/)
+    dark_l: bool = True         # /l/ -> velarised hard /l/ (Russian only)
     strength: float = 0.85      # 0 = untouched, 1 = fully substituted
 
     def any_active(self) -> bool:
@@ -119,14 +135,17 @@ class ConsonantShaper:
 
     def __init__(self, sample_rate: int, freqs: np.ndarray,
                  settings: Optional[ConsonantSettings] = None,
-                 scale: float = 1.0) -> None:
+                 scale: float = 1.0, language: str = RUSSIAN) -> None:
         self.sample_rate = sample_rate
         self.settings = settings or ConsonantSettings()
         self.scale = float(scale)
+        self.language = language
         self._freqs = freqs
         self._nyquist = sample_rate / 2.0
         self._noise_band = ((freqs >= V_NOISE_BAND_HZ[0] * self.scale)
                             & (freqs <= V_NOISE_BAND_HZ[1] * self.scale))
+        self._uvular_band = ((freqs >= UVULAR_NOISE_BAND_HZ[0] * self.scale)
+                             & (freqs <= UVULAR_NOISE_BAND_HZ[1] * self.scale))
         self._rng = np.random.default_rng(0x5253)
         self._phase = 0.0
         self._depth = 0.0
@@ -137,6 +156,19 @@ class ConsonantShaper:
         self._phase = 0.0
         self._depth = 0.0
         self._target_depth = 0.0
+
+    def handles(self, phone: Phone) -> bool:
+        """Will this shaper substitute ``phone``, given its settings?"""
+        settings = self.settings
+        if not settings.enabled:
+            return False
+        if phone is Phone.R:
+            return settings.trill
+        if phone is Phone.W:
+            return settings.w_to_v
+        if phone is Phone.L:
+            return settings.dark_l and self.language != GERMAN
+        return False
 
     # -- per-frame spectral work ------------------------------------------
 
@@ -157,24 +189,34 @@ class ConsonantShaper:
             return spectrum
         strength = float(np.clip(settings.strength, 0.0, 1.0))
 
-        self._target_depth = (strength if settings.trill
-                              and frame.phone is Phone.R else 0.0)
+        rolling = (settings.trill and frame.phone is Phone.R
+                   and self.language != GERMAN)
+        self._target_depth = strength if rolling else 0.0
         self._taper = taper
 
         if frame.phone is Phone.R and settings.trill:
-            # Put F3 back where an unrolled Russian /r/ has it. The English
-            # /ɹ/ signature *is* the lowered F3, so undoing it is most of
-            # what stops the sound reading as English.
+            # Put F3 back where a non-English /r/ has it. The English /ɹ/'s
+            # signature *is* the lowered F3, so undoing it is most of what
+            # stops the sound reading as English, in either accent.
             source = frame.f3 if frame.f3 > 0 else ENGLISH_R_F3_HZ * self.scale
             target = source + (RUSSIAN_R_F3_HZ * self.scale - source) * strength
-            return self._warp(spectrum, frame.formants, 2, target)
+            moved = self._warp(spectrum, frame.formants, 2, target)
+            if self.language == GERMAN:
+                # [ʁ] is a fricative, and the modulation stays off: a
+                # rolled German r is a Russian speaking German.
+                return self._fricate(moved, strength, self._uvular_band,
+                                     UVULAR_NOISE_LEVEL)
+            return moved
 
         if frame.phone is Phone.W and settings.w_to_v:
             lifted = self._warp(spectrum, frame.formants, 1,
                                 frame.f2 * (1.0 + (V_F2_LIFT - 1.0) * strength))
             return self._fricate(lifted, strength)
 
-        if frame.phone is Phone.L and settings.dark_l:
+        if (frame.phone is Phone.L and settings.dark_l
+                and self.language != GERMAN):
+            # German /l/ is clear, close to the English one; velarising it
+            # would be importing a Russian feature.
             target = DARK_L_F2_HZ * self.scale
             return self._warp(spectrum, frame.formants, 1,
                               frame.f2 + (target - frame.f2) * strength)
@@ -195,9 +237,11 @@ class ConsonantShaper:
             gain = 1.0 + (gain - 1.0) * self._taper
         return spectrum * gain
 
-    def _fricate(self, spectrum: np.ndarray, strength: float) -> np.ndarray:
-        """Add the frication that makes a /v/ a fricative and not a glide."""
-        band = self._noise_band
+    def _fricate(self, spectrum: np.ndarray, strength: float,
+                 band: Optional[np.ndarray] = None,
+                 level: float = V_NOISE_LEVEL) -> np.ndarray:
+        """Add frication in ``band`` -- what makes a fricative not a glide."""
+        band = self._noise_band if band is None else band
         if not band.any():
             return spectrum
         # Measured against the whole frame, not against the band itself: a
@@ -207,7 +251,7 @@ class ConsonantShaper:
         reference = float(np.abs(spectrum).mean())
         if reference <= 0.0:
             return spectrum
-        level = reference * V_NOISE_LEVEL * strength
+        level = reference * level * strength
         phase = self._rng.uniform(0.0, 2 * math.pi, int(band.sum()))
         out = spectrum.copy()
         out[band] = out[band] + level * np.exp(1j * phase)

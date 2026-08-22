@@ -59,6 +59,10 @@ class LiveMode:
 
     def _settings(self) -> LiveSettings:
         voice = self.config.voice
+        # One language setting drives both modes: picking German on the
+        # Accent page changes what Live does to your vowels and your r too,
+        # rather than leaving Live quietly Russian.
+        voice.live_accent.language = self.config.accent.language
         return LiveSettings(
             pitch_semitones=voice.fx.pitch_semitones,
             comms=voice.comms_profile,

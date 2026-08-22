@@ -209,6 +209,79 @@ def scale_from_formants(formants: Sequence[float]) -> float:
                      SCALE_RANGE[1]))
 
 
+def fit_lpc(samples: np.ndarray, sample_rate: int, order: int = 12,
+            analysis_hz: float = 9600.0) -> Optional[np.ndarray]:
+    """All-pole coefficients for one frame, by the Praat recipe.
+
+    Pre-emphasis flattens the glottal tilt so the fit describes the vocal
+    tract and not the voice's overall slope. Leaving it out is not a small
+    loss of accuracy: without it the fit puts a spurious wide pole at about
+    210 Hz in front of every real formant, and reports F1 as F2.
+
+    Decimation is done by truncating the spectrum, which is exact, rather
+    than filtering and interpolating.
+    """
+    x = np.asarray(samples, dtype=np.float64).reshape(-1)
+    if x.size < 64:
+        return None
+    x = np.append(x[0], x[1:] - 0.97 * x[:-1])
+
+    rate = float(sample_rate)
+    if rate > analysis_hz:
+        length = max(64, int(round(x.size * analysis_hz / rate)))
+        x = np.fft.irfft(np.fft.rfft(x)[:length // 2 + 1], length)
+    x = x * np.hamming(x.size)
+    if not np.any(x):
+        return None
+    order = max(8, min(order, x.size // 2))
+    return levinson(autocorrelation(x, order), order)
+
+
+def formants_from_lpc(coefficients: np.ndarray,
+                      analysis_hz: float = 9600.0) -> Tuple[float, ...]:
+    """Formant frequencies from an all-pole model, ascending.
+
+    The bandwidth gate is what keeps the list honest. Real formants here
+    measure 70-310 Hz wide; the poles a too-high model order invents to
+    describe spectral valleys measure 500-2200, and letting those through
+    shifts every real formant a slot up the list.
+    """
+    try:
+        roots = np.roots(coefficients)
+    except (np.linalg.LinAlgError, ValueError):
+        return ()
+    found: List[float] = []
+    for root in roots:
+        if root.imag <= 0:
+            continue          # conjugate pairs: keep one of each
+        magnitude = abs(root)
+        if not 1e-9 < magnitude < 1.0:
+            continue
+        frequency = math.atan2(root.imag, root.real) * analysis_hz / (2 * math.pi)
+        bandwidth = -math.log(magnitude) * analysis_hz / math.pi
+        if 150.0 <= frequency <= 4500.0 and bandwidth < MAX_BANDWIDTH_HZ:
+            found.append(frequency)
+    found.sort()
+    return tuple(found[:4])
+
+
+def lpc_envelope(coefficients: np.ndarray, freqs: np.ndarray,
+                 analysis_hz: float = 9600.0) -> np.ndarray:
+    """The model's own magnitude response, on an FFT frequency grid.
+
+    The envelope has to come from the *same* fit as the formants: warping
+    one model's curve using another model's landmarks tears the spectrum
+    apart, which is what once sent vowels needing an upward F2 move far
+    below where they started.
+    """
+    omega = np.pi * np.clip(freqs / (analysis_hz / 2.0), 0.0, 1.0)
+    z = np.exp(-1j * omega)
+    response = np.zeros_like(z)
+    for index, coefficient in enumerate(coefficients):
+        response = response + coefficient * z ** index
+    return 1.0 / np.maximum(np.abs(response), 1e-9)
+
+
 class PhoneAnalyser:
     """Measures frames and labels them, keeping a little history."""
 
@@ -228,6 +301,7 @@ class PhoneAnalyser:
         self.scale = float(min(max(scale, SCALE_RANGE[0]), SCALE_RANGE[1]))
         self._history = np.zeros(n_fft, dtype=np.float64)
         self._analysis_window = np.hanning(n_fft)
+        self._coefficients: Optional[np.ndarray] = None
         self._freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
         self._low = self._freqs < VOICING_BAND_HZ
         self._min_lag = max(1, int(sample_rate / PITCH_RANGE_HZ[1]))
@@ -243,7 +317,6 @@ class PhoneAnalyser:
         self._w_f2, self._w_f1 = W_MAX_F2 * k, W_MAX_F1 * k
         self._l_f2 = (L_F2_RANGE[0] * k, L_F2_RANGE[1] * k)
         self._l_f1, self._l_f3 = L_MAX_F1 * k, L_MIN_F3 * k
-        self._window = np.hamming(0)
         self._reference_db = -120.0
         self._previous: Optional[Frame] = None
         self._held = Phone.SILENCE
@@ -278,6 +351,15 @@ class PhoneAnalyser:
     @property
     def previous(self) -> Optional[Frame]:
         return self._previous
+
+    @property
+    def coefficients(self) -> Optional[np.ndarray]:
+        """The all-pole fit behind the last frame's formants.
+
+        Shared so that anything warping the spectrum uses the same model
+        that located the formants it is warping towards.
+        """
+        return self._coefficients
 
     # -- measurement ------------------------------------------------------
 
@@ -324,7 +406,11 @@ class PhoneAnalyser:
                 + (1.0 - LEVEL_DECAY) * frame.energy_db, -120.0)
         frame.relative_db = frame.energy_db - self._reference_db
 
-        frame.formants = self._formants(window)
+        self._coefficients = fit_lpc(window, self.sample_rate,
+                                     self.LPC_ORDER, self.ANALYSIS_HZ)
+        frame.formants = (formants_from_lpc(self._coefficients,
+                                            self.ANALYSIS_HZ)
+                          if self._coefficients is not None else ())
         frame.raw_phone = self._classify(frame)
         frame.phone = self._hold(frame.raw_phone)
         self._previous = frame
@@ -345,52 +431,11 @@ class PhoneAnalyser:
         return float(np.max(correlation[self._min_lag:top]) / correlation[0])
 
     def _formants(self, samples: np.ndarray) -> Tuple[float, ...]:
-        """F1 and F2 by linear prediction, following the Praat recipe.
-
-        Pre-emphasis flattens the glottal tilt so the fit describes the
-        vocal tract and not the voice's overall slope; leaving it out was
-        what made the first version of this report F2 several hundred Hz
-        low. Decimation is done by truncating the spectrum, which is exact
-        rather than the filter-and-interpolate approximation.
-        """
-        x = np.asarray(samples, dtype=np.float64)
-        if x.size < 64:
-            return ()
-        x = np.append(x[0], x[1:] - 0.97 * x[:-1])
-
-        rate = float(self.sample_rate)
-        if rate > self.ANALYSIS_HZ:
-            out_len = max(64, int(round(x.size * self.ANALYSIS_HZ / rate)))
-            x = np.fft.irfft(np.fft.rfft(x)[:out_len // 2 + 1], out_len)
-            rate = self.ANALYSIS_HZ
-        if x.size != self._window.size:
-            self._window = np.hamming(x.size)
-        x = x * self._window
-        if not np.any(x):
-            return ()
-
-        order = max(8, min(self.LPC_ORDER, x.size // 2))
-        coefficients = levinson(autocorrelation(x, order), order)
+        coefficients = fit_lpc(samples, self.sample_rate, self.LPC_ORDER,
+                               self.ANALYSIS_HZ)
         if coefficients is None:
             return ()
-        try:
-            roots = np.roots(coefficients)
-        except (np.linalg.LinAlgError, ValueError):
-            return ()
-
-        found: List[float] = []
-        for root in roots:
-            if root.imag <= 0:
-                continue
-            magnitude = abs(root)
-            if not 1e-9 < magnitude < 1.0:
-                continue
-            frequency = math.atan2(root.imag, root.real) * rate / (2 * math.pi)
-            bandwidth = -math.log(magnitude) * rate / math.pi
-            if 150.0 <= frequency <= 4500.0 and bandwidth < MAX_BANDWIDTH_HZ:
-                found.append(frequency)
-        found.sort()
-        return tuple(found[:4])
+        return formants_from_lpc(coefficients, self.ANALYSIS_HZ)
 
     # -- classification ---------------------------------------------------
 
