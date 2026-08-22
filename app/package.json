@@ -12,7 +12,9 @@
     "budget": "node scripts/check-budget.mjs",
     "verify": "npm run typecheck && npm test && npm run build && npm run budget",
     "build:e2e": "VITE_TRANSPORT_BASE=http://127.0.0.1:4174/v1 vite build",
-    "e2e": "npm run build:e2e && node e2e/drive.mjs"
+    "e2e": "npm run build:e2e && node e2e/drive.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=pendlo"
   },
   "dependencies": {
     "@preact/signals": "^2.0.1",
