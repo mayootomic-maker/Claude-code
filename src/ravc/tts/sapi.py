@@ -15,6 +15,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from .._optional import have
 from .base import Audio, SynthRequest, TtsEngine, TtsError, Voice
 
 _LANGUAGE_HINTS = {
@@ -33,13 +34,7 @@ class SapiEngine(TtsEngine):
 
     @staticmethod
     def is_installed() -> bool:
-        if os.name != "nt":
-            return False
-        try:
-            import win32com.client  # noqa: F401
-        except Exception:
-            return False
-        return True
+        return os.name == "nt" and have("win32com.client")
 
     def is_available(self) -> bool:
         return self.is_installed() and bool(self.list_voices())

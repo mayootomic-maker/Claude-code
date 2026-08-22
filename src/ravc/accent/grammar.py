@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, List, Sequence
+from typing import List, Sequence
 
 ARTICLES = {"a", "an", "the"}
 COPULA = {"is", "are", "am", "'s", "'re", "'m"}

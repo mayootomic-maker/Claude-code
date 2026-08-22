@@ -14,8 +14,7 @@ in plain numpy, so there is no scipy/librosa dependency to package.
 
 from __future__ import annotations
 
-import math
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 

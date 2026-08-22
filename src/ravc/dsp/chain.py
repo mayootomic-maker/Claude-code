@@ -7,8 +7,8 @@ downstream can clip the virtual cable.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass
+from typing import Dict, List
 
 import numpy as np
 

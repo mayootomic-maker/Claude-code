@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from .devices import AudioUnavailable, Device, _sd
+from .devices import AudioUnavailable, _sd
 
 CAPTURE_RATE = 16000  # what Whisper wants; also plenty for the VAD
 

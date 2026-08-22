@@ -28,7 +28,9 @@ _ABBREVIATIONS = {
     "prof": "professor", "st": "saint", "vs": "versus", "etc": "et cetera",
     "e.g": "for example", "i.e": "that is", "approx": "approximately",
     "dept": "department", "govt": "government", "inc": "incorporated",
-    "ltd": "limited", "jr": "junior", "sr": "senior", "no": "number",
+    "ltd": "limited", "jr": "junior", "sr": "senior",
+    # Deliberately no "no" -> "number": "No." far more often ends a sentence
+    # than abbreviates "number", and getting that wrong is very audible.
     "&": "and", "%": "percent", "+": "plus", "=": "equals", "@": "at",
     "#": "number", "~": "about", "w/": "with", "w/o": "without",
 }
@@ -144,9 +146,12 @@ def normalize(text: str) -> str:
         return _ABBREVIATIONS.get(key, m.group(0))
 
     text = re.sub(r"\b[A-Za-z]{1,6}\.(?=\s|$)", abbrev, text)
-    for sym, word in _ABBREVIATIONS.items():
-        if not sym.isalpha():
-            text = text.replace(sym, f" {word} ")
+    # Longest first, or "w/o" is consumed by the "w/" rule and becomes
+    # "with o".
+    symbols = sorted((s for s in _ABBREVIATIONS if not s.isalpha()),
+                     key=len, reverse=True)
+    for sym in symbols:
+        text = text.replace(sym, f" {_ABBREVIATIONS[sym]} ")
 
     return _WS_RE.sub(" ", text).strip()
 

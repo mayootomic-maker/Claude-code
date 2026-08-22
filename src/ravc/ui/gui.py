@@ -29,7 +29,7 @@ from ..accent.languages import get_pack
 from ..asr.whisper_asr import MODEL_SIZES, WhisperAsr
 from ..audio import devices as audio_devices
 from ..config import AppConfig, config_path
-from ..dsp.chain import PRESETS, get_preset, preset_names
+from ..dsp.chain import get_preset, preset_names
 from ..pipeline import Events, State, VoiceChanger
 from ..tts import voices as voice_catalogue
 from . import theme

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Full, Queue
 from typing import Callable, List, Optional
@@ -30,7 +30,7 @@ from typing import Callable, List, Optional
 import numpy as np
 
 from .accent.engine import AccentEngine, AccentResult
-from .asr.whisper_asr import ASR_RATE, AsrConfig, Transcript, WhisperAsr
+from .asr.whisper_asr import ASR_RATE, AsrConfig, WhisperAsr
 from .audio.capture import CaptureConfig, MicrophoneCapture, Reframer
 from .audio.devices import (AudioUnavailable, find_device_by_name,
                             find_virtual_cable, sounddevice_available)
@@ -339,8 +339,17 @@ class VoiceChanger:
             self._log("Dropped an utterance: synthesis is behind. "
                       "Try a smaller speech model.")
 
+    def _settle_state(self) -> None:
+        if self._stop.is_set():
+            return
+        if time.monotonic() >= self._mute_until:
+            self._set_state(State.LISTENING)
+
     def _work_loop(self) -> None:
         while not self._stop.is_set():
+            # Drop back to "listening" only once our own audio has finished
+            # playing, or the UI says "listening" while it is still speaking.
+            self._settle_state()
             try:
                 utterance = self._utterances.get(timeout=0.25)
             except Empty:
@@ -349,9 +358,6 @@ class VoiceChanger:
                 self._process(utterance)
             except Exception as exc:  # noqa: BLE001
                 self.events.emit("on_error", f"Processing failed: {exc}")
-            finally:
-                if not self._stop.is_set():
-                    self._set_state(State.LISTENING)
 
     def _process(self, utterance: Utterance) -> None:
         started = time.perf_counter()

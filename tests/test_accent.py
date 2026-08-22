@@ -5,9 +5,8 @@ import pytest
 from ravc.accent import grammar, normalize
 from ravc.accent.engine import AccentEngine, accentify
 from ravc.accent.languages import PACKS, available, get_pack
-from ravc.accent.phones import Phone
 from ravc.accent.phonology import accentify_word, spelling_vowels
-from ravc.accent.render import to_eye_dialect, to_ipa, to_native_text
+from ravc.accent.render import to_ipa, to_native_text
 from ravc.phonetics.g2p import word_to_phonemes
 
 
@@ -125,17 +124,15 @@ def test_strength_zero_disables_the_loudest_substitutions():
     assert phones[0].sym != "s"
 
 
-def test_strength_is_monotonic():
-    """More strength must never remove a substitution that was already on."""
-    pack = get_pack("russian")
-    seen = None
-    for strength in (0.0, 0.25, 0.5, 0.75, 1.0):
-        text = accentify("think this water hello", "russian",
-                         strength=strength).eye_dialect
-        if seen is not None:
-            pass  # only checking it runs and changes coherently
-        seen = text
-    assert accentify("think", "russian", strength=1.0).eye_dialect.startswith("s")
+def test_strength_ladder_is_ordered():
+    """Substitutions must switch on as strength rises, never off."""
+    def has_th_to_s(strength):
+        return accentify("think", "russian", strength=strength
+                         ).eye_dialect.startswith("s")
+
+    switched_on = [has_th_to_s(s) for s in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    assert switched_on == sorted(switched_on), switched_on
+    assert switched_on[-1] and not switched_on[0]
 
 
 def test_feature_override_turns_one_rule_off():
@@ -157,7 +154,6 @@ def test_every_pack_declares_defaults_for_its_labels():
 
 def test_ipa_candidates_are_non_empty_for_every_symbol():
     for language in ("russian", "german"):
-        pack = get_pack(language)
         result = AccentEngine(language=language).accentify(
             "The quick brown fox jumps over thirty lazy dogs, judging "
             "everything with sharp measured pleasure.")

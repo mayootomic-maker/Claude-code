@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from .._optional import have
+
 _HF_BASE = ("https://huggingface.co/rhasspy/piper-voices/resolve/main/"
             "{lang}/{locale}/{speaker}/{quality}/"
             "{locale}-{speaker}-{quality}")
@@ -168,13 +170,12 @@ def download_voice(key: str, progress: Optional[ProgressFn] = None,
 
 def _download(url: str, dest: Path, timeout: int,
               progress: Optional[Callable[[float], None]]) -> None:
-    try:
-        import requests  # noqa: F401
-    except ImportError:
+    if not have("requests"):
         _download_urllib(url, dest, timeout, progress)
         return
 
     import requests
+
     with requests.get(url, stream=True, timeout=timeout) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("Content-Length") or 0)

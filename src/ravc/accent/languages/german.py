@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Dict, List, Sequence
 
-from ..phones import DEVOICED, NO_VOICE_PARTNER, REVOICED, Phone, devoice
+from ..phones import NO_VOICE_PARTNER, REVOICED, Phone, devoice
 from .base import AccentProfile, Context, LanguagePack
 
 DEFAULT_FEATURES: Dict[str, bool] = {

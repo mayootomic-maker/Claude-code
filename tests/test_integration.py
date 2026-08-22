@@ -79,7 +79,6 @@ def test_synthesis_produces_plausible_speech(models):
 def test_pipeline_render_and_file_round_trip(models, tmp_path):
     from ravc.config import AppConfig
     from ravc.pipeline import VoiceChanger
-    from ravc.tts import voices
 
     for language in languages_with_models(models):
         config = AppConfig()

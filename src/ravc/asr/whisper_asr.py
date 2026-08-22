@@ -15,6 +15,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from .._optional import have
+
 ASR_RATE = 16000
 
 MODEL_SIZES: Tuple[Tuple[str, str, str], ...] = (
@@ -77,11 +79,7 @@ class WhisperAsr:
 
     @staticmethod
     def is_installed() -> bool:
-        try:
-            import faster_whisper  # noqa: F401
-        except Exception:
-            return False
-        return True
+        return have("faster_whisper")
 
     @staticmethod
     def cuda_available() -> bool:

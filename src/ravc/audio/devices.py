@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from .._optional import have
+
 # Ordered by preference.  Matching is case-insensitive substring.
 VIRTUAL_CABLE_HINTS: Tuple[Tuple[str, str], ...] = (
     ("cable input", "VB-Audio Virtual Cable"),
@@ -62,11 +64,7 @@ class Device:
 
 
 def sounddevice_available() -> bool:
-    try:
-        import sounddevice  # noqa: F401
-    except Exception:
-        return False
-    return True
+    return have("sounddevice")
 
 
 def _sd():

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import lts
-from .arpabet import DEVOICE_MAP, is_vowel, split_stress
+from .arpabet import DEVOICE_MAP, split_stress
 
 _DATA = Path(__file__).resolve().parent.parent / "data" / "cmudict.txt.gz"
 
@@ -196,8 +196,9 @@ def word_to_phonemes(word: str) -> tuple:
         if phones:
             return tuple(phones)
 
-    # ALLCAPS that is not a dictionary word: probably an initialism.
-    if token.isupper() and len(core) <= 5 and not _lookup_raw(core):
+    # ALLCAPS and not a dictionary word (the lookups above already failed):
+    # probably an initialism, so spell it out.
+    if token.isupper() and len(core) <= 5:
         out = []
         for ch in core:
             letter = _lookup_raw(ch)

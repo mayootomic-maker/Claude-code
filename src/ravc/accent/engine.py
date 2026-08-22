@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import List, Optional
 
 from ..phonetics.g2p import word_to_phonemes
 from . import grammar, normalize
 from .languages import DEFAULT_LANGUAGE, get_pack
 from .languages.base import AccentProfile, LanguagePack
-from .phones import Phone
 from .phonology import AccentedWord, accentify_word
 from .render import to_eye_dialect, to_ipa, to_native_text
 

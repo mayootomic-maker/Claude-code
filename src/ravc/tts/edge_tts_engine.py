@@ -15,6 +15,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from .._optional import have
 from .base import Audio, SynthRequest, TtsEngine, TtsError, Voice
 
 EDGE_VOICES = [
@@ -50,11 +51,7 @@ class EdgeTtsEngine(TtsEngine):
 
     @staticmethod
     def is_installed() -> bool:
-        try:
-            import edge_tts  # noqa: F401
-        except Exception:
-            return False
-        return True
+        return have("edge_tts")
 
     def is_available(self) -> bool:
         return self.is_installed()

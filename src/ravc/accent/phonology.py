@@ -15,8 +15,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from ..phonetics.arpabet import split_stress
 from .languages import DEFAULT_LANGUAGE, get_pack
 from .languages.base import AccentProfile, Context, LanguagePack
-from .phones import (CONSONANTS, DEVOICED, FRONT_VOWELS, OBSTRUENTS, Phone,
-                     REVOICED, VOWELS)
+from .phones import Phone, VOWELS
 
 __all__ = ["AccentProfile", "AccentedWord", "Context", "LanguagePack", "Phone",
            "accentify_word", "russify_word", "default_profile", "VOWELS"]

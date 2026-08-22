@@ -1,11 +1,9 @@
 """End-to-end behaviour that does not need audio hardware or a voice model."""
 
 import io
-import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from ravc.accent.engine import AccentEngine

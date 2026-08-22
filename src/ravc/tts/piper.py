@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import json
 import threading
-from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
+from .._optional import have
 from . import voices as voice_catalogue
 from .base import Audio, SynthRequest, TtsEngine, TtsError, Voice
 
@@ -50,11 +50,7 @@ class PiperEngine(TtsEngine):
 
     @staticmethod
     def onnxruntime_available() -> bool:
-        try:
-            import onnxruntime  # noqa: F401
-        except Exception:
-            return False
-        return True
+        return have("onnxruntime")
 
     def is_available(self) -> bool:
         return (self.onnxruntime_available()
