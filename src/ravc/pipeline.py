@@ -1,4 +1,4 @@
-"""The live pipeline: microphone in, Russian-accented voice out.
+"""The live pipeline: microphone in, accented voice out.
 
 Stages run on separate threads so a slow transcription never stalls audio
 capture:
@@ -30,6 +30,7 @@ from typing import Callable, List, Optional
 import numpy as np
 
 from .accent.engine import AccentEngine, AccentResult
+from .accent.languages import get_pack
 from .asr.whisper_asr import ASR_RATE, AsrConfig, WhisperAsr
 from .audio.capture import CaptureConfig, MicrophoneCapture, Reframer
 from .audio.devices import (AudioUnavailable, find_device_by_name,
@@ -194,7 +195,8 @@ class VoiceChanger:
         for thread in self._threads:
             thread.start()
         self._set_state(State.LISTENING)
-        self._log("Listening. Speak English; you will come out Russian.")
+        adjective = get_pack(self.config.accent.language).adjective
+        self._log(f"Listening. Speak English; you will come out {adjective}.")
         threading.Thread(target=self._warm_up, name="ravc-warmup",
                          daemon=True).start()
 

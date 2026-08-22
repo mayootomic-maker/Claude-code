@@ -2,7 +2,7 @@
 
 The user picks a voice; this decides which backend can actually speak it
 right now, and falls back gracefully when the preferred one cannot (model
-not downloaded, no network, no Russian system voice).
+not downloaded, no network, no matching system voice).
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Offline speech recognition with faster-whisper (CTranslate2).
 
 Recognition runs in English and is deliberately conservative: the accent
-engine will happily give a Russian accent to a hallucinated sentence, so it
+engine will happily give an accent to a hallucinated sentence, so it
 is much better to return nothing than to return something invented.  The
 guards below (no cross-utterance conditioning, a compression-ratio and
 log-probability floor, and a hallucination blocklist) exist for that.

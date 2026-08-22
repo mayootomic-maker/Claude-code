@@ -1,9 +1,10 @@
 """Windows SAPI5 fallback.
 
-Last resort: it only sounds properly Russian if a Russian voice (for
-example "Microsoft Irina") is installed, which needs the Russian language
-pack.  It exists so the app can still speak on a machine with no Piper
-model downloaded and no internet.
+Last resort: it only sounds properly accented if a voice in the target
+language is installed (for example "Microsoft Irina" for Russian or
+"Microsoft Hedda" for German), which needs that Windows language pack.  It
+exists so the app can still speak on a machine with no Piper model
+downloaded and no internet.
 """
 
 from __future__ import annotations

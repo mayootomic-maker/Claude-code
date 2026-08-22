@@ -2,8 +2,8 @@
 
 Optional, but the best-sounding option when there is a network connection:
 these are the same neural voices Edge's Read Aloud uses.  They read the
-Cyrillic transcription produced by the accent engine, which is what gives
-the authentic Russian delivery.
+transcription produced by the accent engine -- Cyrillic for Russian, German
+orthography for German -- which is what gives the authentic delivery.
 """
 
 from __future__ import annotations
