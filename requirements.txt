@@ -1,0 +1,22 @@
+# Core
+numpy>=1.23
+
+# Audio I/O
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# Speech recognition (offline, CTranslate2 backend)
+faster-whisper>=1.0.0
+
+# Neural TTS (Piper ONNX voices run through onnxruntime directly)
+onnxruntime>=1.16
+
+# Optional cloud-quality neural TTS (Microsoft Edge voices)
+edge-tts>=6.1.9
+
+# Voice-model downloader
+requests>=2.31
+
+# Windows-only extras
+pywin32>=306; sys_platform == "win32"
+comtypes>=1.2; sys_platform == "win32"

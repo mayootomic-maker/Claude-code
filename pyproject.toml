@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ravc"
+version = "1.0.0"
+description = "Russian Accent Voice Changer - speak English with a massive Russian accent, in real time."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Russian Accent Voice Changer contributors" }]
+keywords = ["voice-changer", "accent", "russian", "tts", "asr", "speech"]
+classifiers = [
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    "numpy>=1.23",
+]
+
+[project.optional-dependencies]
+# Everything needed for the full real-time microphone pipeline.
+full = [
+    "sounddevice>=0.4.6",
+    "soundfile>=0.12.1",
+    "onnxruntime>=1.16",
+    "faster-whisper>=1.0.0",
+    "edge-tts>=6.1.9",
+    "requests>=2.31",
+]
+# Windows-only extras (SAPI5 fallback voice, media-key hotkeys).
+windows = [
+    "pywin32>=306; sys_platform == 'win32'",
+    "comtypes>=1.2; sys_platform == 'win32'",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[project.scripts]
+ravc = "ravc.__main__:main"
+
+[project.gui-scripts]
+ravc-gui = "ravc.__main__:main_gui"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ravc = ["data/*.json", "data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore::DeprecationWarning"]
