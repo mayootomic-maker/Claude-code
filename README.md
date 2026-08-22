@@ -182,6 +182,30 @@ Roughly a second of delay, and it is no longer your voice.
 
 Type-to-speak works in either mode and is instant.
 
+## Soundboard, profiles, meters
+
+**Soundboard.** Clips are mixed into the *microphone*, not played out of
+your speakers, so the point of a soundboard survives: the other players
+hear it and you never leave the game. Add wav, flac, ogg, mp3 or m4a, give
+each one a shortcut like `ctrl+alt+1`, and it fires while a game has focus.
+
+Three details do the work. Clips are decoded and resampled once, off the
+audio thread — reading a file inside the audio callback is how a voice
+changer produces a click in the middle of a round. Your microphone ducks
+under a playing clip, with a fast attack and a slow release, so you are not
+talking over your own soundboard. And firing a clip that is already playing
+restarts it rather than stacking it, so holding the key does not pile the
+sample onto itself and clip the output.
+
+**Profiles.** Save the accent and the voice under a name and switch between
+them in one click. Devices are deliberately *not* part of a profile — it is
+"how I sound in this game", and your microphone does not change between
+games.
+
+**Meters.** Mic and output side by side. A mic meter moving while the
+channel stays silent is the commonest way this goes wrong, and with only
+one meter you cannot tell which side is at fault.
+
 ## Sounding like a teammate
 
 **Comms** pushes the finished voice through a game voice channel. The

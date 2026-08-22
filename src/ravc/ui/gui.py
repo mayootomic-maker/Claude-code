@@ -33,6 +33,7 @@ from ..audio import devices as audio_devices
 from ..config import AppConfig, config_path
 from ..dsp.chain import get_preset, preset_names
 from ..dsp.comms import profile_names as comms_names
+from ..soundboard import SoundClip
 from ..hotkeys import (DEFAULTS as HOTKEY_DEFAULTS, Binding, HotkeyManager,
                        LABELS as HOTKEY_LABELS, available as hotkeys_available,
                        describe as describe_hotkey,
@@ -55,6 +56,7 @@ PAGES = [
     ("voice", "Voice", "◔"),
     ("accent", "Accent", "▤"),
     ("comms", "Comms", "▦"),
+    ("board", "Board", "♪"),
     ("audio", "Audio", "▶"),
     ("models", "Models", "▼"),
     ("help", "Help", "?"),
@@ -77,6 +79,7 @@ class AccentApp:
         # -- cross-thread plumbing (see the module docstring) --------------
         self._events: "queue.Queue" = queue.Queue(maxsize=2048)
         self._pending_level: Optional[float] = None
+        self._pending_output_level: Optional[float] = None
         self._pump_job: Optional[str] = None
         self._timers: List[str] = []
         self._closing = False
@@ -104,6 +107,7 @@ class AccentApp:
             self.config,
             on_state=lambda s: self._ui(self._on_state, s),
             on_level=self._set_level,
+            on_output_level=self._set_output_level,
             on_error=lambda m: self._ui(self._on_error, m),
             on_log=lambda m: self._ui(self._log, m))
 
@@ -144,6 +148,10 @@ class AccentApp:
         """
         self._pending_level = value
 
+    def _set_output_level(self, value: float) -> None:
+        """Newest output level. Same single-slot rule as the mic meter."""
+        self._pending_output_level = value
+
     def _pump(self) -> None:
         try:
             for _ in range(64):
@@ -165,6 +173,14 @@ class AccentApp:
                         meter.set_level(scaled)
                     except tk.TclError:
                         pass
+
+            output = self._pending_output_level
+            if output is not None:
+                self._pending_output_level = None
+                try:
+                    self.output_meter.set_level(min(1.0, output * 1.6))
+                except tk.TclError:
+                    pass
         finally:
             # Cancel any timer already pending before arming the next one.
             # Without this, calling _pump directly (as the tests and the
@@ -253,6 +269,7 @@ class AccentApp:
         self._build_voice()
         self._build_accent()
         self._build_comms()
+        self._build_board()
         self._build_audio()
         self._build_models()
         self._build_help()
@@ -330,13 +347,32 @@ class AccentApp:
 
         row = tk.Frame(body, bg=theme.BG_CARD)
         row.pack(fill="x")
-        tk.Label(row, text="Microphone", bg=theme.BG_CARD, fg=theme.FG_MUTED,
-                 font=theme.Fonts.small).pack(side="left", padx=(0, 10))
-        self.meter = LevelMeter(row, width=240)
+        tk.Label(row, text="Mic", bg=theme.BG_CARD, fg=theme.FG_MUTED,
+                 font=theme.Fonts.small).pack(side="left", padx=(0, 8))
+        self.meter = LevelMeter(row, width=150)
         self.meter.pack(side="left")
+        tk.Label(row, text="Out", bg=theme.BG_CARD, fg=theme.FG_MUTED,
+                 font=theme.Fonts.small).pack(side="left", padx=(14, 8))
+        self.output_meter = LevelMeter(row, width=150)
+        self.output_meter.pack(side="left")
         self.latency_label = tk.Label(row, text="", bg=theme.BG_CARD,
                                       fg=theme.FG_FAINT, font=theme.Fonts.code)
         self.latency_label.pack(side="right")
+
+        profiles = Card(page, "Profiles",
+                        "A profile remembers the accent and the voice, not "
+                        "the devices — so one per game, not one per headset.")
+        profiles.pack(fill="x", pady=(14, 0))
+        pbody = profiles.body()
+        self.profile_row = tk.Frame(pbody, bg=theme.BG_CARD)
+        self.profile_row.pack(fill="x", pady=(0, 8))
+        actions = tk.Frame(pbody, bg=theme.BG_CARD)
+        actions.pack(fill="x")
+        self.profile_name = ttk.Entry(actions, width=22)
+        self.profile_name.pack(side="left")
+        ttk.Button(actions, text="Save current", style="Ghost.TButton",
+                   command=self.save_profile).pack(side="left", padx=8)
+        self._refresh_profiles()
 
         subs = Card(page, "What they hear")
         subs.pack(fill="both", expand=True, pady=(14, 0))
@@ -601,6 +637,81 @@ class AccentApp:
         self.gate_slider.pack(fill="x")
 
     # -- Audio -------------------------------------------------------------
+
+    def _build_board(self) -> None:
+        page = self._page("board")
+
+        card = Card(page, "Soundboard",
+                    "Clips are mixed into the microphone, so the other "
+                    "players hear them. Give one a shortcut and it fires "
+                    "without leaving the game.")
+        card.pack(fill="x")
+        body = card.body()
+
+        row = tk.Frame(body, bg=theme.BG_CARD)
+        row.pack(fill="x", pady=(0, 10))
+        self.board_toggle = Toggle(row, command=self.on_board_toggle,
+                                   value=self.config.soundboard.enabled)
+        self.board_toggle.pack(side="left", padx=(0, 10))
+        tk.Label(row, text="Soundboard on", bg=theme.BG_CARD, fg=theme.FG,
+                 font=theme.Fonts.small).pack(side="left")
+        ttk.Button(row, text="Add clip…", style="Ghost.TButton",
+                   command=self.add_clip).pack(side="right")
+
+        self.board_duck = Slider(
+            body, "Duck my voice while a clip plays", -30.0, 0.0,
+            self.config.soundboard.duck_db,
+            on_change=self.on_board_duck, fmt="{:.0f} dB")
+        self.board_duck.pack(fill="x", pady=(0, 4))
+        self.board_level = Slider(
+            body, "Clip volume", -24.0, 6.0, self.config.soundboard.output_db,
+            on_change=self.on_board_level, fmt="{:+.0f} dB")
+        self.board_level.pack(fill="x", pady=(0, 10))
+
+        clips = Card(page, "Clips")
+        clips.pack(fill="both", expand=True, pady=(14, 0))
+        self.clip_list = tk.Frame(clips.body(), bg=theme.BG_CARD)
+        self.clip_list.pack(fill="both", expand=True)
+        self.board_note = tk.Label(clips.body(), text="", bg=theme.BG_CARD,
+                                   fg=theme.FG_FAINT, font=theme.Fonts.small,
+                                   justify="left", anchor="w")
+        self.board_note.pack(anchor="w", pady=(8, 0))
+        self._refresh_clips()
+
+    def _refresh_clips(self) -> None:
+        for child in self.clip_list.winfo_children():
+            child.destroy()
+        clips = self.config.soundboard.clips
+        if not clips:
+            tk.Label(self.clip_list, text="No clips yet — add a wav, flac or "
+                                          "mp3 and give it a shortcut.",
+                     bg=theme.BG_CARD, fg=theme.FG_FAINT,
+                     font=theme.Fonts.small).pack(anchor="w")
+            self.board_note.configure(text="")
+            return
+        self.clip_hotkeys: Dict[int, ttk.Entry] = {}
+        for index, clip in enumerate(clips):
+            row = tk.Frame(self.clip_list, bg=theme.BG_CARD)
+            row.pack(fill="x", pady=2)
+            ttk.Button(row, text="▶", width=3, style="Ghost.TButton",
+                       command=lambda i=index: self.play_clip(i)).pack(side="left")
+            missing = "" if clip.exists else "  (file missing)"
+            tk.Label(row, text=clip.name + missing, bg=theme.BG_CARD,
+                     fg=theme.FG if clip.exists else theme.FG_FAINT,
+                     font=theme.Fonts.small, width=22, anchor="w"
+                     ).pack(side="left", padx=(8, 8))
+            entry = ttk.Entry(row, width=14)
+            entry.insert(0, clip.hotkey)
+            entry.bind("<FocusOut>", lambda _e, i=index: self.on_clip_hotkey(i))
+            entry.bind("<Return>", lambda _e, i=index: self.on_clip_hotkey(i))
+            entry.pack(side="left")
+            self.clip_hotkeys[index] = entry
+            ttk.Button(row, text="Remove", style="Ghost.TButton",
+                       command=lambda i=index: self.remove_clip(i)
+                       ).pack(side="right")
+        self.board_note.configure(
+            text="Shortcuts look like ctrl+alt+1. They work while a game has "
+                 "focus, and only while Live or Accent mode is running.")
 
     def _build_audio(self) -> None:
         page = self._page("audio")
@@ -1072,6 +1183,106 @@ class AccentApp:
             self.config.recognition.model_size = MODEL_SIZES[index][0]
             self._apply_config()
 
+    # -- profiles ----------------------------------------------------------
+
+    def _refresh_profiles(self) -> None:
+        for child in self.profile_row.winfo_children():
+            child.destroy()
+        if not self.config.profiles:
+            tk.Label(self.profile_row, text="None saved yet.",
+                     bg=theme.BG_CARD, fg=theme.FG_FAINT,
+                     font=theme.Fonts.small).pack(anchor="w")
+            return
+        for profile in list(self.config.profiles):
+            chip = tk.Frame(self.profile_row, bg=theme.BG_CARD)
+            chip.pack(side="left", padx=(0, 10))
+            ttk.Button(chip, text=profile.name, style="Ghost.TButton",
+                       command=lambda n=profile.name: self.use_profile(n)
+                       ).pack(side="left")
+            ttk.Button(chip, text="×", width=2, style="Ghost.TButton",
+                       command=lambda n=profile.name: self.drop_profile(n)
+                       ).pack(side="left")
+
+    def save_profile(self) -> None:
+        name = self.profile_name.get().strip()
+        if not name:
+            self._log("Give the profile a name first.")
+            return
+        self.config.save_profile(name)
+        self.profile_name.delete(0, "end")
+        self._refresh_profiles()
+        self._apply_config()
+        self._log(f"Saved profile “{name}”.")
+
+    def use_profile(self, name: str) -> None:
+        if not self.config.apply_profile(name):
+            return
+        self._load_into_widgets()
+        self._apply_config()
+        self._log(f"Switched to “{name}”.")
+
+    def drop_profile(self, name: str) -> None:
+        if self.config.delete_profile(name):
+            self._refresh_profiles()
+            self._apply_config()
+
+    # -- soundboard --------------------------------------------------------
+
+    def on_board_toggle(self, value: bool) -> None:
+        self.config.soundboard.enabled = bool(value)
+        self._apply_config()
+
+    def on_board_duck(self, value: float) -> None:
+        self.config.soundboard.duck_db = float(value)
+        self._apply_config()
+
+    def on_board_level(self, value: float) -> None:
+        self.config.soundboard.output_db = float(value)
+        self._apply_config()
+
+    def add_clip(self) -> None:
+        paths = filedialog.askopenfilenames(
+            title="Add soundboard clips",
+            filetypes=[("Audio", "*.wav *.flac *.ogg *.mp3 *.m4a"),
+                       ("All files", "*.*")])
+        for path in paths:
+            self.config.soundboard.clips.append(
+                SoundClip(name=Path(path).stem[:28], path=path))
+        if paths:
+            self._refresh_clips()
+            self._apply_config()
+            self._start_hotkeys()
+            self._log(f"Added {len(paths)} clip(s).")
+
+    def remove_clip(self, index: int) -> None:
+        clips = self.config.soundboard.clips
+        if 0 <= index < len(clips):
+            gone = clips.pop(index)
+            self.live.soundboard.forget(gone.path)
+            self._refresh_clips()
+            self._apply_config()
+            self._start_hotkeys()
+
+    def on_clip_hotkey(self, index: int) -> None:
+        clips = self.config.soundboard.clips
+        entry = self.clip_hotkeys.get(index)
+        if entry is None or not 0 <= index < len(clips):
+            return
+        clips[index].hotkey = entry.get().strip()
+        self._apply_config()
+        self._start_hotkeys()
+
+    def play_clip(self, index: int) -> None:
+        """Fire a clip. It only reaches anyone if the stream is running."""
+        if not self.live.soundboard.trigger(index):
+            clips = self.config.soundboard.clips
+            name = clips[index].name if 0 <= index < len(clips) else "clip"
+            self._log(f"Could not play {name} — check the file still exists.")
+            self._refresh_clips()
+        elif not self.live.running:
+            self._log("Playing, but nothing is listening: start Live mode "
+                      "for teammates to hear it.")
+
     # -- hotkeys -----------------------------------------------------------
 
     def _start_hotkeys(self) -> None:
@@ -1089,6 +1300,12 @@ class AccentApp:
             spec = configured.get(name, "")
             if spec:
                 bindings[name] = Binding(spec, action, HOTKEY_LABELS[name])
+        for index, clip in enumerate(self.config.soundboard.clips):
+            if clip.hotkey:
+                bindings[f"clip_{index}"] = Binding(
+                    clip.hotkey,
+                    lambda i=index: self.live.soundboard.trigger(i),
+                    f"Soundboard: {clip.name}")
         self.hotkeys.set_bindings(bindings)
         self.hotkeys.start()
         self._report_hotkeys()

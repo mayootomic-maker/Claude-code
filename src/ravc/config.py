@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import tempfile
 from dataclasses import (MISSING, asdict, dataclass, field, fields,
                          is_dataclass)
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, get_args, get_origin, get_type_hints
 
 from .accent.languages import DEFAULT_LANGUAGE, get_pack
 from .hotkeys import DEFAULTS as DEFAULT_HOTKEYS
 from .accent.languages.base import AccentProfile
 from .asr.whisper_asr import DEFAULT_MODEL
 from .dsp.accentfx import AccentFxSettings
+from .soundboard import SoundboardSettings
 from .dsp.chain import DEFAULT_PRESET, VoiceFx, get_preset
 from .dsp.comms import DEFAULT_PROFILE as DEFAULT_COMMS
 from .dsp.comms import CommsProfile, get_profile
@@ -150,6 +152,19 @@ class BehaviourSettings:
 
 
 @dataclass
+class Profile:
+    """A named snapshot of everything that decides how you sound.
+
+    Devices are deliberately not part of it: a profile is "how I sound in
+    this game", and the microphone does not change between games.
+    """
+
+    name: str = ""
+    accent: AccentSettings = field(default_factory=AccentSettings)
+    voice: VoiceSettings = field(default_factory=VoiceSettings)
+
+
+@dataclass
 class AppConfig:
     version: int = CONFIG_VERSION
     audio: AudioSettings = field(default_factory=AudioSettings)
@@ -157,6 +172,39 @@ class AppConfig:
     accent: AccentSettings = field(default_factory=AccentSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     behaviour: BehaviourSettings = field(default_factory=BehaviourSettings)
+    soundboard: SoundboardSettings = field(default_factory=SoundboardSettings)
+    profiles: List[Profile] = field(default_factory=list)
+
+    # -- profiles --------------------------------------------------------
+
+    def save_profile(self, name: str) -> "Profile":
+        """Store the current accent and voice settings under ``name``.
+
+        Saving over an existing name replaces it in place, so the order the
+        buttons appear in does not shuffle when you re-save one.
+        """
+        profile = Profile(name=name,
+                          accent=copy.deepcopy(self.accent),
+                          voice=copy.deepcopy(self.voice))
+        for index, existing in enumerate(self.profiles):
+            if existing.name == name:
+                self.profiles[index] = profile
+                return profile
+        self.profiles.append(profile)
+        return profile
+
+    def apply_profile(self, name: str) -> bool:
+        for profile in self.profiles:
+            if profile.name == name:
+                self.accent = copy.deepcopy(profile.accent)
+                self.voice = copy.deepcopy(profile.voice)
+                return True
+        return False
+
+    def delete_profile(self, name: str) -> bool:
+        before = len(self.profiles)
+        self.profiles = [p for p in self.profiles if p.name != name]
+        return len(self.profiles) != before
 
     # -- persistence -----------------------------------------------------
 
@@ -216,13 +264,26 @@ class AppConfig:
         return self.voice.voice_for(self.accent.language)
 
 
-def _declared_type(f) -> Optional[type]:
-    """The runtime type of a field.
+def _hints(cls) -> Dict[str, Any]:
+    """Resolved annotations for a dataclass, or {} if they cannot be.
 
     ``f.type`` is a *string* here because of ``from __future__ import
-    annotations``, so nested dataclasses have to be identified from what the
-    field's default produces rather than from the annotation.
+    annotations``, so the annotations have to be resolved before a field's
+    declared type means anything.
     """
+    try:
+        return get_type_hints(cls)
+    except Exception:      # a forward reference that cannot be resolved
+        return {}
+
+
+def _declared_type(f, hints: Dict[str, Any]) -> Optional[type]:
+    """The runtime type of a field, for rebuilding a nested dataclass."""
+    hint = hints.get(f.name)
+    if is_dataclass(hint):
+        return hint          # type: ignore[return-value]
+    # Fall back to what the default produces, which covers fields whose
+    # annotation could not be resolved.
     if f.default_factory is not MISSING:  # type: ignore[misc]
         try:
             return type(f.default_factory())  # type: ignore[misc]
@@ -233,14 +294,34 @@ def _declared_type(f) -> Optional[type]:
     return None
 
 
+def _element_type(hint: Any) -> Optional[type]:
+    """The dataclass a ``List[...]`` annotation holds, if it holds one.
+
+    Needed because a list field's default is an empty list, which says
+    nothing about what goes in it -- so without reading the annotation, a
+    saved list of profiles came back as a list of plain dicts and failed at
+    the first attribute access.
+    """
+    if get_origin(hint) is not list:
+        return None
+    args = get_args(hint)
+    return args[0] if args and is_dataclass(args[0]) else None
+
+
 def _build(cls, data: Dict[str, Any]):
     """Rebuild a nested dataclass, ignoring unknown or removed keys."""
+    hints = _hints(cls)
     kwargs: Dict[str, Any] = {}
     for f in fields(cls):
         if f.name not in data:
             continue
         value = data[f.name]
-        target = _declared_type(f)
+        element = _element_type(hints.get(f.name))
+        if element is not None and isinstance(value, list):
+            kwargs[f.name] = [_build(element, item) if isinstance(item, dict)
+                              else item for item in value]
+            continue
+        target = _declared_type(f, hints)
         if isinstance(value, dict) and target is not None and is_dataclass(target):
             kwargs[f.name] = _build(target, value)
         else:

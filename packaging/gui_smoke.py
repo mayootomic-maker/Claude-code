@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 import traceback
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -71,7 +72,45 @@ check("hotkey cycle", app.hotkey_cycle_mode)
 check("hotkey mute", app.hotkey_mute)
 check("hotkey unmute", app.hotkey_mute)
 check("meters", lambda: [app.meter.set_level(v / 10) for v in range(11)])
+check("output meter", lambda: [app.output_meter.set_level(v / 10)
+                               for v in range(11)])
 check("sample", app.insert_sample)
+
+check("consonant toggles", lambda: [
+    t.set(not t.value, notify=True) or t.set(not t.value, notify=True)
+    for t in app.consonant_toggles.values()])
+check("consonant strength", lambda: app.on_consonant_strength(0.6))
+
+# The soundboard, driven with a clip written here so the real decode,
+# resample and mix path runs on the machine the installer is built for.
+clip = os.path.join(tempfile.mkdtemp(), "smoke.wav")
+try:
+    import numpy as _np
+    import soundfile as _sf
+    _t = _np.arange(int(22050 * 0.2)) / 22050
+    _sf.write(clip, (0.4 * _np.sin(2 * _np.pi * 660 * _t)).astype("float32"), 22050)
+    from ravc.soundboard import SoundClip
+    check("add clip", lambda: (
+        app.config.soundboard.clips.append(SoundClip(name="smoke", path=clip)),
+        app._refresh_clips()))
+    check("play clip", lambda: app.play_clip(0))
+    check("clip hotkey", lambda: (
+        app.clip_hotkeys[0].delete(0, "end"),
+        app.clip_hotkeys[0].insert(0, "ctrl+alt+9"),
+        app.on_clip_hotkey(0)))
+    check("board settings", lambda: (app.on_board_duck(-18.0),
+                                     app.on_board_level(-4.0),
+                                     app.on_board_toggle(False),
+                                     app.on_board_toggle(True)))
+    check("remove clip", lambda: app.remove_clip(0))
+except ImportError as exc:
+    print(f"  skip soundboard: {exc}", flush=True)
+
+check("save profile", lambda: (app.profile_name.delete(0, "end"),
+                               app.profile_name.insert(0, "smoke"),
+                               app.save_profile()))
+check("use profile", lambda: app.use_profile("smoke"))
+check("drop profile", lambda: app.drop_profile("smoke"))
 
 
 def hammer():

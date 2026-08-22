@@ -15,6 +15,8 @@ from __future__ import annotations
 import threading
 from typing import Callable, Optional
 
+import numpy as np
+
 from . import diagnostics
 from .audio.capture import CaptureConfig, MicrophoneCapture
 from .audio.devices import (AudioUnavailable, find_device_by_name,
@@ -22,6 +24,7 @@ from .audio.devices import (AudioUnavailable, find_device_by_name,
 from .audio.playback import OutputRouter, PlaybackConfig
 from .config import AppConfig
 from .dsp.live import LiveProcessor, LiveSettings
+from .soundboard import Soundboard
 
 LIVE_RATE = 48000
 BLOCK_MS = 20
@@ -38,11 +41,16 @@ class LiveMode:
     def __init__(self, config: Optional[AppConfig] = None,
                  on_state: Optional[Callable[[str], None]] = None,
                  on_level: Optional[Callable[[float], None]] = None,
+                 on_output_level: Optional[Callable[[float], None]] = None,
                  on_error: Optional[Callable[[str], None]] = None,
                  on_log: Optional[Callable[[str], None]] = None) -> None:
         self.config = config or AppConfig()
         self.on_state = on_state
         self.on_level = on_level
+        # The output level is worth showing separately: a mic meter that
+        # moves while the channel stays silent is the commonest way this
+        # goes wrong, and without both you cannot see which side it is.
+        self.on_output_level = on_output_level
         self.on_error = on_error
         self.on_log = on_log
 
@@ -51,6 +59,9 @@ class LiveMode:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._processor: Optional[LiveProcessor] = None
+        # The soundboard mixes into the outgoing stream, so clips arrive on
+        # the microphone rather than out of your own speakers.
+        self.soundboard = Soundboard(LIVE_RATE, self.config.soundboard)
         self._lock = threading.Lock()
         self.running = False
         self.dropped_blocks = 0
@@ -73,6 +84,7 @@ class LiveMode:
 
     def update_config(self, config: AppConfig) -> None:
         self.config = config
+        self.soundboard.settings = config.soundboard
         with self._lock:
             if self._processor is not None:
                 self._processor.update(self._settings())
@@ -184,12 +196,20 @@ class LiveMode:
             except Exception as exc:  # noqa: BLE001
                 diagnostics.log_exception("live processing", exc)
                 continue
+            try:
+                processed = self.soundboard.mix(processed)
+            except Exception as exc:  # noqa: BLE001
+                # A bad clip must not take the voice down with it.
+                diagnostics.log_exception("soundboard", exc)
 
             # Never let the queue grow: latency you cannot recover from is
             # worse than a dropped block nobody notices.
             if router.queued_seconds > MAX_LATENCY_SECONDS:
                 router.flush()
                 self.dropped_blocks += 1
+            if self.on_output_level is not None and processed.size:
+                peak = float(np.abs(processed).max())
+                self._emit(self.on_output_level, min(peak, 1.0))
             router.play(processed, LIVE_RATE)
 
     @property
