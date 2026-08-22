@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- left margin rule -->
+    <path android:fillColor="#4D8A94A6" android:pathData="M34,32 h3.2 v44 h-3.2 z"/>
+    <!-- right margin rule -->
+    <path android:fillColor="#4D8A94A6" android:pathData="M70.8,32 h3.2 v44 h-3.2 z"/>
+    <!-- ascending measure -->
+    <path android:fillColor="#F2F4F7" android:pathData="M40.5,68.2 L52.4,56.2 L58.6,62.4 L71.6,47.6 L75.2,50.8 L58.9,69.3 L52.7,63.1 L44,71.8 z"/>
+    <!-- baseline anchor -->
+    <path android:fillColor="#3DDC97" android:pathData="M40.5,74.6 h27 v3.4 h-27 z"/>
+</vector>
