@@ -4,7 +4,7 @@ Skipped unless ``RAVC_TEST_MODELS_DIR`` points at a directory containing
 downloaded voices, so a plain ``pytest`` run stays fast and offline:
 
     ravc voices --install ru_RU-dmitri-medium de_DE-thorsten-medium
-    RAVC_TEST_MODELS_DIR=~/.local/share/RussianAccentVoiceChanger/voices pytest
+    RAVC_TEST_MODELS_DIR=~/.local/share/AccentVoiceChanger/voices pytest
 """
 
 import os

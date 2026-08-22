@@ -22,13 +22,23 @@ choose one of the voices marked "online".
 
 ### Windows (recommended)
 
-Download **`AccentVoiceChanger-Setup-1.0.0.exe`** from the
-[Releases page](../../releases) and run it. Or grab the portable `.zip`, unzip
-it anywhere, and run `AccentVoiceChanger.exe`.
+Grab **`AccentVoiceChanger-Setup-1.0.0.exe`**:
+
+- from the [Releases page](../../releases), if a release has been published; or
+- from the latest green run of the
+  [Build Windows installer](../../actions/workflows/build-windows.yml) workflow
+  — the installer and a portable `.zip` are attached to every run as artifacts; or
+- build it yourself in one command (see *Building the installer* below).
+
+Run the installer, or unzip the portable build anywhere and run
+`AccentVoiceChanger.exe`.
 
 Then, on first launch:
 
 1. **Models tab** → download one voice (about 60 MB) for the accent you want.
+   (On Windows the app can already speak through a system voice before you
+   do this, but it will only sound properly accented once a real Russian or
+   German voice is installed.)
 2. **Audio tab** → set the virtual cable (see *Being heard in other apps* below).
 3. **Live tab** → press **Start listening** and talk.
 

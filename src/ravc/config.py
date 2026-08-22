@@ -16,7 +16,7 @@ from .asr.whisper_asr import DEFAULT_MODEL
 from .dsp.chain import DEFAULT_PRESET, VoiceFx, get_preset
 from .tts.voices import default_voice
 
-APP_NAME = "RussianAccentVoiceChanger"
+APP_NAME = "AccentVoiceChanger"
 CONFIG_VERSION = 1
 
 

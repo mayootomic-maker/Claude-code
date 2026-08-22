@@ -43,7 +43,7 @@ jobs:
       - name: Run integration tests against the real voice models
         shell: bash
         env:
-          RAVC_TEST_MODELS_DIR: ${{ env.LOCALAPPDATA }}\RussianAccentVoiceChanger\voices
+          RAVC_TEST_MODELS_DIR: ${{ env.LOCALAPPDATA }}\AccentVoiceChanger\voices
         run: python -m pytest tests/test_integration.py -q
 
       - name: Regenerate the icon

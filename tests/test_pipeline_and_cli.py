@@ -52,12 +52,25 @@ def test_start_without_audio_backend_reports_a_clear_error(monkeypatch):
     changer.close()
 
 
-def test_render_without_a_voice_model_raises_something_actionable():
+def test_render_without_a_voice_model_is_actionable_or_falls_back():
+    """No Piper model: speak via a system voice if there is one, else say so.
+
+    Windows always has SAPI, so the app can talk before anything is
+    downloaded; on other platforms the failure must name the engines tried
+    rather than blowing up with something opaque.
+    """
     changer = VoiceChanger(AppConfig())
-    with pytest.raises(Exception) as excinfo:
-        changer.render("hello there")
-    assert "engine" in str(excinfo.value).lower()
-    changer.close()
+    try:
+        if changer.registry.available_engines():
+            _accented, audio = changer.render("hello there")
+            assert audio.samples.size >= 0
+            assert changer.stats.engine
+        else:
+            with pytest.raises(Exception) as excinfo:
+                changer.render("hello there")
+            assert "engine" in str(excinfo.value).lower()
+    finally:
+        changer.close()
 
 
 def test_render_of_empty_text_is_a_no_op():

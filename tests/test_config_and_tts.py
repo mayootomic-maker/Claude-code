@@ -11,7 +11,7 @@ from ravc.dsp.chain import VoiceFx
 from ravc.tts import voices as catalogue
 from ravc.tts.base import Audio, SynthRequest, TtsEngine, Voice, resample
 from ravc.tts.piper import PiperEngine
-from ravc.tts.registry import VoiceRegistry
+from ravc.tts.registry import ENGINE_ORDER, VoiceRegistry
 
 
 # --------------------------------------------------------------------------
@@ -153,11 +153,22 @@ def test_registry_key_splitting():
     assert registry.split_key("")[0] == "piper"
 
 
-def test_registry_reports_a_clear_error_when_nothing_is_installed():
+def test_registry_either_speaks_or_explains_why_not():
+    """With no Piper model downloaded the outcome is platform-dependent.
+
+    On Windows the SAPI fallback can still speak, which is the point of
+    having it; everywhere else there is nothing left to fall back to and
+    the error has to name the engines it tried.
+    """
     registry = VoiceRegistry()
-    with pytest.raises(Exception) as excinfo:
-        registry.synthesize(SynthRequest(text="тест", ipa=[["t"]]))
-    assert "engine" in str(excinfo.value).lower()
+    request = SynthRequest(text="тест", ipa=[["t"], ["e"], ["s"], ["t"]])
+    if registry.available_engines():
+        registry.synthesize(request)
+        assert registry.last_engine_used in ENGINE_ORDER
+    else:
+        with pytest.raises(Exception) as excinfo:
+            registry.synthesize(request)
+        assert "engine" in str(excinfo.value).lower()
 
 
 def test_status_lines_never_raise():

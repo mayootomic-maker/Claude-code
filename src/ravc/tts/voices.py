@@ -12,6 +12,8 @@ from typing import Callable, Dict, List, Optional
 
 from .._optional import have
 
+APP_DIR_NAME = "AccentVoiceChanger"
+
 _HF_BASE = ("https://huggingface.co/rhasspy/piper-voices/resolve/main/"
             "{lang}/{locale}/{speaker}/{quality}/"
             "{locale}-{speaker}-{quality}")
@@ -110,7 +112,7 @@ def models_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "RussianAccentVoiceChanger" / "voices"
+    return base / APP_DIR_NAME / "voices"
 
 
 def model_paths(key: str) -> tuple:
