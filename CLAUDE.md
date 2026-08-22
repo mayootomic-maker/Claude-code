@@ -160,10 +160,22 @@ npx wrangler secret put DEVICE_TOKEN     # openssl rand -base64 32
 npx wrangler deploy
 ```
 
-Get the OJP key at `api-manager.opentransportdata.swiss`: register, create an
-Application, then "read more" → "access with this plan" → "Select an App" on
-OJP 2.0. One key per API. It is a Bearer token (`Authorization: Bearer <key>`),
-free for private use at 50 req/min and 20 000 req/day.
+Getting the OJP key. The official docs say "create an Application", but the
+portal never uses that word — it is labelled **"my apps"**, and every subscribe
+control is hidden until you are logged in, so the product page looks like a
+dead end. Actual path:
+
+1. Register: `/auth/password/register` (password ≥ 12 chars, a number and a
+   special character)
+2. Create the app under **my apps**: `/portal/private/dashboard`
+   (logged out this just redirects to the login page)
+3. Subscribe OJP 2.0 to it: `/portal/catalogue-products/tedp_ojp20-1`, under
+   "Plans available for subscription"
+
+One key per API. It is a Bearer token (`Authorization: Bearer <key>`), free for
+private use at 50 req/min and 20 000 req/day. Other product ids on the same
+portal, should they ever be needed: `tedp_siri_sx-1` (unplanned disruptions),
+`tedp_gtfs_rt-1` (rejected, see above), `tedp_ojpfare-1`.
 
 `DEVICE_TOKEN` is a secret you invent, shared between app and Worker. Without
 it the endpoint is open: anyone who found the URL could exhaust the daily OJP
