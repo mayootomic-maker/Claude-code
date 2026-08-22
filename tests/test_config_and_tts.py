@@ -177,6 +177,8 @@ def test_status_lines_never_raise():
         assert registry.status_lines(key)
 
 
+@pytest.mark.skipif(not PiperEngine.onnxruntime_available(),
+                    reason="onnxruntime not installed")
 def test_piper_reports_missing_model_helpfully():
     engine = PiperEngine("ru_RU-dmitri-medium")
     assert engine.is_available() is False
@@ -238,3 +240,15 @@ def test_engine_interface_is_complete():
         assert issubclass(engine_class, TtsEngine)
         for method in ("is_available", "list_voices", "synthesize"):
             assert callable(getattr(engine_class, method))
+
+
+def test_piper_explains_a_missing_dependency_rather_than_crashing(monkeypatch):
+    """Without onnxruntime the user must get an instruction, not an ImportError."""
+    monkeypatch.setattr(PiperEngine, "onnxruntime_available",
+                        staticmethod(lambda: False))
+    engine = PiperEngine("ru_RU-dmitri-medium")
+    with pytest.raises(Exception) as excinfo:
+        engine.synthesize(SynthRequest(text="тест", ipa=[["t"]]))
+    message = str(excinfo.value)
+    assert "onnxruntime" in message and "pip install" in message
+    assert "No module named" not in message

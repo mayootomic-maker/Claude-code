@@ -79,13 +79,24 @@ class PiperEngine(TtsEngine):
     def _ensure_loaded(self, key: str) -> None:
         if self._loaded_key == key and self._session is not None:
             return
-        import onnxruntime as ort
+
+        # Check both preconditions before importing, so a missing dependency
+        # or an undownloaded voice produces an instruction rather than a bare
+        # ModuleNotFoundError from somewhere deep in the import machinery.
+        if not self.onnxruntime_available():
+            raise TtsError(
+                "onnxruntime is not installed, so the offline Piper voices "
+                "cannot run. Install it with `pip install onnxruntime`, or "
+                "use one of the online voices.")
 
         onnx_path, cfg_path = voice_catalogue.model_paths(key)
         if not onnx_path.is_file() or not cfg_path.is_file():
             raise TtsError(
                 f"Voice '{key}' is not downloaded yet. "
                 f"Use the Voices tab (or `ravc voices --install {key}`).")
+
+        import onnxruntime as ort
+
 
         with open(cfg_path, "r", encoding="utf-8") as fh:
             config = json.load(fh)

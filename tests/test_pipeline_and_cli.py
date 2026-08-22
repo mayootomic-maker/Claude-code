@@ -238,3 +238,38 @@ def test_long_input_does_not_blow_up():
     text = "This is a long sentence about many things. " * 40
     result = AccentEngine().accentify(text)
     assert len(result.words) > 300
+
+
+# --------------------------------------------------------------------------
+# Console encoding (Windows regression)
+# --------------------------------------------------------------------------
+
+def test_cli_prints_cyrillic_to_a_legacy_codepage_console():
+    """A Windows console defaults to cp1252, where Cyrillic is unencodable.
+
+    Without configure_console() this raised UnicodeEncodeError and `ravc say`
+    exited 1 on Windows with a charmap error.
+    """
+    import sys as _sys
+
+    buffer = io.BytesIO()
+    legacy = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict",
+                              write_through=True)
+    real_stdout = _sys.stdout
+    _sys.stdout = legacy
+    try:
+        code = cli.main(["say", "--dry-run", "-l", "ru", "hello there"])
+    finally:
+        try:
+            legacy.flush()
+        except Exception:
+            pass
+        _sys.stdout = real_stdout
+
+    assert code == 0
+    assert b"hello there" in buffer.getvalue()
+
+
+def test_configure_console_is_safe_to_call_repeatedly():
+    cli.configure_console()
+    cli.configure_console()

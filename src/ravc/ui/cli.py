@@ -8,6 +8,7 @@ much easier -- "run `ravc doctor` and paste the output".
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -308,6 +309,34 @@ def cmd_gui(args) -> int:
 # Parser
 # --------------------------------------------------------------------------
 
+def configure_console() -> None:
+    """Make the console able to print the Cyrillic transcription.
+
+    A Windows console starts on a legacy code page (cp1252 or cp437), where
+    printing Cyrillic raises UnicodeEncodeError -- so `ravc say` died on
+    Windows with a charmap error even though the accent engine had worked
+    perfectly. Switching the console to UTF-8 and reconfiguring the streams
+    fixes it; ``errors="replace"`` means that even on a console that cannot
+    be switched, the output degrades to question marks instead of crashing.
+    """
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+            ctypes.windll.kernel32.SetConsoleCP(65001)
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ravc",
@@ -373,6 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    configure_console()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
