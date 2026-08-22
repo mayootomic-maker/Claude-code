@@ -29,12 +29,14 @@ accent-by-transcription path it runs live.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import numpy as np
 
 from .calibrate import levinson
+from .consonants import ConsonantSettings, ConsonantShaper
+from .phones import Frame, Phone, PhoneAnalyser
 
 # --------------------------------------------------------------------------
 # Vowel targets
@@ -91,6 +93,11 @@ def _build_target_table() -> List[Tuple[float, float, float, float]]:
 
 
 TARGETS = _build_target_table()
+
+# Classes the consonant stage owns. Everything else falls through to the
+# vowel warp, nasals included -- they were treated as vowels before this
+# existed and moving their formants does them no harm.
+CONSONANT_PHONES = frozenset({Phone.R, Phone.W, Phone.L})
 
 # Formant tracking. Speech formants live below about 4 kHz, so the analysis
 # is band-limited there and the model order chosen to give roughly two
@@ -151,6 +158,15 @@ class AccentFxSettings:
     # Russian targets while costing only 1.4 dB of harmonic structure; at
     # 0.6 the damage nearly doubles for almost no extra movement.
     max_shift: float = 0.4
+    # The consonant substitutions -- the rolled r above all. See
+    # dsp/consonants.py.
+    consonants: ConsonantSettings = field(default_factory=ConsonantSettings)
+    # Vocal-tract scale, 1.0 for an adult male. Every frequency threshold in
+    # the phone detector is stated for that tract and multiplied by this, so
+    # a voice of a different size is measured against its own numbers rather
+    # than someone else's. `scale_from_formants` derives it from the voice
+    # calibration the app already performs.
+    scale: float = 1.0
 
 
 class VowelSpaceWarper:
@@ -182,12 +198,31 @@ class VowelSpaceWarper:
             (ANALYSIS_BAND_HZ * 1.05 - self._freqs) / (ANALYSIS_BAND_HZ * 0.25),
             0.0, 1.0)
         self._smoothed: Optional[Tuple[float, float]] = None
+        self._scale = self.settings.scale
+        self._analyser = PhoneAnalyser(sample_rate, scale=self._scale)
+        self._shaper = ConsonantShaper(sample_rate, self._freqs,
+                                       self.settings.consonants, self._scale)
+
+    def _rescale(self) -> None:
+        """Rebuild the detector when calibration changes the tract size.
+
+        Both objects precompute frequency masks from the scale, so a change
+        has to be applied by rebuilding them, not by assignment.
+        """
+        if abs(self.settings.scale - self._scale) < 1e-6:
+            return
+        self._scale = self.settings.scale
+        self._analyser = PhoneAnalyser(self.sample_rate, scale=self._scale)
+        self._shaper = ConsonantShaper(self.sample_rate, self._freqs,
+                                       self.settings.consonants, self._scale)
 
     def reset(self) -> None:
         self._input = np.zeros(0, dtype=np.float32)
         self._output = np.zeros(self.n_fft, dtype=np.float64)
         self._norm = np.zeros(self.n_fft, dtype=np.float64)
         self._smoothed = None
+        self._analyser.reset()
+        self._shaper.reset()
 
     @property
     def latency_samples(self) -> int:
@@ -305,10 +340,27 @@ class VowelSpaceWarper:
     def _process_frame(self, frame: np.ndarray) -> np.ndarray:
         spectrum = np.fft.rfft(frame * self._window)
         magnitude = np.abs(spectrum)
+        self._shaper.settings = self.settings.consonants
+        measured = self._analyser.previous or Frame()
         if not self.settings.enabled or magnitude.max() < 1e-7:
+            self._shaper.spectrum(spectrum, measured)
             return np.fft.irfft(spectrum, self.n_fft)
 
+        # A consonant is not a vowel: warping /r/ towards /a/ because its
+        # formants happen to sit near one is exactly the artefact the phone
+        # detector exists to prevent. Consonants get their own substitution
+        # and skip the vowel stage entirely -- including its all-pole fit,
+        # which they have no use for.
+        if measured.phone in CONSONANT_PHONES:
+            self._smoothed = None
+            return np.fft.irfft(
+                self._shaper.spectrum(spectrum, measured, self._band_taper),
+                self.n_fft)
+        self._shaper.spectrum(spectrum, measured)
+
         coefficients = self._lpc(magnitude ** 2)
+        envelope = (self._envelope_from_lpc(coefficients)
+                    if coefficients is not None else None)
         formants = self._formants(coefficients) if coefficients is not None else None
         if formants is None:
             self._smoothed = None
@@ -326,7 +378,7 @@ class VowelSpaceWarper:
             )
         f1, f2 = self._smoothed
 
-        envelope = self._envelope_from_lpc(coefficients)
+        assert envelope is not None
         source_positions = self._warp_map(f1, f2)
         warped = np.interp(source_positions, self._freqs, envelope)
         # Divide the old envelope out and multiply the new one in, leaving
@@ -345,10 +397,16 @@ class VowelSpaceWarper:
         if arr.size == 0:
             return arr
 
+        self._rescale()
         self._input = np.concatenate([self._input, arr])
         produced: List[np.ndarray] = []
 
         while self._input.size >= self.n_fft:
+            # Advance the phone detector by exactly the samples about to be
+            # consumed. It keeps its own longer window, so handing it the
+            # whole overlapping frame each hop would feed it the same audio
+            # four times over.
+            self._analyser.analyse(self._input[:self.hop])
             frame = self._input[:self.n_fft].astype(np.float64)
             result = self._process_frame(frame) * self._window
 
@@ -368,4 +426,8 @@ class VowelSpaceWarper:
 
         if not produced:
             return np.zeros(0, dtype=np.float32)
-        return np.concatenate(produced).astype(np.float32)
+        out = np.concatenate(produced).astype(np.float32)
+        # The roll is an amplitude modulation at 27 Hz -- a 37 ms cycle. It
+        # has to be imposed on the output stream rather than per frame,
+        # because the overlap-add would otherwise average it away.
+        return self._shaper.modulate(out)

@@ -304,6 +304,30 @@ class AccentApp:
             on_change=self.on_live_accent_change, fmt="{:.0%}")
         self.live_accent_slider.pack(fill="x", pady=(0, 12))
 
+        cons = self.config.voice.live_accent.consonants
+        tk.Label(body, text="Consonants", bg=theme.BG_CARD, fg=theme.FG_MUTED,
+                 font=theme.Fonts.small).pack(anchor="w", pady=(2, 4))
+        self.consonant_toggles = {}
+        for field_name, label, hint in (
+                ("trill",  "Rolled r",   "the r is trilled, as in Russian"),
+                ("w_to_v", "w \u2192 v", "\u201cwater\u201d comes out \u201cvater\u201d"),
+                ("dark_l", "Hard l",     "the l is velarised, as in \u201cmiluk\u201d")):
+            row = tk.Frame(body, bg=theme.BG_CARD)
+            row.pack(fill="x", pady=1)
+            toggle = Toggle(row, value=getattr(cons, field_name),
+                            command=lambda v, f=field_name:
+                            self.on_consonant_toggle(f, v))
+            toggle.pack(side="left", padx=(0, 10))
+            tk.Label(row, text=label, bg=theme.BG_CARD, fg=theme.FG,
+                     font=theme.Fonts.small).pack(side="left")
+            tk.Label(row, text=hint, bg=theme.BG_CARD, fg=theme.FG_FAINT,
+                     font=theme.Fonts.small).pack(side="left", padx=(8, 0))
+            self.consonant_toggles[field_name] = toggle
+        self.live_consonant_slider = Slider(
+            body, "Consonant strength", 0.0, 1.0, cons.strength,
+            on_change=self.on_consonant_strength, fmt="{:.0%}")
+        self.live_consonant_slider.pack(fill="x", pady=(8, 12))
+
         row = tk.Frame(body, bg=theme.BG_CARD)
         row.pack(fill="x")
         tk.Label(row, text="Microphone", bg=theme.BG_CARD, fg=theme.FG_MUTED,
@@ -759,6 +783,10 @@ class AccentApp:
         self.rate_slider.set(self.config.voice.speaking_rate)
         self.gate_slider.set(self.config.voice.live_gate_db)
         self.live_accent_slider.set(self.config.voice.live_accent.strength)
+        cons = self.config.voice.live_accent.consonants
+        for field_name, toggle in self.consonant_toggles.items():
+            toggle.set(getattr(cons, field_name))
+        self.live_consonant_slider.set(cons.strength)
         for field, slider in self.fx_sliders.items():
             slider.set(getattr(self.config.voice.fx, field))
         for index, (key, _n, _d) in enumerate(MODEL_SIZES):
@@ -898,6 +926,15 @@ class AccentApp:
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
+
+    def on_consonant_toggle(self, field_name: str, value: bool) -> None:
+        setattr(self.config.voice.live_accent.consonants, field_name,
+                bool(value))
+        self._apply_config()
+
+    def on_consonant_strength(self, value: float) -> None:
+        self.config.voice.live_accent.consonants.strength = float(value)
+        self._apply_config()
 
     def on_live_accent_change(self, value: float) -> None:
         accent = self.config.voice.live_accent
@@ -1407,14 +1444,19 @@ of the voices marked "online", which sends only the transcribed text.
 
 The two modes
 ─────────────
-Live     Changes your own voice as you speak, about 40 ms behind. It can
-         change who you sound like and put you on a game voice channel,
-         but it cannot add an accent: an accent is a property of words,
-         and words are only known once you have said them.
+Live     Keeps your own voice -- your pitch, your timing -- and gives it
+         an accent as you speak, about 45 ms behind. It moves your vowels
+         onto Russian ones, rolls your r, turns your w into v and hardens
+         your l. It can also change who you sound like and put you on a
+         game voice channel.
+
+         The one thing it cannot do is th -> s. /th/ and /f/ sound too
+         alike to tell apart without knowing the word, so it would turn
+         "for" into "sor" as often as it fixed "think".
 
 Accent   Waits for you to finish a sentence, works out what you said, and
-         re-speaks it with a real Russian or German accent. Roughly a
-         second of delay. This is the one that actually sounds foreign.
+         re-speaks it with the full Russian or German accent, th and all.
+         Roughly a second of delay, and it is no longer your voice.
 
 Type to speak works in either mode and is instant.
 

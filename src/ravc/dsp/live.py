@@ -1,13 +1,14 @@
 """Streaming effects for the low-latency path.
 
-The accent path has to wait for you to finish a sentence -- it cannot know
-how to mispronounce a word until it knows which word it is. That is fine
-for a callout, and useless for banter.
+The accent path waits for you to finish a sentence, because a few of the
+substitutions really do need to know which word you said. That is fine for
+a callout, and useless for banter.
 
 This module is the other half: block-by-block processing of your own voice
-with about twenty milliseconds of delay. It cannot add an accent, but it
-can change *who you sound like* and put you on the far end of a game voice
-link, which between them is most of the effect.
+with about twenty milliseconds of delay. It changes *who you sound like*
+and puts you on the far end of a game voice link; the accent itself is in
+`accentfx.py` (vowels) and `consonants.py` (the rolled r, w -> v, hard l),
+which run in the same chain and need no lookahead.
 
 Everything here keeps state across blocks and allocates nothing per sample,
 because it runs inside the audio callback.

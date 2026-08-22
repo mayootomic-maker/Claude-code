@@ -7,6 +7,7 @@ import pytest
 
 from ravc.accent.languages import available
 from ravc.config import AppConfig, config_path
+from ravc.dsp.consonants import ConsonantSettings
 from ravc.dsp.chain import VoiceFx
 from ravc.tts import voices as catalogue
 from ravc.tts.base import Audio, SynthRequest, TtsEngine, Voice, resample
@@ -44,6 +45,28 @@ def test_round_trip_keeps_nested_types():
     assert loaded.voice.fx.pitch_semitones == -6.0
     assert loaded.active_voice_key == "piper:de_DE-karlsson-low"
     assert loaded.voice.preset == "Bond Villain"
+
+
+def test_round_trip_keeps_the_live_consonant_settings():
+    """Two levels of nesting: live_accent.consonants must come back typed.
+
+    A dict here instead of a ConsonantSettings would still have the right
+    values and would still fail at the first attribute access in the audio
+    callback.
+    """
+    config = AppConfig()
+    config.voice.live_accent.consonants.trill = False
+    config.voice.live_accent.consonants.strength = 0.33
+    config.voice.live_accent.scale = 1.21
+    config.save()
+
+    loaded = AppConfig.load()
+    consonants = loaded.voice.live_accent.consonants
+    assert isinstance(consonants, ConsonantSettings)
+    assert consonants.trill is False
+    assert consonants.w_to_v is True
+    assert consonants.strength == 0.33
+    assert loaded.voice.live_accent.scale == 1.21
 
 
 def test_corrupt_file_falls_back_to_defaults():

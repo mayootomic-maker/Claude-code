@@ -40,6 +40,7 @@ from .audio.vad import Endpointer, Utterance, VadConfig
 from .config import AppConfig
 from .dsp.calibrate import VoiceFingerprint, fingerprint, match
 from .dsp.chain import VoiceFx
+from .dsp.phones import scale_from_formants
 from .tts.base import Audio, SynthRequest
 from .tts.registry import VoiceRegistry
 
@@ -486,9 +487,16 @@ class VoiceChanger:
                               "Check that a voice model is downloaded.")
 
         pitch, formant = match(source, target)
+        # The same measurement tells the live phone detector how big your
+        # vocal tract is. Its thresholds are stated for an adult male, and
+        # the /ɹ/ cue collapses from 36 dB to 8 dB on a voice a sixth
+        # smaller, so this is not a refinement -- unscaled, the live
+        # consonant substitutions simply stop firing for most people.
+        scale = scale_from_formants(target.formants)
         if apply:
             self.config.voice.fx.pitch_semitones = pitch
             self.config.voice.fx.formant_semitones = formant
+            self.config.voice.live_accent.scale = scale
         return pitch, formant, (
             f"Matched to your voice: pitch {pitch:+.1f} semitones, "
             f"formant {formant:+.1f}. "

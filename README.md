@@ -108,8 +108,44 @@ the pitch and glottal character that make the voice recognisably *yours*
 survive. Measured: vowels reach about 88% of the way to their Russian
 targets for 1.4 dB of harmonic loss, with the fundamental unchanged.
 
-What Live cannot do is the consonants — /θ/ → /s/, the trilled r — because
-those need to know which word you said.
+### The consonants, live
+
+That claim used to end "and the consonants need to know which word you
+said". Checked, it turned out to be wrong for most of them. The sounds a
+Russian accent changes have signatures you can measure in a single frame,
+so Live now rolls your r, turns your /w/ into /v/ and hardens your /l/ —
+still on your own voice, still with no idea what you are saying.
+
+The r is the one worth the trouble, and the reason it works is a happy
+accident of English. English /ɹ/ has an extraordinarily low third formant,
+around 1500 Hz where every other English sound keeps it above 2400. When
+F3 drops that far it empties the region above it, and comparing the
+1.4–2.2 kHz band against 2.2–3.4 kHz separates /ɹ/ from every vowel, from
+/l/, from dark /l/, from /w/, /j/ and the nasals — by 22 dB, measured
+across four pitches. Having found it, the substitution is what a trill
+physically *is*: the tongue tip contacts the ridge 2–3 times, shutting the
+airflow briefly each time, so the sound gets an amplitude modulation at
+about 27 Hz. Impose that, put F3 back where an unrolled Russian /r/ has
+it, and the r rolls.
+
+| substitution | why Russian forces it | measured effect |
+|---|---|---|
+| /ɹ/ → rolled r | Russian /r/ is an alveolar trill | 27 Hz modulation 8× deeper; the English /ɹ/ signature drops 5 dB |
+| /w/ → /v/ | Russian has no /w/ — "water" → "vater" | +6.6 dB of frication in the labiodental band |
+| /l/ → hard l | Russian /l/ is heavily velarised — the "miluk" in stage-Russian "milk" | F2 pulled from 1159 Hz to 768 |
+
+Each is a separate switch, and none of them touches a vowel: run the
+consonant stage alone over a sustained /ɑ/ and its formants move by under
+80 Hz.
+
+**/θ/ → /s/ is still not there, and cannot be.** /θ/ and /f/ are the
+classic confusable pair — near chance from spectral cues, which is why
+English listeners mishear them too. A live detector would turn "for" into
+"sor" as often as it fixed "think", so that substitution stays in Full,
+where the word is known.
+
+The whole detector costs 1.3% of one core and adds no latency: it reads
+the audio already gone past, and never looks ahead.
 
 **Full** waits for a pause, works out what you said, and re-speaks it in a
 Russian or German voice with the complete accent, consonants and all.
