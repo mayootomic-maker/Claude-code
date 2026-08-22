@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .accent.languages import DEFAULT_LANGUAGE, get_pack
+from .hotkeys import DEFAULTS as DEFAULT_HOTKEYS
 from .accent.languages.base import AccentProfile
 from .asr.whisper_asr import DEFAULT_MODEL
 from .dsp.chain import DEFAULT_PRESET, VoiceFx, get_preset
@@ -102,6 +103,8 @@ class VoiceSettings:
     fx: VoiceFx = field(default_factory=lambda: get_preset(DEFAULT_PRESET))
     # The voice-chat link the output is pushed through, after the character
     # effects: narrowband codec, cheap mic, room noise.
+    # Live mode holds the room-noise bed back until you actually speak.
+    live_gate_db: float = -55.0
     comms: str = DEFAULT_COMMS
     comms_profile: CommsProfile = field(
         default_factory=lambda: get_profile(DEFAULT_COMMS))
@@ -124,6 +127,10 @@ class VoiceSettings:
 
 @dataclass
 class BehaviourSettings:
+    # System-wide shortcuts, so the mode can be changed without leaving a
+    # full-screen game. Empty string disables one.
+    hotkeys: Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_HOTKEYS))
+    hotkeys_enabled: bool = True
     start_minimised: bool = False
     autostart_pipeline: bool = False
     push_to_talk: bool = False

@@ -84,6 +84,48 @@ VoiceMeeter, Virtual Audio Cable and (on macOS) BlackHole are detected too.
 
 ---
 
+## Two modes, and why there are two
+
+**Live** changes your own voice as you speak, about forty milliseconds
+behind. It can change who you sound like and put you on a game voice
+channel, but it cannot add an accent — an accent is a property of *words*,
+and the words are only known once you have said them.
+
+**Accent** waits for a pause, works out what you said, and re-speaks it
+with a real Russian or German accent. Roughly a second of delay. This is
+the one that actually sounds foreign.
+
+Type-to-speak works in either mode and is instant.
+
+## Sounding like a teammate
+
+**Comms** pushes the finished voice through a game voice channel. The
+pieces are modelled separately, because the mix is what sells it:
+
+| | |
+|---|---|
+| narrowband codec | Steam's voice path is historically Speex, so nothing above ~4 kHz survives — that is the "tinny" quality |
+| coarse quantisation | the grain a low-bitrate coder leaves on sibilants |
+| cheap boom mic | no bass, a hard presence peak around 3 kHz |
+| gain set too high | clipping, as it invariably is |
+| automatic gain control | rides the level and pumps the noise floor up between words |
+| dropped packets | the giveaway of a real network |
+| the room | a desk fan, a mechanical keyboard, a television next door |
+
+Presets include *CS:GO teammate*, *CS:GO awful mic*, *Family in the
+background*, *Discord decent headset*, *Speakerphone* and *Military radio*.
+
+## Shortcuts
+
+System-wide, so they work while a game has focus (Windows only —
+`RegisterHotKey` via ctypes, no extra dependency):
+
+| | |
+|---|---|
+| `Ctrl+Alt+V` | switch mode: Off → Live → Accent |
+| `Ctrl+Alt+M` | panic mute, and unmute back to the same mode |
+| `Ctrl+Alt+C` | voice-chat link on/off |
+
 ## The three modes
 
 | Mode | What it does | Delay |
@@ -317,6 +359,17 @@ real time. The delay you notice is mostly the pause you have to leave at the
 end of a sentence, not computation.
 
 ---
+
+## When something goes wrong
+
+Everything is logged, including failures on background threads, which a
+windowed build otherwise swallows silently:
+
+```
+%LOCALAPPDATA%\AccentVoiceChanger\accent-voice-changer.log
+```
+
+Attaching that file to a bug report is usually enough to identify the cause.
 
 ## Troubleshooting
 

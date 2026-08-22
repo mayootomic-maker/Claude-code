@@ -53,6 +53,14 @@ jobs:
           python -m pytest tests/test_integration.py -q -rs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # The 1.1.0 Windows crash got through because the window had only
+      # ever been opened under Xvfb on Linux. Open it on Windows.
+      - name: Smoke-test the window on Windows
+        env:
+          RAVC_CONFIG_DIR: ${{ runner.temp }}\ravc-config
+          RAVC_LOG_DIR: ${{ runner.temp }}\ravc-logs
+        run: python packaging/gui_smoke.py
+
       - name: Regenerate the icon
         run: python assets/make_icon.py
 
@@ -74,6 +82,7 @@ jobs:
           ./dist/AccentVoiceChanger/ravc.exe say --dry-run -l ru "packaging works"
           ./dist/AccentVoiceChanger/ravc.exe say --dry-run -l de "packaging works"
           ./dist/AccentVoiceChanger/ravc.exe presets
+          ./dist/AccentVoiceChanger/ravc.exe say --dry-run -c "CS:GO teammate" "comms check"
 
       - name: Create the portable zip
         shell: pwsh

@@ -24,13 +24,12 @@ independently, because the mix is what sells it:
 
 from __future__ import annotations
 
-import math
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 
-from .effects import compress, limit, saturate
+from .effects import compress, limit
 from .filters import Biquad, apply_offline, db_to_linear
 from .pitch import resample_to
 
