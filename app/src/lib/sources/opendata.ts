@@ -177,6 +177,9 @@ function parseDeparture(value: unknown, path: string): Departure {
     destination: optString(record['to']) ?? '',
     platform: optString(stop['platform']),
     timing,
+    // opendata.ch supplies neither; empty means "this source cannot say".
+    occupancy: [],
+    attributes: [],
   }
 }
 
@@ -208,7 +211,7 @@ export async function fetchDepartureBoard(
     parseDeparture,
   )
 
-  return { stop, departures: items, source: 'opendata', fetchedAt: deps.now(), dropped }
+  return { stop, departures: items, situations: [], source: 'opendata', fetchedAt: deps.now(), dropped }
 }
 
 export async function searchStops(

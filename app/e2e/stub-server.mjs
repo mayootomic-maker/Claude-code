@@ -30,6 +30,7 @@ const SCENARIOS = {
   '9000004': 'empty',
   '9000005': 'error',
   '9000006': 'malformed',
+  '9000007': 'disrupted',
 }
 
 const STOPS = [
@@ -41,6 +42,7 @@ const STOPS = [
   { id: '9000003', name: 'Testhalt Sofort', x: 47.0, y: 8.0 },
   { id: '9000004', name: 'Testhalt Leer', x: 47.0, y: 8.0 },
   { id: '9000005', name: 'Testhalt Fehler', x: 47.0, y: 8.0 },
+  { id: '9000007', name: 'Testhalt Störung', x: 47.0, y: 8.0 },
 ]
 
 const iso = (ms) => {
@@ -138,6 +140,46 @@ const server = createServer(async (req, res) => {
         name: s.name,
         coordinate: { type: 'WGS84', x: s.x, y: s.y },
       })),
+    })
+  }
+
+  // Worker-shaped endpoint: exercises the app's worker source, occupancy and
+  // disruptions, none of which the keyless API can produce.
+  if (url.pathname === '/worker/departures') {
+    if (req.headers['x-pendlo-token'] !== 'test-token') {
+      return sendJson(res, 401, { error: 'unauthorised' })
+    }
+    const id = url.searchParams.get('stopId') ?? ''
+    const scenario = SCENARIOS[id] ?? 'normal'
+    const iso8 = (m) => new Date(Date.now() + m * 60_000).toISOString()
+
+    return sendJson(res, 200, {
+      stop: { id, name: STOPS.find((s) => s.id === id)?.name ?? 'Aarau' },
+      departures: [
+        {
+          key: 'IR16@1', line: 'IR16', category: 'IR', destination: 'Zürich HB',
+          platform: '2', scheduled: iso8(21), estimated: iso8(21),
+          cancelled: false,
+          occupancy: [
+            { fareClass: 'first', level: 'manySeatsAvailable' },
+            { fareClass: 'second', level: 'standingRoomOnly' },
+          ],
+          attributes: ['Aussteigeseite: Rechts', 'Niederflureinstieg'],
+        },
+        {
+          key: 'S29@2', line: 'S29', category: 'S', destination: 'Turgi',
+          platform: '1', scheduled: iso8(33), estimated: iso8(35),
+          cancelled: false,
+          occupancy: [{ fareClass: 'second', level: 'fewSeatsAvailable' }],
+          attributes: [],
+        },
+      ],
+      situations:
+        scenario === 'disrupted'
+          ? [{ id: 'sit-1', summary: 'Streckenunterbruch Aarau–Olten', detail: 'Ersatzbusse verkehren.' }]
+          : [],
+      source: 'ojp',
+      fetchedAt: Date.now(),
     })
   }
 

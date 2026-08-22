@@ -13,6 +13,8 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { createClock } from './time'
 import { Breaker, DEFAULT_BREAKER, runWithFailover, type Attempt } from './sources/failover'
 import { fetchDepartureBoard, type OpendataDeps } from './sources/opendata'
+import { fetchDepartureBoard as fetchViaWorker, type WorkerDeps } from './sources/worker'
+import { settings } from './store'
 import type { DepartureBoard } from './types'
 
 export const clock = createClock()
@@ -114,15 +116,42 @@ export type BoardState = {
   refresh: () => void
 }
 
+const workerDeps: WorkerDeps = {
+  fetch: (url, init) => fetch(url, init),
+  now: () => Date.now(),
+  onResponseMeta: ({ serverDate, sentAt, receivedAt }) => clock.sync(serverDate, sentAt, receivedAt),
+}
+
+/**
+ * Sources in preference order.
+ *
+ * The Worker first when configured: it is the only path to occupancy and
+ * disruptions. Direct opendata.ch always last, because it needs no key and no
+ * deployment, so the app keeps working even if the Worker is down, misconfigured
+ * or never deployed at all.
+ */
 async function loadBoard(stopId: string, signal: AbortSignal) {
-  const attempts: Array<Attempt<Awaited<ReturnType<typeof fetchDepartureBoard>>>> = [
-    {
-      id: 'opendata',
-      run: (innerSignal) => fetchDepartureBoard(opendataDeps, { stopId, signal: innerSignal }),
-    },
-    // The OJP adapter joins this list in Phase 3; the failover path around it is
-    // already built and tested.
-  ]
+  type Board = Awaited<ReturnType<typeof fetchDepartureBoard>>
+  const attempts: Array<Attempt<Board>> = []
+
+  const { workerUrl, deviceToken } = settings.value
+  if (workerUrl !== null && workerUrl !== '' && deviceToken !== null && deviceToken !== '') {
+    attempts.push({
+      id: 'worker',
+      run: (innerSignal) =>
+        fetchViaWorker(
+          workerDeps,
+          { baseUrl: workerUrl, token: deviceToken },
+          { stopId, signal: innerSignal },
+        ),
+    })
+  }
+
+  attempts.push({
+    id: 'opendata',
+    run: (innerSignal) => fetchDepartureBoard(opendataDeps, { stopId, signal: innerSignal }),
+  })
+
   return runWithFailover(attempts, breaker, breakerOptions, signal)
 }
 

@@ -36,9 +36,9 @@ async function shot(page, name) {
 }
 
 /** Seeds a route directly so each scenario starts from a known state. */
-async function seedRoute(page, stopId, walkMinutes) {
+async function seedRoute(page, stopId, walkMinutes, extraSettings = {}) {
   await page.evaluate(
-    async ({ stopId, walkMinutes }) => {
+    async ({ stopId, walkMinutes, extraSettings }) => {
       await new Promise((resolve, reject) => {
         const open = indexedDB.open('pendlo', 1)
         open.onupgradeneeded = () => {
@@ -59,7 +59,15 @@ async function seedRoute(page, stopId, walkMinutes) {
                   note: '',
                 },
               ],
-              settings: { language: 'de', theme: 'system', delayAlertMinutes: 3 },
+              settings: {
+                language: 'de',
+                theme: 'system',
+                delayAlertMinutes: 3,
+                inspectionPrior: 0.15,
+                workerUrl: null,
+                deviceToken: null,
+                ...extraSettings,
+              },
             },
             'app-data',
           )
@@ -69,7 +77,7 @@ async function seedRoute(page, stopId, walkMinutes) {
         open.onerror = () => reject(open.error)
       })
     },
-    { stopId, walkMinutes },
+    { stopId, walkMinutes, extraSettings },
   )
 }
 
@@ -199,6 +207,52 @@ async function drive(browser) {
     await shot(page, `${theme}-ticket-view`)
     await page.click('[role="dialog"] button:has-text("Schliessen")')
     await page.waitForTimeout(300)
+
+    // --- Worker source: occupancy and disruptions ---------------------------
+    // Neither exists in the keyless API, so this is the only path that shows
+    // them. Also proves the app prefers the Worker when configured.
+    const worker = { workerUrl: `${BASE}/worker`, deviceToken: 'test-token' }
+
+    await seedRoute(page, '8502113', 8, worker)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_500)
+
+    const withWorker = (await page.textContent('body')) ?? ''
+    const occupancyShown = /Nur Stehplätze/.test(withWorker)
+    const exitSideShown = /Aussteigeseite: Rechts/.test(withWorker)
+    findings.push(`[${theme}] occupancy     ${occupancyShown ? 'OK  ' : 'MISS'} (via worker/OJP only)`)
+    findings.push(`[${theme}] exit side     ${exitSideShown ? 'OK  ' : 'MISS'} (operator attribute)`)
+    if (!occupancyShown) problems.push(`[${theme}] occupancy chip did not render from worker data`)
+    if (!exitSideShown) problems.push(`[${theme}] exit-side attribute did not render`)
+    await shot(page, `${theme}-worker-occupancy`)
+
+    // Disruption must appear above the countdown: it changes whether the plan holds.
+    await seedRoute(page, '9000007', 8, worker)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(1_500)
+    const disrupted = (await page.textContent('body')) ?? ''
+    const disruptionShown = /Streckenunterbruch/.test(disrupted)
+    findings.push(`[${theme}] disruption    ${disruptionShown ? 'OK  ' : 'MISS'}`)
+    if (!disruptionShown) problems.push(`[${theme}] disruption banner did not render`)
+    await shot(page, `${theme}-worker-disruption`)
+
+    // A rejected token must fall back silently to the keyless API, not break.
+    // The browser logs the 401 regardless of the app handling it correctly.
+    deliberateFailure = true
+    await seedRoute(page, '8502113', 8, { workerUrl: `${BASE}/worker`, deviceToken: 'wrong-token' })
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(2_000)
+    const fellBack = (await page.textContent('body')) ?? ''
+    const stillWorks = /Losgehen in|Jetzt losgehen/.test(fellBack)
+    findings.push(`[${theme}] worker 401    ${stillWorks ? 'OK  ' : 'MISS'} (fell back to keyless API)`)
+    if (!stillWorks) problems.push(`[${theme}] a rejected worker token broke the board`)
+
+    // Clear the bad token before moving on, or the poll keeps firing 401s into
+    // the sections that follow.
+    await seedRoute(page, '8502113', 8)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(800)
+    deliberateFailure = false
 
     // --- On board: the inspection must bind to the train you are ON --------
     // Mid-journey the board shows the *next* train. Without active-trip

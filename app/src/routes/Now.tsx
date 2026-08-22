@@ -24,7 +24,7 @@ import { tripKey as buildTripKey } from '../lib/inspections'
 import { InspectionPanel } from '../ui/InspectionPanel'
 import { TicketView } from '../ui/TicketView'
 import { Countdown, CountdownAnnouncer } from '../ui/Countdown'
-import { Banner, DelayBadge, formatAge } from '../ui/status'
+import { Banner, DelayBadge, OccupancyChip, formatAge } from '../ui/status'
 import type { ActiveTrip, Departure, Direction, SavedRoute } from '../lib/types'
 import type { Translate } from '../lib/i18n'
 
@@ -189,6 +189,19 @@ function NowForStop({
         </button>
       </header>
 
+      {board !== null && board.situations.length > 0 && (
+        <div class="space-y-2 pt-1">
+          {board.situations.slice(0, 2).map((situation) => (
+            <Banner
+              key={situation.id}
+              tone="warn"
+              title={situation.summary}
+              {...(situation.detail === null ? {} : { detail: situation.detail })}
+            />
+          ))}
+        </div>
+      )}
+
       {skippedCancelled.length > 0 && (
         <div class="space-y-2 pt-1">
           {skippedCancelled.map((departure) => (
@@ -318,6 +331,10 @@ function Lead({
   const minutes = state.kind === 'counting' ? minutesFromSeconds(state.secondsUntilLeave) : 0
   const departsIn = minutesFromSeconds(state.secondsUntilDeparture)
 
+  // OJP publishes which side the doors open. Worth surfacing: it decides where
+  // you stand, and no other app on the platform tells you.
+  const exitSide = departure.attributes.find((a) => a.startsWith('Aussteigeseite')) ?? null
+
   return (
     <div>
       {state.kind === 'go-now' ? (
@@ -347,7 +364,12 @@ function Lead({
         <span>{t('now.departsAt', { time: formatClock(departure.timing.actual) })}</span>
         {departure.platform !== null && <span>{t('now.platform', { platform: departure.platform })}</span>}
         <DelayBadge timing={departure.timing} t={t} />
+        <OccupancyChip occupancy={departure.occupancy} t={t} />
       </div>
+
+      {exitSide !== null && (
+        <p class="mt-1.5 text-sm text-muted">{exitSide}</p>
+      )}
     </div>
   )
 }

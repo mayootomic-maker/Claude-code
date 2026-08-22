@@ -24,6 +24,7 @@ import {
 import { clock } from '../lib/live'
 import { Banner, formatAge } from '../ui/status'
 import { TicketManager } from '../ui/TicketManager'
+import { WorkerSettings } from '../ui/WorkerSettings'
 import type { Settings as SettingsType } from '../lib/types'
 
 export function Settings() {
@@ -110,6 +111,10 @@ export function Settings() {
             options={[3, 5, 10].map((n) => ({ value: String(n), label: `${n} ${t('now.minutes')}` }))}
             onChange={(value) => void updateSettings({ delayAlertMinutes: Number(value) })}
           />
+        </Group>
+
+        <Group label={t('worker.title')}>
+          <WorkerSettings />
         </Group>
 
         <Group label={t('ticket.title')}>

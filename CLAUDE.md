@@ -14,8 +14,12 @@ Full plan, including phases still to build: `/root/.claude/plans/replicated-tink
 
 ```
 app/      Vite + Preact + TS + Tailwind v4 → static PWA
-worker/   Cloudflare Worker: cache + auth in front of the transport APIs
+worker/   Cloudflare Worker: OJP + opendata.ch behind cache, auth and failover
 ```
+
+**Source preference**: Worker (OJP, with occupancy and disruptions) → direct
+opendata.ch (keyless, neither). The app works with no Worker deployed at all;
+it just shows less. XML parsing lives in the Worker so the app ships no parser.
 
 ## Commands
 
@@ -54,9 +58,19 @@ with reality in two places.
 - Volunteer-run, wrapping `timetable.search.ch`, **no SLA**. Treat failure as
   routine; that is what `sources/failover.ts` is for.
 
-**opentransportdata.swiss** — free for private use, needs a key from
-`api-manager.opentransportdata.swiss`. Not yet wired up (Phase 3).
-- OJP: 50 req/min, 20 000 req/day. Source for disruptions and possibly occupancy.
+**opentransportdata.swiss / OJP 2.0** — `https://api.opentransportdata.swiss/ojp20`,
+POST XML, `Authorization: Bearer <key>`. Verified working; the Worker uses it.
+- 50 req/min, 20 000 req/day, free for private use.
+- **Occupancy is real here** (`ExpectedDepartureOccupancy` → `OccupancyLevel`),
+  per fare class. This is the only source for it.
+- `FareClass` arrives as **`"secondClass "` with a trailing space**. Trim before
+  comparing or every second-class figure classifies as first.
+- Every text node carries `xml:lang`, so `<Text>` never matches bare.
+- Disruptions live in `StopEventResponseContext/Situations`, usually empty.
+  Empty means "nothing disrupted", not a parse failure.
+- Carries per-service attributes including **`Aussteigeseite: Rechts/Links`** —
+  which side the doors open. Nothing else we can reach publishes that.
+- A SIRI `ErrorCondition` can arrive inside an HTTP 200; check for it.
 - GTFS-RT: **rejected by design.** It needs a key (bare request returns `401`),
   it is one national protobuf blob for all of Switzerland, and decoding it
   would run against the free Worker's CPU ceiling. `OJPStopEventRequest`

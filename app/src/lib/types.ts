@@ -12,6 +12,19 @@ export type StopRef = {
   coord: { lat: number; lon: number } | null
 }
 
+/**
+ * How full the train is expected to be.
+ *
+ * Only OJP supplies this. opendata.ch documents the fields but returns null on
+ * every request, so an empty array means "this source cannot say" — which the
+ * UI must render as unknown, never as empty seats.
+ */
+export type Occupancy = {
+  fareClass: 'first' | 'second'
+  /** Raw SIRI level, mapped for display in ui/status.tsx. */
+  level: string
+}
+
 export type Departure = {
   /** Stable within a response; used as a list key and to match across refreshes. */
   key: string
@@ -21,11 +34,22 @@ export type Departure = {
   destination: string
   platform: string | null
   timing: DepartureTiming
+  occupancy: Occupancy[]
+  /** Operator notes, e.g. "Aussteigeseite: Rechts". */
+  attributes: string[]
+}
+
+/** A disruption affecting this stop. Only OJP supplies these. */
+export type Situation = {
+  id: string
+  summary: string
+  detail: string | null
 }
 
 export type DepartureBoard = {
   stop: StopRef
   departures: Departure[]
+  situations: Situation[]
   /** Which source answered — surfaced in the UI when it is not the primary. */
   source: SourceId
   /** Corrected clock time at which this was fetched. */
@@ -113,6 +137,13 @@ export type Settings = {
   /** Notify when a departure on a saved route is at least this many minutes late. */
   delayAlertMinutes: number
   /**
+   * Base URL of your deployed Worker, or null to call opendata.ch directly.
+   * The Worker adds occupancy and disruptions, which the keyless API lacks.
+   */
+  workerUrl: string | null
+  /** Shared secret matching the Worker's DEVICE_TOKEN. Never leaves the device. */
+  deviceToken: string | null
+  /**
    * The user's own guess at how often they get checked, 0..1, or null if they
    * did not answer. Seeds the prediction so week one is not blank; real logged
    * rides progressively replace it. Never presented as anything but a guess.
@@ -125,4 +156,6 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   delayAlertMinutes: 3,
   inspectionPrior: null,
+  workerUrl: null,
+  deviceToken: null,
 }

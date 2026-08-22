@@ -9,6 +9,7 @@
 import type { DepartureTiming } from '../lib/time'
 import { hasRealtime } from '../lib/time'
 import type { Translate } from '../lib/i18n'
+import type { Occupancy } from '../lib/types'
 
 /** Delay severity as a continuous ramp rather than three buckets. */
 function delayTone(minutes: number): string {
@@ -143,4 +144,66 @@ export function Banner({
       )}
     </div>
   )
+}
+
+/**
+ * Expected occupancy.
+ *
+ * Only OJP supplies this; the keyless source returns nothing, so an empty list
+ * means "we cannot say" and renders nothing at all rather than implying an
+ * empty train. Second class is shown by default — it is what almost every
+ * journey uses, and showing both classes doubles the chip for little gain.
+ */
+export function OccupancyChip({ occupancy, t }: { occupancy: readonly Occupancy[]; t: Translate }) {
+  const preferred = occupancy.find((o) => o.fareClass === 'second') ?? occupancy[0]
+  if (preferred === undefined) return null
+
+  const { label, tone, bars } = describeOccupancy(preferred.level, t)
+
+  return (
+    <span
+      class={`inline-flex items-center gap-1.5 text-sm font-medium ${tone}`}
+      title={`${preferred.fareClass === 'first' ? t('occ.first') : t('occ.second')}: ${label}`}
+    >
+      {/* Bars, not just colour: this has to be readable in sunlight on a
+          platform and with a colour-vision deficiency. */}
+      <span class="flex items-end gap-px" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            class={`w-1 rounded-sm ${i < bars ? 'bg-current' : 'bg-current opacity-25'}`}
+            style={{ height: `${5 + i * 3}px` }}
+          />
+        ))}
+      </span>
+      {label}
+    </span>
+  )
+}
+
+/**
+ * Maps SIRI occupancy levels to plain language.
+ *
+ * The spec defines more levels than SBB publishes; unknown values fall through
+ * to the raw string rather than being silently dropped, so a new level shows up
+ * as odd text instead of vanishing.
+ */
+function describeOccupancy(
+  level: string,
+  t: Translate,
+): { label: string; tone: string; bars: number } {
+  switch (level) {
+    case 'manySeatsAvailable':
+      return { label: t('occ.many'), tone: 'text-ok', bars: 1 }
+    case 'seatsAvailable':
+    case 'fewSeatsAvailable':
+      return { label: t('occ.some'), tone: 'text-warn', bars: 2 }
+    case 'standingRoomOnly':
+      return { label: t('occ.standing'), tone: 'text-late', bars: 3 }
+    case 'full':
+    case 'notAcceptingPassengers':
+      return { label: t('occ.full'), tone: 'text-critical', bars: 3 }
+    default:
+      return { label: level, tone: 'text-muted', bars: 2 }
+  }
 }
