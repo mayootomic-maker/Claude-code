@@ -9,6 +9,12 @@ import kotlin.math.roundToLong
  */
 object Money {
 
+    /**
+     * A non-breaking space between the currency and the figure, so "CHF" can never wrap onto
+     * a different line from the number it labels.
+     */
+    private const val NBSP = '\u00A0'
+
     fun format(
         minor: Long,
         currency: String = "CHF",
@@ -31,7 +37,7 @@ object Money {
             alwaysSigned && minor > 0 -> "+"
             else -> ""
         }
-        return if (showCurrency) "$sign$currency $body" else "$sign$body"
+        return if (showCurrency) "$sign$currency$NBSP$body" else "$sign$body"
     }
 
     /**
@@ -57,7 +63,7 @@ object Money {
             abs >= 1_000 -> trimZero(abs / 100L / 10.0) + "k"
             else -> abs.toString()
         }
-        return if (showCurrency) "$sign$currency $body" else "$sign$body"
+        return if (showCurrency) "$sign$currency$NBSP$body" else "$sign$body"
     }
 
     fun percent(fraction: Double, alwaysSigned: Boolean = false): String {

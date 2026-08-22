@@ -78,8 +78,8 @@ object AttentionEngine {
                     kind = AttentionKind.PRICE_DROP,
                     priority = AttentionKind.PRICE_DROP.basePriority +
                         (listing.priceDropFraction * 40).roundToLong().toInt(),
-                    headline = "${listing.title} dropped ${Money.format(drop, currency)}",
-                    detail = "Now ${Money.format(listing.askingPriceMinor, currency)}, " +
+                    headline = "${listing.title} dropped ${Money.whole(drop, currency)}",
+                    detail = "Now ${Money.whole(listing.askingPriceMinor, currency)}, " +
                         "${Money.percent(listing.priceDropFraction)} below where it started. " +
                         walkAway(w.evaluation, currency),
                     amountMinor = drop,
@@ -90,8 +90,8 @@ object AttentionEngine {
                     id = "rise-${listing.id}",
                     kind = AttentionKind.PRICE_RISE,
                     priority = AttentionKind.PRICE_RISE.basePriority,
-                    headline = "${listing.title} went up ${Money.format(-drop, currency)}",
-                    detail = "Now ${Money.format(listing.askingPriceMinor, currency)}. " +
+                    headline = "${listing.title} went up ${Money.whole(-drop, currency)}",
+                    detail = "Now ${Money.whole(listing.askingPriceMinor, currency)}. " +
                         "Sellers who raise prices rarely negotiate.",
                     amountMinor = drop,
                     listingId = listing.id,
@@ -106,10 +106,15 @@ object AttentionEngine {
                     kind = if (improved) AttentionKind.VERDICT_IMPROVED else AttentionKind.VERDICT_WORSENED,
                     priority = (if (improved) AttentionKind.VERDICT_IMPROVED else AttentionKind.VERDICT_WORSENED)
                         .basePriority + abs(scoreDelta),
-                    headline = "${listing.title} is now ${w.evaluation.verdict.label.lowercase()}",
-                    detail = "Deal score moved ${if (scoreDelta > 0) "+" else ""}$scoreDelta to " +
-                        "${w.evaluation.dealScore}, from ${w.verdictAtWatch.label.lowercase()}. " +
-                        w.evaluation.headline,
+                    headline = if (w.evaluation.verdict != w.verdictAtWatch) {
+                        "${listing.title} moved to ${w.evaluation.verdict.label.lowercase()}"
+                    } else if (improved) {
+                        "${listing.title} is scoring better"
+                    } else {
+                        "${listing.title} is scoring worse"
+                    },
+                    detail = "Deal score ${if (scoreDelta > 0) "up" else "down"} " +
+                        "${abs(scoreDelta)} to ${w.evaluation.dealScore}. " + w.evaluation.headline,
                     listingId = listing.id,
                 )
             }
@@ -140,7 +145,7 @@ object AttentionEngine {
                 priority = AttentionKind.DRAFT_OPEN.basePriority +
                     ((nowMillis - draft.createdAtMillis) / DAY).toInt().coerceAtMost(20),
                 headline = "Unfinished listing: ${draft.title}",
-                detail = "Priced at ${Money.format(draft.askPriceMinor, currency)} and not posted yet. " +
+                detail = "Priced at ${Money.whole(draft.askPriceMinor, currency)} and not posted yet. " +
                     "${draft.photosDone} of ${draft.photosTotal} preparation steps done.",
                 amountMinor = draft.askPriceMinor,
                 saleDraftId = draft.id,
@@ -148,16 +153,20 @@ object AttentionEngine {
             )
         }
 
-        return items.sortedByDescending { it.priority }
+        return items
+            .sortedByDescending { it.priority }
+            .distinctBy { it.listingId ?: it.ownedItemId ?: it.id }
     }
 
-    private fun walkAway(evaluation: Evaluation, currency: String): String =
-        if (evaluation.negotiationGapMinor <= 0) {
-            "That is under your walk-away price of ${Money.format(evaluation.maxBidMinor, currency)}."
-        } else {
-            "Still ${Money.format(evaluation.negotiationGapMinor, currency)} above your walk-away " +
-                "price of ${Money.format(evaluation.maxBidMinor, currency)}."
-        }
+    private fun walkAway(evaluation: Evaluation, currency: String): String = when {
+        evaluation.negotiationGapMinor <= 0 ->
+            "That is under your walk-away price of ${Money.whole(evaluation.maxBidMinor, currency)}."
+        evaluation.maxBidMinor < evaluation.askingPriceMinor / 2 ->
+            "Still short: this one cannot reach your target even at half the asking price."
+        else ->
+            "Still ${Money.whole(evaluation.negotiationGapMinor, currency)} above your walk-away " +
+                "price of ${Money.whole(evaluation.maxBidMinor, currency)}."
+    }
 
     /**
      * Owned goods lose value continuously. This fires when holding is measurably costing
@@ -180,9 +189,9 @@ object AttentionEngine {
                 kind = AttentionKind.SELL_NOW,
                 priority = AttentionKind.SELL_NOW.basePriority + (gainFraction * 30).roundToLong().toInt(),
                 headline = "${item.title} is up ${Money.percent(gainFraction)}",
-                detail = "Worth ${Money.format(item.currentValueMinor, currency)} against " +
-                    "${Money.format(item.purchasePriceMinor, currency)} paid. It sheds about " +
-                    "${Money.format(monthlyLoss, currency)} a month from here.",
+                detail = "Worth ${Money.whole(item.currentValueMinor, currency)} against " +
+                    "${Money.whole(item.purchasePriceMinor, currency)} paid. It sheds about " +
+                    "${Money.whole(monthlyLoss, currency)} a month from here.",
                 amountMinor = gain,
                 ownedItemId = item.id,
             )
@@ -191,8 +200,8 @@ object AttentionEngine {
                 kind = AttentionKind.SELL_NOW,
                 priority = AttentionKind.SELL_NOW.basePriority - 10 + (heldDays / 30),
                 headline = "${item.title} is costing you to hold",
-                detail = "Held $heldDays days and losing about ${Money.format(monthlyLoss, currency)} " +
-                    "a month. Current value ${Money.format(item.currentValueMinor, currency)}.",
+                detail = "Held $heldDays days and losing about ${Money.whole(monthlyLoss, currency)} " +
+                    "a month. Current value ${Money.whole(item.currentValueMinor, currency)}.",
                 amountMinor = -monthlyLoss,
                 ownedItemId = item.id,
             )

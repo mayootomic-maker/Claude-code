@@ -61,12 +61,12 @@ data class DecisionMemory(
                 val cheaperBy = avg - listing.askingPriceMinor
                 if (cheaperBy > avg / 8) {
                     delta += 4
-                    notes += "Cheaper than the ${listing.category.label.lowercase()} you rejected " +
-                        "(average ${Money.format(avg, listing.currency)})."
+                    notes += "Cheaper than the ${listing.category.label} you rejected " +
+                        "(average ${Money.whole(avg, listing.currency)})."
                 } else if (cheaperBy < -avg / 8) {
                     delta -= 3
-                    notes += "Dearer than the ${listing.category.label.lowercase()} you already rejected " +
-                        "(average ${Money.format(avg, listing.currency)})."
+                    notes += "Dearer than the ${listing.category.label} you already rejected " +
+                        "(average ${Money.whole(avg, listing.currency)})."
                 }
             }
         }
@@ -75,6 +75,21 @@ data class DecisionMemory(
             scoreDelta = delta.coerceIn(-12, 10),
             note = notes.takeIf { it.isNotEmpty() }?.joinToString(" "),
         )
+    }
+
+    /** One line describing what Margin has learned. Shown on Today, so memory is visible. */
+    fun summaryLine(currency: String = "CHF"): String? {
+        if (totalDecisions == 0) return null
+        val topRejected = rejectedByBrand.maxByOrNull { it.value }
+        val decisions = "$totalDecisions decision${if (totalDecisions == 1) "" else "s"} on record"
+        if (topRejected == null || topRejected.value < 2) return decisions
+        val brand = topRejected.key.replaceFirstChar { it.uppercase() }
+        val avg = avgRejectedAskByCategory.values.maxOrNull()
+        return if (avg != null && avg > 0) {
+            "$decisions · you pass on $brand above ${Money.whole(avg, currency)}"
+        } else {
+            "$decisions · you have passed on $brand ${topRejected.value} times"
+        }
     }
 
     companion object {
