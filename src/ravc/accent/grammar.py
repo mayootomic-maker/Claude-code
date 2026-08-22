@@ -34,17 +34,26 @@ _CONTRACTIONS = {
 
 # German keeps articles and the copula; only the negation moves.
 _GERMAN_CONTRACTIONS = {
-    "don't": "not", "doesn't": "not", "didn't": "not", "can't": "cannot",
-    "won't": "will not", "i'm": "I am", "it's": "it is", "that's": "that is",
-    "you're": "you are", "we're": "we are", "they're": "they are",
-    "he's": "he is", "she's": "she is", "i've": "I have",
+    "can't": "cannot", "won't": "will not", "i'm": "I am", "it's": "it is",
+    "that's": "that is", "you're": "you are", "we're": "we are",
+    "they're": "they are", "he's": "he is", "she's": "she is",
+    "i've": "I have",
 }
+
+# Negated do-support, contracted.  These are handled before the plain
+# contraction table so the negation can move behind the verb -- expanding
+# them to a bare "not" first would give the Russian pattern ("I not know")
+# instead of the German one ("I know not").
+_GERMAN_NEGATIONS = {"don't", "doesn't", "didn't"}
 
 _KEEP_COPULA_BEFORE = {"not", "no", "never", "there"}
 _PREPOSITION_SWAP = {"in": "on", "on": "in", "at": "in"}
 
 _TOKEN_RE = re.compile(r"[\w']+|[^\w\s]")
-_TERMINALS = {".", "!", "?"}
+
+
+def _is_word(token: str) -> bool:
+    return bool(token) and token[0].isalpha()
 
 
 def _rand_stream(seed_text: str, count: int) -> List[float]:
@@ -143,18 +152,29 @@ def _brokenise_german(text: str, strength: float) -> str:
         low = token.lower()
         roll = rolls[i]
 
-        if low in _GERMAN_CONTRACTIONS and roll < strength:
-            out.extend(_capitalise_like(token, _GERMAN_CONTRACTIONS[low].split()))
-            i += 1
+        # "don't know" -> "know not": German puts nicht after the verb.
+        if low in _GERMAN_NEGATIONS and roll < strength:
+            if i + 1 < len(tokens) and _is_word(tokens[i + 1]):
+                out.append(tokens[i + 1])
+                out.append("not")
+                i += 2
+            else:
+                out.append("not")
+                i += 1
             continue
 
-        # "do not know" -> "know not": German puts nicht after the verb.
+        # The same, spelled out: "do not know" -> "know not".
         if (low in DO_SUPPORT and i + 2 < len(tokens)
                 and tokens[i + 1].lower() in {"not", "n't"}
-                and roll < strength):
+                and _is_word(tokens[i + 2]) and roll < strength):
             out.append(tokens[i + 2])
             out.append("not")
             i += 3
+            continue
+
+        if low in _GERMAN_CONTRACTIONS and roll < strength:
+            out.extend(_capitalise_like(token, _GERMAN_CONTRACTIONS[low].split()))
+            i += 1
             continue
 
         out.append(token)

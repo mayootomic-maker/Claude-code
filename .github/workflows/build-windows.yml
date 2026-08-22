@@ -1,0 +1,121 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      make_release:
+        description: "Attach the build to a GitHub release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -e ".[full,dev]"
+          pip install pyinstaller
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Download voice models for the integration tests
+        run: |
+          python -m ravc voices --install ru_RU-dmitri-medium de_DE-thorsten-medium
+
+      - name: Run integration tests against the real voice models
+        shell: bash
+        env:
+          RAVC_TEST_MODELS_DIR: ${{ env.LOCALAPPDATA }}\RussianAccentVoiceChanger\voices
+        run: python -m pytest tests/test_integration.py -q
+
+      - name: Regenerate the icon
+        run: python assets/make_icon.py
+
+      - name: Read the version
+        id: version
+        shell: bash
+        run: |
+          v=$(python -c "import sys; sys.path.insert(0,'src'); import ravc; print(ravc.__version__)")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm --clean packaging/ravc.spec
+
+      - name: Smoke-test the built executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./dist/AccentVoiceChanger/ravc.exe --version
+          ./dist/AccentVoiceChanger/ravc.exe say --dry-run -l ru "packaging works"
+          ./dist/AccentVoiceChanger/ravc.exe say --dry-run -l de "packaging works"
+          ./dist/AccentVoiceChanger/ravc.exe presets
+
+      - name: Create the portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/AccentVoiceChanger/*" `
+            -DestinationPath "dist/AccentVoiceChanger-${{ steps.version.outputs.version }}-portable-win64.zip" -Force
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile the installer
+        run: >
+          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe"
+          "/DAppVersion=${{ steps.version.outputs.version }}"
+          "packaging\installer.iss"
+
+      - name: List artifacts
+        shell: bash
+        run: ls -lh dist/*.exe dist/*.zip
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AccentVoiceChanger-Setup-${{ steps.version.outputs.version }}
+          path: dist/AccentVoiceChanger-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Upload the portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: AccentVoiceChanger-portable-${{ steps.version.outputs.version }}
+          path: dist/*-portable-win64.zip
+          if-no-files-found: error
+
+      - name: Attach to a release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.make_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          name: Accent Voice Changer ${{ steps.version.outputs.version }}
+          files: |
+            dist/AccentVoiceChanger-Setup-*.exe
+            dist/*-portable-win64.zip
+          body: |
+            **Accent Voice Changer ${{ steps.version.outputs.version }}** — speak English with a Russian or German accent.
+
+            - `AccentVoiceChanger-Setup-*.exe` — Windows installer (recommended)
+            - `*-portable-win64.zip` — unzip and run, no installation
+
+            After installing, open the app and download one voice model from
+            the **Models** tab. To be heard in Discord, Zoom, OBS or a game,
+            also install the free [VB-CABLE](https://vb-audio.com/Cable/).

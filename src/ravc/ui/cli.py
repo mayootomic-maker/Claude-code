@@ -66,7 +66,9 @@ def cmd_say(args) -> int:
         return 2
 
     changer = VoiceChanger(config)
-    accented, audio = changer.render(text)
+    # Work out the accent first and print it, so --dry-run never needs a
+    # voice model and still works on a fresh install.
+    accented = changer.accent.accentify(text)
     if accented.is_empty:
         print("Nothing speakable in that text.", file=sys.stderr)
         return 2
@@ -75,15 +77,17 @@ def cmd_say(args) -> int:
     print(f"Accented : {accented.eye_dialect}")
     print(f"For TTS  : {accented.native_text}")
 
+    if args.dry_run:
+        return 0
+
+    _accented, audio = changer.render(text)
+
     if args.out:
         out = Path(args.out)
         import soundfile as sf
         out.parent.mkdir(parents=True, exist_ok=True)
         sf.write(str(out), audio.samples, audio.sample_rate)
         print(f"Wrote    : {out}  ({audio.duration:.2f}s)")
-        return 0
-
-    if args.dry_run:
         return 0
 
     try:

@@ -25,12 +25,14 @@ class Voice:
 
     @property
     def label(self) -> str:
-        bits = [self.name]
+        """One-line description for a picker, e.g. "Dmitri - male, offline"."""
+        bits = []
         if self.gender in ("male", "female"):
-            bits.append(self.gender[0].upper())
-        if not self.offline:
-            bits.append("online")
-        return f"{self.name} ({', '.join(bits[1:])})" if len(bits) > 1 else self.name
+            bits.append(self.gender)
+        bits.append("offline" if self.offline else "online")
+        if not self.installed:
+            bits.append("not downloaded")
+        return f"{self.name} \u2014 {', '.join(bits)}"
 
 
 @dataclass

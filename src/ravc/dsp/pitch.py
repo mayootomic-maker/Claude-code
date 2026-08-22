@@ -195,15 +195,83 @@ def shift(x: np.ndarray, sr: int, pitch_semitones: float = 0.0,
 
 
 def estimate_f0(x: np.ndarray, sr: int, fmin: float = 60.0,
-                fmax: float = 400.0) -> float:
-    """Rough autocorrelation f0 estimate (used by tests and the level meter)."""
-    arr = np.asarray(x, dtype=np.float64)
-    if arr.size < int(sr / fmin) * 2:
+                fmax: float = 500.0, threshold: float = 0.15) -> float:
+    """Fundamental frequency, by the YIN difference function.
+
+    Plain autocorrelation picks the wrong octave whenever a period-doubled
+    peak happens to be the strongest -- which a phase vocoder's output can
+    easily produce.  YIN's cumulative mean normalised difference is
+    specifically designed to avoid that, and taking the *first* dip below
+    the threshold rather than the global minimum is what makes it prefer
+    the true period over its multiples.
+
+    Returns 0.0 when the signal is too short or has no clear periodicity.
+    """
+    arr = np.asarray(x, dtype=np.float64).reshape(-1)
+    lo = max(2, int(sr / fmax))
+    hi = int(sr / fmin)
+    if arr.size < 2 * hi or hi <= lo:
         return 0.0
+
     arr = arr - arr.mean()
-    corr = np.correlate(arr, arr, mode="full")[arr.size - 1:]
-    lo, hi = int(sr / fmax), min(int(sr / fmin), corr.size - 1)
-    if hi <= lo:
+    window = min(arr.size - hi, 4 * hi)
+    if window <= lo:
         return 0.0
-    peak = int(np.argmax(corr[lo:hi])) + lo
-    return float(sr) / peak if peak else 0.0
+
+    # Analyse the loudest segment rather than the start of the buffer: real
+    # utterances (and everything the FX chain emits) begin with silence, and
+    # measuring that returns a formant or nothing at all.
+    span = window + hi
+    energy = np.concatenate([[0.0], np.cumsum(arr * arr)])
+    hop = max(1, span // 8)
+    starts = np.arange(0, arr.size - span + 1, hop)
+    if starts.size:
+        loudest = int(starts[np.argmax(energy[starts + span] - energy[starts])])
+    else:
+        loudest = 0
+    frame = arr[loudest:loudest + span]
+
+    # Digital silence makes the difference function identically zero, which
+    # would trip the threshold at the shortest lag and report a pitch.
+    if float(np.max(np.abs(frame))) < 1e-7:
+        return 0.0
+
+    # d(tau) = sum (x[j] - x[j+tau])^2, expanded so it can use one FFT
+    # correlation plus two running power sums.
+    power = np.concatenate([[0.0], np.cumsum(frame * frame)])
+    head = power[window] - power[0]
+    tails = power[window + np.arange(hi + 1)] - power[np.arange(hi + 1)]
+
+    size = 1
+    while size < 2 * frame.size:
+        size <<= 1
+    spectrum = np.fft.rfft(frame, size)
+    correlation = np.fft.irfft(spectrum * np.conj(spectrum), size)[:hi + 1]
+
+    diff = head + tails - 2.0 * correlation
+    diff[0] = 0.0
+
+    cumulative = np.cumsum(diff[1:])
+    taus = np.arange(1, hi + 1)
+    normalised = diff[1:] * taus / np.maximum(cumulative, 1e-12)
+
+    candidates = np.nonzero(normalised[lo - 1:] < threshold)[0]
+    if candidates.size:
+        tau = int(candidates[0]) + lo
+        # Walk down into the local minimum the dip belongs to.
+        while (tau + 1 <= hi
+               and normalised[tau] < normalised[tau - 1]):
+            tau += 1
+    else:
+        tau = int(np.argmin(normalised[lo - 1:hi])) + lo
+        if normalised[tau - 1] > 0.6:
+            return 0.0
+
+    # Parabolic interpolation around the chosen lag.
+    if 1 < tau < hi:
+        y0, y1, y2 = normalised[tau - 2], normalised[tau - 1], normalised[tau]
+        denominator = 2.0 * (y0 - 2.0 * y1 + y2)
+        if abs(denominator) > 1e-12:
+            tau = tau + (y0 - y2) / denominator
+
+    return float(sr) / tau if tau > 0 else 0.0

@@ -524,9 +524,7 @@ class AccentApp:
         voices = self.changer.registry.all_voices(language)
         labels, keys = [], []
         for voice in voices:
-            tag = "" if voice.installed else "  (not downloaded)"
-            where = "offline" if voice.offline else "online"
-            labels.append(f"{voice.name} — {voice.gender}, {where}{tag}")
+            labels.append(voice.label)
             keys.append(voice.key)
         self._voice_keys = keys
         self.voice_combo.configure(values=labels)
