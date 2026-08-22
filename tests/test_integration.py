@@ -16,15 +16,29 @@ import pytest
 MODELS_DIR = os.environ.get("RAVC_TEST_MODELS_DIR")
 
 
+# Set RAVC_REQUIRE_MODELS=1 where models are known to be present (CI), so a
+# misconfigured path fails the build instead of quietly skipping the whole
+# integration suite -- which is exactly what happened the first time.
+REQUIRE = os.environ.get("RAVC_REQUIRE_MODELS") == "1"
+
+
+def _unavailable(reason: str):
+    if REQUIRE:
+        pytest.fail(f"RAVC_REQUIRE_MODELS is set but {reason}")
+    pytest.skip(reason)
+
+
 @pytest.fixture
 def models(monkeypatch):
-    if not MODELS_DIR or not Path(MODELS_DIR).is_dir():
-        pytest.skip("set RAVC_TEST_MODELS_DIR to a voices directory")
+    if not MODELS_DIR:
+        _unavailable("RAVC_TEST_MODELS_DIR is not set")
+    if not Path(MODELS_DIR).is_dir():
+        _unavailable(f"RAVC_TEST_MODELS_DIR does not exist: {MODELS_DIR}")
     monkeypatch.setenv("RAVC_MODELS_DIR", MODELS_DIR)
     from ravc.tts import voices
     installed = voices.installed_voices()
     if not installed:
-        pytest.skip(f"no voice models in {MODELS_DIR}")
+        _unavailable(f"no voice models in {MODELS_DIR}")
     return installed
 
 

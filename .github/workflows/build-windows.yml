@@ -41,10 +41,17 @@ jobs:
           python -m ravc voices --install ru_RU-dmitri-medium de_DE-thorsten-medium
 
       - name: Run integration tests against the real voice models
-        shell: bash
-        env:
-          RAVC_TEST_MODELS_DIR: ${{ env.LOCALAPPDATA }}\AccentVoiceChanger\voices
-        run: python -m pytest tests/test_integration.py -q
+        shell: pwsh
+        run: |
+          # LOCALAPPDATA has to be read from the runner's environment here.
+          # As ${{ env.LOCALAPPDATA }} it resolves to the *workflow* env,
+          # which is empty, and the tests then silently skipped.
+          $env:RAVC_TEST_MODELS_DIR = "$env:LOCALAPPDATA\AccentVoiceChanger\voices"
+          Write-Host "Voice models in: $env:RAVC_TEST_MODELS_DIR"
+          Get-ChildItem $env:RAVC_TEST_MODELS_DIR
+          $env:RAVC_REQUIRE_MODELS = "1"
+          python -m pytest tests/test_integration.py -q -rs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Regenerate the icon
         run: python assets/make_icon.py
@@ -78,10 +85,23 @@ jobs:
         run: choco install innosetup --no-progress -y
 
       - name: Compile the installer
-        run: >
-          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe"
-          "/DAppVersion=${{ steps.version.outputs.version }}"
-          "packaging\installer.iss"
+        shell: pwsh
+        run: |
+          # Note the braces: $env:ProgramFiles(x86) parses as $env:ProgramFiles
+          # followed by the literal "(x86)", which resolves to a path that does
+          # not exist. ${env:ProgramFiles(x86)} is the whole variable name.
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $iscc) { throw "ISCC.exe not found. Tried: $($candidates -join '; ')" }
+          Write-Host "Using $iscc"
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "packaging\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
       - name: List artifacts
         shell: bash
