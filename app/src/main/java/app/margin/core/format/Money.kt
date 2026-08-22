@@ -34,6 +34,20 @@ object Money {
         return if (showCurrency) "$sign$currency $body" else "$sign$body"
     }
 
+    /**
+     * Rounds to whole units before formatting. Used for every derived figure — fair value,
+     * resale, profit — because quoting an appraisal to the centime is false precision.
+     */
+    fun whole(
+        minor: Long,
+        currency: String = "CHF",
+        showCurrency: Boolean = true,
+        alwaysSigned: Boolean = false,
+    ): String {
+        val rounded = ((minor + if (minor >= 0) 50 else -50) / 100) * 100
+        return format(rounded, currency, showCurrency, alwaysSigned)
+    }
+
     /** Compact form for dense rows and chart labels: CHF 1.5k, CHF 12.4k. */
     fun compact(minor: Long, currency: String = "CHF", showCurrency: Boolean = true): String {
         val abs = abs(minor) / 100

@@ -462,11 +462,17 @@ class HeuristicValuationEngine(
         }
 
         if (basis.hasMarketData && fair > 0 && ask < low * 0.70) {
+            // A cheap listing that is thoroughly documented is a bargain; a cheap listing with
+            // two photos and a weak seller is a warning. Severity follows the corroboration.
+            val corroborated = listing.description.length >= 220 &&
+                listing.imageCount >= 5 &&
+                (listing.sellerRatingPct ?: 0) >= 93
             risks += Risk(
-                RiskSeverity.SERIOUS.name,
-                "Priced far below every comparable sale",
-                "Asking ${Money.format(ask, cur)} against a low comparable of " +
-                    "${Money.format(low, cur)}. That gap usually means undisclosed damage, a " +
+                if (corroborated) RiskSeverity.CAUTION.name else RiskSeverity.SERIOUS.name,
+                if (corroborated) "Priced well below comparable sales"
+                else "Priced far below every comparable sale",
+                "Asking ${Money.whole(ask, cur)} against a low comparable of " +
+                    "${Money.whole(low, cur)}. That gap usually means undisclosed damage, a " +
                     "missing part, or a listing that will not survive contact. Verify before paying.",
                 // A verification flag, not a score penalty: a cheaper listing must never score
                 // worse than an identical dearer one.
@@ -498,7 +504,7 @@ class HeuristicValuationEngine(
                     RiskSeverity.SERIOUS.name,
                     "Battery is near replacement",
                     "Stated health $health%. A replacement is already priced into the " +
-                        "refurbishment estimate of ${Money.format(refurb.costMinor, cur)}.",
+                        "refurbishment estimate of ${Money.whole(refurb.costMinor, cur)}.",
                 )
                 health < 85 -> risks += Risk(
                     RiskSeverity.CAUTION.name,
@@ -512,7 +518,7 @@ class HeuristicValuationEngine(
             risks += Risk(
                 RiskSeverity.CAUTION.name,
                 "Depends on refurbishment going to plan",
-                "The estimate of ${Money.format(refurb.costMinor, cur)} already carries a " +
+                "The estimate of ${Money.whole(refurb.costMinor, cur)} already carries a " +
                     "${Money.percent(refurb.overrunFraction)} overrun allowance. Work on " +
                     "${listing.condition.label.lowercase()} items regularly exceeds it anyway.",
             )
@@ -581,8 +587,8 @@ class HeuristicValuationEngine(
                 val over = ask - goal.budgetMaxMinor
                 risks += Risk(
                     if (over > goal.budgetMaxMinor / 5) RiskSeverity.SERIOUS.name else RiskSeverity.CAUTION.name,
-                    "Over budget by ${Money.format(over, cur)}",
-                    "\"${goal.title}\" caps spending at ${Money.format(goal.budgetMaxMinor, cur)}.",
+                    "Over budget by ${Money.whole(over, cur)}",
+                    "\"${goal.title}\" caps spending at ${Money.whole(goal.budgetMaxMinor, cur)}.",
                 )
             }
             if (goal.conditionFloor.rank > listing.condition.rank) {
@@ -615,8 +621,20 @@ class HeuristicValuationEngine(
         val discount = if (fair > 0 && hasMarketData) (fair - ask).toDouble() / fair.toDouble() else 0.0
         val priceComponent = (50 + discount * 145).coerceIn(0.0, 100.0)
 
-        val margin = net.toDouble() / ask.toDouble()
-        val marginComponent = (50 + margin * 115).coerceIn(0.0, 100.0)
+        // On a flip goal the question is not "is there margin" but "does it clear the target
+        // the user set". Scoring against zero produced 99-out-of-100 deals that the verdict
+        // then had to contradict.
+        val target = goal?.takeIf { it.kind == GoalKind.FLIP }?.targetProfitMinMinor ?: 0L
+        val marginComponent = if (target > 0L) {
+            val ratio = net.toDouble() / target.toDouble()
+            when {
+                ratio <= 0.0 -> 0.0
+                ratio >= 1.0 -> (75 + 25 * ((ratio - 1.0) / 2.0)).coerceAtMost(100.0)
+                else -> 75.0 * ratio
+            }
+        } else {
+            (50 + (net.toDouble() / ask.toDouble()) * 115).coerceIn(0.0, 100.0)
+        }
 
         val liquidityComponent = (liquidity * 100).coerceIn(0.0, 100.0)
 
@@ -689,12 +707,12 @@ class HeuristicValuationEngine(
         val delta = fair - listing.askingPriceMinor
         return when (verdict) {
             Verdict.STRONG_BUY -> if (goal?.kind == GoalKind.FLIP) {
-                "Buy it. ${Money.format(net, cur)} clear after every cost."
+                "Buy it. ${Money.whole(net, cur)} clear after every cost."
             } else {
-                "Buy it. ${Money.format(abs(delta), cur)} under fair value."
+                "Buy it. ${Money.whole(abs(delta), cur)} under fair value."
             }
             Verdict.BUY -> if (delta > 0) {
-                "Good buy at ${Money.format(abs(delta), cur)} below fair value."
+                "Good buy at ${Money.whole(abs(delta), cur)} below fair value."
             } else {
                 "Fair price for what it is."
             }
@@ -724,40 +742,40 @@ class HeuristicValuationEngine(
             return out
         }
 
-        out += "Fair value ${Money.format(fair, cur)} (range ${Money.format(low, cur)}–" +
-            "${Money.format(high, cur)}), from ${basis.method}, adjusted for " +
+        out += "Fair value ${Money.whole(fair, cur)} (range ${Money.whole(low, cur)}–" +
+            "${Money.whole(high, cur)}), from ${basis.method}, adjusted for " +
             "${listing.condition.label.lowercase()} condition."
 
         val delta = fair - listing.askingPriceMinor
         out += when {
-            delta > 0 -> "Asking ${Money.format(listing.askingPriceMinor, cur)} is " +
-                "${Money.format(delta, cur)} below that, ${Money.percent(delta.toDouble() / fair)} under."
-            delta < 0 -> "Asking ${Money.format(listing.askingPriceMinor, cur)} is " +
-                "${Money.format(-delta, cur)} above it, ${Money.percent(-delta.toDouble() / fair)} over."
+            delta > 0 -> "Asking ${Money.whole(listing.askingPriceMinor, cur)} is " +
+                "${Money.whole(delta, cur)} below that, ${Money.percent(delta.toDouble() / fair)} under."
+            delta < 0 -> "Asking ${Money.whole(listing.askingPriceMinor, cur)} is " +
+                "${Money.whole(-delta, cur)} above it, ${Money.percent(-delta.toDouble() / fair)} over."
             else -> "Asking price sits exactly on fair value."
         }
 
         if (refurb.attempted) {
             out += "Bringing it from ${listing.condition.label.lowercase()} to " +
                 "${refurb.resultingCondition.label.lowercase()} costs about " +
-                "${Money.format(refurb.costMinor, cur)}, overrun allowance included."
+                "${Money.whole(refurb.costMinor, cur)}, overrun allowance included."
         } else if (listing.condition.rank < Condition.GOOD.rank) {
             out += "Refurbishing it would cost more than the value it restores, so this is " +
                 "priced as it stands."
         }
 
-        out += "Through ${channel.label.lowercase()} it returns about ${Money.format(resale, cur)}" +
-            (if (fees > 0) " before ${Money.format(fees, cur)} of fees" else " with no platform fee") +
+        out += "Through ${channel.label.lowercase()} it returns about ${Money.whole(resale, cur)}" +
+            (if (fees > 0) " before ${Money.whole(fees, cur)} of fees" else " with no platform fee") +
             ", typically in ${channel.typicalDays} days."
 
         out += if (net >= 0) {
-            "After purchase, refurbishment, fees, ${Money.format(logistics, cur)} collection and " +
-                "${Money.format(holding, cur)} of tied-up capital, you clear ${Money.format(net, cur)}."
+            "After purchase, refurbishment, fees, ${Money.whole(logistics, cur)} collection and " +
+                "${Money.whole(holding, cur)} of tied-up capital, you clear ${Money.whole(net, cur)}."
         } else {
-            "After every cost you are ${Money.format(-net, cur)} down. This does not work as a flip."
+            "After every cost you are ${Money.whole(-net, cur)} down. This does not work as a flip."
         }
 
-        out += "Walk away above ${Money.format(maxBid, cur)}."
+        out += "Walk away above ${Money.whole(maxBid, cur)}."
 
         out += when {
             liquidity >= 0.82 -> "This model sells quickly; you are unlikely to sit on it."
@@ -768,15 +786,15 @@ class HeuristicValuationEngine(
         goal?.let {
             out += when (it.kind) {
                 GoalKind.FLIP -> if (net >= it.targetProfitMinMinor) {
-                    "Clears the ${Money.format(it.targetProfitMinMinor, cur)} target on \"${it.title}\" " +
-                        "by ${Money.format(net - it.targetProfitMinMinor, cur)}."
+                    "Clears the ${Money.whole(it.targetProfitMinMinor, cur)} target on \"${it.title}\" " +
+                        "by ${Money.whole(net - it.targetProfitMinMinor, cur)}."
                 } else {
-                    "Falls ${Money.format(it.targetProfitMinMinor - net, cur)} short of the target on \"${it.title}\"."
+                    "Falls ${Money.whole(it.targetProfitMinMinor - net, cur)} short of the target on \"${it.title}\"."
                 }
                 GoalKind.BUY -> if (listing.askingPriceMinor <= it.budgetMaxMinor) {
-                    "Inside the ${Money.format(it.budgetMaxMinor, cur)} budget on \"${it.title}\"."
+                    "Inside the ${Money.whole(it.budgetMaxMinor, cur)} budget on \"${it.title}\"."
                 } else {
-                    "Above the ${Money.format(it.budgetMaxMinor, cur)} budget on \"${it.title}\"."
+                    "Above the ${Money.whole(it.budgetMaxMinor, cur)} budget on \"${it.title}\"."
                 }
             }
         }

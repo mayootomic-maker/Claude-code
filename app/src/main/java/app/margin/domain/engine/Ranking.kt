@@ -26,7 +26,7 @@ object Ranking {
     fun relevance(listing: Listing, goal: Goal?): Double {
         if (goal == null) return 0.5
         var score = 0.0
-        if (listing.category == goal.category) score += 0.40
+        if (listing.category == goal.category) score += 0.45
 
         val haystack = "${listing.title} ${listing.brand} ${listing.model} ${listing.description}".lowercase()
         val hits = goal.keywords.count { kw -> kw.isNotBlank() && haystack.contains(kw.lowercase()) }
@@ -37,11 +37,18 @@ object Ranking {
         }
 
         when (goal.kind) {
-            GoalKind.BUY ->
-                if (listing.askingPriceMinor <= goal.budgetMaxMinor) score += 0.25
-                else if (listing.askingPriceMinor <= goal.budgetMaxMinor * 12 / 10) score += 0.10
-            GoalKind.FLIP ->
-                if (listing.askingPriceMinor <= goal.budgetMaxMinor) score += 0.25
+            // Over budget must still bind to the goal: an item can only be reported as over
+            // budget by the goal it belongs to.
+            GoalKind.BUY -> when {
+                listing.askingPriceMinor <= goal.budgetMaxMinor -> score += 0.25
+                listing.askingPriceMinor <= goal.budgetMaxMinor * 15 / 10 -> score += 0.12
+                else -> score += 0.04
+            }
+            GoalKind.FLIP -> when {
+                listing.askingPriceMinor <= goal.budgetMaxMinor -> score += 0.25
+                listing.askingPriceMinor <= goal.budgetMaxMinor * 15 / 10 -> score += 0.10
+                else -> score += 0.0
+            }
         }
 
         return score.coerceIn(0.0, 1.0)
