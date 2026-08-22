@@ -29,7 +29,8 @@ Grab **`AccentVoiceChanger-Setup-1.0.0.exe`**:
 - from the [Releases page](../../releases), if a release has been published; or
 - from the latest green run of the
   [Build Windows installer](../../actions/workflows/build-windows.yml) workflow
-  — the installer and a portable `.zip` are attached to every run as artifacts; or
+  — every run attaches the installer (~80 MB) and a portable `.zip` (~115 MB)
+  as artifacts; or
 - build it yourself in one command (see *Building the installer* below).
 
 Run the installer, or unzip the portable build anywhere and run
