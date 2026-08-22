@@ -78,7 +78,10 @@ Filename: "https://vb-audio.com/Cable/"; \
 Type: filesandordirs; Name: "{app}"
 
 [Code]
-{ True when {app} is not already on the user's PATH. }
+// True when the given directory is not already on the user's PATH.
+// Note: use // here, not { }. In Pascal a brace opens a comment, so a
+// constant like {app} inside one closes it early and the rest of the line
+// becomes stray code -- which is exactly what broke this compile.
 function NeedsAddPath(Param: string): Boolean;
 var
   OrigPath: string;
