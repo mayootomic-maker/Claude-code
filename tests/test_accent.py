@@ -5,6 +5,8 @@ import pytest
 from ravc.accent import grammar, normalize
 from ravc.accent.engine import AccentEngine, accentify
 from ravc.accent.languages import PACKS, available, get_pack
+from ravc.accent.languages import german as german_pack
+from ravc.accent.languages import russian as russian_pack
 from ravc.accent.phonology import accentify_word, spelling_vowels
 from ravc.accent.render import to_ipa, to_native_text
 from ravc.phonetics.g2p import word_to_phonemes
@@ -24,6 +26,10 @@ def de(word):
 
 def syms(phones):
     return [p.sym for p in phones]
+
+
+THRESHOLDS = {"russian": russian_pack.THRESHOLDS,
+              "german": german_pack.THRESHOLDS}
 
 
 # --------------------------------------------------------------------------
@@ -274,3 +280,120 @@ def test_grammar_is_deterministic():
     text = "She is a very good friend of mine."
     runs = {grammar.brokenise(text, 0.6) for _ in range(20)}
     assert len(runs) == 1
+
+
+# --------------------------------------------------------------------------
+# Strength ladder
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("language", ["russian", "german"])
+def test_strength_slider_is_progressive(language):
+    """The slider must have real intermediate positions, not three states."""
+    probe = ("Hello, I am thinking about washing the ship at the information "
+             "station, and the dog is going bad.")
+    renderings = [accentify(probe, language, strength=s / 10).eye_dialect
+                  for s in range(11)]
+    assert len(set(renderings)) >= 5, set(renderings)
+    assert renderings[0] != renderings[-1]
+
+
+@pytest.mark.parametrize("language", ["russian", "german"])
+def test_features_only_ever_switch_on_as_strength_rises(language):
+    """A feature that fires at strength X must still fire at X + delta."""
+    pack = get_pack(language)
+    for name, threshold in THRESHOLDS[language].items():
+        below = pack.profile(max(0.0, threshold - 0.01))
+        above = pack.profile(min(1.0, threshold + 0.01))
+        default = pack.default_features.get(name, True)
+        if not default:
+            continue
+        assert not below.fires(name, threshold), (language, name)
+        assert above.fires(name, threshold), (language, name)
+
+
+@pytest.mark.parametrize("language", ["russian", "german"])
+def test_every_feature_has_a_threshold(language):
+    pack = get_pack(language)
+    for name in pack.default_features:
+        assert name in THRESHOLDS[language], (language, name)
+
+
+def test_thresholds_are_spread_over_the_range():
+    for language, thresholds in THRESHOLDS.items():
+        values = sorted(thresholds.values())
+        assert values[0] < 0.2 and values[-1] > 0.85
+        # No large empty stretch, or the slider feels dead in that region.
+        gaps = [b - a for a, b in zip(values, values[1:])]
+        assert max(gaps) < 0.2, sorted(thresholds.items(), key=lambda kv: kv[1])
+
+
+# --------------------------------------------------------------------------
+# Features that were previously declared but not implemented
+# --------------------------------------------------------------------------
+
+def test_russian_tense_switch_actually_changes_the_vowel():
+    # Not "ship": after a hard sibilant the vowel backs to /ɨ/, which has no
+    # length contrast in Russian, so the switch correctly has no effect there.
+    pack = get_pack("russian")
+    phones = list(word_to_phonemes("bit"))
+    tense = accentify_word("bit", phones, pack,
+                           pack.profile(1.0, {"tense_short_vowels": True}))
+    lax = accentify_word("bit", phones, pack,
+                         pack.profile(1.0, {"tense_short_vowels": False}))
+    assert [p.long for p in tense] != [p.long for p in lax]
+    tense_ipa = "".join(c[0] for c in to_ipa(tense, pack))
+    lax_ipa = "".join(c[0] for c in to_ipa(lax, pack))
+    assert tense_ipa != lax_ipa
+    assert "ɪ" in lax_ipa and "ɪ" not in tense_ipa
+
+
+def test_russian_does_not_write_a_length_mark():
+    """espeak-ru never emits it, so the voice was never trained on it."""
+    pack = get_pack("russian")
+    ipa = "".join(c[0] for c in to_ipa(ru("sheep"), pack))
+    assert "ː" not in ipa
+
+
+def test_german_does_write_a_length_mark():
+    pack = get_pack("german")
+    assert "ː" in "".join(c[0] for c in to_ipa(de("name"), pack))
+
+
+@pytest.mark.parametrize("word,expected", [
+    ("nation", "netsion"),
+    ("station", "shtetsion"),
+    ("vision", "vizion"),
+])
+def test_german_tion_suffix(word, expected):
+    assert accentify(word, "german").eye_dialect == expected
+
+
+def test_german_tion_switch_can_be_turned_off():
+    pack = get_pack("german")
+    off = pack.profile(1.0, {"tion_to_tsion": False})
+    phones = accentify_word("nation", list(word_to_phonemes("nation")),
+                            pack, off)
+    assert "ts" not in [p.sym for p in phones]
+
+
+@pytest.mark.parametrize("word,expected_start", [
+    ("question", ["k", "v"]),   # Quelle is [kv], never [kf]
+    ("quick", ["k", "v"]),
+    ("swim", ["s", "v"]),       # <sw> is foreign in German, so [s] not [ʃ]
+    ("sweet", ["s", "v"]),
+])
+def test_german_v_resists_progressive_devoicing(word, expected_start):
+    assert syms(de(word))[:2] == expected_start
+
+
+def test_german_only_sp_and_st_become_sh():
+    """<sp>/<st> are [ʃp]/[ʃt]; <sk>, <sl>, <sm>, <sw> stay [s]."""
+    assert syms(de("stop"))[0] == "sh"
+    assert syms(de("speak"))[0] == "sh"
+    for word in ("small", "skill", "sleep", "snow"):
+        assert syms(de(word))[0] == "s", word
+
+
+def test_german_v_still_devoices_word_finally():
+    assert syms(de("brave"))[-1] == "f"
+    assert syms(de("have"))[-1] == "f"

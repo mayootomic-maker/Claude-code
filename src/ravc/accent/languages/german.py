@@ -34,6 +34,54 @@ from typing import Dict, List, Sequence
 from ..phones import NO_VOICE_PARTNER, REVOICED, Phone, devoice
 from .base import AccentProfile, Context, LanguagePack
 
+# Where each feature switches on as the strength slider rises, ordered by
+# how persistent it is in real speakers: the habits that outlast decades of
+# immersion (final devoicing, <w> as [v], the uvular r) come in first, while
+# the ones that mark a beginner ("shtop", "natsion") appear near the top.
+THRESHOLDS: Dict[str, float] = {
+    "w_to_v": 0.12,
+    "final_devoicing": 0.20,
+    "uvular_r": 0.26,
+    "th_to_s": 0.34,
+    "th_to_t": 0.34,
+    "dh_to_z": 0.40,
+    "dh_to_d": 0.40,
+    "ae_to_e": 0.46,
+    "vocalise_coda_r": 0.52,
+    "zh_to_sh": 0.58,
+    "dzh_to_tsh": 0.64,
+    "monophthongise": 0.70,
+    "initial_s_to_z": 0.76,
+    "s_cluster_to_sh": 0.82,
+    "tion_to_tsion": 0.88,
+    "no_vowel_reduction": 0.90,
+    "ng_to_ngk": 0.93,
+    "v_to_w_hypercorrection": 0.96,
+}
+
+
+def fires(profile: AccentProfile, name: str, default: bool = True) -> bool:
+    return profile.fires(name, THRESHOLDS.get(name, 0.5), default)
+
+
+# /v/ keeps its voicing after a voiceless obstruent: Quelle is [kvɛlə] and
+# schwarz is [ʃvaʁts].  It still devoices word-finally (brav -> [braːf]).
+TRANSPARENT = {"v"}
+
+# Words whose <-tion>/<-sion> ending a German reads as [tsi̯oːn] / [zi̯oːn].
+_TION = ("tion", "tions")
+_SION = ("sion", "sions")
+
+
+def _tion_ending(word: str):
+    low = word.lower()
+    if low.endswith(_TION):
+        return "tion"
+    if low.endswith(_SION):
+        return "sion"
+    return None
+
+
 DEFAULT_FEATURES: Dict[str, bool] = {
     "th_to_s": True,
     "th_to_t": False,          # alternative realisation: "tink"
@@ -95,40 +143,49 @@ _VOWELS: Dict[str, List[str]] = {
 def map_consonant(base: str, profile: AccentProfile,
                   ctx: Context) -> List[str]:
     if base == "TH":
-        if profile.fires("th_to_t", 0.35, False):
+        if fires(profile, "th_to_t", False):
             return ["t"]
-        return ["s"] if profile.fires("th_to_s", 0.35) else ["t"]
+        return ["s"] if fires(profile, "th_to_s") else ["t"]
     if base == "DH":
-        if profile.fires("dh_to_d", 0.35, False):
+        if fires(profile, "dh_to_d", False):
             return ["d"]
-        return ["z"] if profile.fires("dh_to_z", 0.35) else ["d"]
+        return ["z"] if fires(profile, "dh_to_z") else ["d"]
     if base == "W":
-        return ["v"] if profile.fires("w_to_v", 0.15) else ["v"]
-    if base == "V" and profile.fires("v_to_w_hypercorrection", 0.8, False):
+        return ["v"] if fires(profile, "w_to_v") else ["u"]
+    if base == "V" and fires(profile, "v_to_w_hypercorrection", False):
         return ["v"]
     if base == "R":
         # A coda /r/ vocalises: "better" ends in [ɐ], not a consonant.
-        if profile.fires("vocalise_coda_r", 0.45):
+        if fires(profile, "vocalise_coda_r"):
             next_is_vowel = _is_vowel_arp(ctx.next_arp)
             if not next_is_vowel:
                 return ["ar"]
-        return ["R"] if profile.fires("uvular_r", 0.3) else ["r"]
+        return ["R"] if fires(profile, "uvular_r") else ["r"]
     if base == "JH":
-        return ["ch"] if profile.fires("dzh_to_tsh", 0.4) else ["dzh"]
+        return ["ch"] if fires(profile, "dzh_to_tsh") else ["dzh"]
     if base == "ZH":
-        return ["sh"] if profile.fires("zh_to_sh", 0.4) else ["zh"]
+        if _tion_ending(ctx.word) == "sion" and fires(profile, "tion_to_tsion"):
+            return ["z"]
+        return ["sh"] if fires(profile, "zh_to_sh") else ["zh"]
+    if base == "SH":
+        # <-tion> is [tsi̯oːn] and <-sion> is [zi̯oːn] in German; the vowel
+        # half is added by map_vowel when it sees this consonant before it.
+        ending = _tion_ending(ctx.word)
+        if ending and fires(profile, "tion_to_tsion"):
+            return ["ts"] if ending == "tion" else ["z"]
+        return ["sh"]
     if base == "S":
         # German <s> is [z] before a vowel at the start of a word, and the
         # clusters <st>/<sp> are [ʃt]/[ʃp] there.
-        if ctx.is_initial and profile.fires("s_cluster_to_sh", 0.4):
+        if ctx.is_initial and fires(profile, "s_cluster_to_sh"):
             if ctx.next_arp in {"T", "P"}:
                 return ["sh"]
         if (ctx.is_initial and _is_vowel_arp(ctx.next_arp)
-                and profile.fires("initial_s_to_z", 0.5)):
+                and fires(profile, "initial_s_to_z")):
             return ["z"]
         return ["s"]
     if base == "NG":
-        if ctx.is_final and profile.fires("ng_to_ngk", 0.7, False):
+        if ctx.is_final and fires(profile, "ng_to_ngk", False):
             return ["ng", "k"]
         return ["ng"]
     return list(_CONSONANTS.get(base, [base.lower()]))
@@ -139,25 +196,29 @@ def map_vowel(base: str, stress: int, profile: AccentProfile,
     if base == "ER":
         # Stressed "bird" keeps a vowel plus uvular r; unstressed "better"
         # is just the vocalised [ɐ].
-        if stress == 0 and profile.fires("vocalise_coda_r", 0.45):
+        if stress == 0 and fires(profile, "vocalise_coda_r"):
             return ["ar"]
-        r = "R" if profile.fires("uvular_r", 0.3) else "r"
-        if profile.fires("vocalise_coda_r", 0.45):
+        r = "R" if fires(profile, "uvular_r") else "r"
+        if fires(profile, "vocalise_coda_r"):
             return ["e", "ar"]
         return ["e", r]
     if base == "AE":
-        return ["e"] if profile.fires("ae_to_e", 0.4) else ["a"]
+        return ["e"] if fires(profile, "ae_to_e") else ["a"]
     if base == "AH" and stress == 0:
+        # The vowel half of <-tion>/<-sion>: [i̯oː].
+        if (ctx.prev_arp in {"SH", "ZH"} and _tion_ending(ctx.word)
+                and fires(profile, "tion_to_tsion")):
+            return ["i", "o:"]
         # German has a schwa, so reduction survives -- this is a real
         # difference from the Russian pack, which restores the full vowel.
-        if not profile.fires("no_vowel_reduction", 0.5, False):
+        if not fires(profile, "no_vowel_reduction", False):
             return ["sch"]
         return [ctx.spelling_vowel or "a"]
     # Spelling pronunciation of <o>: English "stop"/"job"/"hot" have /ɑ/,
     # but a German reads the letter and says a short [ɔ].
     if base in {"AA", "AO"} and ctx.spelling_vowel == "o":
         return ["o"]
-    if base in {"EY", "OW"} and not profile.fires("monophthongise", 0.45):
+    if base in {"EY", "OW"} and not fires(profile, "monophthongise"):
         return ["e", "j"] if base == "EY" else ["o", "u"]
     return list(_VOWELS.get(base, ["a"]))
 
@@ -187,17 +248,20 @@ def assimilate_voicing(phones: List[Phone],
         return phones
     out = list(phones)
 
-    if profile.fires("final_devoicing", 0.3):
+    if fires(profile, "final_devoicing"):
         i = len(out) - 1
         while i >= 0 and out[i].is_obstruent:
             out[i] = devoice(out[i])
             i -= 1
 
     # German assimilates progressively: a voiceless obstruent devoices what
-    # follows it ("das Buch" stays [b], but "Absatz" is [ps]).
+    # follows it.  /v/ is the exception -- <qu> is [kv] and <schw> is [ʃv],
+    # so without excluding it "question" comes out "kfestion".
     for i in range(1, len(out)):
         prev, cur = out[i - 1], out[i]
         if not (prev.is_obstruent and cur.is_obstruent):
+            continue
+        if cur.sym in TRANSPARENT:
             continue
         if prev.sym in REVOICED or prev.sym in NO_VOICE_PARTNER:
             out[i] = devoice(cur)

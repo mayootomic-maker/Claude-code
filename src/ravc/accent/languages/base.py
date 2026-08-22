@@ -88,6 +88,17 @@ class LanguagePack:
     # length flag has to pick a different candidate, not just add a colon.
     ipa_long: Dict[str, List[str]] = field(default_factory=dict)
 
+    # Optional: eye-dialect spelling for phonemically long vowels, so the
+    # subtitles can show "sheep" for /iː/ and "ship" for /ɪ/.
+    latin_long: Dict[str, str] = field(default_factory=dict)
+
+    # Whether to write the IPA length mark on long vowels.  German needs it
+    # (length is phonemic and espeak-de emits it, so the voice was trained on
+    # it); Russian must not, because espeak-ru never produces "ː" and feeding
+    # a symbol the model has never seen invites artefacts.  For Russian the
+    # tense/lax contrast is carried by the vowel quality instead.
+    mark_length: bool = True
+
     default_features: Dict[str, bool] = field(default_factory=dict)
     feature_labels: Sequence[Tuple[str, str]] = ()
     spelling_pronunciation: bool = True

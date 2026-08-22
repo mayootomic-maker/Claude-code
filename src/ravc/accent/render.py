@@ -95,7 +95,8 @@ def to_ipa(phones: Sequence[Phone], pack: Optional[LanguagePack] = None,
             candidates: List[str] = []
             if p.long:
                 long_base = ipa_long.get(p.sym, base)
-                candidates.extend(c + LENGTH_MARK for c in long_base)
+                if language.mark_length:
+                    candidates.extend(c + LENGTH_MARK for c in long_base)
                 candidates.extend(long_base)
             candidates.extend(base)
             symbols.append(_dedupe(candidates))
@@ -128,7 +129,9 @@ _INHERENTLY_SOFT = {"ch", "shch", "dzh", "j"}
 def to_eye_dialect(phones: Sequence[Phone],
                    pack: Optional[LanguagePack] = None) -> str:
     """A readable Latin approximation, for the live subtitle strip."""
-    latin = _pack(pack).latin_map
+    language = _pack(pack)
+    latin = language.latin_map
+    latin_long = language.latin_long
     out: List[str] = []
     n = len(phones)
     for i, p in enumerate(phones):
@@ -138,10 +141,10 @@ def to_eye_dialect(phones: Sequence[Phone],
             continue
 
         if p.is_vowel:
-            # The long "ee"/"oo" spellings are only worth writing on the
-            # stressed nucleus, otherwise the subtitles turn into soup.
-            if p.stress != 1 and letter in ("ee", "oo"):
-                letter = letter[0]
+            # Long vowels get their digraph; short ones stay short, so the
+            # subtitles distinguish "sheep" from "ship".
+            if p.long and p.sym in latin_long:
+                letter = latin_long[p.sym]
             out.append(letter)
             continue
 

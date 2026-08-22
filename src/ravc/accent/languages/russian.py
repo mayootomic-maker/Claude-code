@@ -38,6 +38,34 @@ ALWAYS_SOFT = {"ch", "shch", "j"}
 # /v/ undergoes voicing assimilation but never triggers it (tvoy = [tvoj]).
 NON_TRIGGERING = {"v"}
 
+# Where each feature switches on as the strength slider rises.  Ordered by
+# how persistent the feature is in real speakers: the habits that survive
+# decades of immersion (final devoicing, /w/ -> /v/, the trilled r) come in
+# first and are the last thing left at low strength, while the features that
+# mark a beginner ("khello", "goink") only appear near the top.  Without this
+# spread the slider would be a three-position switch.
+THRESHOLDS: Dict[str, float] = {
+    "w_to_v": 0.12,
+    "final_devoicing": 0.20,
+    "palatalise": 0.28,
+    "dark_l": 0.30,
+    "th_to_s": 0.34,
+    "dh_to_z": 0.40,
+    "ae_to_e": 0.48,
+    "no_vowel_reduction": 0.58,
+    "tense_short_vowels": 0.68,
+    "h_to_kh": 0.76,
+    "ng_to_nk": 0.84,
+    "hard_sibilant_backing": 0.90,
+    "palatalise_before_e": 0.95,
+    "v_to_w_hypercorrection": 0.97,
+}
+
+
+def fires(profile: AccentProfile, name: str, default: bool = True) -> bool:
+    return profile.fires(name, THRESHOLDS.get(name, 0.5), default)
+
+
 DEFAULT_FEATURES: Dict[str, bool] = {
     "th_to_s": True,
     "dh_to_z": True,
@@ -77,9 +105,14 @@ _CONSONANTS: Dict[str, List[str]] = {
     "SH": ["sh"], "ZH": ["zh"], "CH": ["ch"], "JH": ["dzh"], "Y": ["j"],
 }
 
+# A trailing ":" marks a tense/long vowel.  Russian has no lax /ɪ/ or /ʊ/,
+# so a strong accent maps both English lax vowels onto the tense ones -- that
+# is the "ship" -> "sheep" effect.  Keeping them apart in the inventory is
+# what lets the feature switch actually do something, and it also gets
+# unstressed Russian /i/ right, which really is reduced to [ɪ].
 _VOWELS: Dict[str, List[str]] = {
     "AA": ["a"], "AE": ["e"], "AH": ["a"], "AO": ["o"],
-    "EH": ["e"], "IH": ["i"], "IY": ["i"], "UH": ["u"], "UW": ["u"],
+    "EH": ["e"], "IH": ["i"], "IY": ["i:"], "UH": ["u"], "UW": ["u:"],
     "AW": ["a", "u"], "AY": ["a", "j"], "EY": ["e", "j"],
     "OW": ["o"], "OY": ["o", "j"],
 }
@@ -88,18 +121,18 @@ _VOWELS: Dict[str, List[str]] = {
 def map_consonant(base: str, profile: AccentProfile,
                   ctx: Context) -> List[str]:
     if base == "TH":
-        return ["s"] if profile.fires("th_to_s", 0.35) else ["t"]
+        return ["s"] if fires(profile, "th_to_s") else ["t"]
     if base == "DH":
-        return ["z"] if profile.fires("dh_to_z", 0.35) else ["d"]
+        return ["z"] if fires(profile, "dh_to_z") else ["d"]
     if base == "W":
-        return ["v"] if profile.fires("w_to_v", 0.2) else ["u"]
+        return ["v"] if fires(profile, "w_to_v") else ["u"]
     if base == "HH":
-        return ["x"] if profile.fires("h_to_kh", 0.5) else ["h"]
+        return ["x"] if fires(profile, "h_to_kh") else ["h"]
     if base == "NG":
         if ctx.is_final:
-            return ["n", "k"] if profile.fires("ng_to_nk", 0.55) else ["n", "g"]
+            return ["n", "k"] if fires(profile, "ng_to_nk") else ["n", "g"]
         return ["n"]
-    if base == "V" and profile.fires("v_to_w_hypercorrection", 0.8, False):
+    if base == "V" and fires(profile, "v_to_w_hypercorrection", False):
         return ["u"]
     return list(_CONSONANTS.get(base, [base.lower()]))
 
@@ -110,19 +143,19 @@ def map_vowel(base: str, stress: int, profile: AccentProfile,
     # Restore the spelling vowel for reduced syllables: this single rule is
     # what turns "problem" into "prob-LEM" instead of English "prob-lm".
     if stress == 0 and base in {"AH", "IH", "UH", "ER"} and spelling:
-        if profile.fires("no_vowel_reduction", 0.3):
+        if fires(profile, "no_vowel_reduction"):
             return [spelling, "r"] if base == "ER" else [spelling]
     if base == "ER":
         return [spelling or "e", "r"]
     if base == "AE":
-        return ["e"] if profile.fires("ae_to_e", 0.4) else ["a"]
+        return ["e"] if fires(profile, "ae_to_e") else ["a"]
     # Spelling pronunciation of stressed <o>: English "problem"/"stop"/"job"
     # have /ɑ/, but a Russian reads the letter and says [o].
-    if base in {"AA", "AO"} and spelling == "o" and profile.feature(
-            "no_vowel_reduction"):
+    if base in {"AA", "AO"} and spelling == "o" and fires(
+            profile, "no_vowel_reduction"):
         return ["o"]
-    if base in {"IH", "UH"} and not profile.feature("tense_short_vowels"):
-        return list(_VOWELS[base])
+    if base in {"IH", "UH"} and fires(profile, "tense_short_vowels"):
+        return ["i:"] if base == "IH" else ["u:"]
     return list(_VOWELS.get(base, ["a"]))
 
 
@@ -137,7 +170,7 @@ def assimilate_voicing(phones: List[Phone],
         return phones
     out = list(phones)
 
-    if profile.fires("final_devoicing", 0.3):
+    if fires(profile, "final_devoicing"):
         i = len(out) - 1
         while i >= 0 and out[i].is_obstruent:
             out[i] = devoice(out[i])
@@ -160,9 +193,9 @@ def assimilate_voicing(phones: List[Phone],
 
 
 def palatalise(phones: List[Phone], profile: AccentProfile) -> List[Phone]:
-    if not profile.fires("palatalise", 0.4):
+    if not fires(profile, "palatalise"):
         return phones
-    before_e = profile.feature("palatalise_before_e", False)
+    before_e = fires(profile, "palatalise_before_e", False)
     out = list(phones)
     for i, p in enumerate(out):
         if p.is_vowel or p.sym in ALWAYS_HARD:
@@ -176,7 +209,7 @@ def palatalise(phones: List[Phone], profile: AccentProfile) -> List[Phone]:
         if nxt.sym in ("j", "i") or (nxt.sym == "e" and before_e):
             out[i] = replace(p, soft=True)
 
-    if profile.feature("dark_l"):
+    if fires(profile, "dark_l"):
         for i, p in enumerate(out):
             if p.sym != "l":
                 continue
@@ -189,7 +222,7 @@ def palatalise(phones: List[Phone], profile: AccentProfile) -> List[Phone]:
 def back_after_hard_sibilant(phones: List[Phone],
                              profile: AccentProfile) -> List[Phone]:
     """After sh / zh / ts an /i/ becomes /ɨ/ -- Russian has no [ʃi]."""
-    if not profile.fires("hard_sibilant_backing", 0.6):
+    if not fires(profile, "hard_sibilant_backing"):
         return phones
     out = list(phones)
     for i in range(1, len(out)):
@@ -286,9 +319,14 @@ IPA_MAP: Dict[str, List[str]] = {
     "ts": ["ts"], "ch": ["tɕ", "tʃ"], "shch": ["ɕː", "ɕ"],
     "dzh": ["dʐ", "dʒ"], "m": ["m"], "n": ["n"], "ng": ["ŋ", "n"],
     "l": ["l", "ɫ"], "r": ["r", "ɾ"], "R": ["r"], "j": ["j"], "h": ["h", "x"],
-    "a": ["a", "ɐ"], "e": ["e", "ɛ"], "i": ["i", "ɪ"],
-    "o": ["o", "ɔ"], "u": ["u", "ʊ"], "y": ["ɨ", "i"],
+    "a": ["a", "ɐ"], "e": ["e", "ɛ"], "i": ["ɪ", "i"],
+    "o": ["o", "ɔ"], "u": ["ʊ", "u"], "y": ["ɨ", "i"],
     "sch": ["ə", "a"], "ar": ["ar", "ɐ"], "oe": ["ø", "o"], "ue": ["y", "u"],
+}
+
+# Long counterparts: the tense vowels use the plain cardinal symbols.
+IPA_LONG: Dict[str, List[str]] = {
+    "i": ["i"], "u": ["u"], "a": ["a"], "e": ["e"], "o": ["o"],
 }
 
 LATIN_MAP: Dict[str, str] = {
@@ -297,9 +335,11 @@ LATIN_MAP: Dict[str, str] = {
     "x": "kh", "ts": "ts", "ch": "ch", "shch": "shch", "dzh": "j",
     "m": "m", "n": "n", "ng": "ng", "l": "l", "r": "r", "R": "r",
     "j": "y", "h": "h",
-    "a": "a", "e": "e", "i": "ee", "o": "o", "u": "oo", "y": "y",
+    "a": "a", "e": "e", "i": "i", "o": "o", "u": "u", "y": "y",
     "sch": "e", "ar": "ar", "oe": "yo", "ue": "yu",
 }
+
+LATIN_LONG: Dict[str, str] = {"i": "ee", "u": "oo"}
 
 
 PACK = LanguagePack(
@@ -315,6 +355,9 @@ PACK = LanguagePack(
     ipa_map=IPA_MAP,
     latin_map=LATIN_MAP,
     render_text=render_cyrillic,
+    ipa_long=IPA_LONG,
+    latin_long=LATIN_LONG,
+    mark_length=False,
     default_features=DEFAULT_FEATURES,
     feature_labels=FEATURE_LABELS,
     spelling_pronunciation=True,
