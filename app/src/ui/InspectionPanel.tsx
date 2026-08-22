@@ -69,7 +69,7 @@ export function InspectionPanel({
   }
 
   return (
-    <section class="border-t border-line pt-3">
+    <section class="mt-3 rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3">
       <button
         type="button"
         onClick={() => setShowStats((s) => !s)}

@@ -25,6 +25,7 @@ import { InspectionPanel } from '../ui/InspectionPanel'
 import { TicketView } from '../ui/TicketView'
 import { Countdown, CountdownAnnouncer } from '../ui/Countdown'
 import { Banner, DelayBadge, OccupancyChip, formatAge } from '../ui/status'
+import { LineBadge } from '../ui/LineBadge'
 import type { ActiveTrip, Departure, Direction, SavedRoute } from '../lib/types'
 import type { Translate } from '../lib/i18n'
 
@@ -174,10 +175,10 @@ function NowForStop({
   }, [onBoard?.tripKey])
 
   return (
-    <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5">
+    <div class="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-md flex-col px-5">
       <header class="safe-top flex items-baseline justify-between gap-3 pb-2">
         <div class="min-w-0">
-          <p class="truncate text-sm font-medium text-muted">{originName}</p>
+          <p class="truncate text-base font-semibold">{originName}</p>
           <p class="truncate text-xs text-faint">{t('now.toward', { destination: destinationName })}</p>
         </div>
         <button
@@ -218,7 +219,7 @@ function NowForStop({
         </div>
       )}
 
-      <main class="flex flex-1 flex-col justify-center py-6">
+      <main class="pt-6">
         {onBoard !== null ? (
           <OnBoardHero trip={onBoard} onNotThisTrain={() => void clearActiveTrip()} t={t} />
         ) : state.loading && board === null ? (
@@ -237,7 +238,7 @@ function NowForStop({
         )}
       </main>
 
-      <div class="space-y-2 pb-3">
+      <div class="space-y-2 pt-3">
         {!online && (
           <Banner
             tone="warn"
@@ -286,21 +287,21 @@ function NowForStop({
       {showTicket && <TicketView onClose={() => setShowTicket(false)} />}
 
       {followUps.length > 0 && (
-        <section class="safe-bottom border-t border-line pt-3">
-          <h2 class="pb-2 text-xs font-semibold tracking-wide text-faint uppercase">
+        <section class="safe-bottom mt-auto pt-5">
+          <h2 class="pb-2 text-xs font-semibold tracking-[0.08em] text-faint uppercase">
             {t('now.nextUp')}
           </h2>
-          <ul class="space-y-1">
+          <ul class="divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
             {followUps.map((departure, index) => (
               <li
                 key={departure.key}
-                class="animate-rise flex items-center gap-3 py-1.5"
+                class="animate-rise flex items-center gap-3 px-3 py-2"
                 style={{ animationDelay: `${index * 40}ms` }}
               >
-                <span class="w-16 shrink-0 text-sm font-semibold">{departure.line}</span>
-                <span class="min-w-0 flex-1 truncate text-sm text-muted">{departure.destination}</span>
+                <LineBadge line={departure.line} category={departure.category} size="sm" />
+                <span class="min-w-0 flex-1 truncate text-sm">{departure.destination}</span>
                 <DelayBadge timing={departure.timing} t={t} compact />
-                <span class="w-12 shrink-0 text-right text-sm font-medium">
+                <span class="w-12 shrink-0 text-right text-sm font-medium tabular-nums">
                   {formatClock(departure.timing.actual)}
                 </span>
               </li>
@@ -338,38 +339,56 @@ function Lead({
   return (
     <div>
       {state.kind === 'go-now' ? (
-        <>
-          <p class="animate-pulse-soft text-[3.25rem] leading-tight font-bold text-late">
+        <div>
+          <p class="animate-pulse-soft text-[3.5rem] leading-[1.05] font-bold tracking-tight text-late">
             {t('now.goNow')}
           </p>
           <p class="mt-1 text-base text-muted">{t('now.goNowHint', { min: departsIn })}</p>
-          <CountdownAnnouncer minutes={departsIn} text={`${t('now.goNow')} — ${t('now.goNowHint', { min: departsIn })}`} />
-        </>
+          <CountdownAnnouncer
+            minutes={departsIn}
+            text={`${t('now.goNow')} — ${t('now.goNowHint', { min: departsIn })}`}
+          />
+        </div>
       ) : (
-        <>
-          <p class="pb-1 text-sm font-medium tracking-wide text-muted uppercase">{t('now.leaveIn')}</p>
-          <Countdown seconds={state.secondsUntilLeave} label={t('now.minutes')} tone={minutes <= 2 ? 'urgent' : 'normal'} />
+        <div>
+          <p class="pb-1 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
+            {t('now.leaveIn')}
+          </p>
+          <Countdown
+            seconds={state.secondsUntilLeave}
+            label={t('now.minutes')}
+            tone={minutes <= 2 ? 'urgent' : 'normal'}
+          />
           <CountdownAnnouncer
             minutes={minutes}
             text={`${t('now.leaveIn')} ${minutes} ${t('now.minutes')}`}
           />
-        </>
+        </div>
       )}
 
-      <div class="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span class="text-lg font-semibold">{departure.line}</span>
-        <span class="min-w-0 flex-1 truncate text-base text-muted">{departure.destination}</span>
-      </div>
-      <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted">
-        <span>{t('now.departsAt', { time: formatClock(departure.timing.actual) })}</span>
-        {departure.platform !== null && <span>{t('now.platform', { platform: departure.platform })}</span>}
-        <DelayBadge timing={departure.timing} t={t} />
-        <OccupancyChip occupancy={departure.occupancy} t={t} />
-      </div>
+      {/* The departure sits on its own surface directly beneath the number, so
+          the two read as one block rather than as text adrift on the page. */}
+      <section class="mt-5 rounded-[var(--radius-card)] border border-line bg-surface p-4">
+        <div class="flex items-center gap-2.5">
+          <LineBadge line={departure.line} category={departure.category} size="lg" />
+          <span class="min-w-0 flex-1 truncate text-lg font-semibold">{departure.destination}</span>
+        </div>
 
-      {exitSide !== null && (
-        <p class="mt-1.5 text-sm text-muted">{exitSide}</p>
-      )}
+        <div class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted">
+          <span class="font-medium text-ink">{formatClock(departure.timing.actual)}</span>
+          {departure.platform !== null && (
+            <span>{t('now.platform', { platform: departure.platform })}</span>
+          )}
+          <DelayBadge timing={departure.timing} t={t} />
+        </div>
+
+        {(departure.occupancy.length > 0 || exitSide !== null) && (
+          <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line pt-2.5">
+            <OccupancyChip occupancy={departure.occupancy} t={t} />
+            {exitSide !== null && <span class="text-sm text-muted">{exitSide}</span>}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
@@ -392,25 +411,32 @@ function OnBoardHero({
 }) {
   return (
     <div class="animate-rise">
-      <p class="pb-1 text-sm font-medium tracking-wide text-muted uppercase">
+      <p class="pb-1 text-xs font-semibold tracking-[0.08em] text-muted uppercase">
         {t('onboard.title')}
       </p>
-      <p class="text-4xl leading-tight font-bold">{trip.line}</p>
-      <p class="pt-1 text-lg text-muted">
-        {t('now.toward', { destination: trip.destination })}
-      </p>
-      <p class="pt-3 text-sm text-muted">
-        {t('onboard.since', { time: formatClock(trip.departedAt) })}
-      </p>
-      <button
-        type="button"
-        // An escape hatch: you checked the app, then took a different train.
-        // Without this the log would quietly record a ride you never took.
-        onClick={onNotThisTrain}
-        class="mt-2 min-h-[var(--tap)] text-sm font-semibold text-accent"
-      >
-        {t('onboard.notMyTrain')}
-      </button>
+
+      <section class="rounded-[var(--radius-card)] border border-line bg-surface p-4">
+        <div class="flex items-center gap-3">
+          <LineBadge line={trip.line} category={trip.category ?? ''} size="lg" />
+          <span class="min-w-0 flex-1 truncate text-xl font-semibold">{trip.destination}</span>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-3 border-t border-line pt-2.5">
+          <p class="text-sm text-muted">
+            {t('onboard.since', { time: formatClock(trip.departedAt) })}
+          </p>
+          <button
+            type="button"
+            // An escape hatch: you checked the app, then took a different
+            // train. Without this the log would quietly record a ride you
+            // never took.
+            onClick={onNotThisTrain}
+            class="min-h-[var(--tap)] shrink-0 text-sm font-semibold text-accent"
+          >
+            {t('onboard.notMyTrain')}
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

@@ -15,7 +15,7 @@ export function Routes() {
   const list = routes.value
 
   return (
-    <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5">
+    <div class="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-md flex-col px-5">
       <header class="safe-top pb-3">
         <h1 class="text-xl font-bold">{t('routes.title')}</h1>
       </header>

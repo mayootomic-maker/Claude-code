@@ -293,7 +293,8 @@ async function drive(browser) {
     await page.waitForTimeout(1_400)
 
     const onboardBody = (await page.textContent('body')) ?? ''
-    const onboardOk = /Du bist unterwegs/.test(onboardBody) && /S 29/.test(onboardBody)
+    // LineBadge normalises "S 29" to "S29" so badges align in a column.
+    const onboardOk = /Du bist unterwegs/.test(onboardBody) && /S\s?29/.test(onboardBody)
     findings.push(`[${theme}] on board      ${onboardOk ? 'OK  ' : 'MISS'} (bound to the boarded train)`)
     if (!onboardOk) problems.push(`[${theme}] on-board mode did not render`)
     await shot(page, `${theme}-onboard`)

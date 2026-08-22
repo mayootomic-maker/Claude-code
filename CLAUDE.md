@@ -122,6 +122,16 @@ POST XML, `Authorization: Bearer <key>`. Verified working; the Worker uses it.
 - No animation library, no charting library, no zod. Hand-rolled beats a
   dependency at this scale — zod alone would be a quarter of the JS budget.
 
+**Visual system**
+- **Line numbers render as coloured badges** (`ui/LineBadge.tsx`), grouped by
+  category. Every Swiss departure board does this and people navigate by the
+  colour before reading the text; plain bold text throws that cue away.
+- Grouped information sits on a surface (`border-line bg-surface`) rather than
+  floating as loose text.
+- Screens are `min-h-[calc(100dvh-4.5rem)]`, never `min-h-dvh`: full viewport
+  plus the fixed tab bar's padding overflows by exactly the bar's height, which
+  hides the last row of every list behind it.
+
 **Accessibility**
 - Countdown live regions announce on the minute, never per tick — a per-second
   live region makes the screen unusable with a screen reader.

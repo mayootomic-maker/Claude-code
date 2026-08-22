@@ -11,6 +11,7 @@ import { opendataDeps, pollIntervalMs, useDepartureBoard, useTick } from '../lib
 import { routes, t as translate } from '../lib/store'
 import { formatClock } from '../lib/time'
 import { Banner, DelayBadge, formatAge } from '../ui/status'
+import { LineBadge } from '../ui/LineBadge'
 import type { StopRef } from '../lib/types'
 
 export function Board() {
@@ -23,9 +24,9 @@ export function Board() {
   const [stop, setStop] = useState<StopRef | null>(fallback)
 
   return (
-    <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5">
+    <div class="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-md flex-col px-5">
       <header class="safe-top pb-3">
-        <h1 class="text-xl font-bold">{t('board.title')}</h1>
+        <h1 class="text-2xl font-bold tracking-tight">{t('board.title')}</h1>
       </header>
 
       <StopSearch onPick={setStop} current={stop} />
@@ -79,20 +80,22 @@ function Departures({ stop, now }: { stop: StopRef; now: number }) {
           <Banner tone="warn" title={t('state.stale', { age: formatAge(age, t) })} />
         </div>
       )}
-      <ul class="divide-y divide-line">
+      <ul class="divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
         {board.departures.map((departure, index) => (
           <li
             key={departure.key}
-            class="animate-rise flex items-center gap-3 py-2.5"
+            class="animate-rise flex items-center gap-3 px-3 py-2.5"
             style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}
           >
-            <span class="w-16 shrink-0 text-sm font-semibold">{departure.line}</span>
+            <LineBadge line={departure.line} category={departure.category} size="md" />
             <span class="min-w-0 flex-1 truncate text-sm">{departure.destination}</span>
             {departure.platform !== null && (
-              <span class="w-10 shrink-0 text-right text-xs text-faint">{departure.platform}</span>
+              <span class="w-6 shrink-0 text-right text-xs text-faint tabular-nums">
+                {departure.platform}
+              </span>
             )}
             <DelayBadge timing={departure.timing} t={t} compact />
-            <span class="w-12 shrink-0 text-right text-sm font-medium">
+            <span class="w-12 shrink-0 text-right text-sm font-medium tabular-nums">
               {formatClock(departure.timing.actual)}
             </span>
           </li>
