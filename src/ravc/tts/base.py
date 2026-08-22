@@ -18,6 +18,7 @@ class Voice:
     engine: str              # "piper" | "edge" | "sapi"
     gender: str = "unknown"  # "male" | "female"
     language: str = "ru-RU"
+    accent: str = "russian"      # which accent language pack this voice serves
     description: str = ""
     offline: bool = True
     installed: bool = True
@@ -58,11 +59,11 @@ class SynthRequest:
     """Everything a backend might need to speak one utterance.
 
     Backends that drive a phoneme model use :attr:`ipa`; backends that take
-    text use :attr:`cyrillic`, which is already spelled the way a Russian
-    voice needs to read it.
+    text use :attr:`text`, which is already spelled the way the target voice
+    needs to read it (Cyrillic for Russian, German orthography for German).
     """
 
-    cyrillic: str
+    text: str                    # already spelled for the target TTS language
     ipa: Sequence[Sequence[str]] = field(default_factory=list)
     voice_key: Optional[str] = None
     rate: float = 1.0        # 1.0 = natural; <1 slower
@@ -85,8 +86,8 @@ class TtsEngine(ABC):
         """Can this engine run right now (deps present, model downloaded)?"""
 
     @abstractmethod
-    def list_voices(self) -> List[Voice]:
-        ...
+    def list_voices(self, language: Optional[str] = None) -> List[Voice]:
+        """Voices this engine offers, optionally filtered by accent language."""
 
     @abstractmethod
     def synthesize(self, request: SynthRequest) -> Audio:

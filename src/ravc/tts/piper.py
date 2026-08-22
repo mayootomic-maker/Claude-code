@@ -60,14 +60,18 @@ class PiperEngine(TtsEngine):
         return (self.onnxruntime_available()
                 and bool(voice_catalogue.installed_voices()))
 
-    def list_voices(self) -> List[Voice]:
+    def list_voices(self, language: Optional[str] = None) -> List[Voice]:
         out: List[Voice] = []
         for key, model in voice_catalogue.CATALOGUE.items():
+            if language and model.language != language:
+                continue
             out.append(Voice(
                 key=f"piper:{key}",
                 name=model.display,
                 engine="piper",
                 gender=model.gender,
+                language=model.locale.replace("_", "-"),
+                accent=model.language,
                 description=model.description,
                 offline=True,
                 installed=voice_catalogue.is_installed(key),

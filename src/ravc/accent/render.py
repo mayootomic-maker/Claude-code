@@ -1,141 +1,69 @@
-"""Render Russian-accented phone sequences into three target notations.
+"""Render accented phone sequences into the three target notations.
 
-* :func:`to_cyrillic` -- text a Russian TTS voice can read.  This is the
-  trick that makes the whole thing work: feeding "хэллоу, хау ар ю" to a
-  native Russian neural voice produces authentic Russian-accented English,
-  complete with untrained-for details like the missing aspiration on stops
-  and the apical trill, which no amount of DSP can fake.
+* :func:`to_native_text` -- text the accent's own TTS language can read.
+  This is the trick that makes the whole thing work: a native Russian
+  neural voice reading "зис ис зэ бэст" produces authentic Russian-accented
+  English, complete with details no amount of DSP can fake -- the missing
+  aspiration on stops, the apical trill, the vowel qualities.
 * :func:`to_ipa` -- espeak-style IPA, used to drive Piper voices directly
   through their phoneme table, bypassing text normalisation entirely.
 * :func:`to_eye_dialect` -- readable Latin spelling for the subtitle strip
-  in the UI ("Ay vant to tok viz yu").
+  ("Ay vant to tok viz yu").
 """
 
 from __future__ import annotations
 
 from typing import Iterable, List, Optional, Sequence
 
-from .phonology import ALWAYS_HARD, Phone
-
-# --------------------------------------------------------------------------
-# Cyrillic
-# --------------------------------------------------------------------------
-
-_CYR_CONSONANT = {
-    "p": "п", "b": "б", "t": "т", "d": "д", "k": "к", "g": "г",
-    "f": "ф", "v": "в", "s": "с", "z": "з", "sh": "ш", "zh": "ж",
-    "x": "х", "ts": "ц", "ch": "ч", "shch": "щ", "dzh": "дж",
-    "m": "м", "n": "н", "l": "л", "r": "р", "h": "г",
-}
-
-# vowel -> (after hard consonant, after soft consonant / after j)
-_CYR_VOWEL = {
-    "a": ("а", "я"),
-    "e": ("э", "е"),
-    "i": ("и", "и"),
-    "o": ("о", "ё"),
-    "u": ("у", "ю"),
-    "y": ("ы", "и"),
-}
-
-STRESS_MARK = "́"  # combining acute; Russian TTS engines honour it
-
-
-def to_cyrillic(phones: Sequence[Phone], mark_stress: bool = False) -> str:
-    """Render one word's phones as Russian orthography."""
-    out: List[str] = []
-    n = len(phones)
-    for i, p in enumerate(phones):
-        nxt = phones[i + 1] if i + 1 < n else None
-        prev = phones[i - 1] if i > 0 else None
-
-        if p.is_vowel:
-            iotated = bool(prev and prev.sym == "j")
-            softened = bool(prev and not prev.is_vowel and prev.soft
-                            and prev.sym != "j")
-            hard, soft = _CYR_VOWEL[p.sym]
-            if p.sym == "i" and prev and prev.sym in ALWAYS_HARD:
-                letter = "ы"
-            elif iotated:
-                letter = soft
-            elif softened:
-                letter = soft
-            else:
-                letter = hard
-            out.append(letter)
-            if mark_stress and p.stress == 1:
-                out.append(STRESS_MARK)
-            continue
-
-        if p.sym == "j":
-            # A yod before a vowel is absorbed into the iotated vowel letter;
-            # elsewhere it is a plain й.
-            if nxt is not None and nxt.is_vowel:
-                if prev is not None and not prev.is_vowel and prev.soft:
-                    out.append("ь")
-                continue
-            out.append("й")
-            continue
-
-        letter = _CYR_CONSONANT.get(p.sym)
-        if letter is None:
-            continue
-        out.append(letter)
-        if p.long:
-            out.append(letter)
-        if p.soft and p.sym not in ("ch", "shch"):
-            # A soft sign is only written when the softness is not already
-            # carried by a following iotated vowel.
-            if nxt is None or not nxt.is_vowel:
-                if not (nxt is not None and nxt.sym == "j"):
-                    out.append("ь")
-    return "".join(out)
-
-
-# --------------------------------------------------------------------------
-# IPA (espeak flavour, for Piper phoneme tables)
-# --------------------------------------------------------------------------
-
-# Each entry is a preference list; the Piper backend picks the first symbol
-# that actually exists in the loaded voice's phoneme table.
-_IPA_CONSONANT = {
-    "p": ["p"], "b": ["b"], "t": ["t"], "d": ["d"], "k": ["k"],
-    "g": ["ɡ", "g"], "f": ["f"], "v": ["v"], "s": ["s"], "z": ["z"],
-    "sh": ["ʂ", "ʃ"], "zh": ["ʐ", "ʒ"], "x": ["x", "h"],
-    "ts": ["ts", "t͡s"], "ch": ["tɕ", "t͡ɕ", "tʃ"], "shch": ["ɕː", "ɕ"],
-    "dzh": ["dʐ", "d͡ʐ", "dʒ"],
-    "m": ["m"], "n": ["n"], "l": ["l"], "r": ["r", "ɾ"], "j": ["j"],
-    "h": ["h", "x"],
-}
-
-_IPA_VOWEL = {
-    "a": ["a", "ɐ", "ə"],
-    "e": ["e", "ɛ", "ɪ"],
-    "i": ["i", "ɪ"],
-    "o": ["o", "ɔ"],
-    "u": ["u", "ʊ"],
-    "y": ["ɨ", "i"],
-}
+from .languages import DEFAULT_LANGUAGE, get_pack
+from .languages.base import LanguagePack
+from .phones import Phone
 
 PRIMARY_STRESS = "ˈ"
 SECONDARY_STRESS = "ˌ"
+LENGTH_MARK = "ː"
+PALATAL_MARK = "ʲ"
 
 
-def to_ipa(phones: Sequence[Phone], mark_stress: bool = True) -> List[List[str]]:
+def _pack(pack: Optional[LanguagePack]) -> LanguagePack:
+    return pack or get_pack(DEFAULT_LANGUAGE)
+
+
+def to_native_text(phones: Sequence[Phone], pack: Optional[LanguagePack] = None,
+                   mark_stress: bool = False) -> str:
+    return _pack(pack).render_text(phones, mark_stress)
+
+
+# Kept as a name because the Russian path is the common one.
+def to_cyrillic(phones: Sequence[Phone], mark_stress: bool = False) -> str:
+    return get_pack("russian").render_text(phones, mark_stress)
+
+
+# --------------------------------------------------------------------------
+# IPA
+# --------------------------------------------------------------------------
+
+def to_ipa(phones: Sequence[Phone], pack: Optional[LanguagePack] = None,
+           mark_stress: bool = True) -> List[List[str]]:
     """Return one preference list per output symbol.
 
-    The Piper backend resolves each preference list against the voice's own
-    phoneme inventory, so an inventory that spells /ʃ/ as ``ʂ`` and one that
-    spells it ``ʃ`` both work without special-casing.
+    The Piper backend resolves each preference list against the loaded
+    voice's own phoneme inventory, so a voice that spells /ʃ/ as ``ʂ`` and
+    one that spells it ``ʃ`` both work from the same renderer.
     """
+    language = _pack(pack)
+    ipa_map = language.ipa_map
+    ipa_long = language.ipa_long
+
     symbols: List[List[str]] = []
     stressed_at: Optional[int] = None
     secondary_at: Optional[int] = None
-
     for i, p in enumerate(phones):
-        if p.is_vowel and p.stress == 1 and stressed_at is None:
+        if not p.is_vowel:
+            continue
+        if p.stress == 1 and stressed_at is None:
             stressed_at = i
-        elif p.is_vowel and p.stress == 2 and secondary_at is None:
+        elif p.stress == 2 and secondary_at is None:
             secondary_at = i
 
     def onset_of(vowel_idx: int) -> int:
@@ -145,7 +73,7 @@ def to_ipa(phones: Sequence[Phone], mark_stress: bool = True) -> List[List[str]]
             j -= 1
         # A sonorant at the front of a two-consonant onset belongs to the
         # previous syllable's coda: com-PU-ter, not co-MPU-ter.
-        if vowel_idx - j == 2 and phones[j].sym in {"m", "n", "l", "r"}:
+        if vowel_idx - j == 2 and phones[j].is_sonorant:
             j += 1
         return j
 
@@ -153,66 +81,75 @@ def to_ipa(phones: Sequence[Phone], mark_stress: bool = True) -> List[List[str]]
     if mark_stress and stressed_at is not None:
         stress_positions[onset_of(stressed_at)] = PRIMARY_STRESS
     if mark_stress and secondary_at is not None:
-        pos = onset_of(secondary_at)
-        stress_positions.setdefault(pos, SECONDARY_STRESS)
+        stress_positions.setdefault(onset_of(secondary_at), SECONDARY_STRESS)
 
     for i, p in enumerate(phones):
         if i in stress_positions:
             symbols.append([stress_positions[i]])
-        if p.is_vowel:
-            symbols.append(list(_IPA_VOWEL.get(p.sym, ["a"])))
-            continue
-        base = _IPA_CONSONANT.get(p.sym)
+
+        base = ipa_map.get(p.sym)
         if base is None:
             continue
+
+        if p.is_vowel:
+            candidates: List[str] = []
+            if p.long:
+                long_base = ipa_long.get(p.sym, base)
+                candidates.extend(c + LENGTH_MARK for c in long_base)
+                candidates.extend(long_base)
+            candidates.extend(base)
+            symbols.append(_dedupe(candidates))
+            continue
+
         if p.soft and p.sym != "j":
-            softened = [b + "ʲ" for b in base]
-            symbols.append(softened + base)
+            symbols.append(_dedupe([c + PALATAL_MARK for c in base] + list(base)))
         else:
             symbols.append(list(base))
     return symbols
+
+
+def _dedupe(items: Iterable[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
 
 
 # --------------------------------------------------------------------------
 # Latin eye-dialect (display only)
 # --------------------------------------------------------------------------
 
-_EYE_CONSONANT = {
-    "p": "p", "b": "b", "t": "t", "d": "d", "k": "k", "g": "g",
-    "f": "f", "v": "v", "s": "s", "z": "z", "sh": "sh", "zh": "zh",
-    "x": "kh", "ts": "ts", "ch": "ch", "shch": "shch", "dzh": "j",
-    "m": "m", "n": "n", "l": "l", "r": "r", "j": "y", "h": "h",
-}
-
-_EYE_VOWEL = {"a": "a", "e": "e", "i": "ee", "o": "o", "u": "oo", "y": "y"}
+_INHERENTLY_SOFT = {"ch", "shch", "dzh", "j"}
 
 
-def to_eye_dialect(phones: Sequence[Phone]) -> str:
+def to_eye_dialect(phones: Sequence[Phone],
+                   pack: Optional[LanguagePack] = None) -> str:
     """A readable Latin approximation, for the live subtitle strip."""
+    latin = _pack(pack).latin_map
     out: List[str] = []
     n = len(phones)
     for i, p in enumerate(phones):
         nxt = phones[i + 1] if i + 1 < n else None
-        if p.is_vowel:
-            # "ee" is only worth writing when it is the stressed nucleus,
-            # otherwise the subtitles turn into soup.
-            if p.sym == "i" and p.stress != 1:
-                out.append("i")
-            elif p.sym == "u" and p.stress != 1:
-                out.append("u")
-            else:
-                out.append(_EYE_VOWEL[p.sym])
-            continue
-        letter = _EYE_CONSONANT.get(p.sym)
+        letter = latin.get(p.sym)
         if letter is None:
             continue
+
+        if p.is_vowel:
+            # The long "ee"/"oo" spellings are only worth writing on the
+            # stressed nucleus, otherwise the subtitles turn into soup.
+            if p.stress != 1 and letter in ("ee", "oo"):
+                letter = letter[0]
+            out.append(letter)
+            continue
+
         if p.sym == "j" and nxt is not None and nxt.is_vowel:
             out.append("y")
             continue
         out.append(letter)
-        # ch/shch/dzh are inherently soft in Russian; writing "chy" in the
-        # subtitles just makes them hard to read.
-        if (p.soft and p.sym not in {"ch", "shch", "dzh"}
+        if (p.soft and p.sym not in _INHERENTLY_SOFT
                 and nxt is not None and nxt.is_vowel and nxt.sym != "i"):
             out.append("y")
     return "".join(out)
