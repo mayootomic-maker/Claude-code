@@ -172,6 +172,23 @@ dead end. Actual path:
 3. Subscribe OJP 2.0 to it: `/portal/catalogue-products/tedp_ojp20-1`, under
    "Plans available for subscription"
 
+The portal shows a **token** and a **token hash** — take the **token**. The hash
+is a one-way digest it keeps to identify the credential; it cannot authenticate.
+The plaintext is shown once, and it is one key per API, so losing it means
+regenerating.
+
+Verify a credential without pasting it anywhere:
+
+```bash
+cd worker && node scripts/check-key.mjs
+```
+
+It reads the key from the environment or `.dev.vars`, makes one real request,
+and separates the cases that look alike from the portal UI: `401`/`403` means
+the credential is wrong or still pending approval, `400` means it authenticated
+and only the body was rejected, `200` means both were fine. It prints only a
+short fingerprint, never the key.
+
 One key per API. It is a Bearer token (`Authorization: Bearer <key>`), free for
 private use at 50 req/min and 20 000 req/day. Other product ids on the same
 portal, should they ever be needed: `tedp_siri_sx-1` (unplanned disruptions),
