@@ -13,3 +13,5 @@ local.properties
 *.jks
 /motion/node_modules/
 /motion/out/
+.env
+.env.local
