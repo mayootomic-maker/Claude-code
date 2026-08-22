@@ -88,6 +88,8 @@ export type ActiveTrip = {
   direction: Direction
   line: string
   destination: string
+  /** Product category (IR, IC, S). Lets prediction pool across services. */
+  category?: string
   /** Realtime-adjusted departure, epoch ms. */
   departedAt: number
   /** Segment travelled, for inspection heat mapping. */
@@ -110,10 +112,17 @@ export type Settings = {
   theme: 'system' | 'light' | 'dark'
   /** Notify when a departure on a saved route is at least this many minutes late. */
   delayAlertMinutes: number
+  /**
+   * The user's own guess at how often they get checked, 0..1, or null if they
+   * did not answer. Seeds the prediction so week one is not blank; real logged
+   * rides progressively replace it. Never presented as anything but a guess.
+   */
+  inspectionPrior: number | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   language: 'de',
   theme: 'system',
   delayAlertMinutes: 3,
+  inspectionPrior: null,
 }

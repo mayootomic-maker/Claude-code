@@ -108,6 +108,7 @@ function migrateActiveTrip(raw: unknown): ActiveTrip | null {
     direction: trip.direction === 'inbound' ? 'inbound' : 'outbound',
     line: typeof trip.line === 'string' ? trip.line : '',
     destination: typeof trip.destination === 'string' ? trip.destination : '',
+    ...(typeof trip.category === 'string' ? { category: trip.category } : {}),
     departedAt: trip.departedAt,
     segment: Array.isArray(trip.segment) && trip.segment.length === 2
       ? [String(trip.segment[0]), String(trip.segment[1])]

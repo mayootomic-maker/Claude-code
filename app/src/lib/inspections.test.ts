@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_LOG,
-  MIN_RIDES_FOR_ESTIMATE,
   knownTripKeys,
   migrateLog,
   predict,
@@ -25,6 +24,7 @@ function buildLog(options: {
   tripKeyValue: string
   endingAt: number
   segment?: [string, string]
+  category?: string
 }): InspectionLog {
   let log: InspectionLog = EMPTY_LOG
   for (let i = 0; i < options.rides; i++) {
@@ -34,6 +34,7 @@ function buildLog(options: {
       tripKey: options.tripKeyValue,
       routeId: 'r1',
       direction: 'outbound',
+      ...(options.category === undefined ? {} : { category: options.category }),
     })
     if (i < options.checked) {
       log = recordInspection(log, {
@@ -43,6 +44,7 @@ function buildLog(options: {
         direction: 'outbound',
         segment: options.segment ?? null,
         note: '',
+        ...(options.category === undefined ? {} : { category: options.category }),
       })
     }
   }
@@ -132,64 +134,91 @@ describe('resolveTripKey', () => {
   })
 })
 
-describe('predict', () => {
+describe('predict — pooled model', () => {
   const now = at('2026-08-21T12:00:00Z')
   const trip = key('2026-08-21T05:42:00Z')
+  const target = { tripKey: trip, category: 'IR' }
 
-  it('refuses to give a number below the confidence threshold', () => {
-    // One check in three rides is not "33%". Inventing that number is exactly
-    // the failure this guard exists to prevent.
-    const log = buildLog({ rides: 3, checked: 1, tripKeyValue: trip, endingAt: now })
-    const result = predict(log, trip, now)
+  it('gives a usable answer from the very first ride', () => {
+    // The old model refused to say anything below eight rides on that exact
+    // train, which meant knowing nothing for weeks. Shrinkage toward a prior
+    // means there is always a defensible number.
+    const log = buildLog({ rides: 1, checked: 0, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    const result = predict(log, target, now, { prior: 0.2 })
 
-    expect(result.kind).toBe('insufficient')
-    if (result.kind !== 'insufficient') throw new Error('unreachable')
-    expect(result.rides).toBe(3)
-    expect(result.ridesNeeded).toBe(MIN_RIDES_FOR_ESTIMATE)
+    expect(result.probability).toBeGreaterThan(0)
+    expect(result.probability).toBeLessThan(1)
+    expect(result.basis).toBe('prior')
   })
 
-  it('gives an estimate once there is enough history', () => {
-    const log = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now })
-    const result = predict(log, trip, now)
-
-    expect(result.kind).toBe('estimate')
-    if (result.kind !== 'estimate') throw new Error('unreachable')
-    expect(result.rides).toBe(20)
-    expect(result.inspections).toBe(5)
-    // Recent inspections are weighted up, so the rate exceeds the raw 25%.
-    expect(result.probability).toBeGreaterThan(0.2)
-    expect(result.oneIn).toBeGreaterThanOrEqual(1)
+  it('says the estimate rests on the prior while data is thin', () => {
+    const log = buildLog({ rides: 2, checked: 0, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    expect(predict(log, target, now, { prior: 0.2 }).basis).toBe('prior')
   })
 
-  it('reports a never-inspected trip as zero, not as insufficient', () => {
-    const log = buildLog({ rides: 30, checked: 0, tripKeyValue: trip, endingAt: now })
-    const result = predict(log, trip, now)
+  it('shifts to the trip once its own history is substantial', () => {
+    const log = buildLog({ rides: 30, checked: 8, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    expect(predict(log, target, now, { prior: 0.2 }).basis).toBe('trip')
+  })
 
-    if (result.kind !== 'estimate') throw new Error('expected an estimate')
-    expect(result.probability).toBe(0)
-    expect(result.oneIn).toBe(0)
+  it('learns about a train never ridden, from others of the same category', () => {
+    // This is the whole point of pooling. Heavy inspections on one IR should
+    // inform a different IR with no history of its own.
+    const other = key('2026-08-21T08:42:00Z')
+    const log = buildLog({ rides: 30, checked: 20, tripKeyValue: other, endingAt: now, category: 'IR' })
+
+    const unridden = predict(log, { tripKey: trip, category: 'IR' }, now, { prior: 0.05 })
+
+    // Far above the 0.05 prior, because IR services demonstrably get checked.
+    expect(unridden.probability).toBeGreaterThan(0.3)
+    expect(unridden.tripRides).toBe(0)
+    expect(unridden.basis).toBe('category')
+  })
+
+  it('keeps categories apart — S-Bahn history does not colour an IR estimate', () => {
+    const sbahn = key('2026-08-21T08:42:00Z')
+    const log = buildLog({ rides: 30, checked: 25, tripKeyValue: sbahn, endingAt: now, category: 'S' })
+
+    const forS = predict(log, { tripKey: sbahn, category: 'S' }, now, { prior: 0.05 })
+    const forIR = predict(log, { tripKey: trip, category: 'IR' }, now, { prior: 0.05 })
+
+    expect(forS.probability).toBeGreaterThan(forIR.probability)
+  })
+
+  it('lets a heavily-checked trip exceed its category', () => {
+    let log = buildLog({ rides: 40, checked: 2, tripKeyValue: key('2026-08-21T08:42:00Z'), endingAt: now, category: 'IR' })
+    const busy = buildLog({ rides: 40, checked: 30, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    log = { rides: [...log.rides, ...busy.rides], inspections: [...log.inspections, ...busy.inspections] }
+
+    const result = predict(log, target, now, { prior: 0.1 })
+    expect(result.probability).toBeGreaterThan(0.4)
+    expect(result.basis).toBe('trip')
+  })
+
+  it('converges on a never-inspected trip toward zero, not to zero outright', () => {
+    // Thirty clean rides is strong evidence, but not proof it never happens.
+    const log = buildLog({ rides: 30, checked: 0, tripKeyValue: trip, endingAt: now, category: 'IR' })
+    const result = predict(log, target, now, { prior: 0.2 })
+
+    expect(result.probability).toBeLessThan(0.05)
+    expect(result.probability).toBeGreaterThan(0)
   })
 
   it('weights recent inspections above old ones', () => {
-    const recent = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now })
-
-    // The same five inspections, but a year in the past.
+    const recent = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now, category: 'IR' })
     const old: InspectionLog = {
       rides: recent.rides,
       inspections: recent.inspections.map((i) => ({ ...i, ts: i.ts - 365 * DAY })),
     }
 
-    const recentResult = predict(recent, trip, now)
-    const oldResult = predict(old, trip, now)
-    if (recentResult.kind !== 'estimate' || oldResult.kind !== 'estimate') {
-      throw new Error('expected estimates')
-    }
-    expect(recentResult.probability).toBeGreaterThan(oldResult.probability)
+    expect(predict(recent, target, now).probability).toBeGreaterThan(
+      predict(old, target, now).probability,
+    )
   })
 
   it('never reports a probability above 1, even from a corrupt import', () => {
     const log: InspectionLog = {
-      rides: buildLog({ rides: 10, checked: 0, tripKeyValue: trip, endingAt: now }).rides,
+      rides: buildLog({ rides: 10, checked: 0, tripKeyValue: trip, endingAt: now, category: 'IR' }).rides,
       // Hand-edited file with more inspections than rides.
       inspections: Array.from({ length: 50 }, (_, i) => ({
         id: `x${i}`,
@@ -199,51 +228,53 @@ describe('predict', () => {
         direction: 'outbound' as const,
         segment: null,
         note: '',
+        category: 'IR',
       })),
     }
+    expect(predict(log, target, now).probability).toBeLessThanOrEqual(1)
+  })
 
-    const result = predict(log, trip, now)
-    if (result.kind !== 'estimate') throw new Error('expected an estimate')
-    expect(result.probability).toBeLessThanOrEqual(1)
+  it('still works for entries logged before features existed', () => {
+    // Older logs carry no category. They must still count globally rather
+    // than being silently ignored.
+    const log = buildLog({ rides: 20, checked: 10, tripKeyValue: trip, endingAt: now })
+    const result = predict(log, { tripKey: trip }, now, { prior: 0.05 })
+
+    expect(result.probability).toBeGreaterThan(0.2)
+    expect(result.totalRides).toBe(20)
   })
 
   it('reads history through the tolerance, so a shifted timetable still predicts', () => {
-    const log = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now })
-    // Next December the same train leaves three minutes later.
+    const log = buildLog({ rides: 20, checked: 5, tripKeyValue: trip, endingAt: now, category: 'IR' })
     const shifted = key('2026-08-21T05:45:00Z')
-    expect(predict(log, shifted, now).kind).toBe('estimate')
-  })
-
-  it('ignores history from a different trip', () => {
-    const other = key('2026-08-21T08:42:00Z')
-    const log = buildLog({ rides: 30, checked: 20, tripKeyValue: other, endingAt: now })
-    expect(predict(log, trip, now).kind).toBe('insufficient')
+    expect(predict(log, { tripKey: shifted, category: 'IR' }, now).tripRides).toBe(20)
   })
 
   it('names a segment only when checks actually cluster there', () => {
     const clustered = buildLog({
-      rides: 20,
-      checked: 6,
-      tripKeyValue: trip,
-      endingAt: now,
+      rides: 20, checked: 6, tripKeyValue: trip, endingAt: now, category: 'IR',
       segment: ['8502113', '8502119'],
     })
-    const result = predict(clustered, trip, now)
-    if (result.kind !== 'estimate') throw new Error('expected an estimate')
-    expect(result.hotSegment).toEqual({ from: '8502113', to: '8502119', count: 6 })
+    expect(predict(clustered, target, now).hotSegment).toEqual({
+      from: '8502113', to: '8502119', count: 6,
+    })
   })
 
   it('does not name a segment on the strength of a single check', () => {
     const once = buildLog({
-      rides: 20,
-      checked: 1,
-      tripKeyValue: trip,
-      endingAt: now,
+      rides: 20, checked: 1, tripKeyValue: trip, endingAt: now, category: 'IR',
       segment: ['8502113', '8502119'],
     })
-    const result = predict(once, trip, now)
-    if (result.kind !== 'estimate') throw new Error('expected an estimate')
-    expect(result.hotSegment).toBeNull()
+    expect(predict(once, target, now).hotSegment).toBeNull()
+  })
+
+  it('respects the seeded prior when there is no data at all', () => {
+    const high = predict(EMPTY_LOG, target, now, { prior: 0.5 })
+    const low = predict(EMPTY_LOG, target, now, { prior: 0.02 })
+
+    expect(high.probability).toBeGreaterThan(low.probability)
+    expect(high.basis).toBe('prior')
+    expect(high.oneIn).toBe(2)
   })
 })
 

@@ -11,10 +11,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { searchStops, stopsNear } from '../lib/sources/opendata'
 import { opendataDeps } from '../lib/live'
-import { saveRoute, t as translate } from '../lib/store'
+import { saveRoute, t as translate, updateSettings } from '../lib/store'
 import type { StopRef } from '../lib/types'
 
-type Step = 'origin' | 'destination' | 'walk'
+type Step = 'origin' | 'destination' | 'walk' | 'prior'
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const t = translate.value
@@ -23,8 +23,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [destination, setDestination] = useState<StopRef | null>(null)
   const [walkMinutes, setWalkMinutes] = useState(8)
 
-  const finish = async () => {
+  const finish = async (prior: number | null) => {
     if (origin === null || destination === null) return
+    await updateSettings({ inspectionPrior: prior })
     await saveRoute({
       id: crypto.randomUUID(),
       label: `${origin.name} – ${destination.name}`,
@@ -89,13 +90,49 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             />
           </div>
         )}
+
+        {step === 'prior' && (
+          <div class="animate-rise">
+            <h2 class="text-lg font-semibold">{t('insp.priorQuestion')}</h2>
+            <p class="mt-1 text-sm text-muted">{t('insp.priorHint')}</p>
+
+            <div class="mt-6 space-y-2">
+              {/* Coarse bands, not a number. Nobody knows their inspection rate
+                  to a percentage, and offering a slider would imply a precision
+                  the answer does not have. */}
+              {([
+                ['insp.priorRarely', 0.05],
+                ['insp.priorSometimes', 0.15],
+                ['insp.priorOften', 0.35],
+              ] as const).map(([labelKey, value]) => (
+                <button
+                  key={labelKey}
+                  type="button"
+                  onClick={() => void finish(value)}
+                  class="min-h-[var(--tap)] w-full rounded-[var(--radius-card)] border border-line px-4 text-left font-semibold"
+                >
+                  {t(labelKey)}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => void finish(null)}
+                class="min-h-[var(--tap)] w-full rounded-[var(--radius-card)] px-4 text-left text-sm font-semibold text-muted"
+              >
+                {t('insp.priorSkip')}
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer class="safe-bottom flex gap-3 pt-4">
         {step !== 'origin' && (
           <button
             type="button"
-            onClick={() => setStep(step === 'walk' ? 'destination' : 'origin')}
+            onClick={() =>
+              setStep(step === 'prior' ? 'walk' : step === 'walk' ? 'destination' : 'origin')
+            }
             class="min-h-[var(--tap)] flex-1 rounded-[var(--radius-card)] border border-line px-4 font-semibold"
           >
             {t('onboarding.back')}
@@ -104,10 +141,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         {step === 'walk' && (
           <button
             type="button"
-            onClick={() => void finish()}
+            onClick={() => setStep('prior')}
             class="min-h-[var(--tap)] flex-[2] rounded-[var(--radius-card)] bg-accent px-4 font-semibold text-on-accent"
           >
-            {t('onboarding.finish')}
+            {t('onboarding.continue')}
           </button>
         )}
       </footer>

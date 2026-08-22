@@ -6,13 +6,15 @@
  * elevated the ticket shortcut promotes itself, because that is the action
  * that actually helps.
  *
- * Below the confidence threshold this says "not enough data" and shows no
- * percentage. A number derived from three rides would be invented confidence.
+ * The estimate pools across everything you have logged, so it is useful from
+ * the first ride rather than after eight on one train. What it currently rests
+ * on — your seeded guess, this category of service, or this specific train —
+ * is always stated, because those carry very different weight.
  */
 
 import { useState } from 'preact/hooks'
-import { MIN_RIDES_FOR_ESTIMATE, predict, type Prediction } from '../lib/inspections'
-import { log, logInspection, t as translate } from '../lib/store'
+import { predict, type Prediction } from '../lib/inspections'
+import { log, logInspection, settings, t as translate } from '../lib/store'
 import { serviceDayOfWeek } from '../lib/time'
 import type { Direction } from '../lib/types'
 
@@ -24,6 +26,7 @@ export function InspectionPanel({
   routeId,
   direction,
   segment,
+  category,
   now,
   onShowTicket,
 }: {
@@ -31,6 +34,8 @@ export function InspectionPanel({
   routeId: string
   direction: Direction
   segment: [string, string] | null
+  /** Product category of the train, so the estimate can pool across services. */
+  category: string | undefined
   now: number
   onShowTicket: () => void
 }) {
@@ -38,11 +43,27 @@ export function InspectionPanel({
   const [justLogged, setJustLogged] = useState(false)
   const [showStats, setShowStats] = useState(false)
 
-  const prediction = predict(log.value, tripKey, now, serviceDayOfWeek(now))
-  const elevated = prediction.kind === 'estimate' && prediction.probability >= ELEVATED_PROBABILITY
+  const prediction = predict(
+    log.value,
+    { tripKey, ...(category === undefined ? {} : { category }) },
+    now,
+    {
+      ...(settings.value.inspectionPrior === null ? {} : { prior: settings.value.inspectionPrior }),
+      forWeekday: serviceDayOfWeek(now),
+    },
+  )
+  const elevated = prediction.probability >= ELEVATED_PROBABILITY
 
   const capture = async () => {
-    await logInspection({ ts: now, tripKey, routeId, direction, segment, note: '' })
+    await logInspection({
+      ts: now,
+      tripKey,
+      routeId,
+      direction,
+      segment,
+      note: '',
+      ...(category === undefined ? {} : { category }),
+    })
     setJustLogged(true)
     setTimeout(() => setJustLogged(false), 2000)
   }
@@ -63,7 +84,7 @@ export function InspectionPanel({
         </span>
       </button>
 
-      {showStats && <Stats prediction={prediction} />}
+      {showStats && <Stats prediction={prediction} category={category} />}
 
       <div class="mt-2 flex gap-2">
         <button
@@ -95,18 +116,6 @@ export function InspectionPanel({
 function Summary({ prediction }: { prediction: Prediction }) {
   const t = translate.value
 
-  if (prediction.kind === 'insufficient') {
-    return (
-      <>
-        {t('insp.insufficient')}
-        {' · '}
-        <span class="text-faint">
-          {t('insp.insufficientHint', { missing: MIN_RIDES_FOR_ESTIMATE - prediction.rides })}
-        </span>
-      </>
-    )
-  }
-
   if (prediction.probability === 0) return <>{t('insp.never')}</>
 
   return (
@@ -125,22 +134,29 @@ function Summary({ prediction }: { prediction: Prediction }) {
   )
 }
 
-function Stats({ prediction }: { prediction: Prediction }) {
+function Stats({ prediction, category }: { prediction: Prediction; category: string | undefined }) {
   const t = translate.value
+
+  // Says plainly what the number rests on. An estimate carried mostly by the
+  // prior is a different thing from one built on thirty logged rides, and
+  // presenting them identically would overstate the second-hand one.
+  const basis =
+    prediction.basis === 'trip'
+      ? t('insp.basisTrip', {
+          inspections: prediction.tripInspections,
+          rides: prediction.tripRides,
+        })
+      : prediction.basis === 'category' && category !== undefined && prediction.categoryRides > 0
+        ? t('insp.basisCategory', { rides: prediction.categoryRides, category })
+        : prediction.basis === 'category'
+          ? t('insp.basisAll', { rides: prediction.totalRides })
+          : t('insp.basisPrior')
 
   return (
     <div class="animate-rise pt-2 text-sm text-muted">
-      {prediction.kind === 'estimate' ? (
-        <>
-          <p>
-            {t('insp.basis', { inspections: prediction.inspections, rides: prediction.rides })}
-          </p>
-          {prediction.weekdayNote === 'higher' && <p>{t('insp.weekdayHigher')}</p>}
-          {prediction.weekdayNote === 'lower' && <p>{t('insp.weekdayLower')}</p>}
-        </>
-      ) : (
-        <p>{t('insp.noneLogged')}</p>
-      )}
+      <p>{basis}</p>
+      {prediction.weekdayNote === 'higher' && <p>{t('insp.weekdayHigher')}</p>}
+      {prediction.weekdayNote === 'lower' && <p>{t('insp.weekdayLower')}</p>}
       {/* Always visible: this is a personal statistic, not a live radar, and
           the difference matters for how much you trust it. */}
       <p class="pt-1 text-xs text-faint">{t('insp.disclaimer')}</p>

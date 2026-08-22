@@ -76,8 +76,17 @@ with reality in two places.
 - **Trip identity uses nearest-match, never buckets.** `tripKey` is exact;
   tolerance lives in `resolveTripKey`. Rounding into buckets only moves the
   history-splitting problem to the bucket edges (07:44 vs 07:46).
-- Prediction refuses to show a percentage below `MIN_RIDES_FOR_ESTIMATE`.
-  A rate from three rides is invented confidence.
+- **Prediction pools across levels — prior → category → trip** — each shrunk
+  toward the one above (`SHRINKAGE` in `lib/inspections.ts`). Counting only
+  exact-trip matches meant eight rides on the 07:42 before saying anything, and
+  nothing at all about a train never taken. Every ride now informs every trip.
+- **The `basis` field is not decoration.** An estimate carried by the seeded
+  prior and one built on thirty rides must never be presented identically; the
+  panel states which it is.
+- **No inspection data source exists.** Verified against live OJP: zero hits for
+  Kontrolle/inspect/Zugbegleiter/staff. Nobody publishes inspector positions.
+  Published statistics count *fare evaders caught*, not inspection frequency, so
+  they cannot seed a base rate either. Do not scrape other apps for it.
 - Unknown is never rendered as fine. `delayMinutes: null` means no data.
 - A cancelled service never renders a countdown, and never silently disappears —
   if one is skipped, it is announced (`skippedCancelled` in `routes/Now.tsx`).

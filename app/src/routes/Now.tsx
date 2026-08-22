@@ -152,6 +152,7 @@ function NowForStop({
       direction,
       line: leading.line,
       destination: leading.destination,
+      ...(leading.category === '' ? {} : { category: leading.category }),
       departedAt: leading.timing.actual,
       segment: [originId, destinationId],
     }, now)
@@ -263,6 +264,7 @@ function NowForStop({
           routeId={route.id}
           direction={onBoard?.direction ?? direction}
           segment={onBoard?.segment ?? [originId, destinationId]}
+          category={onBoard?.category ?? leading?.category}
           now={now}
           onShowTicket={() => setShowTicket(true)}
         />

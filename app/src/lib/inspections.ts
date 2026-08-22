@@ -17,6 +17,25 @@
 import { serviceDay, serviceDayOfWeek } from './time'
 import type { Direction } from './types'
 
+/**
+ * What a ride was like, beyond which train it was.
+ *
+ * These are what let the model pool across trips: an inspection on the 07:42
+ * IR says something about IR services generally, not only about that one
+ * departure. All of it comes free from the departure already on screen — the
+ * user is never asked for it.
+ *
+ * Every field is optional because entries logged before this existed have none
+ * of it, and an import may be older still. Missing features simply do not
+ * contribute to their level.
+ */
+export type RideFeatures = {
+  /** Product category: IR, IC, S, RE. From OJP or opendata.ch. */
+  category?: string
+  /** Local hour of departure, 0-23. */
+  hour?: number
+}
+
 export type Inspection = {
   id: string
   ts: number
@@ -26,7 +45,7 @@ export type Inspection = {
   segment: [fromStopId: string, toStopId: string] | null
   direction: Direction
   note: string
-}
+} & RideFeatures
 
 export type Ride = {
   id: string
@@ -34,7 +53,7 @@ export type Ride = {
   tripKey: string
   routeId: string
   direction: Direction
-}
+} & RideFeatures
 
 export type InspectionLog = {
   inspections: Inspection[]
@@ -151,90 +170,172 @@ function minutesIntoServiceDay(epochMs: number): number {
 // Prediction
 // ---------------------------------------------------------------------------
 
-/**
- * Rides needed before a rate is shown at all.
- *
- * Below this the estimate swings wildly — one inspection in two rides is not
- * "50%". Showing a number derived from three data points would be inventing
- * confidence the data does not support.
- */
-export const MIN_RIDES_FOR_ESTIMATE = 8
-
 /** Recency weighting: inspection patterns drift as rosters and routes change. */
 const HALF_LIFE_DAYS = 56
 
-export type Prediction =
-  | {
-      kind: 'insufficient'
-      rides: number
-      ridesNeeded: number
-    }
-  | {
-      kind: 'estimate'
-      /** Recency-weighted probability, 0..1. */
-      probability: number
-      /** Plain-language odds, e.g. 4 meaning "about 1 in 4". */
-      oneIn: number
-      rides: number
-      inspections: number
-      /** Most frequent segment, when one stands out. */
-      hotSegment: { from: string; to: string; count: number } | null
-      /** Higher on this weekday than overall, when the sample supports it. */
-      weekdayNote: 'higher' | 'lower' | null
-    }
+/**
+ * How strongly each level pulls its child toward it.
+ *
+ * Read as "worth this many observations". At 6, a trip with 6 logged rides is
+ * weighted half its own data and half the category it belongs to; by 30 rides
+ * its own history dominates. Low enough that real per-trip differences surface,
+ * high enough that three rides cannot produce a wild number.
+ */
+const SHRINKAGE = 6
+
+/**
+ * How much the seeded prior counts for.
+ *
+ * Deliberately weak — about four rides' worth. It exists to give a sane answer
+ * in week one, not to survive contact with real data.
+ */
+const PRIOR_STRENGTH = 4
+
+/** What an estimate mostly rests on, so the UI can be honest about it. */
+export type Basis = 'prior' | 'category' | 'trip'
+
+export type Prediction = {
+  /** Recency-weighted probability, 0..1. */
+  probability: number
+  /** Plain-language odds: 4 means "about 1 in 4". Zero when probability is 0. */
+  oneIn: number
+  /** What the number mainly comes from. */
+  basis: Basis
+  /** Logged rides on this exact trip. */
+  tripRides: number
+  /** Logged inspections on this exact trip. */
+  tripInspections: number
+  /** Logged rides on this category of service. */
+  categoryRides: number
+  /** Every ride logged, across all trips. */
+  totalRides: number
+  /** Most frequent segment, when one stands out. */
+  hotSegment: { from: string; to: string; count: number } | null
+  /** Higher on this weekday than overall, when the sample supports it. */
+  weekdayNote: 'higher' | 'lower' | null
+}
 
 function weightFor(ts: number, now: number): number {
   const ageDays = Math.max(0, (now - ts) / 86_400_000)
   return Math.pow(0.5, ageDays / HALF_LIFE_DAYS)
 }
 
+type Tally = { rides: number; inspections: number; rideCount: number; inspectionCount: number }
+
+function tally(
+  log: InspectionLog,
+  now: number,
+  matches: (entry: { tripKey: string; category?: string }) => boolean,
+): Tally {
+  let rides = 0
+  let inspections = 0
+  let rideCount = 0
+  let inspectionCount = 0
+
+  for (const ride of log.rides) {
+    if (!matches(ride)) continue
+    rides += weightFor(ride.ts, now)
+    rideCount++
+  }
+  for (const inspection of log.inspections) {
+    if (!matches(inspection)) continue
+    inspections += weightFor(inspection.ts, now)
+    inspectionCount++
+  }
+  return { rides, inspections, rideCount, inspectionCount }
+}
+
 /**
- * Estimates the chance of an inspection on a given trip.
+ * Shrinks an observed rate toward a parent rate.
  *
- * Weighted: a check last week counts for more than one six months ago. The
- * denominator is weighted the same way, so the result stays a probability
- * rather than drifting as history accumulates.
+ * Standard empirical-Bayes: treat the parent as `strength` pseudo-observations
+ * already seen. With no data of its own the result *is* the parent; as real
+ * observations accumulate they take over. This is what makes an estimate
+ * available from the first ride without it being nonsense.
+ */
+function shrink(observed: Tally, parent: number, strength: number): number {
+  return (observed.inspections + parent * strength) / (observed.rides + strength)
+}
+
+/**
+ * Estimates the chance of an inspection.
+ *
+ * Pools across three levels — everything you have logged, then this category of
+ * service, then this specific train — each shrunk toward the one above it.
+ *
+ * The point is that every ride teaches the model something about every trip.
+ * Counting only exact-trip matches meant needing eight rides on the 07:42
+ * before saying anything, and knowing nothing at all about a train you had
+ * never taken. Here, an inspection on any IR informs every IR.
  */
 export function predict(
   log: InspectionLog,
-  tripKeyValue: string,
+  target: { tripKey: string; category?: string },
   now: number,
-  forWeekday?: number,
+  options: { prior?: number; forWeekday?: number } = {},
 ): Prediction {
   // Resolve first: a timetable shift must not read as "no history".
-  const resolved = resolveTripKey(knownTripKeys(log), tripKeyValue)
-  const rides = log.rides.filter((r) => r.tripKey === resolved)
-  const inspections = log.inspections.filter((i) => i.tripKey === resolved)
+  const resolvedKey = resolveTripKey(knownTripKeys(log), target.tripKey)
 
-  if (rides.length < MIN_RIDES_FOR_ESTIMATE) {
-    return { kind: 'insufficient', rides: rides.length, ridesNeeded: MIN_RIDES_FOR_ESTIMATE }
-  }
+  const global = tally(log, now, () => true)
+  const category =
+    target.category === undefined
+      ? { rides: 0, inspections: 0, rideCount: 0, inspectionCount: 0 }
+      : tally(log, now, (e) => e.category === target.category)
+  const trip = tally(log, now, (e) => e.tripKey === resolvedKey)
 
-  const rideWeight = rides.reduce((sum, r) => sum + weightFor(r.ts, now), 0)
-  const inspectionWeight = inspections.reduce((sum, i) => sum + weightFor(i.ts, now), 0)
+  // A prior the user gave us, or an uninformative default. Never presented as
+  // fact — `basis` tells the UI when this is doing the work.
+  const prior = clampProbability(options.prior ?? 0.1)
 
-  // Rides always outnumber inspections in reality, but a clamp keeps a corrupt
-  // or hand-edited import from producing a probability above 1.
-  const probability = rideWeight === 0 ? 0 : Math.min(1, inspectionWeight / rideWeight)
+  const globalRate = shrink(global, prior, PRIOR_STRENGTH)
+  const categoryRate = shrink(category, globalRate, SHRINKAGE)
+  const tripRate = shrink(trip, categoryRate, SHRINKAGE)
+
+  const probability = clampProbability(tripRate)
 
   return {
-    kind: 'estimate',
     probability,
     oneIn: probability <= 0 ? 0 : Math.max(1, Math.round(1 / probability)),
-    rides: rides.length,
-    inspections: inspections.length,
-    hotSegment: findHotSegment(inspections),
-    weekdayNote: weekdayNote(rides, inspections, probability, forWeekday),
+    basis: basisFor(trip, category, global),
+    tripRides: trip.rideCount,
+    tripInspections: trip.inspectionCount,
+    categoryRides: category.rideCount,
+    totalRides: global.rideCount,
+    hotSegment: findHotSegment(log.inspections.filter((i) => i.tripKey === resolvedKey)),
+    weekdayNote: weekdayNote(log, globalRate, options.forWeekday),
   }
+}
+
+/**
+ * Rides on this exact trip before its own history outweighs the category it
+ * was shrunk toward.
+ */
+const TRIP_DOMINATES_AT = SHRINKAGE
+
+function basisFor(trip: Tally, category: Tally, global: Tally): Basis {
+  if (trip.rideCount >= TRIP_DOMINATES_AT) return 'trip'
+  if (category.rideCount >= TRIP_DOMINATES_AT || global.rideCount >= TRIP_DOMINATES_AT) {
+    return 'category'
+  }
+  return 'prior'
+}
+
+/** Guards against a corrupt or hand-edited import producing an impossible rate. */
+function clampProbability(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(1, Math.max(0, value))
 }
 
 /**
  * The segment where checks cluster, if one clearly dominates.
  *
- * Requires both a plurality and at least two occurrences: naming a stretch of
- * line on the strength of a single check would be noise dressed as insight.
+ * Requires at least two occurrences: naming a stretch of line on the strength
+ * of a single check would be noise dressed as insight.
  */
-function findHotSegment(inspections: readonly Inspection[]): { from: string; to: string; count: number } | null {
+function findHotSegment(
+  inspections: readonly Inspection[],
+): { from: string; to: string; count: number } | null {
   const counts = new Map<string, { from: string; to: string; count: number }>()
 
   for (const inspection of inspections) {
@@ -258,17 +359,16 @@ function findHotSegment(inspections: readonly Inspection[]): { from: string; to:
 const MIN_RIDES_FOR_WEEKDAY = 5
 
 function weekdayNote(
-  rides: readonly Ride[],
-  inspections: readonly Inspection[],
+  log: InspectionLog,
   overall: number,
   forWeekday?: number,
 ): 'higher' | 'lower' | null {
   if (forWeekday === undefined) return null
 
-  const dayRides = rides.filter((r) => serviceDayOfWeek(r.ts) === forWeekday)
+  const dayRides = log.rides.filter((r) => serviceDayOfWeek(r.ts) === forWeekday)
   if (dayRides.length < MIN_RIDES_FOR_WEEKDAY) return null
 
-  const dayInspections = inspections.filter((i) => serviceDayOfWeek(i.ts) === forWeekday)
+  const dayInspections = log.inspections.filter((i) => serviceDayOfWeek(i.ts) === forWeekday)
   const dayRate = dayInspections.length / dayRides.length
 
   // Only remark on a clear difference; small wobbles are not signal.

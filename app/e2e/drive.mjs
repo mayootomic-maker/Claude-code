@@ -123,6 +123,11 @@ async function drive(browser) {
     await shot(page, `${theme}-03-onboarding-walk`)
     await page.click('footer button >> nth=-1')
 
+    // Fourth step: the seeded prior, so week one is not blank.
+    await page.waitForSelector('button:has-text("Ab und zu")', { timeout: 5_000 })
+    await shot(page, `${theme}-03b-onboarding-prior`)
+    await page.click('button:has-text("Ab und zu")')
+
     await page.waitForTimeout(1_500)
     await shot(page, `${theme}-04-now-after-onboarding`)
     const afterOnboarding = (await page.textContent('main')) ?? ''
@@ -168,21 +173,21 @@ async function drive(browser) {
     await page.waitForTimeout(1_000)
 
     const panelBefore = (await page.textContent('body')) ?? ''
-    if (!/Zu wenig Daten|Bisher keine Kontrolle/.test(panelBefore)) {
-      problems.push(`[${theme}] inspection panel did not render its low-data state`)
-    }
-    findings.push(`[${theme}] inspection panel OK (low-data state shown)`)
+    const hasEstimate = /Kontrolle: ~1 von \d+/.test(panelBefore)
+    findings.push(`[${theme}] estimate shown ${hasEstimate ? 'OK  ' : 'MISS'} (usable from ride one)`)
+    if (!hasEstimate) problems.push(`[${theme}] no estimate rendered despite a seeded prior`)
 
-    // Log one inspection; the panel must still refuse to give a percentage.
+    // Expanding must disclose that this rests on the prior, not on real rides.
+    await page.click('section button[aria-expanded]')
+    await page.waitForTimeout(400)
+    const stats = (await page.textContent('body')) ?? ''
+    const honest = /Grobe Annahme/.test(stats)
+    findings.push(`[${theme}] basis stated  ${honest ? 'OK  ' : 'MISS'} (says it is only an assumption)`)
+    if (!honest) problems.push(`[${theme}] estimate did not disclose that it rests on the prior`)
+    await shot(page, `${theme}-inspection-panel`)
+
     await page.click('button:has-text("Kontrolle")')
     await page.waitForTimeout(600)
-    const afterLog = (await page.textContent('body')) ?? ''
-    const stillHonest = /Zu wenig Daten/.test(afterLog)
-    findings.push(`[${theme}] after 1 inspection ${stillHonest ? 'OK  ' : 'MISS'} (still refuses a percentage)`)
-    if (!stillHonest) {
-      problems.push(`[${theme}] showed an estimate from a single data point`)
-    }
-    await shot(page, `${theme}-inspection-panel`)
 
     // Ticket view opens with nothing stored and says so, rather than blank.
     await page.click('button:has-text("Billett zeigen")')
