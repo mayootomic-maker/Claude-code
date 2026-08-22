@@ -8,11 +8,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Every style that can contain a figure carries `tnum` (tabular numerals) so that numbers
- * align in columns and do not jitter horizontally while a count-up animation runs.
+ * Large text is light, small text is heavy. Only the numeral styles carry tabular figures —
+ * tabular digits in running prose make paragraphs read like a spreadsheet.
  */
 private const val TABULAR = "tnum"
-
 private val Sans = FontFamily.Default
 
 @Immutable
@@ -34,36 +33,36 @@ data class MarginTypography(
 
 val MarginType = MarginTypography(
     display = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 32.sp,
-        lineHeight = 38.sp, letterSpacing = (-0.7).sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 32.sp,
+        lineHeight = 38.sp, letterSpacing = (-0.8).sp,
     ),
     titleXl = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 25.sp,
-        lineHeight = 31.sp, letterSpacing = (-0.5).sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 25.sp,
+        lineHeight = 31.sp, letterSpacing = (-0.5).sp,
     ),
     title = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 19.sp,
-        lineHeight = 25.sp, letterSpacing = (-0.25).sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 20.sp,
+        lineHeight = 26.sp, letterSpacing = (-0.3).sp,
     ),
     heading = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp,
-        lineHeight = 21.sp, letterSpacing = (-0.1).sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp,
+        lineHeight = 23.sp, letterSpacing = (-0.15).sp,
     ),
     body = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 14.5.sp,
-        lineHeight = 21.sp, letterSpacing = 0.sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 15.sp,
+        lineHeight = 22.sp,
     ),
     bodyStrong = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 14.5.sp,
-        lineHeight = 21.sp, letterSpacing = 0.sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp,
+        lineHeight = 22.sp,
     ),
     caption = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 12.5.sp,
-        lineHeight = 17.sp, letterSpacing = 0.05.sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 13.sp,
+        lineHeight = 18.sp,
     ),
     captionStrong = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 12.5.sp,
-        lineHeight = 17.sp, letterSpacing = 0.05.sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 13.sp,
+        lineHeight = 18.sp,
     ),
     label = TextStyle(
         fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 11.sp,
@@ -78,12 +77,12 @@ val MarginType = MarginTypography(
         lineHeight = 31.sp, letterSpacing = (-0.6).sp, fontFeatureSettings = TABULAR,
     ),
     numeralM = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
-        lineHeight = 21.sp, letterSpacing = (-0.2).sp, fontFeatureSettings = TABULAR,
+        fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 17.sp,
+        lineHeight = 22.sp, letterSpacing = (-0.2).sp, fontFeatureSettings = TABULAR,
     ),
     numeralS = TextStyle(
         fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 13.sp,
-        lineHeight = 17.sp, letterSpacing = 0.sp, fontFeatureSettings = TABULAR,
+        lineHeight = 17.sp, fontFeatureSettings = TABULAR,
     ),
 )
 
