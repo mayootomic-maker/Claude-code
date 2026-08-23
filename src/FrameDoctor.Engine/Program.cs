@@ -8,6 +8,7 @@ using FrameDoctor.Engine.Hosting;
 using FrameDoctor.Ipc;
 using FrameDoctor.Platform.Windows.Time;
 using FrameDoctor.Simulation;
+using FrameDoctor.Storage.Catalog;
 
 // The engine is the resident process: it owns the collectors, the pipeline and the session
 // store, and it outlives whatever window happens to be open. Closing the UI must not end a
@@ -24,6 +25,7 @@ static async Task<int> Run(string[] args)
         "probe" => await Probe().ConfigureAwait(false),
         "serve" => await Serve(args).ConfigureAwait(false),
         "simulate" => await Simulate(args).ConfigureAwait(false),
+        "sessions" => Sessions(args),
         _ => Help(),
     };
 }
@@ -40,9 +42,14 @@ static int Help()
           framedoctor-engine probe              Report what this machine can measure
           framedoctor-engine serve              Collect and serve until stopped
           framedoctor-engine simulate <id>      Run one scenario through the live pipeline
+          framedoctor-engine simulate <id> --save  ... and record it as a session
+          framedoctor-engine sessions           List recorded sessions
 
         `probe` changes nothing and starts no capture. It is the honest answer to
         "what will this actually be able to tell me on my hardware?"
+
+        Sessions are stored under this machine's local application data. Nothing
+        leaves it: there is no account, no upload and no analytics.
         """);
 
     return 0;
@@ -266,6 +273,7 @@ static async Task<int> Simulate(string[] args)
     }
 
     var session = new LiveSession(scenario.RefreshRateHz);
+    var diagnosed = new List<FrameDoctor.Diagnostics.Diagnosis>();
     var explained = 0;
     var total = 0;
 
@@ -273,6 +281,7 @@ static async Task<int> Simulate(string[] args)
     {
         total++;
         if (diagnosis.IsExplained) explained++;
+        diagnosed.Add(diagnosis);
 
         Console.WriteLine(
             $"  {diagnosis.Event.Start.TotalMilliseconds / 1000.0,8:F1}s  " +
@@ -304,13 +313,49 @@ static async Task<int> Simulate(string[] args)
         session.AddSensorSamples(one);
     }
 
-    foreach (var diagnosis in session.Complete())
+    var completed = session.Complete();
+    foreach (var diagnosis in completed)
     {
         total++;
         if (diagnosis.IsExplained) explained++;
+        diagnosed.Add(diagnosis);
     }
 
     var stats = session.Statistics();
+
+    if (args.Contains("--save"))
+    {
+        var path = StorePath(args);
+        using var store = SessionStore.Open(path);
+
+        if (!store.IsWritable)
+        {
+            Console.Error.WriteLine($"  The session store at {path} is not writable.");
+            return 3;
+        }
+
+        var recorder = new SessionRecorder(new SessionRepository(store));
+
+        // A simulated session is recorded as what it is. The machine fingerprint says
+        // "simulation" so a real session can never be compared against one, which would be a
+        // regression manufactured entirely out of synthetic data.
+        var config = new ConfigRecord(
+            new GameRecord($"{scenario.Id}.sim", null, scenario.Title),
+            new MachineRecord("simulation", "Simulated CPU", "Simulated GPU", null, null),
+            GpuDriver: null,
+            MonitorHz: scenario.RefreshRateHz,
+            MonitorWidth: null,
+            MonitorHeight: null,
+            PowerScheme: null,
+            PowerOverlay: null,
+            GameMode: null,
+            Optimizations: null);
+
+        var recordedId = recorder.Record(config, new StopwatchClock(), stats, diagnosed,
+            baselineEligible: false);
+
+        Console.WriteLine($"  Recorded as session {recordedId} in {path}");
+    }
 
     Console.WriteLine();
     Console.WriteLine($"  {stats.FrameCount:N0} frames over {stats.Elapsed.TotalSeconds:F0} s");
@@ -321,6 +366,62 @@ static async Task<int> Simulate(string[] args)
     Console.WriteLine();
 
     await Task.CompletedTask.ConfigureAwait(false);
+    return 0;
+}
+
+// Where sessions live. Local application data, per user, and nowhere else: FrameDoctor has no
+// account, uploads nothing and keeps no analytics.
+static string StorePath(string[] args)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+        if (args[i] is "--store") return args[i + 1];
+
+    var root = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FrameDoctor");
+
+    Directory.CreateDirectory(root);
+    return Path.Combine(root, "sessions.db");
+}
+
+// Lists what has been recorded, newest first.
+static int Sessions(string[] args)
+{
+    var path = StorePath(args);
+
+    if (!File.Exists(path))
+    {
+        Console.WriteLine();
+        Console.WriteLine("  No sessions recorded yet.");
+        Console.WriteLine($"  The store would be at {path}");
+        Console.WriteLine();
+        return 0;
+    }
+
+    using var store = SessionStore.Open(path);
+    var repository = new SessionRepository(store);
+    var sessions = repository.ListAll();
+
+    Console.WriteLine();
+    Console.WriteLine($"  {sessions.Count} session(s) in {path}");
+    Console.WriteLine();
+
+    foreach (var (session, game, stutters) in sessions)
+    {
+        var when = new DateTimeOffset(session.EpochUtcTicks, TimeSpan.Zero).ToLocalTime();
+        var duration = TimeSpan.FromTicks(session.DurationTicks);
+
+        Console.WriteLine(
+            $"  {when:yyyy-MM-dd HH:mm}  {game,-24} " +
+            $"{duration.TotalSeconds,6:F0}s  {session.FrameCount,8:N0} frames  " +
+            $"{stutters,3} stutter(s)" +
+            // Stated per row rather than in a footnote. A session excluded from baselines looks
+            // identical to one included, and comparing across the two would manufacture a
+            // regression out of a measurement problem.
+            (session.BaselineEligible ? string.Empty : "  [not baseline-eligible]"));
+    }
+
+    Console.WriteLine();
     return 0;
 }
 

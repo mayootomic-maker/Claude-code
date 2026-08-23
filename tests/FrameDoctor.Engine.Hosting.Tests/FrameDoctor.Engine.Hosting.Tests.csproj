@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/FrameDoctor.Engine.Hosting/FrameDoctor.Engine.Hosting.csproj" />
     <ProjectReference Include="../../src/FrameDoctor.Simulation/FrameDoctor.Simulation.csproj" />
+    <ProjectReference Include="../../src/FrameDoctor.Storage/FrameDoctor.Storage.csproj" />
   </ItemGroup>
 
 </Project>
