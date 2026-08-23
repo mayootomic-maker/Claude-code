@@ -23,11 +23,10 @@ public sealed class GpuThermalThrottleScenario : SimulationScenario
 {
     /// <summary>Vendor bitmask value for a hardware thermal slowdown.</summary>
     /// <remarks>
-    /// Modelled on NVML's documented clock-event-reason bits. Real values are read from the
-    /// vendor API rather than assumed; this constant exists only so the scenario and the
-    /// detector agree on what a set thermal bit looks like.
+    /// Taken from the shared throttle vocabulary rather than restated here, so a scenario cannot
+    /// drift away from what the detector reads.
     /// </remarks>
-    public const int HardwareThermalSlowdown = 0x40;
+    public const int HardwareThermalSlowdown = (int)GpuThrottleReason.HardwareThermalSlowdown;
 
     private static readonly TimeSpan RampStart = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RampEnd = TimeSpan.FromSeconds(55);

@@ -15,9 +15,6 @@ namespace FrameDoctor.Diagnostics.Rules;
 /// </remarks>
 public sealed class GpuThermalThrottleRule : IDiagnosticRule
 {
-    /// <summary>Vendor bitmask bits indicating a thermal slowdown.</summary>
-    private const int ThermalReasonMask = 0x60;   // software (0x20) or hardware (0x40) thermal
-
     /// <summary>Temperature above which throttling is plausible even without a reason bit.</summary>
     private const double HotCelsius = 83.0;
 
@@ -38,7 +35,12 @@ public sealed class GpuThermalThrottleRule : IDiagnosticRule
             return RuleEvaluation.NotCheckable("gpu.temperature", "gpu.throttle.reason");
         }
 
-        var reasonSet = reason?.AnyFlagSet(ThermalReasonMask) ?? false;
+        // The bitmask is read through the shared vocabulary, never bit-tested here. The bit that
+        // means "clocks halved, cause not stated" is the trap: reading it as thermal because
+        // thermal is the common case is how a tool tells someone to clean a heatsink when the
+        // card was hitting a power limit.
+        var verdict = GpuThrottleReasons.Classify(reason?.ThrottleReasons() ?? GpuThrottleReason.None);
+        var reasonSet = verdict is GpuThrottleVerdict.Thermal;
         var peakTemp = temperature?.Max() ?? double.NaN;
         var hot = !double.IsNaN(peakTemp) && peakTemp >= HotCelsius;
 
@@ -47,9 +49,17 @@ public sealed class GpuThermalThrottleRule : IDiagnosticRule
 
         if (!reasonSet && !hot)
         {
-            return RuleEvaluation.Rejected(double.IsNaN(peakTemp)
-                ? "The GPU reported no thermal limit."
-                : $"GPU peaked at {peakTemp:F0} C with no thermal limit reported.");
+            return RuleEvaluation.Rejected(verdict switch
+            {
+                // Naming what the GPU did report is worth more than a bare "not this": it tells
+                // the reader the sensor was working and what it actually said.
+                GpuThrottleVerdict.PowerLimit =>
+                    "The GPU reduced clocks for a power limit, not a thermal one.",
+                GpuThrottleVerdict.ThermalOrPower =>
+                    "The GPU reported a hardware slowdown without naming temperature as the cause.",
+                _ when double.IsNaN(peakTemp) => "The GPU reported no thermal limit.",
+                _ => $"GPU peaked at {peakTemp:F0} C with no thermal limit reported.",
+            });
         }
 
         var evidence = new List<EvidenceItem>();

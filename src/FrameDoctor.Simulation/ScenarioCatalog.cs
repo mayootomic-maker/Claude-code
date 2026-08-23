@@ -28,6 +28,7 @@ public static class ScenarioCatalog
         new BackgroundCpuSpikeScenario(),
         new CpuFrequencyCollapseScenario(),
         new GpuThermalThrottleScenario(),
+        new GpuPowerLimitScenario(),
         new PagingStormScenario(),
         new UnexplainedHitchScenario(),
     ];

@@ -51,6 +51,7 @@ public sealed class DiagnosticEngine
         new BackgroundCpuContentionRule(),
         new CpuFrequencyCollapseRule(),
         new GpuThermalThrottleRule(),
+        new GpuPowerLimitRule(),
         new MemoryPressurePagingRule(),
         new DiskStallRule(),
         new DpcStormRule(),

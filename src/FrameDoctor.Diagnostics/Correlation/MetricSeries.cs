@@ -168,6 +168,27 @@ public sealed class MetricSeries
     public bool AnyFlagSet(int mask) =>
         _samples.Any(s => s.TryGetValue(out var v) && ((int)v & mask) != 0);
 
+    /// <summary>
+    /// Every throttle-reason bit seen anywhere in the window, combined.
+    /// </summary>
+    /// <remarks>
+    /// The union rather than the last value. Throttling is intermittent by nature — the GPU
+    /// drops its clock, cools, and lifts it again within a second — so a bit that was set during
+    /// the stutter and clear by the time the window ended is still the explanation for it.
+    /// </remarks>
+    public GpuThrottleReason ThrottleReasons()
+    {
+        ulong union = 0;
+
+        foreach (var sample in _samples)
+        {
+            if (sample.TryGetValue(out var v) && v is >= 0 and <= ulong.MaxValue)
+                union |= (ulong)v;
+        }
+
+        return (GpuThrottleReason)union;
+    }
+
     private double MedianOf(Func<TelemetrySample, bool> predicate)
     {
         var values = new List<double>();
