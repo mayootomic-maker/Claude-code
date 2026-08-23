@@ -116,6 +116,13 @@ class VoiceSettings:
     live_gate_db: float = -55.0
     # The real-time accent applied to your own voice in Live mode.
     live_accent: AccentFxSettings = field(default_factory=AccentFxSettings)
+    # How far Live shifts your own pitch. Zero by default, and that matters:
+    # `fx` above describes the *character voice* the Full path synthesises,
+    # and Live was borrowing its pitch shift, so a fresh install moved the
+    # speaker down two semitones through a delay-line shifter. Live is
+    # supposed to keep your voice and change only the accent, and a pitch
+    # shift is the one thing guaranteed to stop it being your voice.
+    live_pitch_semitones: float = 0.0
     comms: str = DEFAULT_COMMS
     comms_profile: CommsProfile = field(
         default_factory=lambda: get_profile(DEFAULT_COMMS))

@@ -343,7 +343,18 @@ class AccentApp:
         self.live_consonant_slider = Slider(
             body, "Consonant strength", 0.0, 1.0, cons.strength,
             on_change=self.on_consonant_strength, fmt="{:.0%}")
-        self.live_consonant_slider.pack(fill="x", pady=(8, 12))
+        self.live_consonant_slider.pack(fill="x", pady=(8, 4))
+
+        self.live_pitch_slider = Slider(
+            body, "Pitch (0 = your own voice)", -8.0, 8.0,
+            self.config.voice.live_pitch_semitones,
+            on_change=self.on_live_pitch_change, fmt="{:+.1f} st")
+        self.live_pitch_slider.pack(fill="x", pady=(0, 4))
+        tk.Label(body, text="Live keeps your voice at 0. Move it and you "
+                            "become someone else, which is a different "
+                            "thing from having an accent.",
+                 bg=theme.BG_CARD, fg=theme.FG_FAINT, font=theme.Fonts.small,
+                 justify="left", wraplength=430).pack(anchor="w", pady=(0, 10))
 
         row = tk.Frame(body, bg=theme.BG_CARD)
         row.pack(fill="x")
@@ -898,6 +909,7 @@ class AccentApp:
         for field_name, toggle in self.consonant_toggles.items():
             toggle.set(getattr(cons, field_name))
         self.live_consonant_slider.set(cons.strength)
+        self.live_pitch_slider.set(self.config.voice.live_pitch_semitones)
         for field, slider in self.fx_sliders.items():
             slider.set(getattr(self.config.voice.fx, field))
         for index, (key, _n, _d) in enumerate(MODEL_SIZES):
@@ -1041,6 +1053,10 @@ class AccentApp:
     def on_consonant_toggle(self, field_name: str, value: bool) -> None:
         setattr(self.config.voice.live_accent.consonants, field_name,
                 bool(value))
+        self._apply_config()
+
+    def on_live_pitch_change(self, value: float) -> None:
+        self.config.voice.live_pitch_semitones = float(value)
         self._apply_config()
 
     def on_consonant_strength(self, value: float) -> None:

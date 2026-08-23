@@ -75,7 +75,7 @@ class LiveMode:
         # rather than leaving Live quietly Russian.
         voice.live_accent.language = self.config.accent.language
         return LiveSettings(
-            pitch_semitones=voice.fx.pitch_semitones,
+            pitch_semitones=voice.live_pitch_semitones,
             comms=voice.comms_profile,
             output_db=voice.fx.output_db,
             noise_gate_db=voice.live_gate_db,

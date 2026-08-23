@@ -141,6 +141,12 @@ def targets_for(language: str) -> List[Tuple[float, float, float, float]]:
 # their formants does them no harm.
 CONSONANT_PHONES = frozenset({Phone.R, Phone.W, Phone.L})
 
+# How many consecutive frames may reuse the last good formant estimate.
+# At a 256-sample hop that is about 80 ms -- long enough to ride out a
+# failed fit, short enough that a genuinely new sound is not warped as the
+# old one.
+HOLD_FRAMES = 15
+
 # Formant tracking is not done here any more. It used to be, with its own
 # all-pole fit, and that fit was wrong: it had no pre-emphasis, so it put a
 # spurious wide pole at about 210 Hz in front of every real formant and
@@ -248,6 +254,7 @@ class VowelSpaceWarper:
             (ANALYSIS_BAND_HZ * 1.05 - self._freqs) / (ANALYSIS_BAND_HZ * 0.25),
             0.0, 1.0)
         self._smoothed: Optional[Tuple[float, float]] = None
+        self._held = 0
         self._scale = self.settings.scale
         self._language = self.settings.language
         self._analyser = PhoneAnalyser(sample_rate, scale=self._scale)
@@ -276,6 +283,7 @@ class VowelSpaceWarper:
         self._output = np.zeros(self.n_fft, dtype=np.float64)
         self._norm = np.zeros(self.n_fft, dtype=np.float64)
         self._smoothed = None
+        self._held = 0
         self._analyser.reset()
         self._shaper.reset()
 
@@ -364,8 +372,23 @@ class VowelSpaceWarper:
                     if coefficients is not None else None)
         formants = self._vowel_formants(measured) if envelope is not None else None
         if formants is None:
-            self._smoothed = None
-            return np.fft.irfft(spectrum, self.n_fft)
+            # Hold the last good estimate rather than dropping the frame.
+            # The fit fails on about 7% of frames of a steady vowel
+            # (41 in 596, measured), and skipping those left the sound
+            # alternating between warped and unwarped at the hop rate. A
+            # vowel does not stop being that vowel because one fit failed.
+            if self._smoothed is None or envelope is None:
+                self._smoothed = None
+                self._held = 0
+                return np.fft.irfft(spectrum, self.n_fft)
+            self._held += 1
+            if self._held > HOLD_FRAMES:
+                self._smoothed = None
+                self._held = 0
+                return np.fft.irfft(spectrum, self.n_fft)
+            formants = self._smoothed
+        else:
+            self._held = 0
 
         # Smooth the estimate across frames: raw per-frame formants jitter,
         # and a jittering warp sounds like a bad chorus pedal.

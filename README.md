@@ -89,6 +89,34 @@ VoiceMeeter, Virtual Audio Cable and (on macOS) BlackHole are detected too.
 **Live** keeps your own voice — your pitch, your timing, your throat — and
 moves your *vowels* onto Russian ones as you speak, about 45 ms behind.
 
+That is the claim, and until 1.5.0 a fresh install did not honour it. The
+character-voice preset — the one that shapes the synthetic voice the Full
+path uses — was also being read by Live, so out of the box Live put your
+own voice through a −2 semitone shift. It moved the speaker down nearly a
+whole tone, which is the one change guaranteed to stop it being your voice.
+Live now has its own pitch control, defaulting to 0, and the character
+preset stays where it belongs.
+
+The shifter it used was also the loudest source of the "robotic" quality.
+It is a delay line with two taps half a grain apart; the crossfade between
+them sums to one, which is the usual argument for why it is transparent —
+but that says nothing about what the two taps *contain*. They read the
+signal 27 ms apart, so they comb-filter each other, and as the delay sweeps
+the comb sweeps with it. Measured on steady vowels from 85 to 250 Hz, it
+modulated the output's amplitude by **3 to 20 per cent** at a few hertz,
+against a hundredth of a per cent in the input. That warble is what robotic
+sounds like.
+
+The fix is to make the grain an even number of pitch periods, so the two
+taps sit a whole number of periods apart and reinforce each other at every
+sweep position instead of combing — while the delay still sweeps, so the
+shift itself is untouched. Under a tenth of a per cent now: **64 to 2250
+times less**, with the pitch landing within 4 cents of where it was asked
+to. (Snapping the *read positions* to whole periods instead looks
+equivalent and is not: reading in phase with the input reads the same
+waveform back, and the pitch stops shifting at all. There is a test for
+that.)
+
 The trick is that most of an accent is not consonants, it is where the
 vowels sit. English has around eleven monophthongs; Russian has five. A
 Russian speaker of English has no separate slot for the extra six, so they

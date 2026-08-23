@@ -80,6 +80,8 @@ check("consonant toggles", lambda: [
     t.set(not t.value, notify=True) or t.set(not t.value, notify=True)
     for t in app.consonant_toggles.values()])
 check("consonant strength", lambda: app.on_consonant_strength(0.6))
+check("live pitch", lambda: (app.on_live_pitch_change(-3.0),
+                             app.on_live_pitch_change(0.0)))
 
 # The soundboard, driven with a clip written here so the real decode,
 # resample and mix path runs on the machine the installer is built for.
