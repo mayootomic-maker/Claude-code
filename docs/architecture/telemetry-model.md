@@ -132,6 +132,20 @@ category of the judder users actually complain about.
 | `cpu.temp` | °C | — or core | Frequently `Unavailable` without a sensor source |
 | `cpu.power` | W | — | Often `Unavailable` |
 | `cpu.throttle.state` | enum | — | Often `Unavailable`; never inferred silently |
+| `cpu.dpc.time` | % | — or core | Time in deferred procedure calls |
+| `cpu.isr.time` | % | — or core | Time in interrupt service routines |
+
+#### Why DPC/ISR time earns a place in a short catalog
+
+A driver misbehaving in kernel mode steals time from everything on the machine without
+appearing as any process's CPU usage. It is the classic signature of *"everything got laggy,
+including light games, and nothing in Task Manager looks busy"* — which is exactly the
+real-world case FrameDoctor's first mission is to explain.
+
+Without it, that case is undiagnosable: every user-mode process looks idle, the GPU looks
+idle, the clocks look fine, and the honest answer would be "unexplained". It costs a single
+`NtQuerySystemInformation` call, so it is close to the cheapest diagnostic signal available
+per unit of explanatory power.
 
 ### GPU — `gpu.*`
 
