@@ -37,3 +37,7 @@ Desktop.ini
 
 # Tooling
 .idea/
+
+# Frontend
+src/frontend/node_modules/
+src/frontend/dist/
