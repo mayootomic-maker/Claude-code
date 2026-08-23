@@ -1,0 +1,36 @@
+<!--
+  The whole product, in build order rather than alphabetical.
+
+  A solution file exists mainly so `dotnet build` and `dotnet test` at the repository root do the
+  obvious thing. Without it, continuous integration greenlights a subset and nobody notices which
+  subset.
+-->
+<Solution>
+
+  <Folder Name="/src/">
+    <Project Path="src/FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+    <Project Path="src/FrameDoctor.Pipeline/FrameDoctor.Pipeline.csproj" />
+    <Project Path="src/FrameDoctor.Diagnostics/FrameDoctor.Diagnostics.csproj" />
+    <Project Path="src/FrameDoctor.Simulation/FrameDoctor.Simulation.csproj" />
+    <Project Path="src/FrameDoctor.Storage/FrameDoctor.Storage.csproj" />
+    <Project Path="src/FrameDoctor.Ipc/FrameDoctor.Ipc.csproj" />
+    <Project Path="src/FrameDoctor.Optimization/FrameDoctor.Optimization.csproj" />
+    <Project Path="src/FrameDoctor.Platform.Windows/FrameDoctor.Platform.Windows.csproj" />
+    <Project Path="src/FrameDoctor.Engine.Hosting/FrameDoctor.Engine.Hosting.csproj" />
+    <Project Path="src/FrameDoctor.Engine/FrameDoctor.Engine.csproj" />
+    <Project Path="src/FrameDoctor.Cli/FrameDoctor.Cli.csproj" />
+    <Project Path="src/FrameDoctor.Shell/FrameDoctor.Shell.csproj" />
+  </Folder>
+
+  <Folder Name="/tests/">
+    <Project Path="tests/FrameDoctor.Abstractions.Tests/FrameDoctor.Abstractions.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Pipeline.Tests/FrameDoctor.Pipeline.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Diagnostics.Tests/FrameDoctor.Diagnostics.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Storage.Tests/FrameDoctor.Storage.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Ipc.Tests/FrameDoctor.Ipc.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Optimization.Tests/FrameDoctor.Optimization.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Platform.Windows.Tests/FrameDoctor.Platform.Windows.Tests.csproj" />
+    <Project Path="tests/FrameDoctor.Engine.Hosting.Tests/FrameDoctor.Engine.Hosting.Tests.csproj" />
+  </Folder>
+
+</Solution>
