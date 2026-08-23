@@ -20,3 +20,13 @@ trim_trailing_whitespace = false
 
 [*.sh]
 end_of_line = lf
+
+# Test projects: names are sentences, not identifiers. Readability of a failing
+# test name beats the naming convention.
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA5394.severity = none
+
+[bench/**.cs]
+dotnet_diagnostic.CA1707.severity = none

@@ -8,6 +8,9 @@ Legend: **Done** · **Partial** · **Not started** · **Blocked** · **Needs Win
 
 _Last updated: 2026-08-23_
 
+**Toolchain: .NET 10.0.400 SDK.** .NET 8 reaches EOL 2026-11-10, so it was never a
+candidate for a product with no code yet.
+
 ## Stage 0 — foundations
 
 | Item | Status | Evidence |
@@ -18,11 +21,24 @@ _Last updated: 2026-08-23_
 | Research: frame telemetry | In progress | → `docs/research/frame-telemetry.md` |
 | Research: hardware telemetry | In progress | → `docs/research/hardware-telemetry.md` |
 | Research: Windows internals | In progress | → `docs/research/windows-internals.md` |
-| Architecture decision | Not started | Blocked on research |
+| Architecture decision | Council Phase A complete (6 agents), ADR pending | See commit history |
 | Performance budget | Done | `docs/architecture/performance-budget.md` |
 | Telemetry model spec | Done | `docs/architecture/telemetry-model.md` |
 
-## Stages 1–10
+## Stage 1 — foundations in code
+
+| Item | Status | Evidence |
+|---|---|---|
+| Solution scaffolding (global.json, Directory.Build.props, central packages) | Done | Builds clean with `TreatWarningsAsErrors` |
+| `FrameDoctor.Abstractions` — telemetry model | Done | `dotnet build -c Release`, 0 warnings |
+| Metric catalog with minimum-sample rules | Done | `MetricCatalog.cs` |
+| Monotonic clock + discontinuity types | Done | `Time/` |
+| Telemetry model tests | Done | **10 passing** — including that an unavailable sample refuses to yield a value |
+| Pipeline / Diagnostics / Storage / Ipc / Simulation | Scaffolded, empty | — |
+| Windows platform layer | Not started | — |
+| Frontend | Not started | — |
+
+## Stages 2–10
 
 Not started. See `CLAUDE.md` for the staging plan.
 

@@ -1,0 +1,38 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors></WarningsNotAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- net*-windows projects must compile from this Linux host. They cannot run here;
+         that is expected and tracked in docs/WINDOWS-VALIDATION.md. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <NeutralLanguage>en</NeutralLanguage>
+
+    <!-- Deterministic output so a build can be compared across machines. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591: public members without XML docs. Docs are required where they explain
+         intent, not as a ritual on every property. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <Company>FrameDoctor</Company>
+    <Product>FrameDoctor</Product>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>
