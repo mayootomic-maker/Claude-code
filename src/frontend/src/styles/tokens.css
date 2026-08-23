@@ -1,4 +1,34 @@
 /*
+ * Fonts are vendored, not fetched.
+ *
+ * Invariant 7 makes the product work fully offline with no cloud dependency, so a Google Fonts
+ * link is forbidden outright. These are the latin-subset variable files from Fontsource, both
+ * SIL OFL 1.1, 88 KB for the pair. The package index is deliberately not imported: it pulls
+ * seven subsets we will never render.
+ *
+ * font-display: block rather than swap. A metric that reflows a beat after paint is worse than
+ * one that appears a beat late, because the eye is trying to read a number.
+ *
+ * Inter's latin subset ships no slashed zero, verified by rendering it - the glyph is identical
+ * with and without the feature - so slashed-zero is deliberately not specified.
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+/*
  * FrameDoctor design tokens.
  *
  * Implements docs/design/design-system.md. Values here are the single source of truth for the

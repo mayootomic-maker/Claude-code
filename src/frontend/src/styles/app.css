@@ -1,0 +1,804 @@
+/*
+ * Layout and components. Every value here is a token from tokens.css — nothing defines its own
+ * colour, size or duration.
+ *
+ * Two rules from the design review are enforced structurally rather than by convention:
+ *   1. No metric container has a border or a background. Hierarchy comes from size, weight and
+ *      alignment; boxes turn an instrument cluster into a dashboard of cards.
+ *   2. Nothing bound to telemetry is transitioned. A value that eases between readings is a
+ *      value that lies about when it changed.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: var(--t-body-weight) var(--t-body-size) / var(--t-body-lh) var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- type utilities ------------------------------------------------------ */
+
+.t-hero {
+  font: var(--t-hero-weight) var(--t-hero-size) / var(--t-hero-lh) var(--font-ui);
+  letter-spacing: var(--t-hero-track);
+}
+
+.t-metric-lg {
+  font: var(--t-metric-lg-weight) var(--t-metric-lg-size) / var(--t-metric-lg-lh) var(--font-ui);
+  letter-spacing: var(--t-metric-lg-track);
+}
+
+.t-metric-md {
+  font: var(--t-metric-md-weight) var(--t-metric-md-size) / var(--t-metric-md-lh) var(--font-ui);
+  letter-spacing: var(--t-metric-md-track);
+}
+
+.t-metric-sm {
+  font: var(--t-metric-sm-weight) var(--t-metric-sm-size) / var(--t-metric-sm-lh) var(--font-ui);
+}
+
+.t-title {
+  font: var(--t-title-weight) var(--t-title-size) / var(--t-title-lh) var(--font-ui);
+  letter-spacing: var(--t-title-track);
+  margin: 0;
+}
+
+.t-subtitle {
+  font: var(--t-subtitle-weight) var(--t-subtitle-size) / var(--t-subtitle-lh) var(--font-ui);
+  letter-spacing: var(--t-subtitle-track);
+}
+
+.t-body {
+  font: var(--t-body-weight) var(--t-body-size) / var(--t-body-lh) var(--font-ui);
+}
+
+.t-body-sm {
+  font: var(--t-body-sm-weight) var(--t-body-sm-size) / var(--t-body-sm-lh) var(--font-ui);
+}
+
+.t-label {
+  font: var(--t-label-weight) var(--t-label-size) / var(--t-label-lh) var(--font-ui);
+  letter-spacing: var(--t-label-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.t-label-sm {
+  font: var(--t-label-sm-weight) var(--t-label-sm-size) / var(--t-label-sm-lh) var(--font-ui);
+  letter-spacing: var(--t-label-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.t-nav {
+  font: var(--t-nav-weight) var(--t-nav-size) / var(--t-nav-lh) var(--font-ui);
+  letter-spacing: var(--t-nav-track);
+}
+
+.t-mono {
+  font: var(--t-mono-weight) var(--t-mono-size) / var(--t-mono-lh) var(--font-mono);
+}
+
+.t-mono-sm {
+  font: var(--t-mono-weight) var(--t-mono-sm-size) / var(--t-mono-sm-lh) var(--font-mono);
+}
+
+/* ---- shell --------------------------------------------------------------- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+.simulation-banner {
+  padding: var(--sp-1) var(--sp-6);
+  border-bottom: 1px solid var(--sev-warning);
+  background: var(--sev-warning-wash);
+  color: var(--text-secondary);
+  font: var(--t-body-sm-weight) var(--t-body-sm-size) / 20px var(--font-ui);
+}
+
+.simulation-banner strong {
+  color: var(--sev-warning);
+  font-weight: var(--t-body-strong-weight);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app__body {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  min-height: 0;
+}
+
+.app__main {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app__error,
+.app__unbuilt,
+.app__loading {
+  padding: var(--sp-8);
+  max-width: 62ch;
+  color: var(--text-secondary);
+}
+
+.app__error strong {
+  display: block;
+  color: var(--sev-critical);
+}
+
+/* ---- nav rail ------------------------------------------------------------ */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  border-right: var(--border-default);
+  background: var(--bg-raised);
+  min-height: 0;
+}
+
+.rail__brand {
+  padding: var(--sp-5) var(--sp-4) var(--sp-4);
+  color: var(--text-secondary);
+  letter-spacing: 0.1em;
+}
+
+.rail__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--sp-2);
+}
+
+.rail__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-state), color var(--motion-state);
+}
+
+.rail__item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rail__item[data-active] {
+  border-left-color: var(--sev-selected);
+  background: var(--bg-selected);
+  color: var(--text-primary);
+}
+
+.rail__item:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.rail__pending {
+  font-size: var(--t-label-sm-size);
+  letter-spacing: var(--t-label-track);
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+.rail__scenarios {
+  margin-top: var(--sp-6);
+  padding: 0 var(--sp-2);
+  border-top: var(--border-hairline);
+  padding-top: var(--sp-4);
+}
+
+.rail__scenarios-title {
+  padding: 0 var(--sp-2) var(--sp-2);
+}
+
+.rail__scenario {
+  display: block;
+  width: 100%;
+  padding: var(--sp-1) var(--sp-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--motion-state);
+}
+
+.rail__scenario:hover {
+  color: var(--text-primary);
+}
+
+.rail__scenario[data-active] {
+  border-left-color: var(--sev-selected);
+  color: var(--text-primary);
+}
+
+.rail__foot {
+  margin-top: auto;
+  padding: var(--sp-4);
+  border-top: var(--border-hairline);
+}
+
+.rail__foot-value {
+  color: var(--text-disabled);
+}
+
+/* ---- live view ----------------------------------------------------------- */
+
+.live {
+  display: grid;
+  grid-template-rows: 56px 108px auto minmax(214px, 26vh) 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.live__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--gutter-view);
+  border-bottom: var(--border-default);
+}
+
+.live__game {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.live__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sev-normal);
+  align-self: center;
+}
+
+.live__status-dot[data-state='warning'] {
+  background: var(--sev-warning);
+}
+
+.live__exe {
+  color: var(--text-tertiary);
+}
+
+.live__header-right {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.live__telemetry-chip {
+  padding: 2px var(--sp-2);
+  border: var(--border-hairline);
+  border-radius: var(--r-sm);
+  color: var(--text-secondary);
+}
+
+.live__telemetry-chip[data-degraded] {
+  border-color: var(--sev-warning);
+  color: var(--sev-warning);
+}
+
+/*
+ * The metric cluster: separated by hairline rules, never by cards.
+ * No background, no border, no radius on any cell — that is the review gate from ADR 0004
+ * and it is what keeps this an instrument cluster rather than a KPI grid.
+ */
+.live__metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  padding: var(--sp-3) var(--gutter-view);
+  border-bottom: var(--border-default);
+}
+
+.live__metrics > * + * {
+  padding-left: var(--sp-5);
+  border-left: var(--border-hairline);
+}
+
+.live__strip {
+  display: grid;
+  /* 148px is the measured minimum: below it, labels collide with values at 1280 wide. */
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: var(--sp-1) var(--sp-4);
+  padding: var(--sp-2) var(--gutter-view);
+  border-bottom: var(--border-default);
+}
+
+/* ---- metric readout ------------------------------------------------------ */
+
+.metric-readout__label {
+  margin-bottom: 2px;
+}
+
+.metric-readout__value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-primary);
+}
+
+.metric-readout__number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Units are always subdued relative to the value. The number is what is being read. */
+.metric-readout__unit {
+  font: var(--t-label-weight) var(--t-label-sm-size) / 1 var(--font-ui);
+  color: var(--text-tertiary);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.metric-readout__age {
+  font: var(--t-mono-weight) var(--t-mono-sm-size) / 1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.metric-readout__absent {
+  color: var(--text-disabled);
+  cursor: help;
+}
+
+.metric-readout__detail {
+  margin-top: 2px;
+  font: var(--t-label-sm-weight) var(--t-label-sm-size) / var(--t-label-sm-lh) var(--font-ui);
+  color: var(--text-tertiary);
+}
+
+.metric-readout__detail[data-tone='action'] {
+  color: var(--sev-selected);
+}
+
+.metric-readout__detail[data-tone='fault'] {
+  color: var(--sev-warning);
+}
+
+/* A stale reading is real but old: de-emphasised, never hidden and never redrawn as current. */
+.metric-readout[data-state='stale'] .metric-readout__number {
+  color: var(--text-secondary);
+  opacity: 0.62;
+}
+
+/* ---- chart --------------------------------------------------------------- */
+
+.chart {
+  display: grid;
+  grid-template-rows: 20px 1fr 18px 16px;
+  padding: var(--sp-2) var(--gutter-view) var(--sp-3);
+  border-bottom: var(--border-default);
+  min-height: 0;
+}
+
+.chart__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+/* Sits with the chart title, not the legend: it qualifies what the axis means, and the reader
+   needs it before they read a single value off the plot. */
+.chart__scale {
+  margin-left: var(--sp-2);
+  padding: 1px 5px;
+  color: var(--text-tertiary);
+  background: var(--bg-hover);
+  border-radius: var(--r-sm);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono);
+}
+
+.chart__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.chart__key {
+  display: inline-block;
+  width: 10px;
+  height: 0;
+  margin-right: 2px;
+  border-top: 2px solid var(--chart-envelope);
+  vertical-align: middle;
+}
+
+.chart__key--baseline {
+  border-top-style: dashed;
+  border-top-color: var(--chart-baseline);
+}
+
+.chart__key--refresh {
+  border-top-style: dotted;
+  border-top-color: var(--chart-refresh);
+}
+
+.chart__plot {
+  position: relative;
+  min-height: 0;
+  background: var(--chart-plot-bg);
+  border-bottom: 1px solid var(--chart-axis);
+}
+
+.chart__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chart__ribbon {
+  position: relative;
+  height: 18px;
+}
+
+/*
+ * Severity is carried by colour AND shape AND position, never colour alone.
+ * A severe hitch is a taller, red, triangular mark; a stutter is a square.
+ */
+.chart__marker {
+  position: absolute;
+  top: 4px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
+  padding: 0;
+  border: 0;
+  background: var(--sev-warning);
+  cursor: pointer;
+  transition: transform var(--motion-select);
+}
+
+.chart__marker[data-class='severehitch'] {
+  top: 1px;
+  width: 0;
+  height: 0;
+  background: none;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 9px solid var(--sev-critical);
+  margin-left: -5px;
+}
+
+.chart__marker[data-class='regimechange'] {
+  background: var(--sev-comparison);
+}
+
+.chart__marker[data-selected] {
+  transform: scale(1.4);
+  outline: 1px solid var(--sev-selected);
+  outline-offset: 2px;
+}
+
+.chart__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+}
+
+/* ---- lower region -------------------------------------------------------- */
+
+.live__lower {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(360px, 42%);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diagnosis {
+  padding: var(--sp-4) var(--gutter-view);
+  border-right: var(--border-default);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.diagnosis--empty {
+  display: flex;
+  align-items: center;
+}
+
+.diagnosis__placeholder {
+  color: var(--text-tertiary);
+}
+
+.diagnosis__header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.diagnosis__severity {
+  display: block;
+  margin-bottom: 2px;
+  font: var(--t-label-weight) var(--t-label-size) / var(--t-label-lh) var(--font-ui);
+  letter-spacing: var(--t-label-track);
+  color: var(--sev-warning);
+}
+
+.diagnosis__severity[data-class='severehitch'] {
+  color: var(--sev-critical);
+}
+
+.diagnosis__severity[data-class='regimechange'] {
+  color: var(--sev-comparison);
+}
+
+.diagnosis__title {
+  grid-column: 1;
+}
+
+.diagnosis__confidence {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  text-align: right;
+}
+
+.diagnosis__confidence-value {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnosis__confidence-unit {
+  font: var(--t-label-weight) var(--t-label-size) / 1 var(--font-ui);
+  color: var(--text-tertiary);
+}
+
+.diagnosis__cap {
+  display: block;
+  max-width: 22ch;
+  margin-top: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+}
+
+.confidence-bar {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  margin-top: var(--sp-1);
+}
+
+.confidence-bar__segment {
+  width: 6px;
+  height: 4px;
+  background: var(--line-default);
+}
+
+.confidence-bar__segment[data-filled] {
+  background: var(--sev-selected);
+}
+
+.diagnosis__block {
+  margin-bottom: var(--sp-4);
+}
+
+.diagnosis__block h3 {
+  margin: 0 0 var(--sp-1);
+}
+
+.diagnosis__block p {
+  margin: 0;
+  color: var(--text-secondary);
+  max-width: 68ch;
+}
+
+.diagnosis__caveat {
+  margin-top: var(--sp-1) !important;
+  color: var(--sev-warning) !important;
+}
+
+.diagnosis__evidence {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.diagnosis__evidence td {
+  padding: 3px 0;
+  border-bottom: var(--border-hairline);
+  vertical-align: top;
+  color: var(--text-secondary);
+}
+
+.diagnosis__evidence tr[data-role='consequence'] td {
+  color: var(--text-tertiary);
+}
+
+.diagnosis__evidence-provenance {
+  padding-left: var(--sp-3) !important;
+  color: var(--text-tertiary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.diagnosis__role {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.diagnosis__ruled-out {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--text-tertiary);
+}
+
+.diagnosis__ruled-out li {
+  margin-bottom: 2px;
+}
+
+.diagnosis__ruled-out-title {
+  color: var(--text-secondary);
+}
+
+.diagnosis__block--blind .diagnosis__ruled-out-title {
+  color: var(--sev-warning);
+}
+
+.diagnosis__block--action p {
+  color: var(--text-primary);
+}
+
+/* ---- event log ----------------------------------------------------------- */
+
+.live__log {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4) var(--gutter-view);
+  min-height: 0;
+}
+
+.live__log-title {
+  margin-bottom: var(--sp-2);
+}
+
+.live__log-empty {
+  color: var(--text-tertiary);
+}
+
+.live__log-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.live__log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.live__log-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-base);
+}
+
+.live__log-table th {
+  padding: 0 var(--sp-2) var(--sp-1) 0;
+  border-bottom: var(--border-default);
+  color: var(--text-tertiary);
+  text-align: left;
+  font-weight: var(--t-label-weight);
+}
+
+.live__log-table th.num,
+.live__log-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.live__log-table td {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+  border-bottom: var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.live__log-table tr {
+  cursor: pointer;
+  transition: background var(--motion-state);
+}
+
+.live__log-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.live__log-table tr[data-selected] {
+  background: var(--bg-selected);
+}
+
+.live__log-class[data-class='severehitch'] {
+  color: var(--sev-critical);
+}
+
+.live__log-class[data-class='stutter'],
+.live__log-class[data-class='microstutter'] {
+  color: var(--sev-warning);
+}
+
+.live__log-class[data-class='regimechange'] {
+  color: var(--sev-comparison);
+}
+
+.live__log-footer {
+  padding-top: var(--sp-2);
+  border-top: var(--border-hairline);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+}
+
+/* ---- transport ----------------------------------------------------------- */
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--gutter-view);
+  border-top: var(--border-default);
+  background: var(--bg-raised);
+}
+
+.transport__button {
+  padding: var(--sp-1) var(--sp-4);
+  border: var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+  min-width: 72px;
+}
+
+.transport__button:hover {
+  background: var(--bg-hover);
+}
+
+.transport__scrub {
+  flex: 1;
+  accent-color: var(--sev-selected);
+}
+
+.transport__time {
+  color: var(--text-tertiary);
+  min-width: 14ch;
+  text-align: right;
+}
+
+/* ---- focus --------------------------------------------------------------- */
+
+:where(a, button, [role='button'], input, select, summary):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
