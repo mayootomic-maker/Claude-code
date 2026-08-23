@@ -261,4 +261,47 @@ public sealed class StutterDetectorTests
 
         regime.CountsTowardTally.ShouldBeFalse();
     }
+
+    [Fact]
+    public void An_events_frame_count_matches_the_span_it_reports()
+    {
+        // Found in a screenshot of the event inspector: a single-frame hitch reported "36
+        // frames" beside "0.00 s". The count was every frame observed while the event was open,
+        // including the recovery frames that proved it had ended — so it disagreed with the span
+        // and overstated how much of the session was bad.
+        var series = DetectorHarness.WithHitch(
+            FrameTimeRegimes.VsyncLocked60(6000), atIndex: 3000, hitchMs: 120.0);
+
+        var detector = new StutterDetector(Hz60);
+        var events = DetectorHarness.Run(detector, series);
+
+        events.ShouldNotBeEmpty();
+
+        foreach (var e in events)
+        {
+            if (e.ForceClosed) continue;
+
+            e.FrameCount.ShouldBeGreaterThan(0);
+
+            // A frame cannot take less than nothing, so a span shorter than one frame's worth of
+            // time cannot contain more than one frame.
+            if (e.Duration == TimeSpan.Zero) e.FrameCount.ShouldBe(1);
+        }
+    }
+
+    [Fact]
+    public void Recovery_frames_are_not_counted_as_part_of_the_event()
+    {
+        // The detector waits for several consecutive good frames before closing. Those frames
+        // are the evidence that the event ended; counting them in the event would make every
+        // hitch look an order of magnitude longer than it was.
+        var series = DetectorHarness.WithHitch(
+            FrameTimeRegimes.VsyncLocked60(6000), atIndex: 3000, hitchMs: 200.0);
+
+        var detector = new StutterDetector(Hz60);
+        var events = DetectorHarness.Run(detector, series).Where(e => !e.ForceClosed).ToArray();
+
+        events.ShouldNotBeEmpty();
+        events[0].FrameCount.ShouldBeLessThan(10);
+    }
 }

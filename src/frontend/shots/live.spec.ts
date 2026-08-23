@@ -20,6 +20,7 @@ const SCENARIOS = [
   'background-cpu-spike',
   'cpu-frequency-collapse',
   'gpu-thermal-throttle',
+  'gpu-power-limit',
   'paging-storm',
   'unexplained-hitch',
 ] as const;
@@ -75,4 +76,68 @@ test('an unavailable metric renders as a dash, never as zero', async ({ page }) 
   await expect(cpuTemp).toContainText('kernel-mode sensor driver');
 
   await page.screenshot({ path: `${OUT}/honesty-unavailable-metric.png` });
+});
+
+/**
+ * The event inspector, on the two scenarios that exercise its opposite extremes.
+ *
+ * `gpu-power-limit` has a named cause with vendor testimony behind it; `unexplained-hitch` has
+ * no cause at all and exists to prove the screen is still worth opening when the answer is "I
+ * do not know". If the second one looks like a failure state rather than a finding, the design
+ * is wrong.
+ */
+for (const scenario of ['gpu-power-limit', 'unexplained-hitch'] as const) {
+  test(`event inspector for ${scenario}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto('/');
+    await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+    await page.locator('.rail__scenario').nth(SCENARIOS.indexOf(scenario)).click();
+    await page.waitForTimeout(300);
+
+    // Two clicks: the first selects the event beside the chart, the second opens it in full.
+    const marker = page.locator('.chart__marker').first();
+    await marker.click();
+    await marker.click();
+
+    await expect(page.locator('.inspector')).toBeVisible({ timeout: 5_000 });
+    await page.waitForFunction(() => document.fonts.status === 'loaded');
+    await page.waitForTimeout(400);
+
+    // The inspector is a screen someone will screenshot to ask for help, so it carries the
+    // banner like every other one.
+    await expect(page.getByRole('status')).toContainText('Simulation');
+
+    // Every metric panel must state its own sample count. A panel that shows a line without
+    // saying how many readings it came from invites a 4 Hz series to be read as continuous.
+    await expect(page.locator('.panel').first().locator('.panel__foot')).not.toBeEmpty();
+
+    await page.screenshot({ path: `${OUT}/inspector-${scenario}.png` });
+  });
+}
+
+test('the inspector says why a confidence was capped, not just what it was', async ({ page }) => {
+  // 60 % reads as weak evidence. On this scenario it is strong evidence held back by a missing
+  // CPU temperature sensor — a fact about the machine the reader can act on, and one the number
+  // alone hides.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.locator('.rail__scenario').nth(SCENARIOS.indexOf('cpu-frequency-collapse')).click();
+  await page.waitForTimeout(300);
+
+  const marker = page.locator('.chart__marker').first();
+  await marker.click();
+  await marker.click();
+
+  await expect(page.locator('.inspector')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText('Ruled out')).toBeVisible();
+  await expect(page.locator('.fact__note')).toContainText('sensor');
+
+  // An unavailable metric keeps its panel. Its absence is why the confidence is capped, and a
+  // reader who cannot see the gap cannot understand the cap.
+  await expect(page.locator('.panel__absent').first()).toBeVisible();
+
+  await page.screenshot({ path: `${OUT}/inspector-capped-confidence.png` });
 });

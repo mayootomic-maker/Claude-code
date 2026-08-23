@@ -52,6 +52,18 @@ public sealed class StutterDetector
     private double _eventBaselineMedian;
     private double _eventBaselineScale;
     private int _eventFrames;
+
+    /// <summary>
+    /// Frames counted as of the last frame that actually exceeded the threshold.
+    /// </summary>
+    /// <remarks>
+    /// A closing event's <c>End</c> is the last exceeding frame, not the frame that closed it —
+    /// the event ended when frame times came back, and the recovery frames are the evidence that
+    /// they did, not part of the event. The count has to be taken at the same instant or the two
+    /// disagree: a single-frame hitch would report thirty-six frames over a zero-length span,
+    /// which is both nonsense to read and an overstatement of how much of the session was bad.
+    /// </remarks>
+    private int _eventFramesAtLastExceeded;
     private int _eventMerged;
     private int _consecutiveRecovered;
     private MonotonicTimestamp _recoveryStart;
@@ -334,6 +346,7 @@ public sealed class StutterDetector
         _eventBaselineMedian = _median;
         _eventBaselineScale = _scale;
         _eventFrames = 1;
+        _eventFramesAtLastExceeded = 1;
         _consecutiveRecovered = 0;
         _eventDuringWarmUp = false;
         _openEventFrames.Clear();
@@ -345,6 +358,7 @@ public sealed class StutterDetector
             _eventStart = mergeTarget.Start;
             _eventPeak = Math.Max(_eventPeak, mergeTarget.PeakFrameTimeMs);
             _eventFrames += mergeTarget.FrameCount;
+            _eventFramesAtLastExceeded = _eventFrames;
             _eventMerged = mergeTarget.MergedCount + 1;
             _eventBaselineMedian = mergeTarget.BaselineMedianMs;
             _eventBaselineScale = mergeTarget.BaselineScaleMs;
@@ -375,6 +389,7 @@ public sealed class StutterDetector
         if (excess > _eventThreshold)
         {
             _eventLastExceeded = now;
+            _eventFramesAtLastExceeded = _eventFrames;
             _consecutiveRecovered = 0;
             return;
         }
@@ -415,7 +430,10 @@ public sealed class StutterDetector
             ThresholdMs: _eventThreshold,
             BaselineMedianMs: _eventBaselineMedian,
             BaselineScaleMs: _eventBaselineScale,
-            FrameCount: _eventFrames,
+            // Frames within the reported span. A force-closed event's span runs to the moment it
+            // was closed, so every frame counts; a recovered event's span ends at the last
+            // exceeding frame, so the recovery frames do not.
+            FrameCount: forceClosed ? _eventFrames : _eventFramesAtLastExceeded,
             MergedCount: _eventMerged,
             DuringWarmUp: _eventDuringWarmUp,
             ForceClosed: forceClosed);

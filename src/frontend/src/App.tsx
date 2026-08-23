@@ -1,4 +1,5 @@
 import { useEffect, useState, type JSX } from 'react';
+import { EventInspector } from './views/EventInspector';
 import { LiveView } from './views/LiveView';
 import {
   loadScenario,
@@ -25,6 +26,7 @@ export function App(): JSX.Element {
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<DetectedEvent | null>(null);
+  const [inspecting, setInspecting] = useState<DetectedEvent | null>(null);
   const [playheadMs, setPlayheadMs] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -44,6 +46,7 @@ export function App(): JSX.Element {
     if (scenario) {
       setPlayheadMs(scenario.durationMs);
       setSelectedEvent(null);
+      setInspecting(null);
     }
   }, [scenario]);
 
@@ -60,6 +63,17 @@ export function App(): JSX.Element {
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [playing, scenario]);
+
+  useEffect(() => {
+    if (!inspecting) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setInspecting(null);
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inspecting]);
 
   const selectScenario = (id: string) => {
     setPlaying(false);
@@ -145,18 +159,30 @@ export function App(): JSX.Element {
             </div>
           ) : !scenario ? (
             <div className="app__loading t-body">Loading telemetry…</div>
+          ) : inspecting ? (
+            <EventInspector
+              scenario={scenario}
+              event={inspecting}
+              onClose={() => setInspecting(null)}
+            />
           ) : (
             <LiveView
               scenario={scenario}
               playheadMs={playheadMs}
               selectedEvent={selectedEvent}
-              onSelectEvent={setSelectedEvent}
+              onSelectEvent={(event) => {
+                // First click selects and shows the diagnosis beside the chart; a second click
+                // on the same event opens it in full. Opening the inspector on every click
+                // would make the timeline unusable for scanning.
+                if (selectedEvent?.startMs === event.startMs) setInspecting(event);
+                else setSelectedEvent(event);
+              }}
             />
           )}
         </main>
       </div>
 
-      {scenario ? (
+      {scenario && !inspecting ? (
         <footer className="transport">
           <button
             type="button"

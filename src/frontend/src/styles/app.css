@@ -802,3 +802,371 @@ body {
   outline-offset: 2px;
   border-radius: var(--r-sm);
 }
+
+/* ============================================================================
+   Event inspector
+
+   The screen that answers "why should I believe that". It is dense on purpose:
+   a reader here has already decided the headline was not enough, and hiding
+   half the evidence behind disclosure would be answering a question they have
+   already moved past.
+   ============================================================================ */
+
+.inspector {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.inspector__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--gutter-view) var(--sp-3);
+  border-bottom: var(--border-default);
+}
+
+.inspector__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inspector__class {
+  font-size: var(--t-label-size);
+  line-height: var(--t-label-lh);
+  font-weight: 600;
+  letter-spacing: var(--t-label-track);
+  text-transform: uppercase;
+  color: var(--sev-warning);
+}
+
+.inspector__class[data-class='severehitch'] {
+  color: var(--sev-critical);
+}
+
+.inspector__class[data-class='regimechange'],
+.inspector__class[data-class='microstutter'] {
+  color: var(--text-tertiary);
+}
+
+.inspector__title {
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.inspector__when {
+  color: var(--text-tertiary);
+}
+
+.inspector__close {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  border: var(--border-default);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--motion-state), color var(--motion-state);
+}
+
+.inspector__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.inspector__close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* The measurement, before any interpretation. Fixed columns so two events read
+   in the same order and the eye can compare them across screenshots. */
+.inspector__facts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--gutter-view);
+  border-bottom: var(--border-default);
+  background: var(--bg-raised);
+}
+
+.fact__label {
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.fact__value {
+  color: var(--text-primary);
+}
+
+.fact__unit {
+  margin-left: 3px;
+  font-size: var(--t-label-size);
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.inspector__body {
+  display: grid;
+  grid-template-columns: minmax(380px, 5fr) minmax(420px, 7fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.inspector__narrative {
+  padding: var(--sp-4) var(--gutter-view) var(--sp-6);
+  border-right: var(--border-default);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.inspector__narrative h2 {
+  color: var(--text-tertiary);
+  margin: var(--sp-5) 0 var(--sp-2);
+}
+
+.inspector__narrative h2:first-child {
+  margin-top: 0;
+}
+
+.inspector__narrative p {
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 62ch;
+}
+
+.inspector__none {
+  color: var(--text-tertiary);
+}
+
+.inspector__evidence,
+.inspector__ruled-out,
+.inspector__blind-spots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inspector__evidence li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+  border-bottom: var(--border-hairline);
+  color: var(--text-primary);
+}
+
+/* Evidence that argues against the diagnosis is kept in the list and marked,
+   never dropped. A rule that only shows what supports it is not showing
+   evidence, it is making a case. */
+.inspector__evidence li[data-role='contradicting'] {
+  color: var(--text-tertiary);
+}
+
+.inspector__evidence li[data-role='contradicting']::before {
+  content: 'against';
+  flex: none;
+  margin-right: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-mono-sm-size);
+  color: var(--sev-warning);
+}
+
+.inspector__provenance {
+  flex: none;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.inspector__ruled-out li,
+.inspector__blind-spots li {
+  padding: var(--sp-1) 0;
+  color: var(--text-secondary);
+}
+
+.inspector__ruled-out li::before,
+.inspector__blind-spots li::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: var(--sp-2);
+  vertical-align: middle;
+  background: var(--text-disabled);
+}
+
+/* A blind spot is a different shape from a rejection, because it is a different
+   claim: nothing was excluded here, the question could not be asked. */
+.inspector__blind-spots li::before {
+  background: none;
+  border: 1px solid var(--sev-warning);
+  transform: rotate(45deg);
+}
+
+.inspector__reason {
+  color: var(--text-tertiary);
+}
+
+.inspector__panels {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.inspector__panels-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--gutter-view) var(--sp-2);
+  color: var(--text-tertiary);
+}
+
+.inspector__panels-note {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-disabled);
+}
+
+.inspector__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--sp-3);
+  padding: 0 var(--gutter-view) var(--sp-6);
+  overflow-y: auto;
+  min-height: 0;
+  align-content: start;
+}
+
+.panel {
+  display: grid;
+  grid-template-rows: auto 76px auto;
+  background: var(--bg-raised);
+  border: var(--border-hairline);
+  border-radius: var(--r-md);
+  padding: var(--sp-2);
+  min-width: 0;
+}
+
+/* A panel the diagnosis actually cited. Marked with a rule on the leading edge
+   rather than a fill, so the grid still reads as one surface and the marked
+   panels are countable at a glance. */
+.panel[data-evidence] {
+  border-left: 2px solid var(--sev-selected);
+}
+
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.panel__label {
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel__reading {
+  flex: none;
+  color: var(--text-primary);
+}
+
+.panel__unit {
+  margin-left: 2px;
+  font-size: var(--t-mono-sm-size);
+  color: var(--text-tertiary);
+}
+
+.panel__change {
+  margin-left: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-mono-sm-size);
+}
+
+.panel__change[data-direction='up'] {
+  color: var(--sev-warning);
+}
+
+.panel__change[data-direction='down'] {
+  color: var(--sev-selected);
+}
+
+.panel__absent {
+  flex: none;
+  color: var(--text-disabled);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.panel__plot {
+  margin: var(--sp-2) 0;
+  min-height: 0;
+}
+
+.panel__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.panel__foot {
+  display: flex;
+  gap: var(--sp-2);
+  color: var(--text-disabled);
+  min-width: 0;
+}
+
+.panel__quality {
+  color: var(--sev-warning);
+}
+
+.panel__reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Below this the two-column split stops helping: the panels get too narrow to
+   read a step in, and narrative text wraps to five words a line. */
+@media (max-width: 1280px) {
+  .inspector__body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .inspector__narrative {
+    border-right: none;
+    border-bottom: var(--border-default);
+    overflow-y: visible;
+  }
+
+  .inspector__facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--sp-3);
+  }
+}
+
+.fact__note {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 13px;
+}
+
+/* The missing-sensor cap is the only one the user could change, so it is the only one that
+   reads as something to act on rather than as a statement of fact. */
+.fact__note[data-tone='action'] {
+  color: var(--sev-warning);
+}

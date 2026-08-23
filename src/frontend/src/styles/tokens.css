@@ -109,7 +109,7 @@
   --chart-refresh: var(--fd-n-350);
   --chart-cursor: var(--fd-n-200);
   --chart-selection: var(--sev-selected-wash);
-  --chart-event-span: var(--sev-critical-wash);
+  --chart-event-span: rgb(242 103 97 / 7%);
   --chart-hatch: var(--fd-n-750);
 
   --focus-ring: var(--fd-blue-300);
@@ -240,4 +240,14 @@
     transition-duration: 1ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Added after the first inspector screenshot: the event span had only a fill token, and a fill
+ * strong enough to locate the event was strong enough to bury the trace inside it. The region is
+ * now a faint wash between two rules, so the mark is legible without competing with the
+ * measurement it frames.
+ */
+:root {
+  --chart-event-edge: rgb(242 103 97 / 45%);
 }

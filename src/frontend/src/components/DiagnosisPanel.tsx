@@ -1,14 +1,6 @@
 import type { JSX } from 'react';
+import { describeCap } from '../telemetry/confidence';
 import type { DetectedEvent } from '../telemetry/scenario';
-
-/** Why a confidence value was limited below what the raw evidence implied. */
-const capExplanation: Record<number, string> = {
-  0: '',
-  1: 'attributing a cause is correlational, so certainty is never claimed',
-  2: 'only one kind of evidence supported this',
-  3: 'some evidence was modelled rather than measured',
-  4: 'a sensor this diagnosis needs is unavailable',
-};
 
 interface DiagnosisPanelProps {
   readonly event: DetectedEvent | null;
@@ -73,7 +65,7 @@ export function DiagnosisPanel({ event, compact = false }: DiagnosisPanelProps):
             <ConfidenceBar value={confidence} />
             {event.bindingCap !== 0 ? (
               <span className="t-label-sm diagnosis__cap">
-                capped — {capExplanation[event.bindingCap]}
+                capped — {describeCap(event.bindingCap)}
               </span>
             ) : null}
           </div>
