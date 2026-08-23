@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>framedoctor-engine</AssemblyName>
+    <RootNamespace>FrameDoctor.Engine</RootNamespace>
+
+    <!--
+      The engine is the resident process. It is deliberately not a Windows-only target: the whole
+      pipeline runs against simulated sources on any platform, which is what lets the engine
+      itself — not merely the libraries it composes — be exercised from the Linux container this
+      repository is developed in.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+
+    <!--
+      Workstation, concurrent GC. Server GC would give this process a heap per core and a
+      collection pause proportional to it, on a machine whose spare cores belong to the game.
+      Invariant 8 makes our own pause the user's stutter.
+    -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+    <ProjectReference Include="../FrameDoctor.Diagnostics/FrameDoctor.Diagnostics.csproj" />
+    <ProjectReference Include="../FrameDoctor.Engine.Hosting/FrameDoctor.Engine.Hosting.csproj" />
+    <ProjectReference Include="../FrameDoctor.Ipc/FrameDoctor.Ipc.csproj" />
+    <ProjectReference Include="../FrameDoctor.Pipeline/FrameDoctor.Pipeline.csproj" />
+    <ProjectReference Include="../FrameDoctor.Platform.Windows/FrameDoctor.Platform.Windows.csproj" />
+    <ProjectReference Include="../FrameDoctor.Simulation/FrameDoctor.Simulation.csproj" />
+    <ProjectReference Include="../FrameDoctor.Storage/FrameDoctor.Storage.csproj" />
+  </ItemGroup>
+
+</Project>
