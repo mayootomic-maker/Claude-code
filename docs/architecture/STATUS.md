@@ -11,7 +11,7 @@ _Last updated: 2026-08-23_
 **Toolchain: .NET 10.0.400 SDK.** .NET 8 reaches EOL 2026-11-10, so it was never a candidate for
 a product with no code yet.
 
-**Test count: 305 .NET tests, 35 frontend unit tests, 18 screenshot tests. All passing.**
+**Test count: 320 .NET tests, 46 frontend unit tests, 24 screenshot tests. All passing.**
 
 ---
 
@@ -74,7 +74,7 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Sessions | Done | Reads a fixture round-tripped through the real catalog |
 | System | Done | Every metric listed with its source, working or not |
 | Settings | Done | Real backend; no controls, because the command channel is not built |
-| Screenshot harness | Done | 18 Playwright tests; the simulation banner is asserted in every one |
+| Screenshot harness | Done | 24 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
 
 ## Stage 5 — collection and storage
 
@@ -125,6 +125,36 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Clean-machine install / upgrade / uninstall | Not started — **Needs Windows** | — |
 | Code signing | Not started | No certificate |
 
+## Council Phase E — what the review found
+
+Three council members reviewed the built product against real screenshots and
+real code: anti-slop, design, and adversarial QA. Both reviewers who looked at
+the interface independently found the same root cause, and the QA pass found
+eleven more in code no reviewer would have read.
+
+The defects are fixed and the tests that prove them are in the tree. What the
+episode says about the process is worth keeping:
+
+**Every one of them was invisible to the tests that existed.** The scenario
+exporter omitted null properties, so `undefined !== null` let every guard in the
+frontend pass and put `NaN%` where a confidence belongs — on the screen whose
+subject is how much to trust a number. No unit test could see it because the
+type said the field was there. The rollback journal recorded a display string
+where the target identity belongs, which meant rollback never worked at all;
+sixty-five passing tests could not see it because the fake ignored the argument.
+A stopped source clock left an event open forever, blinding detection for the
+rest of a session, because both bounds on an open event were measured in the
+clock that had stopped.
+
+**The screenshots caught what review could not.** Two of eleven captures were
+byte-identical duplicates, so the artifact set claimed two states it had no
+evidence for. A `NaN` sat at hero size in a shipped screenshot that had been
+looked at more than once.
+
+The new sweep — every screen of every scenario, checked for the strings "NaN",
+"undefined" and "Infinity" — is the only test that would have caught the first
+class, and it exists now.
+
 ## Not built
 
 | Item | Why it is not here |
@@ -133,6 +163,8 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Game detection | The engine measures what it is pointed at; automatic detection is Stage 9 |
 | Baselines and regression detection | Sessions record `baselineEligible`; nothing consumes it yet |
 | Retention purge on a schedule | `PurgeHighResolution` exists and is tested; nothing calls it on a timer |
+| A command channel from the window to the engine | Settings are read-only in the interface, and the screen says so rather than showing controls that would do nothing |
+| Opening a stored session from the Sessions list | Needs a reader for the segment files. The rows are deliberately not styled as clickable |
 | AMD and Intel GPU sources | The seam and the shared throttle vocabulary are in place for them |
 | Tier 2 sensors (CPU temperature) | Requires a kernel driver. Reported as unavailable with the reason instead |
 | Display power request during gamepad play | ADR 0003 lists it; not started |
@@ -147,6 +179,7 @@ These are not defects; they define how work is verified.
 | No GPU, no PresentMon, no sensors | Real collectors cannot be exercised. Simulation carries verification, and the seams are drawn so the pure logic is testable. |
 | WiX builds MSIs on Windows only | The package definition is authored and the payload is produced; the MSI itself is not. |
 | No signing certificate | The binaries are unsigned, which Windows SmartScreen will warn about. |
+| Publish output is not committed | `packaging/out` was committed once by mistake and is now ignored; the 150 MB remains in the history until someone rewrites that commit. |
 
 ## Requires Windows validation
 
