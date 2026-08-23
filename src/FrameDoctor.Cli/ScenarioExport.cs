@@ -29,7 +29,16 @@ internal static class ScenarioExport
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+
+        // Never omit a null. An omitted key arrives in JavaScript as `undefined`, and every
+        // guard on the other side is written against `null` — `undefined !== null` is true, so
+        // every one of them passes on a field that is not there. That put `NaN%` where a
+        // confidence belongs, on the one screen whose subject is how much to trust a number.
+        //
+        // The settings and journal serializers already use Never; this one, the only serializer
+        // that feeds the interface, did not.
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+
         WriteIndented = false,
         NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };

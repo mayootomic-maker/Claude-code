@@ -56,18 +56,24 @@ export type MetricValue =
       readonly reason: UnavailableReason;
     };
 
-export const available = (value: number, quality: Quality = Quality.Exact): MetricValue => ({
-  state: Availability.Available,
-  value,
-  quality,
-});
+/**
+ * A reading.
+ *
+ * Refuses anything that is not a finite number, including `undefined` arriving through an
+ * unvalidated boundary. The discriminated union makes `metric.value ?? 0` unwritable inside this
+ * module, and that guarantee was defeated at the edges: `hasValue` tests the *state*, so an
+ * `{ state: Available, value: undefined }` passed it and reached `.toFixed()` — a blank screen,
+ * or worse, a headline number rendered from nothing.
+ */
+export const available = (value: number, quality: Quality = Quality.Exact): MetricValue =>
+  Number.isFinite(value)
+    ? { state: Availability.Available, value, quality }
+    : { state: Availability.Unavailable, reason: UnavailableReason.SourceFaulted };
 
-export const stale = (value: number, ageMs: number): MetricValue => ({
-  state: Availability.Stale,
-  value,
-  quality: Quality.Degraded,
-  ageMs,
-});
+export const stale = (value: number, ageMs: number): MetricValue =>
+  Number.isFinite(value)
+    ? { state: Availability.Stale, value, quality: Quality.Degraded, ageMs }
+    : { state: Availability.Unavailable, reason: UnavailableReason.SourceFaulted };
 
 export const unavailable = (reason: UnavailableReason): MetricValue => ({
   state: Availability.Unavailable,

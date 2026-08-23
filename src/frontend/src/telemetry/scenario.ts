@@ -122,7 +122,63 @@ export async function loadScenarioIndex(): Promise<ScenarioIndexEntry[]> {
 export async function loadScenario(id: string): Promise<Scenario> {
   const response = await fetch(`${base}scenarios/${id}.json`);
   if (!response.ok) throw new Error(`Scenario '${id}' unavailable (${response.status})`);
-  return (await response.json()) as Scenario;
+  return normalizeScenario(await response.json());
+}
+
+/**
+ * Coerces every absent optional field to a real `null`.
+ *
+ * The bug this exists for reached a screenshot: `undefined !== null` is `true`, so every
+ * `!== null` guard downstream passed on a field the serializer had omitted. An unexplained event
+ * — whose whole meaning is that no cause was found — rendered under the heading "Most likely
+ * cause" with a confidence of `NaN%` as the largest number on the screen.
+ *
+ * The .NET side omits null keys rather than writing `null`, which is the correct thing for it to
+ * do: a key that is absent cannot be misread as a number. The mistake was consuming that with a
+ * bare cast, which tells TypeScript the shape is `T` while leaving the absent fields `undefined`
+ * at runtime. Every guard in the application is written against `null`, so this is the one place
+ * that has to make that true.
+ *
+ * Non-finite numbers are treated as absent too. JSON cannot carry `NaN`, but a hand-edited
+ * fixture or a future producer can, and a `NaN` reaching a `toFixed` call renders as the string
+ * "NaN" in the position a measurement belongs.
+ */
+export function normalizeScenario(raw: unknown): Scenario {
+  const scenario = raw as Scenario;
+
+  return {
+    ...scenario,
+    medianFrameTimeMs: orNull(scenario.medianFrameTimeMs),
+    p99FrameTimeMs: orNull(scenario.p99FrameTimeMs),
+    low1PercentFps: orNull(scenario.low1PercentFps),
+    sensitivityFloorMs: orNull(scenario.sensitivityFloorMs),
+    explanationRate: orNull(scenario.explanationRate),
+    events: (scenario.events ?? []).map(normalizeEvent),
+    series: scenario.series ?? [],
+    frameTimestamps: scenario.frameTimestamps ?? [],
+    frameTimes: scenario.frameTimes ?? [],
+  };
+}
+
+function normalizeEvent(event: DetectedEvent): DetectedEvent {
+  const ruleId = typeof event.ruleId === 'string' && event.ruleId.length > 0 ? event.ruleId : null;
+
+  return {
+    ...event,
+    ruleId,
+    // Tied to the rule id deliberately. A confidence without a rule is a number attached to no
+    // claim, and rendering it would put a percentage beside the word "Unexplained".
+    confidence: ruleId === null ? null : orNull(event.confidence),
+    mechanism: event.mechanism ?? null,
+    recommendedAction: event.recommendedAction ?? null,
+    evidence: event.evidence ?? [],
+    ruledOut: event.ruledOut ?? [],
+  };
+}
+
+/** A number, or null for anything that is not one — including absent and non-finite. */
+function orNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /**

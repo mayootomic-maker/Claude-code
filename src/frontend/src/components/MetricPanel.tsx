@@ -19,6 +19,29 @@ interface MetricPanelProps {
   readonly isEvidence: boolean;
 }
 
+/**
+ * The series' own median sampling interval, in milliseconds.
+ *
+ * Used to widen a zero-width event window. A single-frame event starts and ends at the same
+ * instant, and reading "during the event" over that instant means a 4 Hz sensor contributes a
+ * sample only if one happens to land exactly on it. On the CPU-frequency-collapse scenario that
+ * produced a CPU CLOCK headline of 4627 MHz — the pre-collapse reading — on a screen titled
+ * "CPU frequency collapse", with the panel's own trace visibly descending beneath it.
+ */
+function medianIntervalMs(series: MetricSeries): number {
+  if (series.timestamps.length < 2) return 0;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < series.timestamps.length; i++) {
+    const gap = series.timestamps[i] - series.timestamps[i - 1];
+    if (gap > 0) gaps.push(gap);
+  }
+
+  if (gaps.length === 0) return 0;
+  gaps.sort((a, b) => a - b);
+  return gaps[gaps.length >> 1];
+}
+
 /** Reads the value at a timestamp without interpolating, matching what the panel draws. */
 function valueAt(series: MetricSeries, atMs: number): number | null {
   let found: number | null = null;
@@ -51,9 +74,16 @@ export function MetricPanel({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const inWindow: number[] = [];
+  // Only real readings are counted. A sample that carried nothing is a gap, and counting it
+  // would overstate the evidence behind a panel whose sample count is shown to the reader as
+  // provenance — the same number that appears beside every piece of evidence in a diagnosis.
+  let readingsInWindow = 0;
   for (let i = 0; i < series.timestamps.length; i++) {
     const t = series.timestamps[i];
-    if (t >= range.fromMs && t <= range.toMs) inWindow.push(series.values[i]);
+    if (t < range.fromMs || t > range.toMs) continue;
+
+    inWindow.push(series.values[i]);
+    if (Number.isFinite(series.values[i])) readingsInWindow++;
   }
 
   const scale = panelScale(series.unit, inWindow);
@@ -65,10 +95,16 @@ export function MetricPanel({
 
   const before = valueAt(series, range.eventStartMs - 1);
 
+  // Widened by one sampling interval so a zero-width event can still contain a reading. Without
+  // this the headline number is decided by whether a sensor tick happens to coincide with a
+  // single instant, which on a single-frame event is a coin flip.
+  const duringEndMs = Math.max(range.eventEndMs, range.eventStartMs + medianIntervalMs(series));
+  const extended = duringEndMs > range.eventEndMs;
+
   let duringExtreme: number | null = null;
   for (let i = 0; i < series.timestamps.length; i++) {
     const t = series.timestamps[i];
-    if (t < range.eventStartMs || t > range.eventEndMs) continue;
+    if (t < range.eventStartMs || t > duringEndMs) continue;
 
     const value = series.values[i];
     if (!Number.isFinite(value)) continue;
@@ -115,8 +151,14 @@ export function MetricPanel({
         {readable ? (
           <>
             <span>
-              {inWindow.length} sample{inWindow.length === 1 ? '' : 's'}
+              {readingsInWindow} sample{readingsInWindow === 1 ? '' : 's'}
             </span>
+            {/*
+              Stated when the reading comes from after the event rather than during it. A number
+              that describes the moment after a single-frame hitch is the right number to show,
+              and pretending it was measured during the hitch would be a small confident lie.
+            */}
+            {extended ? <span className="panel__extended">incl. next sample</span> : null}
             {series.quality !== Quality.Exact ? (
               <span className="panel__quality">{Quality[series.quality].toLowerCase()}</span>
             ) : null}

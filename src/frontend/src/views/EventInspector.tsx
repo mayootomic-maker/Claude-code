@@ -127,13 +127,29 @@ export function EventInspector({ scenario, event, onClose }: EventInspectorProps
       */}
       <section className="inspector__facts">
         <Fact label="Peak frame time" value={event.peakFrameTimeMs.toFixed(1)} unit="ms" />
-        <Fact label="Excess over threshold" value={event.excessMs.toFixed(1)} unit="ms" />
+        {/*
+          Over the baseline, not over the threshold. `excessMs` is peak minus the baseline
+          median, and the old label invited a reader to check 88.0 − 3.5 = 84.5 against a
+          displayed 81.1 and conclude the detector was broken — on the strip that exists so the
+          arithmetic can be checked.
+        */}
+        <Fact label="Excess over baseline" value={event.excessMs.toFixed(1)} unit="ms" />
         <Fact label="Threshold in force" value={event.thresholdMs.toFixed(1)} unit="ms" />
         <Fact label="Baseline median" value={event.baselineMedianMs.toFixed(2)} unit="ms" />
+        {/*
+          A single-frame event has zero width by construction: its start and end are the same
+          instant. Printing "0.00 s" beside a frame that took 88 ms is a plausible-looking zero
+          standing in for a known non-zero quantity, which is the failure this product exists to
+          avoid. The frame count says what a duration cannot.
+        */}
         <Fact
           label="Duration"
-          value={((event.endMs - event.startMs) / 1000).toFixed(2)}
-          unit="s"
+          value={
+            event.endMs > event.startMs
+              ? ((event.endMs - event.startMs) / 1000).toFixed(2)
+              : `${event.frameCount}`
+          }
+          unit={event.endMs > event.startMs ? 's' : event.frameCount === 1 ? 'frame' : 'frames'}
         />
         <Fact
           label="Confidence"

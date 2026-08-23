@@ -7,6 +7,7 @@ import {
   Quality,
   UnavailableReason,
   available,
+  hasValue,
   unavailable,
   type MetricValue,
 } from '../telemetry/availability';
@@ -110,8 +111,14 @@ export function LiveView({
   const countedEvents = eventsSoFar.filter((e) => e.countsTowardTally);
   const severeEvents = countedEvents.filter((e) => e.className === 'SevereHitch');
 
-  const availableSeries = scenario.series.filter((s) => s.availability === Availability.Available).length;
-  const totalSeries = scenario.series.length;
+  // Coverage over the metrics this view actually shows, not over the series the export happened
+  // to contain. Counting the export's array reported "13/13 · all telemetry sources reporting"
+  // on a screen displaying two metrics as "no sensor", because a metric with no samples is
+  // absent from that array entirely — the one indicator whose job is to say how much of the
+  // machine you can see, reporting full coverage on a machine with dead sensors.
+  const stripValues = Object.values(strip);
+  const availableSeries = stripValues.filter(hasValue).length;
+  const totalSeries = stripValues.length;
 
   return (
     <div className="live">
@@ -273,9 +280,15 @@ export function LiveView({
           )}
 
           <footer className="live__log-footer t-label-sm">
+            {/*
+              Numerator and denominator over the same population. Counting "explained" across
+              every event while counting "events" across only the ones that count toward the
+              tally produced "1 event · 2 explained · explanation rate 100%" — a ratio above one,
+              printed beside the product's headline honesty statistic.
+            */}
             {countedEvents.length} event{countedEvents.length === 1 ? '' : 's'} ·{' '}
-            {eventsSoFar.filter((e) => e.ruleId !== null).length} explained
-            {scenario.explanationRate !== null
+            {countedEvents.filter((e) => e.ruleId !== null).length} explained
+            {countedEvents.length > 0 && scenario.explanationRate !== null
               ? ` · explanation rate ${(scenario.explanationRate * 100).toFixed(0)}%`
               : ''}
           </footer>

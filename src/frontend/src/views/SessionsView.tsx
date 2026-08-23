@@ -54,11 +54,18 @@ export function SessionsView(): JSX.Element {
         <h1 className="t-title">Recorded sessions</h1>
         <p className="t-body sessions__lede">
           {sessions.length} session{sessions.length === 1 ? '' : 's'} on this machine.
+          {/*
+            States the fact, not a cause. The data carries a boolean and no reason for it, and
+            the previous copy asserted "a measurement problem" for every excluded session —
+            including one with no stutters, 12,964 frames and a 3.5 ms floor, which plainly had
+            none. Inventing the reason for a flag is the same failure as inventing a diagnosis.
+          */}
           {excluded > 0 ? (
             <>
               {' '}
-              {excluded} cannot seed a baseline — a session with a measurement problem in it would
-              move a reference for a reason that has nothing to do with performance.
+              {excluded} cannot seed a baseline. A session is excluded when something about how it
+              was measured would make it a poor reference — a dropped frame, a degraded source, or
+              a capture that was simulated rather than measured.
             </>
           ) : null}
         </p>
@@ -96,6 +103,13 @@ export function SessionsView(): JSX.Element {
   );
 }
 
+/**
+ * One session.
+ *
+ * Not interactive, and deliberately not styled as though it were. Opening a stored session needs
+ * a reader for the segment files, which is not built; a row that highlights on hover and does
+ * nothing when clicked is a dead end with an affordance on it.
+ */
 function SessionRow({ session }: { readonly session: StoredSessionSummary }): JSX.Element {
   const started = sessionStartedAt(session);
   const minutes = session.durationMs / 60_000;
@@ -143,7 +157,10 @@ function SessionRow({ session }: { readonly session: StoredSessionSummary }): JS
         {session.baselineEligible ? (
           <span className="t-body-sm sessions__eligible">eligible</span>
         ) : (
-          <span className="t-body-sm sessions__excluded" title="Excluded from baselines">
+          <span
+            className="t-body-sm sessions__excluded"
+            title="This session will not be used as a reference for detecting regressions"
+          >
             excluded
           </span>
         )}

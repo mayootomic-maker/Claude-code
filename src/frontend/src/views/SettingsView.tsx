@@ -71,11 +71,14 @@ function rows(settings: EngineSettings): SettingRow[] {
     {
       key: 'simulation',
       label: 'Simulation mode',
-      value: settings.simulationMode ? 'on' : 'off',
+      // The saved value, and what this window is actually doing, are two different facts. The
+      // banner above says which one is in force; this row would otherwise appear to contradict
+      // it, and would do so in the reassuring direction.
+      value: `${settings.simulationMode ? 'on' : 'off'} (saved)`,
       explanation:
         'Runs the whole product against synthetic telemetry instead of this machine. Every ' +
         'number stays real pipeline output; only the input is invented, and the interface says ' +
-        'so on every screen.',
+        'so on every screen — including now, if the banner above is showing.',
     },
   ];
 }
@@ -118,10 +121,19 @@ export function SettingsView(): JSX.Element {
     <div className="settings">
       <header className="settings__head">
         <h1 className="t-title">Settings</h1>
+        {/*
+          It said "the values the measuring process is using right now", which was not true: this
+          reads the settings file, and the file is what a *future* process would start from. On
+          the screen whose whole premise is that it does not lie to you, that mattered — and it
+          was self-refuting, since it reported simulation mode off underneath a simulation
+          banner.
+        */}
         <p className="t-body settings__lede">
-          These are the values the measuring process is using right now. Changing them from this
-          window is not built yet, so nothing here is a switch that does nothing — the command
-          that changes each one is shown instead.
+          {settings.exists
+            ? 'These are the values saved on this machine. A measuring process started now would use them.'
+            : 'No settings file has been written yet, so these are the defaults a measuring process would start from.'}{' '}
+          Changing them from this window is not built yet, so nothing here is a switch that does
+          nothing — the command that changes each one is shown instead.
         </p>
       </header>
 

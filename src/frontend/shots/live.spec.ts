@@ -8,9 +8,15 @@ import { expect, test } from '@playwright/test';
  * into an issue without it would have a wrong diagnosis debugged as if it were real.
  */
 
+/**
+ * The sizes the scenario captures do not already cover.
+ *
+ * 1920x1080 is deliberately absent: the scenario loop below captures every scenario at exactly
+ * that size, so including it here produced a capture byte-identical to one of those — an
+ * artifact claiming a state it had no separate evidence for.
+ */
 const RESOLUTIONS = [
   { name: '1280x720', width: 1280, height: 720 },
-  { name: '1920x1080', width: 1920, height: 1080 },
   { name: '2560x1440', width: 2560, height: 1440 },
   { name: '3440x1440-ultrawide', width: 3440, height: 1440 },
 ] as const;
@@ -33,6 +39,13 @@ for (const resolution of RESOLUTIONS) {
     await page.goto('/');
 
     await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+    // A populated session, not the healthy one. These captures exist to review layout at four
+    // sizes, and the default load shows an empty chart and an empty diagnosis panel — which is
+    // exactly what scenario-healthy.png shows, so the two were byte-identical and one of the
+    // claimed states had no evidence behind it.
+    await page.locator('.rail__scenario').nth(SCENARIOS.indexOf('background-cpu-spike')).click();
+    await page.waitForTimeout(250);
     await page.waitForFunction(() => document.fonts.status === 'loaded');
     // The canvas is driven by requestAnimationFrame; give it a couple of frames to paint.
     await page.waitForTimeout(300);
@@ -62,6 +75,49 @@ for (const scenario of SCENARIOS) {
   });
 }
 
+/**
+ * No screen may render the string "NaN".
+ *
+ * It reached a screenshot: an event the engine declined to explain rendered `CONFIDENCE NaN%` at
+ * hero size, because the serializer omits null keys and `undefined !== null` is true, so every
+ * guard downstream passed. This walks every scenario and every screen and fails on the string
+ * itself, which is the only check that would have caught it.
+ */
+for (const scenario of SCENARIOS) {
+  test(`no screen renders NaN on ${scenario}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto('/');
+    await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+    await page.locator('.rail__scenario').nth(SCENARIOS.indexOf(scenario)).click();
+    await page.waitForTimeout(250);
+
+    for (const section of ['Live', 'Sessions', 'System', 'Settings']) {
+      await page.getByRole('button', { name: section, exact: true }).click();
+      await page.waitForTimeout(150);
+
+      const text = await page.locator('.app__main').innerText();
+      expect(text, `${section} on ${scenario}`).not.toContain('NaN');
+      expect(text, `${section} on ${scenario}`).not.toContain('undefined');
+      expect(text, `${section} on ${scenario}`).not.toContain('Infinity');
+    }
+
+    // And the inspector, which has its own confidence readout.
+    await page.getByRole('button', { name: 'Live', exact: true }).click();
+    const marker = page.locator('.chart__marker').first();
+
+    if ((await marker.count()) > 0) {
+      await marker.click();
+      await marker.click();
+      await expect(page.locator('.inspector')).toBeVisible({ timeout: 5_000 });
+
+      const text = await page.locator('.inspector').innerText();
+      expect(text, `inspector on ${scenario}`).not.toContain('NaN');
+      expect(text, `inspector on ${scenario}`).not.toContain('undefined');
+    }
+  });
+}
+
 test('an unavailable metric renders as a dash, never as zero', async ({ page }) => {
   // The honesty invariant, asserted against rendered output rather than against source.
   await page.setViewportSize({ width: 1920, height: 1080 });
@@ -75,7 +131,12 @@ test('an unavailable metric renders as a dash, never as zero', async ({ page }) 
   await expect(cpuTemp.locator('.metric-readout__absent')).toHaveText('—');
   await expect(cpuTemp).toContainText('kernel-mode sensor driver');
 
-  await page.screenshot({ path: `${OUT}/honesty-unavailable-metric.png` });
+  // Cropped to the telemetry strip. A full-page capture here was byte-identical to the
+  // cpu-frequency-collapse scenario shot, so the artifact set claimed a state it had no
+  // separate evidence for.
+  await page.locator('.live__strip').screenshot({
+    path: `${OUT}/honesty-unavailable-metric.png`,
+  });
 });
 
 /**

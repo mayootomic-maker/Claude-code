@@ -253,7 +253,12 @@ body {
 
 .live {
   display: grid;
-  grid-template-rows: 56px 108px auto minmax(214px, 26vh) 1fr;
+  /* The chart takes the surplus, not the region below it.
+     With the chart capped at 26vh and the lower region on 1fr, an ultrawide display gave a
+     350px chart and a 780px void: the frame-time trace, which is the product, reduced to a
+     thread inside a band while emptiness took twice its height. On a log axis height is
+     resolution, so every extra pixel of chart is diagnostic value. */
+  grid-template-rows: 56px 108px auto minmax(214px, 1fr) auto;
   height: 100%;
   min-height: 0;
 }
@@ -514,6 +519,11 @@ body {
   grid-template-columns: minmax(420px, 1fr) minmax(360px, 42%);
   min-height: 0;
   overflow: hidden;
+
+  /* Sized by its content up to a ceiling, rather than absorbing every spare pixel. A diagnosis
+     needs about this much room; beyond it the extra height goes to the chart, where it is
+     resolution rather than padding. */
+  max-height: 46vh;
 }
 
 .diagnosis {
@@ -1396,9 +1406,8 @@ body {
   border-bottom: var(--border-hairline);
 }
 
-.sessions__table tbody tr:hover {
-  background: var(--bg-hover);
-}
+/* No hover state. The rows are not clickable, and a highlight would offer an affordance the
+   row cannot honour. */
 
 .sessions__table td,
 .sessions__game {
@@ -1573,4 +1582,18 @@ body {
   .settings__aside {
     position: static;
   }
+}
+
+/* An unexplained event still occupies the confidence slot. Leaving it empty would read as a
+   rendering failure rather than as a deliberate refusal to put a percentage beside a finding
+   that has no cause behind it. */
+.diagnosis__confidence[data-absent] .diagnosis__confidence-value {
+  color: var(--text-disabled);
+}
+
+/* Marks a panel whose headline reading comes from the first sample after a zero-width event
+   rather than from during it. The number is the right one to show; claiming it was measured
+   during a single-frame hitch would not be. */
+.panel__extended {
+  color: var(--text-disabled);
 }

@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { ABSENT } from '../telemetry/availability';
 import { describeCap } from '../telemetry/confidence';
 import type { DetectedEvent } from '../telemetry/scenario';
 
@@ -69,7 +70,18 @@ export function DiagnosisPanel({ event, compact = false }: DiagnosisPanelProps):
               </span>
             ) : null}
           </div>
-        ) : null}
+        ) : (
+          // Composed, not blank. The absence of a confidence number is itself the finding here,
+          // and leaving the slot empty would read as a rendering failure rather than as a
+          // deliberate refusal to put a percentage next to the word "Unexplained".
+          <div className="diagnosis__confidence" data-absent="">
+            <span className="t-label">Confidence</span>
+            <span className="t-metric-lg diagnosis__confidence-value">{ABSENT}</span>
+            <span className="t-label-sm diagnosis__cap">
+              no cause met the evidence bar
+            </span>
+          </div>
+        )}
       </header>
 
       <div className="diagnosis__block">
