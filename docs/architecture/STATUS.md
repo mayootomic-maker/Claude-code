@@ -14,7 +14,7 @@ _Last updated: 2026-08-23_
 |---|---|---|
 | Environment inspection | Done | .NET 8.0.424 at `/opt/dotnet`; WPF compiles on Linux with `EnableWindowsTargeting` (verified by building a scratch WPF project); Node 22 + pnpm 10; Chromium at `/opt/pw-browsers` |
 | Council system | Done | `.claude/agents` (9), `.claude/commands` (6), `.claude/council/PROTOCOL.md` |
-| Council meta-review | In progress | — |
+| Council meta-review | Done | Applied once and stopped, per plan. See commit history; `scripts/slop-scan.sh` verified against a slopped fixture |
 | Research: frame telemetry | In progress | → `docs/research/frame-telemetry.md` |
 | Research: hardware telemetry | In progress | → `docs/research/hardware-telemetry.md` |
 | Research: Windows internals | In progress | → `docs/research/windows-internals.md` |

@@ -7,7 +7,9 @@ Architecture review of: $ARGUMENTS
 
 Phase A (parallel Agent calls): `systems-architect`, `windows-internals-engineer`,
 `qa-adversarial`, `product-critic`.
-Brief them on the **actual current code** — give file paths; require `file:line` citations.
+If code exists, brief them on it with real paths and require `file:line` citations. **If it
+does not, say so explicitly in the brief** and require every claim to be tagged as a proposal,
+not an observation. A fabricated citation is the worst outcome this command can produce.
 
 Phase B: cross-review between systems-architect and windows-internals-engineer at minimum.
 

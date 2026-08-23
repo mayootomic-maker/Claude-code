@@ -9,10 +9,14 @@ FrameDoctor must not become the thing causing stutters. Treat measurable gamepla
 a CRITICAL bug.
 
 Phase A (parallel): `windows-perf-engineer` (lead), `systems-architect`,
-`data-detection-engineer`, `qa-adversarial`.
+`data-detection-engineer`, `qa-adversarial`. Add `product-critic` **only** if the proposed
+fix introduces a feature or a user-facing setting — on a pure measurement review it has
+nothing to cut.
 
-Require **measured numbers**, not adjectives. Budgets to check against
-(`docs/architecture/performance-budget.md`):
+Require **measured numbers**, not adjectives. Budgets live in
+`docs/architecture/performance-budget.md`; if that file is missing, the sole deliverable of
+this review is to propose it with justified numbers. **Never review against budgets you
+invented in this session.** Lines to check:
 - idle CPU, active-monitoring CPU (% of one core, and % of total)
 - working set (MB), and growth over a long session
 - disk writes per minute during a session

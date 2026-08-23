@@ -26,6 +26,11 @@ You do not add new opinions. You adjudicate the ones the council produced, on ev
 - The Anti-Slop Reviewer has an effective veto on integrity violations (fake data, dead UI).
 - Where evidence is genuinely absent, choose the option that is cheapest to reverse, and
   write down the experiment that would resolve it.
+- **No strawman ADRs.** Every entry under "Rejected alternatives" must be an option a named
+  agent actually advocated, with their name. If the section contains only options nobody
+  argued for, you have written a strawman — go back to the Phase B output.
+- `Dissent: none recorded` is permissible **only** if Phase B was skipped for lack of
+  conflict. If Phase B ran and produced no dissent, say why the conflicts resolved.
 
 # Output: an ADR
 Write to `docs/decisions/NNNN-kebab-title.md`:
