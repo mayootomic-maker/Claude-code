@@ -72,6 +72,7 @@ export function EventInspector({ scenario, event, onClose }: EventInspectorProps
       trace: token('--chart-trace', '#c9d4e3'),
       eventSpan: token('--chart-event-span', 'rgb(242 103 97 / 16%)'),
       eventEdge: token('--chart-event-edge', 'rgb(242 103 97 / 45%)'),
+      baseline: token('--chart-baseline', '#606d7c'),
       gap: token('--chart-hatch', '#1e242e'),
     }),
     [],
@@ -244,7 +245,14 @@ export function EventInspector({ scenario, event, onClose }: EventInspectorProps
               Every metric, {PADDING_MS / 1000}s either side
             </span>
             <span className="t-label-sm inspector__panels-note">
-              stepped at each metric&rsquo;s own sample rate — no interpolation
+              {/*
+                The marker meant something and said so nowhere. A blue edge on two of twelve
+                panels is countable at a glance and uninterpretable without this, and it was
+                invisible to a screen reader entirely.
+              */}
+              <span className="inspector__key" aria-hidden="true" /> cited as evidence · change
+              measured against the last reading before the event · stepped at each metric&rsquo;s
+              own sample rate, never interpolated
             </span>
           </div>
 

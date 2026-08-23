@@ -88,12 +88,12 @@ export function MetricPanel({
 
   const scale = panelScale(series.unit, inWindow);
 
+  const before = valueAt(series, range.eventStartMs - 1);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas) drawMetricPanel(canvas, series, range, scale, theme);
+    if (canvas) drawMetricPanel(canvas, series, range, scale, theme, before);
   });
-
-  const before = valueAt(series, range.eventStartMs - 1);
 
   // Widened by one sampling interval so a zero-width event can still contain a reading. Without
   // this the headline number is decided by whether a sensor tick happens to coincide with a
@@ -121,16 +121,25 @@ export function MetricPanel({
   return (
     <div className="panel" data-evidence={isEvidence || undefined}>
       <div className="panel__head">
-        <span className="t-label panel__label">{label}</span>
+        <span className="t-label panel__label">
+          {label}
+          {isEvidence ? <span className="visually-hidden"> — cited as evidence</span> : null}
+        </span>
 
         {readable ? (
           <span className="panel__reading t-metric-sm">
             {duringExtreme !== null ? duringExtreme.toFixed(precision) : '—'}
             <span className="panel__unit">{unit}</span>
+            {/*
+              With its unit. "+2", "-48", "-0.14" and "-92" were four different quantities — two
+              percentages, a megahertz and a millisecond — presented identically, and nothing
+              said what they were measured against.
+            */}
             {change !== null && Math.abs(change) >= 10 ** -precision ? (
               <span className="panel__change" data-direction={change > 0 ? 'up' : 'down'}>
                 {change > 0 ? '+' : ''}
                 {change.toFixed(precision)}
+                {unit}
               </span>
             ) : null}
           </span>
@@ -158,13 +167,25 @@ export function MetricPanel({
               that describes the moment after a single-frame hitch is the right number to show,
               and pretending it was measured during the hitch would be a small confident lie.
             */}
-            {extended ? <span className="panel__extended">incl. next sample</span> : null}
+            {extended ? (
+              <span
+                className="panel__extended"
+                title="A single-frame event is one instant wide, so this reading is the first sample after it"
+              >
+                +after
+              </span>
+            ) : null}
             {series.quality !== Quality.Exact ? (
               <span className="panel__quality">{Quality[series.quality].toLowerCase()}</span>
             ) : null}
           </>
         ) : (
-          <span className="panel__reason">{describeReason(series.reason)}</span>
+          // Wrapped rather than clipped. This was truncated at "Requires a kernel-mode sensor
+          // driv…", and on a diagnosis capped for a missing sensor the truncated string is the
+          // load-bearing one: it is the answer to why the confidence is what it is.
+          <span className="panel__reason" title={describeReason(series.reason)}>
+            {describeReason(series.reason)}
+          </span>
         )}
       </div>
     </div>

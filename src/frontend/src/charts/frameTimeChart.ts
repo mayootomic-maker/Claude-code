@@ -152,9 +152,13 @@ export class FrameTimeChartRenderer {
 
     let observedMax = 0;
     let observedMin = Infinity;
+    let observedMaxAt = -1;
     for (let i = startIndex; i < ring.count; i++) {
       const v = ring.valueAt(i);
-      if (v > observedMax) observedMax = v;
+      if (v > observedMax) {
+        observedMax = v;
+        observedMaxAt = ring.timestampAt(i);
+      }
       if (v < observedMin) observedMin = v;
     }
 
@@ -252,6 +256,17 @@ export class FrameTimeChartRenderer {
         }
       }
       flush(columnIndex);
+
+      // The peak, in figures, beside the peak.
+      //
+      // A logarithmic axis is right for this data and it does make magnitude harder to read: a
+      // 14x excess occupies a little over half the plot height, and a reader carrying a linear
+      // instinct will halve it in their head. The scale is declared on the chart, but a
+      // declaration is a thing to notice and a number is a thing to read. This removes the
+      // ambiguity however carefully anyone reads the axis.
+      if (observedMax > 0 && observedMaxAt >= 0) {
+        this.labelPeak(ctx, observedMax, observedMaxAt, fromMs, windowMs, width, yOf, dpr);
+      }
     }
 
     return {
@@ -260,6 +275,40 @@ export class FrameTimeChartRenderer {
       samplesConsidered: sampleCount,
       ceilingMs: this.ceilingMs,
     };
+  }
+
+  /**
+   * Writes the peak's value beside the column that produced it.
+   *
+   * Placed on whichever side has room, and never over the trace. A label overlapping the
+   * measurement it describes is worse than no label.
+   */
+  private labelPeak(
+    ctx: CanvasRenderingContext2D,
+    peakMs: number,
+    atMs: number,
+    fromMs: number,
+    windowMs: number,
+    width: number,
+    yOf: (ms: number) => number,
+    dpr: number,
+  ): void {
+    const x = ((atMs - fromMs) / windowMs) * width;
+    const y = yOf(peakMs);
+    const text = `${peakMs >= 100 ? peakMs.toFixed(0) : peakMs.toFixed(1)} ms`;
+
+    ctx.save();
+    ctx.font = `${Math.round(10 * dpr)}px ${LABEL_FONT}`;
+    ctx.fillStyle = this.theme.trace;
+    ctx.textBaseline = 'middle';
+
+    const textWidth = ctx.measureText(text).width;
+    const gap = 6 * dpr;
+    const toTheRight = x + gap + textWidth < width;
+
+    ctx.textAlign = toTheRight ? 'left' : 'right';
+    ctx.fillText(text, toTheRight ? x + gap : x - gap, Math.max(y, 8 * dpr));
+    ctx.restore();
   }
 
   /**
@@ -283,6 +332,16 @@ export class FrameTimeChartRenderer {
     ctx.lineWidth = 1;
     ctx.font = `${Math.round(10 * dpr)}px ${LABEL_FONT}`;
     ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+
+    // The top of the scale, labelled without a gridline.
+    //
+    // The tick generator excludes the endpoints, which is right for the lines — one drawn on the
+    // axis itself is invisible — and was wrong for this label. It left a spike running past the
+    // topmost number with nothing above it to measure against, so the largest value on the chart
+    // was the one value the axis could not tell you.
+    ctx.fillStyle = this.theme.axisText;
+    ctx.fillText(formatTick(this.ceilingMs), 3 * dpr, 12 * dpr);
 
     for (const ms of ticks) {
       const y = Math.round(yOf(ms)) + 0.5;

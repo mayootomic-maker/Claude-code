@@ -9,6 +9,8 @@ export interface MetricPanelTheme {
   readonly eventSpan: string;
   /** Edges of the event span, drawn as rules rather than as more fill. */
   readonly eventEdge: string;
+  /** The level the metric sat at before the event, drawn as a reference. */
+  readonly baseline: string;
   readonly gap: string;
 }
 
@@ -79,6 +81,13 @@ export function drawMetricPanel(
   range: MetricPanelRange,
   scale: PanelScale,
   theme: MetricPanelTheme,
+  /**
+   * The metric's level immediately before the event, drawn as a dotted reference line.
+   *
+   * Without it these panels are qualitative only: a trace visibly steps down and nothing on the
+   * panel says down from what. The delta chip was carrying all of the magnitude on its own.
+   */
+  baselineValue: number | null = null,
 ): void {
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) return;
@@ -124,13 +133,28 @@ export function drawMetricPanel(
     ctx.stroke();
   }
 
-  ctx.strokeStyle = theme.gridLine;
+  // The pre-event level, where there is one, and the panel's midpoint where there is not. The
+  // midpoint means nothing about the data; it exists so an empty panel is not a blank rectangle.
   ctx.lineWidth = 1;
-  const midpoint = Math.round(height / 2) + 0.5;
-  ctx.beginPath();
-  ctx.moveTo(0, midpoint);
-  ctx.lineTo(width, midpoint);
-  ctx.stroke();
+
+  if (baselineValue !== null && Number.isFinite(baselineValue)) {
+    ctx.save();
+    ctx.strokeStyle = theme.baseline;
+    ctx.setLineDash([2 * dpr, 3 * dpr]);
+    const y = Math.round(yOf(baselineValue)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.strokeStyle = theme.gridLine;
+    const midpoint = Math.round(height / 2) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, midpoint);
+    ctx.lineTo(width, midpoint);
+    ctx.stroke();
+  }
 
   if (series.availability !== Availability.Available) return;
 

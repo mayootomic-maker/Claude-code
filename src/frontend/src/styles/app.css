@@ -1135,6 +1135,8 @@ body {
   gap: var(--sp-2);
   color: var(--text-disabled);
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .panel__quality {
@@ -1596,4 +1598,44 @@ body {
    during a single-frame hitch would not be. */
 .panel__extended {
   color: var(--text-disabled);
+}
+
+/* The key for the evidence marker. Same rule, same colour, same width as the panel edge it
+   explains, so the connection needs no words. */
+.inspector__key {
+  display: inline-block;
+  width: 2px;
+  height: 9px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  background: var(--sev-selected);
+}
+
+/* Available to a screen reader, absent from the layout. Used where a visual marker carries
+   meaning that would otherwise reach only sighted readers. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Wrapped, not clipped. On a diagnosis capped for a missing sensor, this string is the answer to
+   why the confidence is what it is. */
+.panel__reason {
+  overflow: visible;
+  white-space: normal;
+  text-wrap: pretty;
+  line-height: 13px;
+}
+
+/* A session excluded from baselines is normal policy, not a warning. Seven amber rows made a
+   routine fact look like seven problems. */
+.sessions__excluded {
+  color: var(--text-tertiary);
 }
