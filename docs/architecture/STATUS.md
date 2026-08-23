@@ -21,7 +21,9 @@ candidate for a product with no code yet.
 | Research: frame telemetry | In progress | → `docs/research/frame-telemetry.md` |
 | Research: hardware telemetry | In progress | → `docs/research/hardware-telemetry.md` |
 | Research: Windows internals | In progress | → `docs/research/windows-internals.md` |
-| Architecture decision | Council Phase A complete (6 agents), ADR pending | See commit history |
+| Architecture decision | ADRs 0001-0005 accepted | `docs/decisions/` |
+| Council Phase A | Done — 6 agents, all ran real experiments | ADR rationale sections |
+| Council Phase B | Running — one genuine conflict: frame persistence cost | — |
 | Performance budget | Done | `docs/architecture/performance-budget.md` |
 | Telemetry model spec | Done | `docs/architecture/telemetry-model.md` |
 
