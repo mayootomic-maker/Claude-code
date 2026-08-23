@@ -22,6 +22,11 @@ internal static class Commands
               framedoctor run <scenario>          Run one scenario and report
               framedoctor run <scenario> --seed N Run with a different noise seed
               framedoctor run-all                 Run every scenario
+              framedoctor export <scenario> <file>  Export one scenario as JSON
+              framedoctor export-all <directory>   Export every scenario as JSON
+
+              Export writes the output of the real pipeline, for the user interface to
+              render. It is simulation data and the interface says so on every screen.
             """);
         return 0;
     }

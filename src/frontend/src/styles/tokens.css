@@ -1,0 +1,213 @@
+/*
+ * FrameDoctor design tokens.
+ *
+ * Implements docs/design/design-system.md. Values here are the single source of truth for the
+ * frontend — no component defines a colour, size or duration of its own.
+ *
+ * Dark is the only theme in v1 and it is designed rather than inverted. Light is deliberately
+ * absent: a filtered dark theme reads worse than no light theme, and shipping one would double
+ * the surface every chart change has to be checked against.
+ */
+
+:root {
+  /* ---- raw ramp -------------------------------------------------------- */
+  --fd-n-1000: #0b0e13;
+  --fd-n-950: #11151c;
+  --fd-n-900: #151a22;
+  --fd-n-850: #1b212b;
+  --fd-n-800: #202836;
+  --fd-n-750: #1e242e;
+  --fd-n-700: #2a323f;
+  --fd-n-600: #3a4552;
+  --fd-n-500: #4a5361;
+  --fd-n-400: #606d7c;
+  --fd-n-350: #7a8494;
+  --fd-n-300: #7c8798;
+  --fd-n-200: #9ba6b7;
+  --fd-n-100: #c9d4e3;
+  --fd-n-50: #e8edf4;
+
+  --fd-green-400: #4cc38a;
+  --fd-amber-400: #d9a03c;
+  --fd-amber-700: #8f7233;
+  --fd-red-400: #f26761;
+  --fd-blue-400: #4c9aff;
+  --fd-blue-300: #6ab0ff;
+  --fd-blue-600: #4e78a8;
+
+  /* ---- surfaces -------------------------------------------------------- */
+  --bg-base: var(--fd-n-1000);
+  --bg-raised: var(--fd-n-950);
+  --bg-panel: var(--fd-n-900);
+  --bg-hover: var(--fd-n-850);
+  --bg-selected: var(--fd-n-800);
+  --bg-scrim: rgb(6 8 11 / 72%);
+
+  /* ---- text ------------------------------------------------------------ */
+  --text-primary: var(--fd-n-50);
+  --text-secondary: var(--fd-n-200);
+  --text-tertiary: var(--fd-n-350);
+  --text-disabled: var(--fd-n-500);
+
+  /* ---- lines ----------------------------------------------------------- */
+  --line-hairline: var(--fd-n-750);
+  --line-default: var(--fd-n-700);
+  --line-strong: var(--fd-n-600);
+
+  /* ---- the five semantic roles ----------------------------------------- */
+  /* Colour carries meaning only. There is no sixth role, and severity is never carried by
+     colour alone — it is always paired with a word, a shape, or a position. */
+  --sev-normal: var(--fd-green-400);
+  --sev-warning: var(--fd-amber-400);
+  --sev-critical: var(--fd-red-400);
+  --sev-selected: var(--fd-blue-400);
+  --sev-comparison: var(--fd-n-300);
+
+  --sev-normal-wash: rgb(76 195 138 / 14%);
+  --sev-warning-wash: rgb(217 160 60 / 14%);
+  --sev-critical-wash: rgb(242 103 97 / 16%);
+  --sev-selected-wash: rgb(76 154 255 / 14%);
+
+  /* ---- chart ----------------------------------------------------------- */
+  --chart-plot-bg: var(--bg-base);
+  --chart-grid: var(--fd-n-850);
+  --chart-axis: var(--fd-n-350);
+  --chart-trace: var(--fd-n-100);
+  --chart-envelope: var(--fd-blue-600);
+  --chart-baseline: var(--fd-n-400);
+  --chart-threshold: var(--fd-amber-700);
+  --chart-refresh: var(--fd-n-350);
+  --chart-cursor: var(--fd-n-200);
+  --chart-selection: var(--sev-selected-wash);
+  --chart-event-span: var(--sev-critical-wash);
+  --chart-hatch: var(--fd-n-750);
+
+  --focus-ring: var(--fd-blue-300);
+
+  /* ---- typography ------------------------------------------------------ */
+  --font-ui: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Cascadia Mono', consolas, 'Courier New', monospace;
+
+  --t-hero-size: 44px;
+  --t-hero-lh: 44px;
+  --t-hero-weight: 620;
+  --t-hero-track: -0.02em;
+
+  --t-metric-lg-size: 28px;
+  --t-metric-lg-lh: 32px;
+  --t-metric-lg-weight: 600;
+  --t-metric-lg-track: -0.015em;
+
+  --t-metric-md-size: 14px;
+  --t-metric-md-lh: 18px;
+  --t-metric-md-weight: 560;
+  --t-metric-md-track: -0.005em;
+
+  --t-metric-sm-size: 12px;
+  --t-metric-sm-lh: 16px;
+  --t-metric-sm-weight: 550;
+  --t-metric-sm-track: 0;
+
+  --t-title-size: 16px;
+  --t-title-lh: 22px;
+  --t-title-weight: 600;
+  --t-title-track: -0.01em;
+
+  --t-subtitle-size: 15px;
+  --t-subtitle-lh: 20px;
+  --t-subtitle-weight: 600;
+  --t-subtitle-track: -0.01em;
+
+  --t-body-size: 13px;
+  --t-body-lh: 20px;
+  --t-body-weight: 400;
+  --t-body-track: 0;
+  --t-body-strong-weight: 600;
+
+  --t-body-sm-size: 12px;
+  --t-body-sm-lh: 18px;
+  --t-body-sm-weight: 400;
+
+  --t-label-size: 11px;
+  --t-label-lh: 14px;
+  --t-label-weight: 500;
+  --t-label-track: 0.06em;
+
+  --t-label-sm-size: 10px;
+  --t-label-sm-lh: 13px;
+  --t-label-sm-weight: 500;
+
+  --t-nav-size: 13px;
+  --t-nav-lh: 16px;
+  --t-nav-weight: 500;
+  --t-nav-track: 0.01em;
+
+  --t-mono-size: 11px;
+  --t-mono-lh: 15px;
+  --t-mono-weight: 450;
+
+  --t-mono-sm-size: 10px;
+  --t-mono-sm-lh: 14px;
+
+  /* ---- spacing --------------------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 48px;
+  --sp-10: 64px;
+
+  --gutter-view: var(--sp-6);
+
+  /* ---- radii ----------------------------------------------------------- */
+  /* Nothing above 4px. Large radii read as consumer software, and this is an instrument.
+     There is deliberately no full-round token: the only circle is the 6px status dot, which
+     is a circle by geometry rather than by radius. */
+  --r-sm: 2px;
+  --r-md: 3px;
+  --r-lg: 4px;
+
+  --border-hairline: 1px solid var(--line-hairline);
+  --border-default: 1px solid var(--line-default);
+  --border-strong: 1px solid var(--line-strong);
+
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 55%), 0 0 0 1px var(--line-default);
+
+  /* ---- motion ---------------------------------------------------------- */
+  /* Four durations, and data never animates. A chart that tweens between values turns a
+     142 ms stutter into a gentle hill. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decel: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --motion-state: 120ms var(--ease-standard);
+  --motion-select: 160ms var(--ease-standard);
+  --motion-arrive: 220ms var(--ease-decel);
+  --motion-reveal: 260ms var(--ease-decel);
+
+  /* Tabular figures everywhere by default. A number that changes width as it counts is a
+     number the eye cannot track. */
+  font-variant-numeric: tabular-nums;
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-state: 1ms linear;
+    --motion-select: 1ms linear;
+    --motion-arrive: 1ms linear;
+    --motion-reveal: 1ms linear;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

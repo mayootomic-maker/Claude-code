@@ -475,6 +475,14 @@ thermal/power limit" and the latter as "confirmed".
 
 ---
 
+## Correction: the effective-clock derivation is unverified
+
+An earlier revision of this document attributed the "scale processor utilization by
+`% Processor Performance`" derivation to a Microsoft power-tuning page. The current revision of
+that page does not contain it. The formula is widely used and is very probably right, but it is
+`[unverified]` rather than `[documented]`, and anything depending on it — CPU clock collapse
+detection above all — must be validated on real hardware before its confidence is trusted.
+
 ## 6. Recommended tiered approach
 
 ### Tier 0 — no privilege, no driver, no install friction (ship this as the default)

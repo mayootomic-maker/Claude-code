@@ -99,6 +99,19 @@ Ids are stable, lowercase, dot-separated, and never reused for a different meani
 | `frame.displayed.time` | ms | Display-side interval; what the eye actually receives |
 | `frame.dropped` | count | Frames presented but never displayed |
 
+### An upstream trap on `frame.time`
+
+PresentMon's CSV writer emits a literal `0.0000` for a missing value in `MsBetweenAppStart`,
+`MsCPUBusy` and `MsCPUWait`, while every neighbouring column writes `NA`. `frame.time` is
+sourced from `MsBetweenAppStart`.
+
+So a parser that trusts the column reports **0 ms frame times as measurements** — infinitely
+fast frames, arriving exactly when the source is struggling. That is the precise failure this
+model exists to prevent, and it is waiting in the tool we depend on rather than in our code.
+
+The frame source must therefore treat `0.0000` in those three columns as
+`Unavailable(SourceLimitation)`, not as a reading. A genuine zero-length frame does not exist.
+
 ### Why `frame.animation_error` matters more than it looks
 
 Present-to-present variance — the obvious "frame time" series — measures when the application

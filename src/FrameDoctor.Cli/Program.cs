@@ -17,5 +17,7 @@ return args switch
     ["run", var id, "--seed", var seed] when int.TryParse(seed, CultureInfo.InvariantCulture, out var s)
         => Commands.Run(id, s),
     ["run-all"] => Commands.RunAll(),
+    ["export", var id, var path] => ScenarioExport.Run(id, path),
+    ["export-all", var dir] => ScenarioExport.RunAll(dir),
     _ => Commands.Unknown(args),
 };
