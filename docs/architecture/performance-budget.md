@@ -87,27 +87,94 @@ is fixed-size at construction.
 
 ## Disk
 
-**Raw per-frame persistence is prohibited.**
+**Raw per-frame persistence in a row-per-sample representation is prohibited.**
 
-A 144-byte frame sample at 240 fps is 118.7 MB/hour — 1.98 MB/min, which is the *entire*
-original write budget consumed by a single series. At 1000 fps it is 8.2 MB/min. The first
-draft's budget and its implied design were mutually impossible.
+Full-resolution frame series *are* permitted, in a columnar chunk that satisfies all of:
 
-| Condition | Budget |
+- quantized at a **declared per-metric quantum** (1/64 ms for the frame hot set), recorded in
+  the metric catalog next to the unit — a lossy decision belongs in the catalog, not inside an
+  encoder;
+- **second difference of quantized timestamps**, zigzag + varint — never first difference of
+  quantized frame times;
+- an absolute QPC anchor in every chunk header;
+- chunk span ≤ 20 s;
+- a container whose **measured write amplification is ≤ 1.3× at the flush size in use**.
+
+| Condition | Budget | Instrument |
+|---|---|---|
+| Bytes written, active session | **≤ 0.4 MB/min** | `GetProcessIoCounters().WriteTransferCount` |
+| **fsync / `FlushFileBuffers`** | **≤ 2 / min** | self-counted |
+| Write operations | **≤ 240 / min** | `GetProcessIoCounters().WriteOperationCount` |
+| **Largest single write** | **≤ 128 KB** | self-counted |
+| Read IOPS, steady state | zero | — |
+| Idle | no sustained writes | — |
+| Frame-series decimation | required above **1000 fps**, declared `quality = Degraded` | — |
+
+### Why the second difference, and not the obvious encoding
+
+Storing timestamps alongside frame times stores the same information twice — timestamps are the
+cumulative sum of the intervals. Deleting them halves the data before any compression.
+
+But the cumulative sum of *quantized* deltas is a **random walk**, and the error grows as √n:
+
+| Rate / chunk span | Max reconstruction error |
 |---|---|
-| Writes during an active session | ≤ 0.4 MB / minute |
-| Write syscalls during an active session | ≤ 5 / minute |
-| Read IOPS in steady state | **zero** — nothing in the hot path touches the disk |
-| Idle | no sustained writes |
+| 300 Hz / 20 s | 0.563 ms |
+| 1000 Hz / 20 s | 0.344 ms |
+| **1000 Hz / 300 s** | **7.023 ms** |
 
-What is persisted instead: 4 Hz aggregates (~0.14 MB/min) plus **full-resolution frame
-windows only around detected events** (~20 events/hour at ±5 s ≈ 0.12 MB/min). Total ≈
-0.26 MB/min, comfortably inside budget — and it is the same shape the telemetry model already
-mandates for process history.
+At a 20 s chunk that is under one frame interval and tolerable — but it makes per-chunk absolute
+anchoring load-bearing rather than incidental, and any future lengthening of the chunk degrades
+correlation silently. Encoding the second difference of the quantized *timestamps* costs the
+same 8 bits/frame, round-trips exactly in integer arithmetic, and removes the failure mode
+permanently.
 
-A default-configured SQLite breaches the syscall line immediately (journal + database +
-fsync per transaction). If SQLite is used it runs WAL with `synchronous` relaxed and
-checkpoints at session end only.
+### Why the old write-syscall line was replaced
+
+The previous line was `≤ 6 write syscalls/min`. It was **inverted**: it forbade the cheap
+pattern and permitted the expensive one. Measured on this host:
+
+| Operation | p50 | p99 | max |
+|---|---|---|---|
+| buffered write, 4 KB | 3.8 µs | 40 µs | 74 µs |
+| buffered write, 64 KB | 29 µs | 235 µs | 502 µs |
+| buffered write, 256 KB | 138 µs | **1.98 ms** | **8.95 ms** |
+| write + `fdatasync`, 4 KB | 221 µs | 375 µs | 2.84 ms |
+
+625 buffered 4 KB writes cost **1.94 ms of CPU per minute — 0.027 % of the CPU budget the line
+existed to protect.** One 256 KB write can stall for 8.95 ms, against a top-line requirement of
+Δp99 frame time ≤ 0.3 ms. So the old line rejected a harmless pattern with 12 000× margin while
+allowing a genuinely harmful one.
+
+The replacement lines target the actual harms: `fsync` is the only call that blocks on the
+device; a single large write is what stalls; and write *count* now catches the failure it was
+meant to catch (a row-per-sample writer at 1000 fps is 60 000 ops/min, 250× over) without
+outlawing every legitimate design alongside it.
+
+### What the byte line now means
+
+0.4 MB/min is 6.7 KB/s. As an I/O-harm threshold that is unmeasurable noise. It is retained as a
+**session-footprint** line: 0.4 MB/min is 96 MB per four-hour session.
+
+Measured worst case, at a pathological 1000 fps with every component rolled up:
+
+| Component | MB/min |
+|---|---|
+| frame hot set | 0.210 |
+| low-rate series, 32-thread machine | 0.058 |
+| 10 s log histograms | 0.006 |
+| event windows, ~20/h at ±5 s | 0.120 |
+| **total, append log at 1.00× amplification** | **0.394 — 99 % of budget** |
+| total, SQLite WAL `page_size=4096` (1.12×) | 0.442 — **breach** |
+| total, SQLite WAL `page_size=65536` (2.80×) | 1.104 — **breach** |
+
+It passes, with 1.5 % margin. "Comfortably inside budget" is not available at 1000 fps, and the
+frame hot set alone exhausts the residual at roughly **1030 fps** — which is why decimation
+above 1000 fps is a budget line rather than a nicety.
+
+Note that write amplification, not encoding, is what decides this. The same bytes through
+SQLite's WAL breach the line, because SQLite issues two writes per dirty page — a 24-byte frame
+header plus the page — in portable code above the VFS, on every platform.
 
 ## Latency
 
