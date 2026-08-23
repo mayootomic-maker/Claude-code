@@ -147,3 +147,46 @@ public interface ISensorSource : ITelemetrySource
     /// </param>
     int Poll(MonotonicTimestamp now, Span<TelemetrySample> destination);
 }
+
+/// <summary>
+/// Names the process responsible for a stutter, on demand rather than on a timer.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Separate from <see cref="ISensorSource"/> because its cost profile is different in kind.
+/// Enumerating every process and thread on the machine is the single most expensive thing
+/// FrameDoctor can ask Windows for, and doing it on a timer for the length of a gaming session
+/// would make the tool a plausible cause of the stutters it reports (invariant 8). ADR 0002
+/// therefore confines it to the event path: roughly twenty calls an hour instead of thirty-six
+/// hundred.
+/// </para>
+/// <para>
+/// The consequence is honest but real: these samples are taken just <i>after</i> an event, not
+/// during it. They establish that a process was busy around the stutter; they cannot establish
+/// that it was busy before it. Implementations mark them accordingly, and the diagnostic engine
+/// weighs them as correlation rather than sequence.
+/// </para>
+/// </remarks>
+public interface IProcessAttributionSource : IAsyncDisposable
+{
+    SourceId Id { get; }
+
+    string DisplayName { get; }
+
+    ValueTask<SourceProbe> ProbeAsync(CancellationToken cancellationToken);
+
+    /// <summary>Upper bound on samples one widening can write.</summary>
+    int MaxSamplesPerWidening { get; }
+
+    /// <summary>
+    /// Takes two process enumerations a short interval apart and reports CPU share per process.
+    /// </summary>
+    /// <remarks>
+    /// Two enumerations, because process CPU is a cumulative counter: a single reading says how
+    /// much CPU a process has used since it started, which is not what a stutter needs to know.
+    /// </remarks>
+    /// <param name="destination">At least <see cref="MaxSamplesPerWidening"/> long.</param>
+    /// <param name="cancellationToken">Abandons the widening; the session continues without it.</param>
+    /// <returns>Samples written.</returns>
+    ValueTask<int> WidenAsync(Memory<TelemetrySample> destination, CancellationToken cancellationToken);
+}
