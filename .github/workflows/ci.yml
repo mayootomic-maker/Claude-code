@@ -1,0 +1,93 @@
+# The checks that must pass before anything is believed.
+#
+# Runs on Linux, which is where this project is developed and where its portable core is fully
+# testable. It deliberately does not claim to verify the Windows halves: those compile here and
+# have never executed, and a green tick that implied otherwise would be the most damaging kind of
+# false signal this repository could produce.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    name: .NET — build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # TreatWarningsAsErrors is on, so a build warning fails here rather than accumulating.
+      - name: Build
+        run: dotnet build -c Release --nologo
+
+      - name: Test
+        run: dotnet test -c Release --no-build --nologo
+
+  frontend:
+    name: Frontend — types, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Types
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        run: pnpm exec vitest run
+
+      - name: Build
+        run: pnpm build
+
+      # Chromium is installed here rather than assumed, unlike in the development container where
+      # it is pre-provisioned and `playwright install` is forbidden.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Screenshots
+        run: pnpm exec playwright test --config=playwright.shots.ts
+
+      # The artefacts /council-ui reviews. Uploaded so a design regression is visible on the pull
+      # request rather than only to whoever runs the suite locally.
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: artifacts/screenshots/*.png
+          retention-days: 14
+
+  honesty:
+    name: Invariant 9 — no fake implementation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The scan reports rather than gates: it cannot see a chart bound to a constant, and a
+      # clean scan is not a pass. Its output is here so a reviewer triages the hits instead of
+      # trusting a tick.
+      - name: Slop scan
+        run: bash scripts/slop-scan.sh
