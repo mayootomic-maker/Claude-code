@@ -36,7 +36,10 @@ candidate for a product with no code yet.
 | Metric catalog with minimum-sample rules | Done | `MetricCatalog.cs` |
 | Monotonic clock + discontinuity types | Done | `Time/` |
 | Telemetry model tests | Done | **10 passing** — including that an unavailable sample refuses to yield a value |
-| Pipeline / Diagnostics / Storage / Ipc / Simulation | Scaffolded, empty | — |
+| Rolling statistics: log histogram | Done | Accuracy verified against exact percentiles, 4 regimes x 4 percentiles |
+| Rolling window + frame-time statistics | Done | Sliding window proven exactly equal to a fresh histogram |
+| Adaptive stutter detector | Done | **28 tests** — zero false positives on both hard regimes |
+| Diagnostics / Storage / Ipc / Simulation | Scaffolded, empty | — |
 | Windows platform layer | Not started | — |
 | Frontend | Not started | — |
 

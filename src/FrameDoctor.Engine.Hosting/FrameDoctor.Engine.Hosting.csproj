@@ -6,4 +6,13 @@
     <RootNamespace>FrameDoctor.Engine.Hosting</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+    <ProjectReference Include="../FrameDoctor.Pipeline/FrameDoctor.Pipeline.csproj" />
+    <ProjectReference Include="../FrameDoctor.Diagnostics/FrameDoctor.Diagnostics.csproj" />
+    <ProjectReference Include="../FrameDoctor.Storage/FrameDoctor.Storage.csproj" />
+    <ProjectReference Include="../FrameDoctor.Ipc/FrameDoctor.Ipc.csproj" />
+    <ProjectReference Include="../FrameDoctor.Simulation/FrameDoctor.Simulation.csproj" />
+  </ItemGroup>
+
 </Project>

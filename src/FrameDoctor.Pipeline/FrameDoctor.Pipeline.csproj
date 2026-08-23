@@ -6,4 +6,8 @@
     <RootNamespace>FrameDoctor.Pipeline</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+  </ItemGroup>
+
 </Project>
