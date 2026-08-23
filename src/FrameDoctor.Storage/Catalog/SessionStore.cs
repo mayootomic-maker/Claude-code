@@ -81,7 +81,62 @@ public sealed class SessionStore : IDisposable
                 new StoreOpenResult(StoreAccess.ReadWrite, StoreVersion.Schema, buildId, null));
         }
 
+        // Everything that reads an existing store is inside one guard.
+        //
+        // A file torn by power loss can fail at any of these steps, not only the first: the
+        // header pragma may read cleanly and a table query fail immediately after. This used to
+        // throw a raw SQLite error out of Open, killing `sessions` and `simulate --save` with a
+        // stack trace — on a product whose whole subject is what to do when a measurement is not
+        // available.
+        //
+        // Damage is treated exactly like a destructive migration: the file is left byte for
+        // byte, a fresh store is started beside it, and the caller is told where the old one is.
+        // Deleting it would be destroying the user's history to make an error message go away.
+        try
+        {
+            return OpenExisting(connection, path, buildId);
+        }
+        catch (SqliteException e) when (e.SqliteErrorCode == SqliteCorrupt)
+        {
+            connection.Dispose();
+            return StartFreshBeside(path, buildId, schema: 0, writtenBy: null);
+        }
+    }
+
+    /// <summary>SQLITE_CORRUPT: this was a database and its pages no longer make sense.</summary>
+    /// <remarks>
+    /// Deliberately not SQLITE_NOTADB. A file that was never a database is something the caller
+    /// pointed us at by mistake — very possibly one of the user's own documents — and quietly
+    /// starting a store beside it would be acting on a mistake instead of reporting it. A file
+    /// that <i>was</i> a database and is now damaged is ours, and recovering from it is the whole
+    /// point.
+    /// </remarks>
+    private const int SqliteCorrupt = 11;
+
+    /// <summary>
+    /// Starts a new store next to one that cannot be used, leaving the original untouched.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the two cases that reach it — a store written by a build too new to read, and a
+    /// store damaged by power loss — because the correct response to both is the same: keep the
+    /// file, keep measuring, and tell the caller where the old one went. Deleting it would be
+    /// destroying a user's history to make an error message go away.
+    /// </remarks>
+    private static SessionStore StartFreshBeside(
+        string path, string buildId, int schema, string? writtenBy)
+    {
+        var alternate = AlternatePathFor(path);
+        var fresh = Connect(alternate);
+        Create(fresh, buildId);
+
+        return new SessionStore(fresh,
+            new StoreOpenResult(StoreAccess.StartedNewStore, schema, writtenBy, alternate));
+    }
+
+    private static SessionStore OpenExisting(SqliteConnection connection, string path, string buildId)
+    {
         var applicationId = ScalarInt(connection, "PRAGMA application_id;");
+
         if (applicationId != StoreVersion.ApplicationId)
         {
             connection.Dispose();
@@ -106,11 +161,7 @@ public sealed class SessionStore : IDisposable
             // Destructive migration. Leave the original byte-for-byte and start a new store
             // beside it, so a user who reverted a build has not lost anything.
             connection.Dispose();
-            var alternate = AlternatePathFor(path);
-            var fresh = Connect(alternate);
-            Create(fresh, buildId);
-            return new SessionStore(fresh,
-                new StoreOpenResult(StoreAccess.StartedNewStore, schema, writtenBy, alternate));
+            return StartFreshBeside(path, buildId, schema, writtenBy);
         }
 
         if (schema < StoreVersion.Schema) Migrate(connection, schema, buildId);

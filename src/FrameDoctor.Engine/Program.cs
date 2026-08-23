@@ -592,6 +592,9 @@ static int ReconcileWindows(ChangeJournal journal, JournalContents contents)
     var restored = 0;
     var left = 0;
 
+    // Kept so anything unresolved can be written down as well as printed.
+    var transcript = new List<string>();
+
     foreach (var entry in contents.Entries)
     {
         // One implementation today. The kind is checked rather than assumed so an entry written
@@ -599,16 +602,40 @@ static int ReconcileWindows(ChangeJournal journal, JournalContents contents)
         // of being handed to the wrong restorer.
         if (entry.ChangeKind != change.ChangeKind)
         {
-            Console.WriteLine($"  {entry.Target}: recorded by a newer version. Left alone.");
+            var note = $"{entry.Description}: recorded by a newer version of FrameDoctor. Left alone.";
+            Console.WriteLine($"  {note}");
+            transcript.Add(note);
             left++;
             continue;
         }
 
-        var result = applier.Reconcile(change, entry);
+        // One entry cannot cancel the others. Every remaining change would otherwise stay
+        // applied because the first one hit a locked file.
+        ReconcileResult result;
+        try
+        {
+            result = applier.Reconcile(change, entry);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            var message = $"{entry.Description}: could not be reconciled — {e.Message}";
+            Console.WriteLine($"  {message}");
+            transcript.Add(message);
+            left++;
+            continue;
+        }
+
         Console.WriteLine($"  {result.Detail}");
 
-        if (result.Restored) restored++;
-        else if (!result.EntryRemoved) left++;
+        if (result.Restored)
+        {
+            restored++;
+        }
+        else
+        {
+            transcript.Add(result.Detail);
+            if (!result.EntryRemoved) left++;
+        }
     }
 
     // Never summarised away. An unreadable entry most likely means a change that was applied and
@@ -619,6 +646,11 @@ static int ReconcileWindows(ChangeJournal journal, JournalContents contents)
         Console.WriteLine($"  A rollback record could not be read: {unreadable.Path}");
         Console.WriteLine($"    {unreadable.Reason}");
         Console.WriteLine("    A setting FrameDoctor changed may still be applied.");
+
+        transcript.Add(
+            $"A rollback record could not be read: {unreadable.Path} — {unreadable.Reason}. " +
+            "A setting FrameDoctor changed may still be applied.");
+
         left++;
     }
 
@@ -626,7 +658,46 @@ static int ReconcileWindows(ChangeJournal journal, JournalContents contents)
     Console.WriteLine($"  {restored} restored, {left} left for you to decide about.");
     Console.WriteLine();
 
+    // Written down, because at logon nobody is reading this.
+    //
+    // The Run entry launches a console executable, so everything above appears in a window that
+    // flashes and closes. Anything that needs the user — "FrameDoctor has tried three times and
+    // will stop trying; here is what to put back" — would be said into a void. The report is a
+    // file the interface can surface later, and it is written only when there is something to
+    // say, so it does not become a log nobody reads.
+    if (left > 0 || contents.Unreadable.Count > 0)
+        WriteReport(journal.Directory, transcript, restored, left);
+
     return left == 0 ? 0 : 1;
+}
+
+// Records what reconciliation could not finish, next to the journal it was reading.
+static void WriteReport(string journalDirectory, List<string> lines, int restored, int left)
+{
+    try
+    {
+        Directory.CreateDirectory(journalDirectory);
+
+        var path = Path.Combine(journalDirectory, "unfinished-rollback.txt");
+        var report = new List<string>
+        {
+            "FrameDoctor could not finish putting everything back.",
+            string.Empty,
+            $"{restored} setting(s) restored, {left} left.",
+            "The details below are what you would need to undo the rest by hand.",
+            string.Empty,
+        };
+
+        report.AddRange(lines);
+
+        File.WriteAllLines(path, report);
+        Console.WriteLine($"  Written to {path}");
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    {
+        // The console line above is all there is, then. Failing to write a report must not turn
+        // a partly-successful rollback into a crash.
+    }
 }
 
 // Identifies which build made a change, so a bad release is identifiable later.

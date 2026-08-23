@@ -20,6 +20,13 @@ namespace FrameDoctor.Pipeline.Detection;
 /// produce real hitches during warm-up that are of little diagnostic use, so they are recorded
 /// and flagged rather than counted alongside steady-state events.
 /// </param>
+/// <param name="RefreshIntervalMs">
+/// The display's refresh interval when the event was detected.
+///
+/// Carried on the event for the same reason the baseline is: it is what makes the classification
+/// reproducible afterwards. Whether an excursion was perceptible at all depends on it, and a
+/// stored event read back on a different display must be judged by the display it happened on.
+/// </param>
 /// <param name="ForceClosed">
 /// Whether the event was closed by timeout rather than by recovery, meaning frame times never
 /// returned to baseline.
@@ -40,20 +47,43 @@ public sealed record StutterEvent(
     double BaselineScaleMs,
     int FrameCount,
     int MergedCount,
+    double RefreshIntervalMs,
     bool DuringWarmUp,
     bool ForceClosed)
 {
     public TimeSpan Duration => End - Start;
 
+    /// <summary>
+    /// Whether the display could have shown this at all.
+    /// </summary>
+    /// <remarks>
+    /// A frame that finished inside one refresh interval was never late: the display had not
+    /// refreshed yet, so nothing about it reached the user's eyes. The detector's threshold floor
+    /// is half a refresh interval, which is deliberately below this — a sub-refresh excursion is
+    /// a real measurement and worth recording — but recording it and counting it as a stutter
+    /// are different claims.
+    /// </remarks>
+    public bool WasPerceptible =>
+        !(RefreshIntervalMs > 0) || PeakFrameTimeMs >= RefreshIntervalMs;
+
     /// <summary>Whether this event should count toward the session's headline stutter tally.</summary>
     /// <remarks>
+    /// <para>
     /// Warm-up events and regime changes are real observations but are not what a user means by
     /// "my game stuttered", so counting them would inflate the number that matters most.
+    /// </para>
+    /// <para>
+    /// Nor is an excursion the display could not show. A menu running at a thousand frames a
+    /// second on a 144 Hz display produces occasional 5 ms frames, every one of them finishing
+    /// inside one 6.94 ms refresh — and reporting "3 stutters" for a menu nobody saw stutter is
+    /// the invented finding this product exists to be the opposite of.
+    /// </para>
     /// </remarks>
     public bool CountsTowardTally =>
-        !DuringWarmUp && Class is StutterClass.MicroStutter or StutterClass.Stutter
-            or StutterClass.SevereHitch or StutterClass.PacingMicroStutter
-            or StutterClass.DroppedFrameBurst;
+        !DuringWarmUp && WasPerceptible
+            && Class is StutterClass.MicroStutter or StutterClass.Stutter
+                or StutterClass.SevereHitch or StutterClass.PacingMicroStutter
+                or StutterClass.DroppedFrameBurst;
 
     public bool IsSevere => Class == StutterClass.SevereHitch;
 }

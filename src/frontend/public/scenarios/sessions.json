@@ -1,8 +1,8 @@
 [
   {
-    "id": "ea50e9e8-47c4-4f64-be05-e5a7b582ea9a",
+    "id": "64c59d7b-68c7-4566-8f1c-1d798fe647e2",
     "game": "Unexplained hitch",
-    "epochUtcTicks": 639231211462749865,
+    "epochUtcTicks": 639231249323771031,
     "durationMs": 89994.6921,
     "frameCount": 12952,
     "stutterCount": 1,
@@ -11,9 +11,9 @@
     "baselineEligible": false
   },
   {
-    "id": "138626b5-8c9e-47f2-90ae-25a55bdbff02",
+    "id": "d890dfc2-f576-425e-91e7-0258c01dd58e",
     "game": "Memory pressure and paging",
-    "epochUtcTicks": 639231211462640541,
+    "epochUtcTicks": 639231249321827031,
     "durationMs": 89999.1855,
     "frameCount": 12542,
     "stutterCount": 2,
@@ -22,9 +22,9 @@
     "baselineEligible": false
   },
   {
-    "id": "50812003-c318-40eb-a2c0-9e95b4cbf4bb",
+    "id": "67250133-643a-409d-bc6f-ef13a04e3a10",
     "game": "GPU power limit",
-    "epochUtcTicks": 639231211462516235,
+    "epochUtcTicks": 639231249319987679,
     "durationMs": 99993.2925,
     "frameCount": 12201,
     "stutterCount": 5,
@@ -33,9 +33,9 @@
     "baselineEligible": false
   },
   {
-    "id": "cb122541-f42d-49fe-8f15-6535949fd365",
+    "id": "2e740fda-aa6c-4ace-8482-753ec37cc90c",
     "game": "GPU thermal throttling",
-    "epochUtcTicks": 639231211462230106,
+    "epochUtcTicks": 639231249318423612,
     "durationMs": 99999.5132,
     "frameCount": 11894,
     "stutterCount": 3,
@@ -44,9 +44,9 @@
     "baselineEligible": false
   },
   {
-    "id": "d849a398-a903-44e5-a710-9c84e59105f2",
+    "id": "2e86ace8-54f1-41c3-8eea-e23d6cca051d",
     "game": "CPU frequency collapse",
-    "epochUtcTicks": 639231211462067941,
+    "epochUtcTicks": 639231249316991333,
     "durationMs": 89999.2868,
     "frameCount": 8004,
     "stutterCount": 1,
@@ -55,9 +55,9 @@
     "baselineEligible": false
   },
   {
-    "id": "ff85189b-9948-4306-affc-f07367d3f1cf",
+    "id": "06709887-d263-4290-bb7b-cd2aad08ed6c",
     "game": "Background CPU contention",
-    "epochUtcTicks": 639231211461871769,
+    "epochUtcTicks": 639231249315385040,
     "durationMs": 89994.2235,
     "frameCount": 12836,
     "stutterCount": 1,
@@ -66,9 +66,9 @@
     "baselineEligible": false
   },
   {
-    "id": "f8e0abcc-e132-44af-80e0-f16879836286",
+    "id": "1704ddb1-41a5-43c3-b477-9f3e4a85565b",
     "game": "Healthy session",
-    "epochUtcTicks": 639231211461010066,
+    "epochUtcTicks": 639231249312753172,
     "durationMs": 89997.75,
     "frameCount": 12964,
     "stutterCount": 0,

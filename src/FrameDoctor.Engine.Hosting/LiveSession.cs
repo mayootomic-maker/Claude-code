@@ -24,6 +24,11 @@ namespace FrameDoctor.Engine.Hosting;
 /// Frames FrameDoctor itself failed to keep up with. Surfaced rather than buried: a frame the
 /// tool dropped is indistinguishable in the data from a frame the game never rendered.
 /// </param>
+/// <param name="PresentationGaps">
+/// Times the game stopped presenting long enough that statistics must not span the break — an
+/// alt-tab, a lock screen, a suspend. Counted rather than hidden: a session with several of
+/// these describes several shorter sessions, and its percentiles say less than they appear to.
+/// </param>
 public readonly record struct LiveStatistics(
     int FrameCount,
     TimeSpan Elapsed,
@@ -37,7 +42,8 @@ public readonly record struct LiveStatistics(
     int StutterCount,
     int SevereCount,
     int ExplainedCount,
-    long FramesLostToBackpressure)
+    long FramesLostToBackpressure,
+    int PresentationGaps = 0)
 {
     /// <summary>Share of counted events that reached a named cause, or NaN before any.</summary>
     public double ExplanationRate =>
@@ -81,26 +87,57 @@ public sealed class LiveSession
     /// that had not been collected yet. Holding the event until its window has filled is what
     /// makes a live diagnosis match the one the batch analyzer produces for the same data.
     /// </remarks>
-    private readonly Queue<StutterEvent> _awaitingEvidence = new();
+    private readonly Queue<(StutterEvent Event, int FrameCountAtClose)> _awaitingEvidence = new();
+
+    /// <summary>
+    /// Frames after which a waiting event is diagnosed even though its window has not filled.
+    /// </summary>
+    /// <remarks>
+    /// The wait is bounded by the session clock, and a source whose clock has stopped never
+    /// satisfies it: the event sits in the queue for the rest of the session and the user is
+    /// never told about the stutter that produced it. Frames still arrive in that state, so
+    /// counting them is the release that still works. The window will be short and the
+    /// confidence it earns reflects that on its own — the same treatment an event still open at
+    /// session end already gets.
+    /// </remarks>
+    private const int MaximumFramesAwaitingEvidence = 20_000;
+
+    private readonly TimeSpan _presentationGap;
 
     private MonotonicTimestamp _first;
     private MonotonicTimestamp _last;
+
+    /// <summary>When the last frame arrived, for detecting a gap in presentation.</summary>
+    private MonotonicTimestamp? _lastFrameAt;
+
     private bool _seenFirst;
+    private int _discontinuities;
     private int _frameCount;
     private int _stutterCount;
     private int _severeCount;
     private int _explainedCount;
 
+    /// <param name="refreshRateHz">Display refresh, which sets the detector's floors.</param>
+    /// <param name="engine">The diagnostic engine, for tests that need a specific rule set.</param>
+    /// <param name="correlationPadding">How far either side of an event to gather evidence.</param>
+    /// <param name="history">The bounded sensor buffer.</param>
+    /// <param name="presentationGap">
+    /// A frame interval longer than this is treated as the game not presenting rather than as a
+    /// frame that took that long. One second is far beyond any stutter a person would sit
+    /// through and far below any alt-tab worth the name.
+    /// </param>
     public LiveSession(
         double refreshRateHz = 144.0,
         DiagnosticEngine? engine = null,
         TimeSpan? correlationPadding = null,
-        SensorHistory? history = null)
+        SensorHistory? history = null,
+        TimeSpan? presentationGap = null)
     {
         _detector = new StutterDetector(refreshRateHz);
         _engine = engine ?? new DiagnosticEngine();
         _correlationPadding = correlationPadding ?? TimeSpan.FromSeconds(2);
         _history = history ?? new SensorHistory();
+        _presentationGap = presentationGap ?? TimeSpan.FromSeconds(1);
 
         if (_history.Retention <= _correlationPadding * 2)
         {
@@ -136,13 +173,44 @@ public sealed class LiveSession
     public void AddFrame(in FramePresent frame)
     {
         if (!_seenFirst) { _first = frame.Timestamp; _seenFirst = true; }
-        _last = frame.Timestamp;
+        Advance(frame.Timestamp);
         _frameCount++;
 
-        var closed = _detector.Add(frame.Timestamp, frame.FrameTimeMs);
-        if (closed is not null) _awaitingEvidence.Enqueue(closed);
+        // A frame interval longer than this did not happen to the game; the game was not
+        // running. Alt-tab, a lock screen, a minimise, a suspend: the source measures app frame
+        // start to app frame start, so the first frame back carries the length of the whole
+        // absence. Feeding that to the detector reports a two-minute stutter the user never
+        // experienced, as the worst event of their session, and poisons the baseline with it.
+        if (_lastFrameAt is { } previous && frame.Timestamp - previous > _presentationGap)
+        {
+            _detector.Reset();
+            _discontinuities++;
+            _lastFrameAt = frame.Timestamp;
+            DrainReadyEvents(_last);
+            return;
+        }
 
-        DrainReadyEvents(frame.Timestamp);
+        _lastFrameAt = frame.Timestamp;
+
+        var closed = _detector.Add(frame.Timestamp, frame.FrameTimeMs);
+        if (closed is not null) _awaitingEvidence.Enqueue((closed, _frameCount));
+
+        DrainReadyEvents(_last);
+    }
+
+    /// <summary>
+    /// Moves the session clock forward, never backward.
+    /// </summary>
+    /// <remarks>
+    /// The frame source is a pipe read from another process and is always some tens of
+    /// milliseconds behind a sensor poll that stamps itself from the clock directly. Assigning
+    /// the session end from whatever arrived last meant every poll pushed it ahead of the frames
+    /// and the next frame pulled it back, so the reported duration moved backwards between two
+    /// reads — and every window computed from it was a different width each time.
+    /// </remarks>
+    private void Advance(MonotonicTimestamp timestamp)
+    {
+        if (timestamp > _last) _last = timestamp;
     }
 
     /// <summary>
@@ -156,12 +224,13 @@ public sealed class LiveSession
     public void AddUnreadableFrame(MonotonicTimestamp timestamp)
     {
         if (!_seenFirst) { _first = timestamp; _seenFirst = true; }
-        _last = timestamp;
+        Advance(timestamp);
+        _lastFrameAt = timestamp;
 
         var closed = _detector.Add(timestamp, double.NaN);
-        if (closed is not null) _awaitingEvidence.Enqueue(closed);
+        if (closed is not null) _awaitingEvidence.Enqueue((closed, _frameCount));
 
-        DrainReadyEvents(timestamp);
+        DrainReadyEvents(_last);
     }
 
     /// <summary>Feeds a batch of sensor samples, as one poll produced them.</summary>
@@ -169,10 +238,22 @@ public sealed class LiveSession
     {
         _history.AddRange(samples);
 
-        foreach (ref readonly var sample in samples)
+        // Sensors do not define the session clock.
+        //
+        // They did, and one sample stamped hours ahead — a clock step at resume, a source on a
+        // different base — moved the trim cutoff with it and discarded the entire correlation
+        // window. The events diagnosed afterwards had no evidence at all, and FrameDoctor did
+        // not report that its evidence had been deleted: it reported an unexplained stutter,
+        // which a user reads as a fact about their machine.
+        //
+        // Frames are the clock because frames are what the session is measuring. A sensor sample
+        // still seeds the clock when nothing else has, so a session that has sensors and no
+        // frames yet is not stuck at zero.
+        if (!_seenFirst && samples.Length > 0)
         {
-            if (sample.Timestamp > _last) _last = sample.Timestamp;
-            if (!_seenFirst) { _first = sample.Timestamp; _seenFirst = true; }
+            _first = samples[0].Timestamp;
+            _last = samples[0].Timestamp;
+            _seenFirst = true;
         }
 
         DrainReadyEvents(_last);
@@ -187,10 +268,20 @@ public sealed class LiveSession
     /// </remarks>
     private void DrainReadyEvents(MonotonicTimestamp now)
     {
-        while (_awaitingEvidence.TryPeek(out var pending) && pending.End + _correlationPadding <= now)
+        while (_awaitingEvidence.TryPeek(out var pending))
         {
+            var windowFilled = pending.Event.End + _correlationPadding <= now;
+
+            // The frame-count release exists for a source whose clock has stopped. Without it
+            // the queued event waits on a condition that can never be met, and the stutter is
+            // never reported at all.
+            var waitedLongEnough =
+                _frameCount - pending.FrameCountAtClose >= MaximumFramesAwaitingEvidence;
+
+            if (!windowFilled && !waitedLongEnough) break;
+
             _awaitingEvidence.Dequeue();
-            Diagnose(pending);
+            Diagnose(pending.Event);
         }
 
         if (_awaitingEvidence.Count == 0) _history.Trim(now);
@@ -229,9 +320,10 @@ public sealed class LiveSession
 
         try
         {
-            foreach (var flushed in _detector.Flush(_last)) _awaitingEvidence.Enqueue(flushed);
+            foreach (var flushed in _detector.Flush(_last))
+                _awaitingEvidence.Enqueue((flushed, _frameCount));
 
-            while (_awaitingEvidence.TryDequeue(out var pending)) Diagnose(pending);
+            while (_awaitingEvidence.TryDequeue(out var pending)) Diagnose(pending.Event);
         }
         finally
         {
@@ -250,7 +342,11 @@ public sealed class LiveSession
             _frameCount,
             _seenFirst ? _last - _first : TimeSpan.Zero,
             stats.RollingFps(),
-            stats.Median(),
+            // Through the catalog's minimum-sample rule, like the p99 beside it. Median() has no
+            // such rule, so the number was published from the first frame onward — next to a p99
+            // correctly reading "insufficient data", which made the median look like the one
+            // that could be trusted.
+            stats.PercentileOrInsufficient(50, MetricId.FrameTimeMedian),
             stats.PercentileOrInsufficient(99, MetricId.FrameTimeP99),
             stats.Low1PercentFps(),
             _detector.ThresholdMs,
@@ -259,6 +355,7 @@ public sealed class LiveSession
             _stutterCount,
             _severeCount,
             _explainedCount,
-            FramesLostToBackpressure);
+            FramesLostToBackpressure,
+            _discontinuities);
     }
 }

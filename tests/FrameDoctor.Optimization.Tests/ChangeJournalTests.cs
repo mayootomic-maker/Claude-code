@@ -14,8 +14,8 @@ public sealed class ChangeJournalTests : IDisposable
 
     private ChangeJournal Journal => new(_directory);
 
-    private static JournalEntry Entry(string id = "pid-4812", string target = "discord.exe (4812)") =>
-        new(id, "process-eco-qos", target, "system-managed", "eco",
+    private static JournalEntry Entry(string id = "pid-4812", string target = "pid:4812|started:1") =>
+        new(id, "process-eco-qos", target, "discord.exe (4812)", "system-managed", "eco",
             new DateTimeOffset(2026, 8, 23, 12, 0, 0, TimeSpan.Zero), "0.1.0");
 
     [Fact]

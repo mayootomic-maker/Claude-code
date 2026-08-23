@@ -22,9 +22,19 @@ namespace FrameDoctor.Optimization;
 /// <param name="Id">Stable identity of this change, for a compare-and-restore later.</param>
 /// <param name="ChangeKind">What kind of setting this is, e.g. process power throttling.</param>
 /// <param name="Target">
-/// What was changed, identified so precisely that it cannot be confused with something else.
+/// What was changed, identified so precisely that it cannot be confused with something else, in
+/// the form the platform implementation reads and writes.
+///
 /// A process id alone is not enough: Windows reuses them, and restoring a captured value onto a
 /// different process that happens to hold the same id would be a mutation of an innocent target.
+///
+/// Never a display string. This field is the only durable record of what to act on, and putting
+/// a sentence here means every rollback path — engine start, logon, uninstall, the user asking —
+/// acts on a sentence. That is either a change that is never undone or, if the sentence happens
+/// to parse as an identity, a write onto a process nobody asked to touch.
+/// </param>
+/// <param name="Description">
+/// The same thing in the user's terms, for wording only. Nothing reads it to decide what to do.
 /// </param>
 /// <param name="CapturedValue">What the setting read before the change, verified by two reads.</param>
 /// <param name="AppliedValue">What FrameDoctor set it to.</param>
@@ -34,10 +44,24 @@ public sealed record JournalEntry(
     string Id,
     string ChangeKind,
     string Target,
+    string Description,
     string CapturedValue,
     string AppliedValue,
     DateTimeOffset AppliedAtUtc,
-    string AppliedByBuild);
+    string AppliedByBuild)
+{
+    /// <summary>
+    /// How many reconcile passes have failed to resolve this entry.
+    /// </summary>
+    /// <remarks>
+    /// Bounded on purpose. An entry the platform can neither read nor recognise is kept by
+    /// design — restoring blindly is worse — but keeping it forever means one permanent file and
+    /// one permanent "left for you to decide about" line per optimization ever applied, and a
+    /// `reconcile` that exits non-zero for the life of the installation. After enough attempts
+    /// the entry stops being a pending action and becomes something to tell the user about once.
+    /// </remarks>
+    public int UnresolvedAttempts { get; init; }
+}
 
 /// <summary>An entry that could not be read.</summary>
 /// <param name="Path">The file.</param>

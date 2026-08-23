@@ -73,6 +73,13 @@ public sealed class StutterDetector
     // knowable until then: a second excursion 300 ms later is part of the same stutter
     // episode from the user's point of view, and emitting two markers would be wrong.
     private StutterEvent? _pendingEvent;
+
+    /// <summary>Frames observed since an event was held for possible merging.</summary>
+    /// <remarks>
+    /// The clock-independent half of the release condition. See
+    /// <see cref="ReleasePendingIfSettled"/>.
+    /// </remarks>
+    private int _framesSincePending;
     private MonotonicTimestamp _pendingSince;
 
     // Frames observed while an event is held. Used to tell a stutter apart from a regime
@@ -160,6 +167,8 @@ public sealed class StutterDetector
 
         // Accumulate frames behind a held event so its release can distinguish a stutter
         // from a shift in the baseline itself.
+        if (_pendingEvent is not null) _framesSincePending++;
+
         if (_pendingEvent is not null && !_eventOpen && double.IsFinite(frameTimeMs))
         {
             _postEventFrames.Add(frameTimeMs);
@@ -217,10 +226,19 @@ public sealed class StutterDetector
     private StutterEvent? ReleasePendingIfSettled(MonotonicTimestamp now)
     {
         if (_pendingEvent is null) return null;
-        if ((now - _pendingSince) <= _options.MergeWindow) return null;
+
+        // Either bound releases it. The merge window is measured in source timestamps, and a
+        // source whose clock has stopped never crosses it — the event is held forever and the
+        // user is never told about the stutter that produced it, while frames keep arriving.
+        // Counting those frames is the release that still works when the clock does not.
+        var mergeWindowPassed = (now - _pendingSince) > _options.MergeWindow;
+        var enoughFramesSince = _framesSincePending >= _options.MaximumEventFrames;
+
+        if (!mergeWindowPassed && !enoughFramesSince) return null;
 
         var e = _pendingEvent;
         _pendingEvent = null;
+        _framesSincePending = 0;
 
         if (e.Class != StutterClass.RegimeChange &&
             HasSettledAbove(_postEventFrames, e.BaselineMedianMs, e.ThresholdMs))
@@ -380,7 +398,11 @@ public sealed class StutterDetector
         if (frameTimeMs > _eventPeak) _eventPeak = frameTimeMs;
         if (_openEventFrames.Count < MaxRetainedEventFrames) _openEventFrames.Add(frameTimeMs);
 
-        if ((now - _eventStart) >= _options.MaximumEventDuration)
+        // Either bound closes it. The duration bound is the meaningful one; the frame bound is
+        // the one that still works when the source's clock has stopped, which is the case where
+        // an open event would otherwise freeze detection for the rest of the session.
+        if ((now - _eventStart) >= _options.MaximumEventDuration ||
+            _eventFrames >= _options.MaximumEventFrames)
         {
             CloseEvent(now, forceClosed: true);
             return;
@@ -435,6 +457,7 @@ public sealed class StutterDetector
             // exceeding frame, so the recovery frames do not.
             FrameCount: forceClosed ? _eventFrames : _eventFramesAtLastExceeded,
             MergedCount: _eventMerged,
+            RefreshIntervalMs: _refreshIntervalMs,
             DuringWarmUp: _eventDuringWarmUp,
             ForceClosed: forceClosed);
 
@@ -442,6 +465,7 @@ public sealed class StutterDetector
         _consecutiveRecovered = 0;
         _pendingEvent = completed;
         _pendingSince = end;
+        _framesSincePending = 0;
 
         if (settledShift)
         {

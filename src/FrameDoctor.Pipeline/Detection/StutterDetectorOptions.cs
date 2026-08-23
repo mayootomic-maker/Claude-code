@@ -61,6 +61,26 @@ public sealed record StutterDetectorOptions
     /// </remarks>
     public TimeSpan MaximumEventDuration { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Frames after which an open event is force-closed regardless of what its timestamps say.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="MaximumEventDuration"/> is measured in source timestamps, so a source whose
+    /// clock stops advancing while it keeps emitting frames never reaches it. A stuck
+    /// QPC-derived stamp, a CSV whose timestamp column repeats, a replay that forgot to advance:
+    /// the event stays open, the baseline stays frozen with it, and no stutter is reported for
+    /// the rest of the session. FrameDoctor would tell the user their game is fine while it was
+    /// measuring nothing at all, which is worse than saying it cannot measure.
+    /// </para>
+    /// <para>
+    /// Twenty thousand frames is four times what a 1000 fps game produces in the five-second
+    /// duration limit, so it cannot fire on a real session and cannot be reached at all unless
+    /// the clock has stopped.
+    /// </para>
+    /// </remarks>
+    public int MaximumEventFrames { get; init; } = 20_000;
+
     /// <summary>Frames required before detection is trusted.</summary>
     public int WarmUpFrames { get; init; } = 300;
 

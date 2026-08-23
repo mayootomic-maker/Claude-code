@@ -15,8 +15,8 @@ namespace FrameDoctor.Optimization.Tests;
 public sealed class ReconcilerTests
 {
     private static JournalEntry Entry(string captured = "system-managed", string applied = "eco") =>
-        new("pid-4812", "process-eco-qos", "discord.exe (4812)", captured, applied,
-            DateTimeOffset.UnixEpoch, "test");
+        new("pid-4812", "process-eco-qos", "pid:4812|started:1", "discord.exe (4812)",
+            captured, applied, DateTimeOffset.UnixEpoch, "test");
 
     [Fact]
     public void A_setting_still_holding_what_we_applied_is_restored()

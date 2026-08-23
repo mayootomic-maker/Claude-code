@@ -66,30 +66,53 @@ public sealed class LiveSessionAbuseTests
     }
 
     /// <summary>
-    /// A frame arriving out of order reports a session that lasted a negative amount of time.
+    /// The session's elapsed time runs backwards whenever a frame lands behind a sensor poll.
     /// </summary>
     /// <remarks>
-    /// <c>LiveSession.AddFrame</c> assigns <c>_last = frame.Timestamp</c> unconditionally, so a
-    /// single late frame — PresentMon interleaving two processes, a restarted source replaying a
-    /// row, a queue drained out of order — moves the session's end backwards past its start. The
-    /// user sees a negative duration, and every rate derived from it is wrong.
+    /// <para>
+    /// <c>AddFrame</c> and <c>AddSensorSamples</c> both assign the session's end from whatever
+    /// they were handed, and <c>AddFrame</c> does it unconditionally. The frame source is a CSV
+    /// pipe read from another process, so it is always some tens of milliseconds behind the
+    /// sensor poll that stamps itself from the clock directly. Every poll therefore pushes the
+    /// session end ahead of the frames, and the next frame pulls it back.
+    /// </para>
+    /// <para>
+    /// The user sees a session duration that ticks backwards in the Live view, and
+    /// <c>SessionRecorder</c> stores <c>statistics.Elapsed.Ticks</c> as the session's recorded
+    /// length — so the number a session is remembered by depends on whether a frame or a sensor
+    /// sample happened to arrive last.
+    /// </para>
     /// </remarks>
     [Fact]
-    public void A_late_frame_makes_the_session_duration_negative()
+    public void The_session_duration_runs_backwards_when_a_frame_lands_behind_a_sensor_poll()
     {
         var session = new LiveSession(144.0);
+        Span<TelemetrySample> one = stackalloc TelemetrySample[1];
+
+        var longest = TimeSpan.Zero;
+        var wentBackwards = false;
 
         for (var i = 0; i < 600; i++)
+        {
+            var frameAt = i * 6.94;
             session.AddFrame(new FramePresent(
-                MonotonicTimestamp.FromMilliseconds(i * 6.94), 6.94, null, false, 0));
+                MonotonicTimestamp.FromMilliseconds(frameAt), 6.94, null, false, 0));
 
-        // One frame from before the session started: a source restart that replays its buffer.
-        session.AddFrame(new FramePresent(
-            MonotonicTimestamp.FromMilliseconds(-5.0), 6.94, null, false, 0));
+            // A sensor poll every 250 ms, stamped from the clock rather than from the frame
+            // stream, which the collector reads with a lag.
+            if (i % 36 == 0)
+            {
+                one[0] = Sensor(frameAt + 40.0, 55);
+                session.AddSensorSamples(one);
+            }
 
-        session.Statistics().Elapsed.ShouldBeGreaterThanOrEqualTo(
-            TimeSpan.Zero,
-            "the Live view reports a session of negative length");
+            var elapsed = session.Statistics().Elapsed;
+            if (elapsed < longest) wentBackwards = true;
+            if (elapsed > longest) longest = elapsed;
+        }
+
+        wentBackwards.ShouldBeFalse(
+            "the session duration shown to the user decreases as the session goes on");
     }
 
     /// <summary>

@@ -163,9 +163,10 @@ public sealed class SessionRepository(SessionStore store)
     /// Deletes a session's high-resolution data while keeping its summary forever.
     /// </summary>
     /// <remarks>
-    /// Retention removes the segment file and nulls the reference in one transaction, in that
-    /// order, so a crash mid-purge can leave an orphaned file but never a row pointing at a
-    /// file that is gone. Summary rows are never purged: reclaiming space by destroying the
+    /// Retention commits the nulled reference and only then unlinks the file, so a crash
+    /// mid-purge can leave an orphaned file but never a row pointing at a file that is gone. An
+    /// orphan costs disk space; a dangling reference is a session that offers a detailed view it
+    /// cannot deliver. Summary rows are never purged: reclaiming space by destroying the
     /// session index would silently destroy the regression history, which is the feature the
     /// history exists for.
     /// </remarks>
@@ -188,12 +189,7 @@ public sealed class SessionRepository(SessionStore store)
             return 0;
         }
 
-        long freed = 0;
-        if (File.Exists(path))
-        {
-            freed = new FileInfo(path).Length;
-            File.Delete(path);
-        }
+        var freed = File.Exists(path) ? new FileInfo(path).Length : 0;
 
         using (var update = _store.Connection.CreateCommand())
         {
@@ -205,6 +201,17 @@ public sealed class SessionRepository(SessionStore store)
         }
 
         transaction.Commit();
+
+        // Unlinked only after the row that references it has been committed.
+        //
+        // The reverse order — which this used to do, while its own comment claimed otherwise —
+        // leaves a window in which the file is gone and the summary still advertises
+        // high-resolution data for it. A crash there produces a session that offers a detailed
+        // view and cannot deliver it, which is unrecoverable. A crash in this order leaves an
+        // orphaned file, which costs disk space and nothing else, and which the next purge pass
+        // can find and remove.
+        if (File.Exists(path)) File.Delete(path);
+
         return freed;
     }
 

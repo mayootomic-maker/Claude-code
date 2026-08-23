@@ -101,14 +101,28 @@
       Undo every outstanding system change before the files that could undo them are deleted.
 
       Scheduled before RemoveFiles and conditioned on removal only. Getting this ordering wrong
-      is how an uninstaller leaves a user's machine modified with the tool that modified it gone
-      — which is unrecoverable without knowing what to look for.
+      is how an uninstaller leaves a machine modified with the tool that modified it gone —
+      unrecoverable without knowing what to look for.
+
+      Impersonate="yes" is load-bearing. The rollback journal lives in the user's
+      LocalApplicationData, and a deferred action with Impersonate="no" runs as NT AUTHORITY\SYSTEM,
+      whose LocalApplicationData is under systemprofile. That action would read an empty journal,
+      report "FrameDoctor has not changed anything on this machine", return zero — and then the
+      uninstaller would delete the only executable that knew how to put the settings back. The
+      action would have done the opposite of its purpose while reporting success.
+
+      Impersonating also costs nothing here: `reconcile` needs no elevation, because the mutation
+      it undoes needed none.
+
+      On a machine with several users this reconciles the uninstalling user only. The others are
+      covered by the logon entry above, which runs per user and reconciles at their next sign-in
+      — which is why that entry exists rather than being a convenience.
     -->
     <CustomAction Id="ReconcileBeforeUninstall"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[INSTALLFOLDER]framedoctor-engine.exe&quot; --reconcile-and-exit"
                   Execute="deferred"
-                  Impersonate="no"
+                  Impersonate="yes"
                   Return="ignore" />
 
     <InstallExecuteSequence>

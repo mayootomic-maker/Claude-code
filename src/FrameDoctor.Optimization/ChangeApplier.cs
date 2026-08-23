@@ -102,6 +102,9 @@ public sealed class ChangeApplier
         _journal.Write(new JournalEntry(
             entryId,
             change.ChangeKind,
+            // The identity, not the sentence. Reconcile reads and writes this string, so a
+            // display name here would send every rollback path at a display name.
+            target,
             description,
             first.Value,
             change.RestrainedValue,
@@ -137,6 +140,17 @@ public sealed class ChangeApplier
             $"{description} is restrained. FrameDoctor will put it back.");
     }
 
+    /// <summary>
+    /// How many reconcile passes an unresolvable entry gets before it stops being retried.
+    /// </summary>
+    /// <remarks>
+    /// Three, because reconcile runs at engine start, at logon and from the uninstaller: an
+    /// entry that survives all of those is not going to resolve itself. Past this it is reported
+    /// once as needing the user, and removed, so the journal does not accumulate one permanent
+    /// file per optimization ever applied.
+    /// </remarks>
+    public const int MaximumUnresolvedAttempts = 3;
+
     /// <summary>Undoes one journal entry, if the compare-and-restore table says to.</summary>
     public ReconcileResult Reconcile(IReversibleChange change, JournalEntry entry)
     {
@@ -154,12 +168,12 @@ public sealed class ChangeApplier
         }
 
         if (decision is not ReconcileDecision.Restore)
-            return new ReconcileResult(decision, false, false, detail);
+            return Unresolved(entry, decision, detail);
 
         if (!change.Write(entry.Target, entry.CapturedValue))
         {
-            return new ReconcileResult(decision, false, false,
-                $"FrameDoctor could not put {entry.Target} back. It will try again next time.");
+            return Unresolved(entry, decision,
+                $"FrameDoctor could not put {entry.Description} back. It will try again next time.");
         }
 
         var verification = change.Read(entry.Target);
@@ -169,11 +183,57 @@ public sealed class ChangeApplier
         {
             // Keep the entry. Deleting it on the strength of a write that did not stick would
             // lose the record of a change still applied to the machine.
-            return new ReconcileResult(decision, false, false,
-                $"The restore of {entry.Target} did not take effect. It will be tried again.");
+            return Unresolved(entry, decision,
+                $"The restore of {entry.Description} did not take effect. It will be tried again.");
         }
 
         _journal.Delete(entry.Id);
         return new ReconcileResult(decision, Restored: true, EntryRemoved: true, detail);
+    }
+
+    /// <summary>
+    /// Records that a pass did not resolve an entry, and gives up after enough of them.
+    /// </summary>
+    /// <remarks>
+    /// Giving up is removal, not silence: the caller is told the entry is being abandoned and
+    /// what may still be applied. Keeping it forever would be the same information repeated at
+    /// every logon for the life of the installation, which is how a real warning becomes noise.
+    /// </remarks>
+    private ReconcileResult Unresolved(JournalEntry entry, ReconcileDecision decision, string detail)
+    {
+        var attempts = entry.UnresolvedAttempts + 1;
+
+        if (attempts < MaximumUnresolvedAttempts)
+        {
+            // Reconciliation used to be read-and-delete; counting attempts made it write, which
+            // inherits every way a write can fail — a full disk, a locked directory, a roaming
+            // profile not yet mounted at logon. A throw here would end the whole pass and leave
+            // every remaining entry applied, so a failed bookkeeping write is swallowed: the
+            // worst it costs is one extra retry, and the alternative costs the rollback.
+            try
+            {
+                _journal.Write(entry with { UnresolvedAttempts = attempts });
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Not fatal. The entry stays as it was and is tried again next pass.
+            }
+
+            return new ReconcileResult(decision, false, false, detail);
+        }
+
+        try
+        {
+            _journal.Delete(entry.Id);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // The change is abandoned either way; the user has been told what to put back.
+        }
+
+        return new ReconcileResult(decision, Restored: false, EntryRemoved: true,
+            $"{detail} FrameDoctor has tried {attempts} times and will stop trying. " +
+            $"If {entry.Description} is still changed, put it back yourself: it was " +
+            $"\"{entry.CapturedValue}\" before FrameDoctor set it to \"{entry.AppliedValue}\".");
     }
 }

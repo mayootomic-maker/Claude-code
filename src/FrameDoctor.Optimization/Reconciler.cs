@@ -114,17 +114,17 @@ public static class Reconciler
         return decision switch
         {
             ReconcileDecision.Restore =>
-                $"Restoring {entry.Target} to how it was before FrameDoctor changed it.",
+                $"Restoring {entry.Description} to how it was before FrameDoctor changed it.",
             ReconcileDecision.AlreadyRestored =>
-                $"{entry.Target} was already back to its original setting.",
+                $"{entry.Description} was already back to its original setting.",
             ReconcileDecision.TargetGone =>
-                $"{entry.Target} no longer exists, so there is nothing to restore.",
+                $"{entry.Description} no longer exists, so there is nothing to restore.",
             ReconcileDecision.ChangedByThirdParty =>
-                $"{entry.Target} was changed again after FrameDoctor changed it. " +
+                $"{entry.Description} was changed again after FrameDoctor changed it. " +
                 "FrameDoctor will not overwrite that; restore it yourself if you want the " +
                 "original setting back.",
             _ =>
-                $"The current setting for {entry.Target} could not be read, so it was left alone.",
+                $"The current setting for {entry.Description} could not be read, so it was left alone.",
         };
     }
 }

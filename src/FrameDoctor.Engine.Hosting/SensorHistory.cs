@@ -52,10 +52,17 @@ public sealed class SensorHistory
         _samples.Enqueue(sample);
     }
 
+    /// <summary>The newest timestamp any retained sample carries.</summary>
+    public MonotonicTimestamp Newest { get; private set; }
+
     /// <summary>Adds a batch, as written by <see cref="Abstractions.Collection.ISensorSource.Poll"/>.</summary>
     public void AddRange(ReadOnlySpan<TelemetrySample> samples)
     {
-        foreach (ref readonly var sample in samples) _samples.Enqueue(sample);
+        foreach (ref readonly var sample in samples)
+        {
+            _samples.Enqueue(sample);
+            if (sample.Timestamp > Newest) Newest = sample.Timestamp;
+        }
     }
 
     /// <summary>
@@ -70,11 +77,32 @@ public sealed class SensorHistory
     {
         var cutoff = now - _retention;
 
-        while (_samples.TryPeek(out var oldest) && oldest.Timestamp < cutoff)
+        // Every sample, not just the ones at the front.
+        //
+        // The queue is ordered by arrival, not by timestamp, and a single sample stamped ahead
+        // of the session — a clock step at resume, a source on a different clock base, a sensor
+        // returning a stuck value with a stale stamp — sits at the head and is never older than
+        // any future cutoff. A trim that stops at the first sample it cannot drop therefore
+        // stops dropping anything at all, and the history grows without bound for the rest of
+        // the session. In the process whose own overhead is the product's headline claim.
+        var kept = 0;
+        var count = _samples.Count;
+
+        for (var i = 0; i < count; i++)
         {
-            _samples.Dequeue();
-            DroppedAsTooOld++;
+            var sample = _samples.Dequeue();
+
+            if (sample.Timestamp < cutoff)
+            {
+                DroppedAsTooOld++;
+                continue;
+            }
+
+            _samples.Enqueue(sample);
+            kept++;
         }
+
+        if (kept == 0) Newest = MonotonicTimestamp.Zero;
     }
 
     /// <summary>Everything retained, oldest first.</summary>
@@ -84,5 +112,6 @@ public sealed class SensorHistory
     {
         _samples.Clear();
         DroppedAsTooOld = 0;
+        Newest = MonotonicTimestamp.Zero;
     }
 }
