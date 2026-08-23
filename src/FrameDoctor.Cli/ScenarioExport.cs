@@ -118,6 +118,8 @@ internal static class ScenarioExport
                 (int)g.First().Availability,
                 (int)g.First().Reason,
                 (int)g.Max(s => s.Quality),
+                g.First().Source.ToString(),
+                (int)g.First().Source,
                 [.. g.Select(s => s.Timestamp.TotalMilliseconds)],
                 [.. g.Select(s => s.TryGetValue(out var v) ? v : double.NaN)]))
             .OrderBy(s => s.MetricId)
@@ -212,6 +214,12 @@ internal sealed record SeriesPayload(
     int Availability,
     int Reason,
     int Quality,
+    // Source and SourceId: which collector produced this series. Exported because provenance is
+    // what makes a source substitution visible. Replacing a counter-derived clock with a
+    // vendor-API clock changes what the number means, and without this the change is invisible
+    // and every stored comparison silently spans two different measurements.
+    string Source,
+    int SourceId,
     double[] Timestamps,
     double[] Values);
 

@@ -54,6 +54,16 @@ export interface MetricSeries {
   readonly availability: Availability;
   readonly reason: UnavailableReason;
   readonly quality: Quality;
+  /**
+   * Which collector produced this series.
+   *
+   * Carried per series, not per session. Two metrics on the same machine routinely come from
+   * different places — a GPU clock from the vendor API, a CPU clock derived from counters — and
+   * a source substitution changes what a number means. Without provenance the substitution is
+   * invisible and a comparison across sessions can silently span two different measurements.
+   */
+  readonly source: string;
+  readonly sourceId: number;
   readonly timestamps: readonly number[];
   /** NaN where the sample carried no reading. */
   readonly values: readonly number[];

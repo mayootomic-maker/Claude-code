@@ -1170,3 +1170,143 @@ body {
 .fact__note[data-tone='action'] {
   color: var(--sev-warning);
 }
+
+/* ============================================================================
+   System view
+
+   The product's own audit trail. Density matters here for a different reason
+   than in the inspector: this is a list someone scans for one row, so the rows
+   are uniform and the state column is always in the same place.
+   ============================================================================ */
+
+.system {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.system__head {
+  padding: var(--sp-5) var(--gutter-view) var(--sp-4);
+  border-bottom: var(--border-default);
+}
+
+.system__head h1 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-primary);
+}
+
+.system__lede {
+  margin: 0;
+  max-width: 82ch;
+  color: var(--text-secondary);
+}
+
+.system__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: var(--sp-5);
+  align-content: start;
+  padding: var(--sp-5) var(--gutter-view) var(--sp-8);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.source {
+  background: var(--bg-raised);
+  border: var(--border-hairline);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.source__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-hairline);
+}
+
+.source__name {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.source__note {
+  color: var(--text-tertiary);
+}
+
+.source__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.source__table th,
+.source__table td {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-4);
+  vertical-align: baseline;
+}
+
+.source__table thead th {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  border-bottom: var(--border-hairline);
+  padding-top: var(--sp-2);
+  padding-bottom: var(--sp-2);
+}
+
+.source__table tbody tr {
+  border-bottom: var(--border-hairline);
+}
+
+.source__table tbody tr:last-child {
+  border-bottom: none;
+}
+
+/* An unavailable row is dimmed but never hidden or struck through. It is the row a user came
+   here to read. */
+.source__table tbody tr:not([data-available]) th[scope='row'] {
+  color: var(--text-tertiary);
+}
+
+.source__table th[scope='row'] {
+  font-weight: 400;
+  color: var(--text-primary);
+}
+
+.source__quality {
+  margin-left: var(--sp-2);
+  color: var(--sev-warning);
+}
+
+.source__unit,
+.source__rate {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  width: 1%;
+}
+
+/* A fixed width, not `1%`. The reason text wraps, and a shrink-to-fit cell containing wrapping
+   text collapses to one word per line — which is what the first screenshot of this screen
+   showed: three rows tall enough to push everything else off the page. */
+.source__state {
+  width: 240px;
+}
+
+.source__ok {
+  color: var(--sev-normal);
+}
+
+.source__missing {
+  color: var(--text-tertiary);
+  display: block;
+  text-wrap: pretty;
+}
+
+/* Only the reasons a user could actually change read as something to do. Marking "no sensor on
+   this hardware" the same way would send someone hunting for a setting that does not exist. */
+.source__missing[data-actionable] {
+  color: var(--sev-warning);
+}

@@ -275,6 +275,9 @@ function absentSeries(metric: string): MetricSeries {
     availability: Availability.Unavailable,
     reason: UnavailableReason.NoSensor,
     quality: Quality.Exact,
+    // No collector claimed it, which is the point: there is no source to name.
+    source: 'None',
+    sourceId: 0,
     timestamps: [],
     values: [],
   };

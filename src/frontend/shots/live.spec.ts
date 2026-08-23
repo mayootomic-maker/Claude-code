@@ -141,3 +141,31 @@ test('the inspector says why a confidence was capped, not just what it was', asy
 
   await page.screenshot({ path: `${OUT}/inspector-capped-confidence.png` });
 });
+
+test('the system view lists what is missing, not only what works', async ({ page }) => {
+  // The screen a user reaches after reading "capped because a sensor this diagnosis needs is
+  // unavailable" and wanting to know which sensor. A list of only the working metrics would
+  // answer the opposite question.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.locator('.rail__scenario').nth(SCENARIOS.indexOf('cpu-frequency-collapse')).click();
+  await page.waitForTimeout(200);
+
+  await page.getByRole('button', { name: 'System' }).click();
+  await expect(page.locator('.system')).toBeVisible({ timeout: 5_000 });
+
+  // Both halves must be present. A screen showing only availability is a feature list.
+  await expect(page.locator('.source__ok').first()).toBeVisible();
+  await expect(page.locator('.source__missing').first()).toBeVisible();
+
+  // Provenance is grouped by collector, so a source substitution is visible rather than silent.
+  await expect(page.locator('.source__name').first()).not.toBeEmpty();
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(300);
+  await expect(page.getByRole('status')).toContainText('Simulation');
+
+  await page.screenshot({ path: `${OUT}/system.png`, fullPage: true });
+});

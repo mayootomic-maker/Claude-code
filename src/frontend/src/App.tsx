@@ -1,6 +1,7 @@
 import { useEffect, useState, type JSX } from 'react';
 import { EventInspector } from './views/EventInspector';
 import { LiveView } from './views/LiveView';
+import { SystemView } from './views/SystemView';
 import {
   loadScenario,
   loadScenarioIndex,
@@ -16,7 +17,7 @@ const SECTIONS: ReadonlyArray<{ id: Section; label: string; available: boolean }
   // Marked unavailable rather than shown as an empty screen. Invariant 9: a control with no
   // implementation behind it is absent or explicitly unavailable, never a placeholder.
   { id: 'sessions', label: 'Sessions', available: false },
-  { id: 'system', label: 'System', available: false },
+  { id: 'system', label: 'System', available: true },
   { id: 'settings', label: 'Settings', available: false },
 ];
 
@@ -149,6 +150,12 @@ export function App(): JSX.Element {
                 reload.
               </p>
             </div>
+          ) : section === 'system' ? (
+            scenario ? (
+              <SystemView scenario={scenario} />
+            ) : (
+              <div className="app__loading t-body">Loading telemetry…</div>
+            )
           ) : section !== 'live' ? (
             <div className="app__unbuilt t-body">
               <h2 className="t-title">{SECTIONS.find((s) => s.id === section)?.label}</h2>
@@ -182,7 +189,9 @@ export function App(): JSX.Element {
         </main>
       </div>
 
-      {scenario && !inspecting ? (
+      {/* The transport belongs to the Live timeline. On a screen with no timeline it would be a
+          control that appears to do nothing. */}
+      {scenario && !inspecting && section === 'live' ? (
         <footer className="transport">
           <button
             type="button"
