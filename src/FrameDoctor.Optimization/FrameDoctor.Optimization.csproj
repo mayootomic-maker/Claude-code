@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Portable on purpose. The journal and the reconcile decision are the parts of this feature
+      that can leave a user's machine changed, and they are the parts that must be exhaustively
+      testable on a machine that cannot perform the mutation itself. Everything that actually
+      touches Windows lives behind IReversibleChange in the platform assembly.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

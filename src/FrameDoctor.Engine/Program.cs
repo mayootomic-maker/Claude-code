@@ -9,6 +9,8 @@ using FrameDoctor.Ipc;
 using FrameDoctor.Platform.Windows.Time;
 using FrameDoctor.Simulation;
 using FrameDoctor.Storage.Catalog;
+using FrameDoctor.Optimization;
+using FrameDoctor.Platform.Windows.Optimization;
 using FrameDoctor.Storage.Settings;
 
 // The engine is the resident process: it owns the collectors, the pipeline and the session
@@ -29,6 +31,7 @@ static async Task<int> Run(string[] args)
         "sessions" => Sessions(args),
         "export-sessions" => ExportSessions(args),
         "settings" => Settings(args),
+        "reconcile" or "--reconcile-and-exit" => Reconcile(args),
         _ => Help(),
     };
 }
@@ -50,6 +53,7 @@ static int Help()
           framedoctor-engine export-sessions <f>   Write the session list as JSON
           framedoctor-engine settings           Show settings and where they live
           framedoctor-engine settings <k> <v>   Change one setting
+          framedoctor-engine reconcile          Put back anything FrameDoctor changed
 
         `probe` changes nothing and starts no capture. It is the honest answer to
         "what will this actually be able to tell me on my hardware?"
@@ -527,6 +531,107 @@ static (LiveStatistics Stats, List<FrameDoctor.Diagnostics.Diagnosis> Diagnoses)
     diagnoses.AddRange(session.Complete());
     return (session.Statistics(), diagnoses);
 }
+
+// Where the rollback journal lives: one plain file per outstanding change, in local application
+// data and deliberately not inside the session database. The rollback doctrine requires
+// restoration to survive database corruption, which is unsatisfiable if the rollback state lives
+// in the database.
+static string JournalPath(string[] args)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+        if (args[i] is "--journal") return args[i + 1];
+
+    return Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FrameDoctor",
+        "rollback");
+}
+
+// Puts back everything FrameDoctor changed and has not yet undone.
+//
+// One verb, one code path. It runs at every engine start, from the logon entry, from the
+// uninstaller, and whenever the user asks — which is why it has to be idempotent, and why the
+// compare-and-restore table refuses to write when a value no longer matches what was applied.
+static int Reconcile(string[] args)
+{
+    var journal = new ChangeJournal(JournalPath(args));
+
+    // A leftover temp file is a write that never completed, which means the change it described
+    // was never applied — the journal is always written first.
+    var cleaned = journal.CleanTemporaryFiles();
+    var contents = journal.ReadAll();
+
+    Console.WriteLine();
+
+    if (contents.Entries.Count == 0 && contents.Unreadable.Count == 0)
+    {
+        Console.WriteLine("  FrameDoctor has not changed anything on this machine.");
+        if (cleaned > 0) Console.WriteLine($"  Cleared {cleaned} incomplete journal file(s).");
+        Console.WriteLine();
+        return 0;
+    }
+
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+    {
+        // The journal is readable anywhere; undoing the change is not. Saying so beats silently
+        // reporting that there was nothing to do.
+        Console.WriteLine($"  {contents.Entries.Count} change(s) are recorded in {journal.Directory}.");
+        Console.WriteLine("  Undoing them needs Windows.");
+        Console.WriteLine();
+        return 2;
+    }
+
+    return ReconcileWindows(journal, contents);
+}
+
+static int ReconcileWindows(ChangeJournal journal, JournalContents contents)
+{
+    var applier = new ChangeApplier(journal, ThisBuild());
+    var change = new EcoQosChange();
+
+    var restored = 0;
+    var left = 0;
+
+    foreach (var entry in contents.Entries)
+    {
+        // One implementation today. The kind is checked rather than assumed so an entry written
+        // by a future build, for a change this build does not understand, is left alone instead
+        // of being handed to the wrong restorer.
+        if (entry.ChangeKind != change.ChangeKind)
+        {
+            Console.WriteLine($"  {entry.Target}: recorded by a newer version. Left alone.");
+            left++;
+            continue;
+        }
+
+        var result = applier.Reconcile(change, entry);
+        Console.WriteLine($"  {result.Detail}");
+
+        if (result.Restored) restored++;
+        else if (!result.EntryRemoved) left++;
+    }
+
+    // Never summarised away. An unreadable entry most likely means a change that was applied and
+    // can no longer be undone automatically, which is exactly what a user must be told.
+    foreach (var unreadable in contents.Unreadable)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"  A rollback record could not be read: {unreadable.Path}");
+        Console.WriteLine($"    {unreadable.Reason}");
+        Console.WriteLine("    A setting FrameDoctor changed may still be applied.");
+        left++;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"  {restored} restored, {left} left for you to decide about.");
+    Console.WriteLine();
+
+    return left == 0 ? 0 : 1;
+}
+
+// Identifies which build made a change, so a bad release is identifiable later.
+static string ThisBuild() =>
+    typeof(ChangeJournal).Assembly.GetName().Version?.ToString() ?? "unknown";
 
 static string SettingsPath(string[] args)
 {

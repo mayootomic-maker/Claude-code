@@ -13,7 +13,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/FrameDoctor.Platform.Windows/FrameDoctor.Platform.Windows.csproj" />
     <ProjectReference Include="../../src/FrameDoctor.Optimization/FrameDoctor.Optimization.csproj" />
   </ItemGroup>
 

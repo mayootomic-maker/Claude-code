@@ -16,7 +16,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      The flag-to-state mapping and the target parser are internal because nothing outside this
+      assembly should build a Windows throttling mask by hand. They are also the two places where
+      a silent mistake changes what happens to a user's machine, so the tests reach them.
+    -->
+    <InternalsVisibleTo Include="FrameDoctor.Platform.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+    <ProjectReference Include="../FrameDoctor.Optimization/FrameDoctor.Optimization.csproj" />
   </ItemGroup>
 
 </Project>
