@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace FrameDoctor.Storage.Encoding;
+namespace FrameDoctor.Storage.Codecs;
 
 /// <summary>
 /// Encodes and decodes a run of frame timestamps as second differences.

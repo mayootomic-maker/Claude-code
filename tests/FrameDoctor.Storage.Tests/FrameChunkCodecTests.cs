@@ -1,4 +1,4 @@
-using FrameDoctor.Storage.Encoding;
+using FrameDoctor.Storage.Codecs;
 using Shouldly;
 using Xunit;
 

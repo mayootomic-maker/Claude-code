@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace FrameDoctor.Storage.Encoding;
+namespace FrameDoctor.Storage.Codecs;
 
 /// <summary>
 /// LEB128 variable-length integers with zigzag mapping for signed values.

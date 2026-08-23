@@ -1,4 +1,4 @@
-namespace FrameDoctor.Storage.Encoding;
+namespace FrameDoctor.Storage.Codecs;
 
 /// <summary>
 /// The quantum frame timing is stored at, and the conversions to and from it.
