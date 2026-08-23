@@ -145,3 +145,54 @@ resolved, and the switch trigger above is its operative form.
 - WebView2 process-group working set > 220 MB with the Live view visible on Windows.
 - Δp99 frame time > 0.3 ms attributable to the UI being visible.
 - Either one → Avalonia, with the chart engine hand-built on Skia.
+
+---
+
+## Amendment, 2026-08-23: uPlot is not in the shipped build
+
+Recorded after implementing the charts. The decision above is amended rather than reversed: the
+split it describes — a library for axes and scales, hand-written canvas for the series — turned
+out to have no library half.
+
+**What changed.** Three facts about uPlot's API surfaced while writing the Live view, all
+verifiable in its source:
+
+1. Suppressing a series' own rendering needs `points: {show: false}` alongside
+   `paths: () => null`. Path suppression alone leaves the point markers drawn, which on a
+   12,000-frame series is 12,000 circles per redraw.
+2. uPlot does not clip custom drawing to the plotting area. Anything drawn in a hook that
+   overflows the plot writes over the axes.
+3. The `draw` hook fires *after* axes and series, so custom drawing lands on top of the axis
+   labels unless `drawClear` or an explicit `drawOrder` is used.
+
+None of these is a defect; they are the consequences of uPlot being a fast renderer rather than a
+framework. But together they meant the "uPlot owns axes and scales" half of the split was being
+fought rather than used, for a component that draws four gridlines and five tick labels.
+
+**What ships instead.** `src/frontend/src/charts/frameTimeChart.ts` is hand-written Canvas 2D
+throughout, and `src/frontend/src/charts/metricPanel.ts` likewise for the inspector's panels. No
+chart library is a dependency of the shipped build.
+
+**The axis is logarithmic.** Not recorded in the original decision, and it is the more consequential
+change. The first real screenshot of the Live view showed one 104 ms hitch setting the scale and
+pressing a 6.9 ms baseline flat against the axis line — the whole pacing signal destroyed by a
+single frame. Frame-time series routinely span more than a decade in ordinary play, which is why
+the pipeline already stores them in a log histogram; the chart now follows that rather than
+contradicting it. The axis is labelled "log ms" on the chart, because a compressed axis that does
+not say so understates how large a spike was.
+
+**What this costs.** Cursor, brush selection and synchronized panning across panels are now ours
+to write. The original decision took uPlot partly to avoid that. The estimate is one to two days
+of work for the inspector's synchronized cursor, against an ongoing cost of working around the
+three points above on every chart change — and against a dependency whose upgrade could change
+any of them.
+
+**What would reverse this.** A second chart family with genuinely different needs — a
+distribution plot, or a scatter with hit-testing — where hand-writing axes stops being a
+rounding error. The seam is drawn so that a future chart may use a library without the frame-time
+chart changing.
+
+**Unchanged:** the WebView2/React decision itself, the Avalonia fallback, the switch trigger, and
+`product-designer`'s recorded dissent. Removing a chart library does not weaken the case for
+Avalonia; if anything it strengthens it, since the hand-written renderer would port to Skia
+largely intact.

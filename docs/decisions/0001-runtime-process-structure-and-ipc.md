@@ -144,3 +144,29 @@ asserted only that no such component ships in v1, which internals independently 
   which would reopen the packaging choice, since invariant 4 would need another mechanism.
 - A feature genuinely requiring admin, which would reopen the elevated-helper question (and
   must first answer: *which rejected tweak are you trying to un-reject?*).
+
+
+---
+
+## Amendment, 2026-08-23: single-file, for two executables, is two runtimes
+
+Recorded after building the publish path. The decision above says "self-contained, ReadyToRun,
+single-file, trimmed win-x64", which is correct for one executable and wrong for two.
+
+Publishing `framedoctor-engine` and `framedoctor` as separate self-contained single-file bundles
+produces two complete copies of the .NET runtime: 188 MB installed. Publishing both into one
+directory, sharing one copy, is 150 MB — about a third of the installed size, for no behavioural
+difference.
+
+Neither executable is single-file in the shipped layout, and the shell has an independent reason
+to avoid it: WebView2's loader resolves its native component relative to the executable, and a
+self-extracting bundle relocates that to a temporary directory on first run. That turns a missing
+WebView2 runtime — the most likely first-run failure on a real machine — into a confusing error
+instead of the explicit message the window is written to show.
+
+**Trimming is also not applied.** WPF does not support it, and applying it to the engine alone
+would fork the two halves' runtime configuration for a saving smaller than the shared-runtime one
+just made. `PublishReadyToRun` is unchanged and does apply to both.
+
+**Unchanged:** the two-process split, both processes being self-contained, the runtime version,
+and the IPC design. `packaging/publish.sh` is the operative form of this amendment.
