@@ -137,4 +137,25 @@ public sealed class ScenarioDiagnosisTests(ITestOutputHelper output)
         collapse.Mechanism.ShouldNotBeNull();
         collapse.Mechanism.ShouldContain("cannot be determined");
     }
+
+    [Fact]
+    public void Contention_names_the_offending_process_rather_than_just_observing_load()
+    {
+        // A named process is the whole value of this diagnosis. "Close OneDrive" is actionable;
+        // "close something" is an observation the user already had.
+        //
+        // This regressed once: contention is a transient, and the correlation window extends two
+        // seconds past the event, so comparing post-event median against pre-event median washed
+        // the spike out entirely and the offender read as idle.
+        var scenario = ScenarioCatalog.ById("background-cpu-spike");
+        var analysis = new SessionAnalyzer(scenario.RefreshRateHz).Analyze(scenario.Generate());
+
+        var d = analysis.Diagnoses.Single(x => x.RuleId == "background-cpu-contention");
+
+        d.Evidence.ShouldContain(e => e.Statement.Contains("4812", StringComparison.Ordinal),
+            "the offending process must be named in the evidence");
+        d.RecommendedAction.ShouldNotBeNull();
+        d.RecommendedAction!.Contains("4812", StringComparison.Ordinal).ShouldBeTrue(
+            "the recommended action must name the process to close");
+    }
 }

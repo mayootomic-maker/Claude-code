@@ -64,17 +64,23 @@ public sealed class BackgroundCpuContentionRule : IDiagnosticRule
         }
 
         // A named process is the difference between an explanation and an observation.
+        //
+        // Peak rise, not delta: contention is a transient. The correlation window extends two
+        // seconds past the event, so a process that spikes and falls quiet has its post-event
+        // median dominated by the recovery, and a delta comparison reports it as idle. That
+        // silently downgrades "close OneDrive" to "close something".
+        //
         // OrderByDescending + FirstOrDefault rather than MaxBy: MaxBy throws on an empty
-        // sequence for value tuples, and "no offending process" is the common case.
+        // sequence for value tuples, and "no offending process" is a normal outcome.
         var offender = window.AllInstancesOf(MetricId.ProcessCpu)
             .Where(s => s.ReadableCount > 0)
-            .Select(s => (Series: (MetricSeries?)s, Delta: s.Delta(), Peak: s.Max()))
-            .Where(x => !double.IsNaN(x.Delta) && x.Delta > OffenderProcessPercent)
-            .OrderByDescending(x => x.Delta)
+            .Select(s => (Series: (MetricSeries?)s, Rise: s.PeakRise(), Peak: s.Max()))
+            .Where(x => !double.IsNaN(x.Rise) && x.Rise > OffenderProcessPercent)
+            .OrderByDescending(x => x.Rise)
             .FirstOrDefault();
 
         var totalLoad = window.Get(MetricId.CpuLoadTotal)!;
-        var loadDelta = totalLoad.Delta();
+        var loadRise = totalLoad.PeakRise();
 
         var saturatedCore = window.AllInstancesOf(MetricId.CpuLoadCore)
             .Where(s => s.ReadableCount > 0 && s.Max() >= SaturatedCorePercent)
@@ -105,11 +111,11 @@ public sealed class BackgroundCpuContentionRule : IDiagnosticRule
                 saturatedCore.CanEstablishOrdering, saturatedCore.Quality));
         }
 
-        if (!double.IsNaN(loadDelta) && loadDelta > 15)
+        if (!double.IsNaN(loadRise) && loadRise > 15)
         {
             evidence.Add(new EvidenceItem(
                 totalLoad.Key,
-                $"Total CPU load rose {loadDelta:F0} points to {totalLoad.MedianAfter():F0}%",
+                $"Total CPU load rose {loadRise:F0} points to {totalLoad.Max():F0}%",
                 LikelihoodRatio: 2.8,
                 EvidenceClass.Contention,
                 EvidenceRole.Cause,
@@ -147,8 +153,8 @@ public sealed class BackgroundCpuContentionRule : IDiagnosticRule
         }
 
         var offenderName = offender.Series is not null
-            ? $"process {offender.Series.Key.Instance}"
-            : "another process";
+            ? $"the process with id {offender.Series.Key.Instance}"
+            : "whichever background process was active";
 
         return new RuleEvaluation(
             evidence,

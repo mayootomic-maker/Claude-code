@@ -132,6 +132,30 @@ public sealed class MetricSeries
         return double.IsNaN(before) || double.IsNaN(after) ? double.NaN : after - before;
     }
 
+    /// <summary>
+    /// How far the peak rose above the pre-event level: <c>Max − MedianBefore</c>, or NaN.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use this for <b>transients</b>; use <see cref="Delta"/> for <b>sustained</b> changes.
+    /// Getting this wrong silently loses the signal.
+    /// </para>
+    /// <para>
+    /// A correlation window extends past the event on both sides, so for a spike that recovers
+    /// — a background process waking for a second and going quiet again — the post-event median
+    /// is dominated by the recovery and <see cref="Delta"/> comes back near zero. The process
+    /// that caused the stutter then looks idle, and the diagnosis degrades from "close
+    /// OneDrive" to "close another process", which is the difference between an explanation and
+    /// an observation.
+    /// </para>
+    /// </remarks>
+    public double PeakRise()
+    {
+        var before = MedianBefore();
+        var max = Max();
+        return double.IsNaN(before) || double.IsNaN(max) ? double.NaN : max - before;
+    }
+
     /// <summary>Fractional change across the event, or NaN.</summary>
     public double RelativeDelta()
     {
