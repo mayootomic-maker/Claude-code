@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The file list, harvested rather than written.
+
+  A hand-maintained list of a hundred and fifty megabytes of runtime files is a list that goes
+  stale on the first dependency change, and a stale list leaves files behind on uninstall — which
+  is how a tool that promises to change nothing permanently ends up leaving a directory in
+  Program Files forever.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(AppDir)\**">
+        <!--
+          The shell's executable is the one the Start menu shortcut points at and the one whose
+          version stamps the package, so it is named explicitly rather than left to a generated
+          identifier.
+        -->
+        <Exclude Files="$(AppDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

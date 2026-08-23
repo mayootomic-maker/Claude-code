@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FrameDoctor installer.
+
+  Three rules shape everything in this file, and each is a thing this category of software
+  routinely gets wrong:
+
+  1. It installs per-machine into Program Files and asks for elevation once, at install time.
+     The application itself runs unelevated (invariant 6), and an installer that put it in the
+     user profile to avoid the prompt would be hiding the fact that it is installing software.
+
+  2. It registers nothing that runs at logon except the rollback reconciler, and that entry
+     exists so a system change survives a crash — not so the product is always running.
+
+  3. Uninstall removes everything. The reconciler runs first, so nothing FrameDoctor changed is
+     left applied on a machine that no longer has FrameDoctor on it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="FrameDoctor"
+           Manufacturer="FrameDoctor"
+           Version="!(bind.FileVersion.ShellExe)"
+           UpgradeCode="9f2b7c14-6d3e-4a58-9f0d-2e7a1b4c8d63"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Real-time gaming performance diagnostics" />
+
+    <!--
+      An upgrade replaces the previous version rather than installing beside it. Two engines
+      measuring at once would each take an ETW provider slot and each write to the same session
+      store, and the second one to start would simply fail.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of FrameDoctor is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      Windows 10 1809 (build 17763) is the floor. It is where ProcessPowerThrottling — the only
+      system change FrameDoctor makes — became available, and shipping onto an older build would
+      mean shipping a feature that silently does nothing.
+    -->
+    <Launch Condition="Installed OR (VersionNT &gt;= 603)"
+            Message="FrameDoctor requires Windows 10 version 1809 or later." />
+
+    <Feature Id="Main" Title="FrameDoctor" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="ApplicationFiles" />
+      <ComponentGroupRef Id="Registration" />
+    </Feature>
+
+    <!--
+      The minimal UI: a progress dialog and nothing else. There is no licence page, because no
+      licence has been chosen for this project yet and an installer showing one would be showing
+      terms nobody wrote. There is no feature-selection page either — there is one feature.
+    -->
+    <ui:WixUI Id="WixUI_Minimal" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="FrameDoctor" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="FrameDoctor" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Registration" Directory="INSTALLFOLDER">
+      <Component Id="StartMenuShortcut" Guid="1c4e9a72-5b83-4f16-8d2a-7e6b3c9f0a45">
+        <Shortcut Id="ShellShortcut"
+                  Directory="ShortcutFolder"
+                  Name="FrameDoctor"
+                  Target="[INSTALLFOLDER]framedoctor.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\FrameDoctor" Name="Installed"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!--
+        The only thing FrameDoctor adds to logon, and it is not the application.
+
+        `reconcile` reads the rollback journal, puts back anything still applied, and exits. It
+        does not measure, does not open a window, and does not stay resident. It exists because
+        a machine that loses power while a background process is throttled would otherwise stay
+        that way until someone launched FrameDoctor again, and a user who never launches it
+        again would never get their setting back.
+      -->
+      <Component Id="RollbackAtLogon" Guid="6a8d2f31-9c47-4e05-b3f8-1d5a7e2c4b90">
+        <RegistryValue Root="HKLM"
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                       Name="FrameDoctorRollback"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]framedoctor-engine.exe&quot; --reconcile-and-exit"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      Undo every outstanding system change before the files that could undo them are deleted.
+
+      Scheduled before RemoveFiles and conditioned on removal only. Getting this ordering wrong
+      is how an uninstaller leaves a user's machine modified with the tool that modified it gone
+      — which is unrecoverable without knowing what to look for.
+    -->
+    <CustomAction Id="ReconcileBeforeUninstall"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]framedoctor-engine.exe&quot; --reconcile-and-exit"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="ReconcileBeforeUninstall"
+              Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>
