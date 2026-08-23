@@ -39,7 +39,12 @@ candidate for a product with no code yet.
 | Rolling statistics: log histogram | Done | Accuracy verified against exact percentiles, 4 regimes x 4 percentiles |
 | Rolling window + frame-time statistics | Done | Sliding window proven exactly equal to a fresh histogram |
 | Adaptive stutter detector | Done | **28 tests** — zero false positives on both hard regimes |
-| Diagnostics / Storage / Ipc / Simulation | Scaffolded, empty | — |
+| Simulation engine, 6 scenarios | Done | Every scenario asserted end-to-end |
+| Correlation windows | Done | Native rates preserved, bracketing samples included |
+| Confidence scoring | Done | Hard 0.97 ceiling, four caps, verified by test |
+| Diagnostic engine + 6 rules | Done | **47 tests total**, all 6 scenarios diagnosed correctly |
+| Session analyzer (vertical slice) | Done | `SessionAnalyzer` — source-blind, runs the full pipeline |
+| Storage / Ipc | Scaffolded, empty | — |
 | Windows platform layer | Not started | — |
 | Frontend | Not started | — |
 

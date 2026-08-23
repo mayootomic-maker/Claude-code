@@ -63,6 +63,18 @@ public sealed class StutterDetector
     private StutterEvent? _pendingEvent;
     private MonotonicTimestamp _pendingSince;
 
+    // Frames observed while an event is held. Used to tell a stutter apart from a regime
+    // change: if the level after recovery is persistently higher, nothing went wrong - the
+    // workload changed, and the lagging median is what made it look like a fault.
+    private readonly List<double> _postEventFrames = [];
+
+    // Frames observed inside the currently open event. A force-closed event never recovered,
+    // so these frames *are* the new regime and are what the baseline is reseeded from.
+    private readonly List<double> _openEventFrames = [];
+
+    /// <summary>Cap on retained in-event frames, so a pathological event cannot grow memory.</summary>
+    private const int MaxRetainedEventFrames = 4096;
+
     private MonotonicTimestamp _firstSample;
     private bool _hasFirstSample;
     private long _framesSeen;
@@ -134,6 +146,13 @@ public sealed class StutterDetector
             _hasFirstSample = true;
         }
 
+        // Accumulate frames behind a held event so its release can distinguish a stutter
+        // from a shift in the baseline itself.
+        if (_pendingEvent is not null && !_eventOpen && double.IsFinite(frameTimeMs))
+        {
+            _postEventFrames.Add(frameTimeMs);
+        }
+
         // Release a held event once nothing can merge into it any more.
         var released = ReleasePendingIfSettled(timestamp);
 
@@ -176,6 +195,13 @@ public sealed class StutterDetector
     }
 
     /// <summary>Emits a held event once the merge window has passed without a new excursion.</summary>
+    /// <remarks>
+    /// Release is also where a regime change is recognised. A rolling median lags an abrupt
+    /// shift in frame time by its whole window, so a scene transition or a settings change
+    /// looks like a stutter - and then like another, and another, until the median catches up.
+    /// Comparing the recovered level against the baseline the event was judged by separates the
+    /// two, and reseeding the estimator stops the rest of the train from ever being generated.
+    /// </remarks>
     private StutterEvent? ReleasePendingIfSettled(MonotonicTimestamp now)
     {
         if (_pendingEvent is null) return null;
@@ -183,7 +209,31 @@ public sealed class StutterDetector
 
         var e = _pendingEvent;
         _pendingEvent = null;
+
+        if (e.Class != StutterClass.RegimeChange &&
+            HasSettledAbove(_postEventFrames, e.BaselineMedianMs, e.ThresholdMs))
+        {
+            e = e with { Class = StutterClass.RegimeChange };
+            ReseedBaselineFrom(_postEventFrames);
+        }
+
+        _postEventFrames.Clear();
         return e;
+    }
+
+    /// <summary>Discards the stale baseline and rebuilds it from the new regime's frames.</summary>
+    /// <remarks>
+    /// Warm-up is deliberately not restarted: this is the same session on the same hardware,
+    /// and the frames being reseeded are real observations. Only the level is stale.
+    /// </remarks>
+    private void ReseedBaselineFrom(List<double> frames)
+    {
+        _stats.Reset();
+        foreach (var f in frames) _stats.Add(f);
+
+        _median = _stats.Median();
+        _scale = _stats.RobustScale();
+        _threshold = double.NaN;   // recomputed on the next refresh, from the new level
     }
 
     /// <summary>
@@ -221,6 +271,8 @@ public sealed class StutterDetector
         _eventOpen = false;
         _consecutiveRecovered = 0;
         _pendingEvent = null;
+        _postEventFrames.Clear();
+        _openEventFrames.Clear();
         IsWarmedUp = false;
         _hasFirstSample = false;
         _framesSeen = 0;
@@ -284,6 +336,8 @@ public sealed class StutterDetector
         _eventFrames = 1;
         _consecutiveRecovered = 0;
         _eventDuringWarmUp = false;
+        _openEventFrames.Clear();
+        _openEventFrames.Add(frameTimeMs);
 
         if (mergeTarget is not null)
         {
@@ -310,6 +364,7 @@ public sealed class StutterDetector
     {
         _eventFrames++;
         if (frameTimeMs > _eventPeak) _eventPeak = frameTimeMs;
+        if (_openEventFrames.Count < MaxRetainedEventFrames) _openEventFrames.Add(frameTimeMs);
 
         if ((now - _eventStart) >= _options.MaximumEventDuration)
         {
@@ -343,8 +398,16 @@ public sealed class StutterDetector
     {
         var excess = _eventPeak - _eventBaselineMedian;
 
+        // A force-closed event never recovered: frame times sat above the threshold for the
+        // whole timeout. That is not a stutter, it is the baseline having moved - a scene
+        // change, a settings change, or a sustained slowdown. Reporting it as a stutter would
+        // produce one every timeout for the rest of the session, each with a baseline that is
+        // now meaningless, which is exactly the train of false events a lagging median causes.
+        var settledShift = forceClosed && HasSettledAbove(_openEventFrames, _eventBaselineMedian,
+            _eventThreshold);
+
         var completed = new StutterEvent(
-            Class: Classify(excess),
+            Class: settledShift ? StutterClass.RegimeChange : Classify(excess),
             Start: _eventStart,
             End: end,
             PeakFrameTimeMs: _eventPeak,
@@ -361,6 +424,22 @@ public sealed class StutterDetector
         _consecutiveRecovered = 0;
         _pendingEvent = completed;
         _pendingSince = end;
+
+        if (settledShift)
+        {
+            ReseedBaselineFrom(_openEventFrames);
+            _postEventFrames.Clear();
+        }
+    }
+
+    /// <summary>Whether a run of frames sits persistently above a baseline by more than a threshold.</summary>
+    private static bool HasSettledAbove(List<double> frames, double baselineMs, double thresholdMs)
+    {
+        if (frames.Count < 8) return false;
+
+        var sorted = frames.ToArray();
+        Array.Sort(sorted);
+        return sorted[sorted.Length / 2] - baselineMs > thresholdMs;
     }
 
     private StutterClass Classify(double excessMs)

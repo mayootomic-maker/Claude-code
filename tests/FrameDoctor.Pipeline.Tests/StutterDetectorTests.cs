@@ -225,4 +225,40 @@ public sealed class StutterDetectorTests
         detector.IsWarmedUp.ShouldBeFalse();
         double.IsNaN(detector.BaselineMedianMs).ShouldBeTrue();
     }
+
+    [Fact]
+    public void A_sustained_step_up_is_one_regime_change_not_a_train_of_stutters()
+    {
+        // A rolling median lags an abrupt shift by its whole window, so without this the level
+        // change produces a false event every timeout for the rest of the session - each with
+        // a baseline that is by then meaningless.
+        var series = new List<double>();
+        series.AddRange(FrameTimeRegimes.Uncapped144(3000));
+        for (var i = 0; i < 6000; i++) series.Add(21.0 + ((i % 7) * 0.4));
+
+        var detector = new StutterDetector(Hz144);
+        var events = DetectorHarness.Run(detector, series);
+
+        events.Count.ShouldBeLessThanOrEqualTo(2,
+            "a sustained step change is one event, not one per timeout");
+        events.ShouldContain(e => e.Class == StutterClass.RegimeChange);
+
+        // And the baseline must have moved to the new level, or everything after is nonsense.
+        detector.BaselineMedianMs.ShouldBe(21.0, 3.0);
+    }
+
+    [Fact]
+    public void A_regime_change_does_not_count_toward_the_stutter_tally()
+    {
+        // The user's game did not stutter; it changed. Counting it would inflate the number
+        // that matters most on the Live view.
+        var series = new List<double>();
+        series.AddRange(FrameTimeRegimes.Uncapped144(3000));
+        for (var i = 0; i < 6000; i++) series.Add(21.0 + ((i % 7) * 0.4));
+
+        var events = DetectorHarness.Run(new StutterDetector(Hz144), series);
+        var regime = events.First(e => e.Class == StutterClass.RegimeChange);
+
+        regime.CountsTowardTally.ShouldBeFalse();
+    }
 }

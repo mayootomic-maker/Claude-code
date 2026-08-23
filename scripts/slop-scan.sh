@@ -17,13 +17,14 @@ WEB='--include=*.ts --include=*.tsx --include=*.css --include=*.js --include=*.j
 EXCL='--exclude-dir=node_modules --exclude-dir=bin --exclude-dir=obj --exclude-dir=dist --exclude-dir=.git --exclude-dir=artifacts'
 
 hits=0
+SCAN_ROOTS="src tests"
 
 section() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
 scan() {
   local label="$1"; shift
   local out
-  out=$(grep -rnI $EXCL "$@" src tests 2>/dev/null)
+  out=$(grep -rnI $EXCL "$@" $SCAN_ROOTS 2>/dev/null)
   if [[ -n "$out" ]]; then
     printf '\n-- %s\n%s\n' "$label" "$out"
     hits=$(( hits + $(printf '%s\n' "$out" | grep -c .) ))
@@ -39,8 +40,12 @@ section 'INTEGRITY (blockers — fake data, dead controls, unimplemented surface
 # ---------------------------------------------------------------------------
 
 # Randomness outside the one sanctioned simulation transport. Invariant 9.
+# Scoped to src: test fixtures legitimately generate seeded series, and the invariant is
+# about what the product does, not what the suite does.
+SCAN_ROOTS="src"
 scan 'randomness outside Simulation' -E 'new Random\(|Math\.random\(|Random\.Shared' \
-     --exclude-dir=Simulation --exclude-dir=simulation --exclude-dir=Fixtures
+     --exclude-dir=FrameDoctor.Simulation
+SCAN_ROOTS="src tests"
 
 scan 'NotImplementedException'        -E 'NotImplementedException|NotSupportedException\("TODO'
 scan 'TODO / FIXME / HACK / XXX'      -E '\b(TODO|FIXME|HACK|XXX)\b'
@@ -58,7 +63,9 @@ scan 'glassmorphism / backdrop blur'  -E 'backdrop-filter|BlurEffect|AcrylicBrus
 scan 'decorative shadows'             -E 'box-shadow|DropShadowEffect'
 scan 'large corner radii'             -E 'border-?[Rr]adius:?\s*.?(1[0-9]|[2-9][0-9])px|CornerRadius="(1[0-9]|[2-9][0-9])'
 scan '!important'                     -E '!important' $WEB
-scan 'emoji in product source'        -P '[\x{1F300}-\x{1FAFF}\x{2190}-\x{21FF}\x{2600}-\x{27BF}\x{FE0F}\x{2B00}-\x{2BFF}]'
+# Arrows (U+2190-U+21FF) are deliberately excluded: they appear legitimately in prose
+# comments describing ranges and transitions, and flagging them buries the real hits.
+scan 'emoji in product source'        -P '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{2B00}-\x{2BFF}]'
 
 # ---------------------------------------------------------------------------
 section 'COPY (exact strings; each needs a replacement, not a softening)'
