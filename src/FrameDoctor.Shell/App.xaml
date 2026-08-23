@@ -1,0 +1,13 @@
+<Application x:Class="FrameDoctor.Shell.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnMainWindowClose">
+  <Application.Resources>
+    <!--
+      Deliberately empty. Every visual decision lives in the web frontend's design tokens, and a
+      second styling system in XAML would guarantee the two drift apart at exactly the boundary
+      the user can see. The window chrome below sets its colours from those same tokens, by hand,
+      in one place.
+    -->
+  </Application.Resources>
+</Application>

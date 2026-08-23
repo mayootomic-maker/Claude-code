@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+
+    <!--
+      The only project in the solution that needs the Windows Desktop framework, and the only one
+      that cannot execute in the container this repository is developed in. It compiles here —
+      EnableWindowsTargeting in Directory.Build.props makes that work — which catches the class
+      of error that matters most in XAML-adjacent code: a type that does not exist.
+    -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>framedoctor</AssemblyName>
+    <RootNamespace>FrameDoctor.Shell</RootNamespace>
+
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+  </PropertyGroup>
+
+  <!--
+    Presentation only. The shell holds no system-level business logic (invariant 2): it
+    references the wire format and nothing that measures or decides anything.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+    <ProjectReference Include="../FrameDoctor.Ipc/FrameDoctor.Ipc.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+
+  <!--
+    The built frontend is copied in rather than referenced in place, so the shipped application
+    is self-contained and the running window can never be showing a half-written dev build.
+
+    The build does not fail when the frontend is missing: this project is compiled on its own
+    during Windows-targeting checks from a Linux container where pnpm may not have run. The
+    window states the missing-interface case to the user rather than crashing on it, so a build
+    without it is a usable diagnostic build, not a broken one.
+  -->
+  <Target Name="CopyFrontend" AfterTargets="Build">
+    <ItemGroup>
+      <FrontendFiles Include="$(MSBuildProjectDirectory)/../frontend/dist/**/*" />
+    </ItemGroup>
+
+    <Message Importance="high"
+             Condition="'@(FrontendFiles)' == ''"
+             Text="FrameDoctor: src/frontend/dist is empty. Run 'pnpm build' in src/frontend to include the interface." />
+
+    <Copy SourceFiles="@(FrontendFiles)"
+          DestinationFolder="$(OutDir)wwwroot/%(RecursiveDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(FrontendFiles)' != ''" />
+  </Target>
+
+</Project>
