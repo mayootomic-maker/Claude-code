@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Deliberately net10.0 rather than net10.0-windows.
+
+      Nothing in this assembly needs the Windows Desktop framework: it is P/Invoke, process
+      management and parsing. Targeting the portable TFM means the parsers and marshalling
+      structs — where the real bugs live — are unit-testable from the Linux container this
+      repository is developed in, while the P/Invoke declarations still compile. Types that
+      genuinely require Windows carry [SupportedOSPlatform("windows")], so CA1416 enforces the
+      boundary at build time instead of leaving it to a comment.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
