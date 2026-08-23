@@ -95,6 +95,31 @@ Ids are stable, lowercase, dot-separated, and never reused for a different meani
 | `frame.time.variance` | ms² | Rolling |
 | `frame.stutter.count` | count | Cumulative in session |
 | `frame.stutter.severe.count` | count | Cumulative in session |
+| `frame.animation_error` | ms | `simStepMs - displayStepMs`. See below. |
+| `frame.displayed.time` | ms | Display-side interval; what the eye actually receives |
+| `frame.dropped` | count | Frames presented but never displayed |
+
+### Why `frame.animation_error` matters more than it looks
+
+Present-to-present variance — the obvious "frame time" series — measures when the application
+*submitted* work. It is blind to what the display actually showed.
+
+A game can present at a metronomically even 6.9 ms and still look visibly juddery, because the
+simulation timestep it advanced by does not match the interval the frame was displayed for.
+PresentMon exposes this directly as animation error, and it is the metric that distinguishes
+"the CPU hitched" from "the frame pacing is wrong" — two problems with completely different
+causes and completely different fixes.
+
+Stutter classification therefore consumes **three** series, not one:
+
+| Series | Catches |
+|---|---|
+| `frame.time` (CPU frame time) | Hitches, background contention, thermal collapse |
+| `frame.animation_error` | Pacing failures invisible to present-to-present variance |
+| `frame.dropped` | Frames the compositor discarded |
+
+A detector built on `frame.time` alone would confidently report "healthy" through an entire
+category of the judder users actually complain about.
 
 ### CPU — `cpu.*`
 
