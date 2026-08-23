@@ -41,3 +41,7 @@ Desktop.ini
 # Frontend
 src/frontend/node_modules/
 src/frontend/dist/
+
+# Publish output. 150 MB of runtime files that packaging/publish.sh regenerates on any
+# machine. Committed once by mistake; see the commit that removed them.
+packaging/out/

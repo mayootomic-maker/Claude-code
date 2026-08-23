@@ -1,9 +1,0 @@
-{
-  "path": "%LOCALAPPDATA%\\FrameDoctor\\settings.json",
-  "exists": false,
-  "highResolutionRetentionDays": 14,
-  "autoStartOnGameDetected": false,
-  "keepMeasuringWithWindowClosed": true,
-  "liveWindowSeconds": 60,
-  "simulationMode": false
-}
