@@ -169,3 +169,56 @@ test('the system view lists what is missing, not only what works', async ({ page
 
   await page.screenshot({ path: `${OUT}/system.png`, fullPage: true });
 });
+
+test('the sessions list shows what each session could have detected', async ({ page }) => {
+  // Two rows both reading "0 stutters" mean different things when one could resolve 3 ms and
+  // the other 30 ms. Without the floor beside it, a user reads the second as a clean session.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Sessions' }).click();
+  await expect(page.locator('.sessions__table')).toBeVisible({ timeout: 5_000 });
+
+  await expect(page.getByRole('columnheader', { name: 'Smallest detectable' })).toBeVisible();
+  await expect(page.locator('.sessions__floor').first()).not.toBeEmpty();
+
+  // A session that cannot seed a baseline says so on its own row, not in a footnote.
+  await expect(page.locator('.sessions__excluded').first()).toBeVisible();
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(200);
+  await expect(page.getByRole('status')).toContainText('Simulation');
+
+  await page.screenshot({ path: `${OUT}/sessions.png` });
+});
+
+test('settings shows values and the command to change them, not dead switches', async ({
+  page,
+}) => {
+  // The command channel from this window to the measuring process is not built. A switch here
+  // would be a switch that does nothing, which is the exact thing invariant 9 forbids.
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.locator('.settings')).toBeVisible({ timeout: 5_000 });
+
+  // No form controls at all on this screen, disabled or otherwise.
+  await expect(page.locator('.settings input, .settings select, .settings__list button')).toHaveCount(0);
+
+  // Every setting carries the command that changes it.
+  const settings = page.locator('.setting');
+  await expect(settings.first()).toBeVisible();
+  await expect(page.locator('.setting__command').first()).toContainText('framedoctor-engine settings');
+
+  // And the file is named, because a setting a user cannot find is one they cannot undo.
+  await expect(page.locator('.settings__path')).toContainText('settings.json');
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(200);
+  await expect(page.getByRole('status')).toContainText('Simulation');
+
+  await page.screenshot({ path: `${OUT}/settings.png` });
+});

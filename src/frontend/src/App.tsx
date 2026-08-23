@@ -1,6 +1,8 @@
 import { useEffect, useState, type JSX } from 'react';
 import { EventInspector } from './views/EventInspector';
 import { LiveView } from './views/LiveView';
+import { SessionsView } from './views/SessionsView';
+import { SettingsView } from './views/SettingsView';
 import { SystemView } from './views/SystemView';
 import {
   loadScenario,
@@ -16,9 +18,9 @@ const SECTIONS: ReadonlyArray<{ id: Section; label: string; available: boolean }
   { id: 'live', label: 'Live', available: true },
   // Marked unavailable rather than shown as an empty screen. Invariant 9: a control with no
   // implementation behind it is absent or explicitly unavailable, never a placeholder.
-  { id: 'sessions', label: 'Sessions', available: false },
+  { id: 'sessions', label: 'Sessions', available: true },
   { id: 'system', label: 'System', available: true },
-  { id: 'settings', label: 'Settings', available: false },
+  { id: 'settings', label: 'Settings', available: true },
 ];
 
 export function App(): JSX.Element {
@@ -150,6 +152,10 @@ export function App(): JSX.Element {
                 reload.
               </p>
             </div>
+          ) : section === 'settings' ? (
+            <SettingsView />
+          ) : section === 'sessions' ? (
+            <SessionsView />
           ) : section === 'system' ? (
             scenario ? (
               <SystemView scenario={scenario} />

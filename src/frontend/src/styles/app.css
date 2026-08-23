@@ -1310,3 +1310,267 @@ body {
 .source__missing[data-actionable] {
   color: var(--sev-warning);
 }
+
+/* ============================================================================
+   Sessions
+
+   A history screen earns its place only if it supports a comparison, so the
+   columns are the ones a comparison needs and the numeric ones are right
+   aligned and tabular so two rows can be read against each other by eye.
+   ============================================================================ */
+
+.sessions {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sessions--empty {
+  display: block;
+  padding: var(--sp-8) var(--gutter-view);
+  max-width: 64ch;
+}
+
+.sessions--empty h1 {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-primary);
+}
+
+.sessions--empty p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.sessions__head {
+  padding: var(--sp-5) var(--gutter-view) var(--sp-4);
+  border-bottom: var(--border-default);
+}
+
+.sessions__head h1 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-primary);
+}
+
+.sessions__lede {
+  margin: 0;
+  max-width: 88ch;
+  color: var(--text-secondary);
+}
+
+.sessions__table-wrap {
+  overflow: auto;
+  min-height: 0;
+  padding: 0 var(--gutter-view) var(--sp-8);
+}
+
+.sessions__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sessions__table th,
+.sessions__table td {
+  text-align: left;
+  padding: var(--sp-3) var(--sp-4);
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.sessions__table .num {
+  text-align: right;
+}
+
+.sessions__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  background: var(--bg-base);
+  border-bottom: var(--border-default);
+}
+
+.sessions__table tbody tr {
+  border-bottom: var(--border-hairline);
+}
+
+.sessions__table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.sessions__table td,
+.sessions__game {
+  color: var(--text-secondary);
+}
+
+.sessions__game {
+  font-weight: 400;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.sessions__state {
+  margin-left: var(--sp-2);
+  color: var(--sev-warning);
+}
+
+/* A zero here is a real measurement and reads as one — but only alongside the
+   detection floor beside it, which is what makes it meaningful. */
+.sessions__table td[data-clean] {
+  color: var(--sev-normal);
+}
+
+.sessions__floor {
+  color: var(--text-tertiary);
+}
+
+.sessions__eligible {
+  color: var(--text-tertiary);
+}
+
+.sessions__excluded {
+  color: var(--sev-warning);
+}
+
+/* ============================================================================
+   Settings
+
+   No controls, because the channel that would carry a change does not exist
+   yet and a switch that does nothing is worse than no switch. What is here is
+   the value and the command that changes it.
+   ============================================================================ */
+
+.settings {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings--empty {
+  display: block;
+  padding: var(--sp-8) var(--gutter-view);
+  max-width: 64ch;
+}
+
+.settings__head {
+  padding: var(--sp-5) var(--gutter-view) var(--sp-4);
+  border-bottom: var(--border-default);
+}
+
+.settings__head h1 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-primary);
+}
+
+.settings__lede {
+  margin: 0;
+  max-width: 84ch;
+  color: var(--text-secondary);
+}
+
+.settings__body {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(300px, 1fr);
+  gap: var(--sp-7);
+  padding: var(--sp-5) var(--gutter-view) var(--sp-8);
+  overflow-y: auto;
+  min-height: 0;
+  align-items: start;
+}
+
+.settings__list {
+  margin: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-1) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-raised);
+  border: var(--border-hairline);
+  border-radius: var(--r-md);
+}
+
+.setting__label {
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.setting__value {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.setting__explanation {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-tertiary);
+  max-width: 78ch;
+}
+
+/* The command is the affordance on this screen, so it looks like something to
+   copy rather than like body text. */
+.setting__command {
+  grid-column: 1 / -1;
+  margin: var(--sp-1) 0 0;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: var(--border-hairline);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  user-select: all;
+}
+
+.settings__aside {
+  padding: var(--sp-4);
+  background: var(--bg-raised);
+  border: var(--border-hairline);
+  border-radius: var(--r-md);
+  position: sticky;
+  top: 0;
+}
+
+.settings__aside h2 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-tertiary);
+}
+
+.settings__aside h2:not(:first-child) {
+  margin-top: var(--sp-5);
+}
+
+.settings__aside p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-secondary);
+}
+
+.settings__path {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.settings__pending {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1180px) {
+  .settings__body {
+    grid-template-columns: 1fr;
+  }
+
+  .settings__aside {
+    position: static;
+  }
+}

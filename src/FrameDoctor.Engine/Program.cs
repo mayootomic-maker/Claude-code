@@ -9,6 +9,7 @@ using FrameDoctor.Ipc;
 using FrameDoctor.Platform.Windows.Time;
 using FrameDoctor.Simulation;
 using FrameDoctor.Storage.Catalog;
+using FrameDoctor.Storage.Settings;
 
 // The engine is the resident process: it owns the collectors, the pipeline and the session
 // store, and it outlives whatever window happens to be open. Closing the UI must not end a
@@ -26,6 +27,8 @@ static async Task<int> Run(string[] args)
         "serve" => await Serve(args).ConfigureAwait(false),
         "simulate" => await Simulate(args).ConfigureAwait(false),
         "sessions" => Sessions(args),
+        "export-sessions" => ExportSessions(args),
+        "settings" => Settings(args),
         _ => Help(),
     };
 }
@@ -44,6 +47,9 @@ static int Help()
           framedoctor-engine simulate <id>      Run one scenario through the live pipeline
           framedoctor-engine simulate <id> --save  ... and record it as a session
           framedoctor-engine sessions           List recorded sessions
+          framedoctor-engine export-sessions <f>   Write the session list as JSON
+          framedoctor-engine settings           Show settings and where they live
+          framedoctor-engine settings <k> <v>   Change one setting
 
         `probe` changes nothing and starts no capture. It is the honest answer to
         "what will this actually be able to tell me on my hardware?"
@@ -423,6 +429,235 @@ static int Sessions(string[] args)
 
     Console.WriteLine();
     return 0;
+}
+
+// Records every scenario into a scratch store and writes the listing back out as JSON.
+//
+// The fixture the Sessions view renders. It is deliberately produced by round-tripping through
+// the real catalog rather than assembled in memory: a fixture that never touches the storage
+// layer would let the view be built against a shape the database cannot actually produce.
+static int ExportSessions(string[] args)
+{
+    var destination = args.Length > 1 ? args[1] : "sessions.json";
+    var scratch = Path.Combine(Path.GetTempPath(), $"framedoctor-export-{Guid.NewGuid():N}.db");
+
+    try
+    {
+        using (var store = SessionStore.Open(scratch))
+        {
+            var recorder = new SessionRecorder(new SessionRepository(store));
+
+            foreach (var scenario in ScenarioCatalog.All)
+            {
+                var (stats, diagnoses) = RunThroughPipeline(scenario);
+
+                var config = new ConfigRecord(
+                    new GameRecord($"{scenario.Id}.sim", null, scenario.Title),
+                    new MachineRecord("simulation", "Simulated CPU", "Simulated GPU", null, null),
+                    null, scenario.RefreshRateHz, null, null, null, null, null, null);
+
+                recorder.Record(config, new StopwatchClock(), stats, diagnoses,
+                    baselineEligible: false);
+            }
+        }
+
+        using (var store = SessionStore.Open(scratch))
+        {
+            var rows = new SessionRepository(store).ListAll();
+
+            var payload = rows.Select(r => new
+            {
+                id = r.Session.Id.ToString(),
+                game = r.GameName,
+                epochUtcTicks = r.Session.EpochUtcTicks,
+                durationMs = TimeSpan.FromTicks(r.Session.DurationTicks).TotalMilliseconds,
+                frameCount = r.Session.FrameCount,
+                stutterCount = r.StutterCount,
+                state = r.Session.State.ToString(),
+                // Null rather than absent-as-zero, so the frontend's own type system can force
+                // the caller to decide what an unmeasured floor looks like.
+                sensitivityFloorMs = r.Session.SensitivityFloorMs,
+                baselineEligible = r.Session.BaselineEligible,
+            });
+
+            var json = System.Text.Json.JsonSerializer.Serialize(payload,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+            File.WriteAllText(destination, json);
+            Console.WriteLine($"  {rows.Count} session(s) -> {destination}");
+        }
+
+        return 0;
+    }
+    finally
+    {
+        foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+        {
+            var path = scratch + suffix;
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+}
+
+static (LiveStatistics Stats, List<FrameDoctor.Diagnostics.Diagnosis> Diagnoses)
+    RunThroughPipeline(SimulationScenario scenario)
+{
+    var session = new LiveSession(scenario.RefreshRateHz);
+    var diagnoses = new List<FrameDoctor.Diagnostics.Diagnosis>();
+    session.EventDiagnosed += diagnoses.Add;
+
+    var one = new TelemetrySample[1];
+
+    foreach (var sample in scenario.Generate())
+    {
+        if (sample.Metric == MetricId.FrameTime)
+        {
+            if (sample.TryGetValue(out var ms))
+                session.AddFrame(new FramePresent(sample.Timestamp, ms, null, false, 0));
+            else
+                session.AddUnreadableFrame(sample.Timestamp);
+
+            continue;
+        }
+
+        one[0] = sample;
+        session.AddSensorSamples(one);
+    }
+
+    diagnoses.AddRange(session.Complete());
+    return (session.Statistics(), diagnoses);
+}
+
+static string SettingsPath(string[] args)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+        if (args[i] is "--settings") return args[i + 1];
+
+    var root = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FrameDoctor");
+
+    Directory.CreateDirectory(root);
+    return Path.Combine(root, "settings.json");
+}
+
+// Shows or changes settings.
+//
+// Every value prints with its file path, because a setting a user cannot find is one they cannot
+// undo, and this file is the only place FrameDoctor keeps configuration — deliberately not the
+// registry, which would survive an uninstall.
+static int Settings(string[] args)
+{
+    var store = new SettingsStore(SettingsPath(args));
+    var settings = store.Load();
+
+    // Flags take a value, so a plain "does not start with --" filter would read a flag's value
+    // as a setting name — which is how `settings --json out.json` ended up reporting that there
+    // is no setting called "out.json".
+    var positional = new List<string>();
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i].StartsWith("--", StringComparison.Ordinal))
+        {
+            i++;
+            continue;
+        }
+
+        positional.Add(args[i]);
+    }
+
+    if (positional.Count >= 2)
+    {
+        var (updated, error) = Apply(settings, positional[0], positional[1]);
+
+        if (error is not null)
+        {
+            Console.Error.WriteLine($"  {error}");
+            return 2;
+        }
+
+        store.Save(updated!);
+        settings = store.Load();
+        Console.WriteLine($"  Saved to {store.Path}");
+    }
+
+    // The interface reads this file rather than being told the values, so the screen it renders
+    // cannot drift away from what the engine would actually honour.
+    var jsonIndex = Array.IndexOf(args, "--json");
+    if (jsonIndex >= 0 && jsonIndex + 1 < args.Length)
+    {
+        var payload = new
+        {
+            path = store.Path,
+            exists = store.Exists,
+            settings.HighResolutionRetentionDays,
+            settings.AutoStartOnGameDetected,
+            settings.KeepMeasuringWithWindowClosed,
+            settings.LiveWindowSeconds,
+            settings.SimulationMode,
+        };
+
+        File.WriteAllText(args[jsonIndex + 1], System.Text.Json.JsonSerializer.Serialize(
+            payload,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+
+        Console.WriteLine($"  settings -> {args[jsonIndex + 1]}");
+        return 0;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"  {store.Path}{(store.Exists ? string.Empty : "  (not written yet)")}");
+    Console.WriteLine();
+    Console.WriteLine($"  retention-days        {settings.HighResolutionRetentionDays}");
+    Console.WriteLine($"  auto-start            {settings.AutoStartOnGameDetected}");
+    Console.WriteLine($"  keep-measuring        {settings.KeepMeasuringWithWindowClosed}");
+    Console.WriteLine($"  live-window-seconds   {settings.LiveWindowSeconds}");
+    Console.WriteLine($"  simulation            {settings.SimulationMode}");
+    Console.WriteLine();
+
+    return 0;
+
+    // Returns the updated settings, or an explanation. A rejected value says what was expected
+    // rather than repeating what was given.
+    static (FrameDoctorSettings? Updated, string? Error) Apply(
+        FrameDoctorSettings current, string key, string value)
+    {
+        switch (key)
+        {
+            case "retention-days":
+                return int.TryParse(value, CultureInfo.InvariantCulture, out var days)
+                    ? (current with { HighResolutionRetentionDays = days }, null)
+                    : (null, "retention-days takes a whole number of days, from 1 to 365.");
+
+            case "live-window-seconds":
+                return int.TryParse(value, CultureInfo.InvariantCulture, out var seconds)
+                    ? (current with { LiveWindowSeconds = seconds }, null)
+                    : (null, "live-window-seconds takes a whole number of seconds, from 15 to 300.");
+
+            case "auto-start":
+                return bool.TryParse(value, out var autoStart)
+                    ? (current with { AutoStartOnGameDetected = autoStart }, null)
+                    : (null, "auto-start takes true or false.");
+
+            case "keep-measuring":
+                return bool.TryParse(value, out var keep)
+                    ? (current with { KeepMeasuringWithWindowClosed = keep }, null)
+                    : (null, "keep-measuring takes true or false.");
+
+            case "simulation":
+                return bool.TryParse(value, out var simulation)
+                    ? (current with { SimulationMode = simulation }, null)
+                    : (null, "simulation takes true or false.");
+
+            default:
+                return (null,
+                    $"There is no setting called '{key}'. Run `settings` with no arguments to see them all.");
+        }
+    }
 }
 
 static double ParseRefresh(string[] args)

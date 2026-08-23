@@ -1,0 +1,79 @@
+[
+  {
+    "id": "ea50e9e8-47c4-4f64-be05-e5a7b582ea9a",
+    "game": "Unexplained hitch",
+    "epochUtcTicks": 639231211462749865,
+    "durationMs": 89994.6921,
+    "frameCount": 12952,
+    "stutterCount": 1,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": false
+  },
+  {
+    "id": "138626b5-8c9e-47f2-90ae-25a55bdbff02",
+    "game": "Memory pressure and paging",
+    "epochUtcTicks": 639231211462640541,
+    "durationMs": 89999.1855,
+    "frameCount": 12542,
+    "stutterCount": 2,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": false
+  },
+  {
+    "id": "50812003-c318-40eb-a2c0-9e95b4cbf4bb",
+    "game": "GPU power limit",
+    "epochUtcTicks": 639231211462516235,
+    "durationMs": 99993.2925,
+    "frameCount": 12201,
+    "stutterCount": 5,
+    "state": "Finalized",
+    "sensitivityFloorMs": 4.460930658926453,
+    "baselineEligible": false
+  },
+  {
+    "id": "cb122541-f42d-49fe-8f15-6535949fd365",
+    "game": "GPU thermal throttling",
+    "epochUtcTicks": 639231211462230106,
+    "durationMs": 99999.5132,
+    "frameCount": 11894,
+    "stutterCount": 3,
+    "state": "Finalized",
+    "sensitivityFloorMs": 4.851556209738273,
+    "baselineEligible": false
+  },
+  {
+    "id": "d849a398-a903-44e5-a710-9c84e59105f2",
+    "game": "CPU frequency collapse",
+    "epochUtcTicks": 639231211462067941,
+    "durationMs": 89999.2868,
+    "frameCount": 8004,
+    "stutterCount": 1,
+    "state": "Finalized",
+    "sensitivityFloorMs": 11.4218643125805,
+    "baselineEligible": false
+  },
+  {
+    "id": "ff85189b-9948-4306-affc-f07367d3f1cf",
+    "game": "Background CPU contention",
+    "epochUtcTicks": 639231211461871769,
+    "durationMs": 89994.2235,
+    "frameCount": 12836,
+    "stutterCount": 1,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": false
+  },
+  {
+    "id": "f8e0abcc-e132-44af-80e0-f16879836286",
+    "game": "Healthy session",
+    "epochUtcTicks": 639231211461010066,
+    "durationMs": 89997.75,
+    "frameCount": 12964,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": false
+  }
+]
