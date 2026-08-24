@@ -74,7 +74,7 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Sessions | Done | Reads a fixture round-tripped through the real catalog |
 | System | Done | Every metric listed with its source, working or not |
 | Settings | Done | Real backend; no controls, because the command channel is not built |
-| Screenshot harness | Done | 25 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
+| Screenshot harness | Done | 26 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
 
 ## Stage 5 — collection and storage
 
@@ -154,6 +154,30 @@ only one carrying a verdict — was drawn half outside the plot. Eight unit test
 covering the geometry could not see either, because both were introduced by the
 rendering, not the arithmetic. The first capture showed both immediately.
 
+## Stage 10 — game detection
+
+| Item | Status | Evidence |
+|---|---|---|
+| Gate A — unoverridable exclusions | Done | 9 tests; a Windows image, ourselves, and a launcher matched on filename **and** signer |
+| An unknown Windows directory fails closed | Done | Every candidate is excluded rather than every candidate eligible. The same mistake in `ThrottleEligibility` would have let us operate on system binaries |
+| Gate B — a conjunction, never a score | Done | 8 tests; two strong signals never carry a missing third, and a signal that could not be read is not one that was met |
+| Sticky to the process, not the foreground | Done | 10 tests; alt-tab enters `Background` and tags its frames, and one missed poll does not split a session |
+| GPU engine instance parsing | Done | 14 tests; a name we do not understand is refused rather than half read |
+| `GpuEngineReader` | Written — **Needs Windows** | Wildcard expansion on a slow cadence, slower once settled; the query is rebuilt rather than grown, because PDH has no remove-counter call |
+| `ForegroundWatcher` | Written — **Needs Windows** | Polled rather than hooked, so our callback is not on the path of every foreground change on the machine |
+| `detect` verb | Done | Reports which process would be measured, or which of the three requirements is unmet. Starts no capture and records nothing |
+| Detection on the System view | Done | Requirements, not a state. There is no foreground window in simulation, and a "detected: none" that meant "we did not look" is worse than saying nothing |
+
+The `--assume-frames` flag on `detect` exists because that verb runs no frame
+source, so the third requirement can never be met under it. It is named for
+what it does rather than for what it enables: a flag that quietly satisfies a
+requirement is how a conjunction becomes a score.
+
+The 15 % 3D-utilization floor is the least-founded number in the product and
+the first to revisit with real hardware. It errs toward declining — a game
+wrongly declined is visible on screen and correctable; a video player wrongly
+confirmed would have its compositor stalls reported as the user's frame pacing.
+
 ## Council Phase E — what the review found
 
 Three council members reviewed the built product against real screenshots and
@@ -189,7 +213,6 @@ class, and it exists now.
 | Item | Why it is not here |
 |---|---|
 | Command channel, shell → engine | Settings are therefore read-only in the interface, and the screen says so rather than showing controls that would do nothing |
-| Game detection | The engine measures what it is pointed at; automatic detection is Stage 9 |
 | Retention purge on a schedule | `PurgeHighResolution` exists and is tested; nothing calls it on a timer |
 | A command channel from the window to the engine | Settings are read-only in the interface, and the screen says so rather than showing controls that would do nothing |
 | Opening a stored session from the Sessions list | Needs a reader for the segment files. The rows are deliberately not styled as clickable |
@@ -212,8 +235,16 @@ These are not defects; they define how work is verified.
 ## Requires Windows validation
 
 The full register, with severities and the test that resolves each row, is
-`docs/WINDOWS-VALIDATION.md`. It currently holds **14 CRITICAL rows**, and
+`docs/WINDOWS-VALIDATION.md`. It currently holds **25 CRITICAL rows** of 86, and
 `/council-prerelease` cannot return READY-FOR-WINDOWS-VALIDATION while any of them is open.
+
+That figure was written here as 14 and was wrong for several stages — the register grew and the
+summary did not. Recount it rather than trusting this line:
+
+```
+awk -F'|' '/^\|/ { gsub(/ /, "", $(NF-1)); if ($(NF-1) == "CRITICAL") n++ } END { print n }' \
+  docs/WINDOWS-VALIDATION.md
+```
 
 The four that would change the product's shape if they came back wrong:
 

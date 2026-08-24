@@ -1447,6 +1447,58 @@ body {
 }
 
 /* ============================================================================
+   Game detection requirements
+
+   Not a live readout, and styled so it cannot be mistaken for one: prose and a
+   numbered list rather than the metric rows above it. A "detected: none" that
+   actually meant "we did not look" would be worse than saying nothing.
+   ============================================================================ */
+
+.detection {
+  margin: var(--sp-6) var(--gutter-view) var(--sp-8);
+  padding: var(--sp-5);
+  border: var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  max-width: 92ch;
+}
+
+.detection__name {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-primary);
+}
+
+.detection__lede {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-secondary);
+}
+
+.detection__list {
+  margin: 0 0 var(--sp-4);
+  padding-left: var(--sp-5);
+  color: var(--text-primary);
+}
+
+.detection__list li {
+  margin-bottom: var(--sp-2);
+}
+
+.detection__note {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-tertiary);
+}
+
+.detection__command {
+  /* A command broken across a line is a command that gets mistyped. */
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--r-sm);
+  padding: 1px var(--sp-1);
+}
+
+/* ============================================================================
    Baseline
 
    The band, not the trend line, is the subject. A point inside the band has not

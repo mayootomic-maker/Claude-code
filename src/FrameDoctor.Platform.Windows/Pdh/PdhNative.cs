@@ -62,6 +62,29 @@ internal static partial class PdhNative
     internal static partial uint PdhAddEnglishCounter(
         nint query, string fullCounterPath, nuint userData, out nint counter);
 
+    /// <summary>
+    /// Expands a wildcard counter path into the instances that currently exist.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The only way to discover per-process GPU engine instances: they are named after the
+    /// process that owns them, so the set changes every time anything starts or stops.
+    /// </para>
+    /// <para>
+    /// Not cheap. On a busy machine <c>\GPU Engine(*)</c> expands to hundreds of instances, and
+    /// calling it on every poll of a gaming session would put FrameDoctor's own cost where
+    /// invariant 8 says it must not be. Callers expand on a slow cadence and hold the counters
+    /// they found.
+    /// </para>
+    /// </remarks>
+    [LibraryImport(Pdh, EntryPoint = "PdhExpandWildCardPathW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial uint PdhExpandWildCardPath(
+        string? dataSource,
+        string wildCardPath,
+        [Out] char[]? expandedPathList,
+        ref uint pathListLength,
+        uint flags);
+
     [LibraryImport(Pdh, EntryPoint = "PdhCollectQueryData")]
     internal static partial uint PdhCollectQueryData(nint query);
 

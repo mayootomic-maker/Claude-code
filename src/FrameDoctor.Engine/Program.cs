@@ -6,6 +6,9 @@ using FrameDoctor.Abstractions.Time;
 using FrameDoctor.Engine;
 using FrameDoctor.Engine.Hosting;
 using FrameDoctor.Ipc;
+using FrameDoctor.Pipeline.Attribution;
+using FrameDoctor.Platform.Windows.Pdh;
+using FrameDoctor.Platform.Windows.Processes;
 using FrameDoctor.Platform.Windows.Time;
 using FrameDoctor.Simulation;
 using FrameDoctor.Storage.Catalog;
@@ -28,6 +31,7 @@ static async Task<int> Run(string[] args)
         "probe" => await Probe().ConfigureAwait(false),
         "serve" => await Serve(args).ConfigureAwait(false),
         "simulate" => await Simulate(args).ConfigureAwait(false),
+        "detect" => await Detect(args).ConfigureAwait(false),
         "sessions" => Sessions(args),
         "export-sessions" => ExportSessions(args),
         "settings" => Settings(args),
@@ -49,6 +53,7 @@ static int Help()
           framedoctor-engine serve              Collect and serve until stopped
           framedoctor-engine simulate <id>      Run one scenario through the live pipeline
           framedoctor-engine simulate <id> --save  ... and record it as a session
+          framedoctor-engine detect             Show what would be measured, changing nothing
           framedoctor-engine sessions           List recorded sessions
           framedoctor-engine export-sessions <f>   Write the session and baseline fixtures
           framedoctor-engine settings           Show settings and where they live
@@ -57,6 +62,10 @@ static int Help()
 
         `probe` changes nothing and starts no capture. It is the honest answer to
         "what will this actually be able to tell me on my hardware?"
+
+        `detect` is the same promise for game detection: it reports which process
+        would be measured and, when none would be, exactly which requirement is
+        unmet. It starts no capture and records nothing.
 
         Sessions are stored under this machine's local application data. Nothing
         leaves it: there is no account, no upload and no analytics.
@@ -376,6 +385,84 @@ static async Task<int> Simulate(string[] args)
     Console.WriteLine();
 
     await Task.CompletedTask.ConfigureAwait(false);
+    return 0;
+}
+
+// Reports what game detection would decide, and changes nothing.
+//
+// The counterpart to `probe`. Detection is a conjunction of three signals from three unrelated
+// sources, and when it declines there is no way to tell from the outside which one was missing.
+// This prints that, once a second, without starting a capture or writing a row.
+static async Task<int> Detect(string[] args)
+{
+    if (!OperatingSystem.IsWindows())
+    {
+        Console.Error.WriteLine("  Game detection reads the foreground window and the GPU engine");
+        Console.Error.WriteLine("  counters. Neither exists on this platform.");
+        return 2;
+    }
+
+    return await DetectWindows(args).ConfigureAwait(false);
+}
+
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static async Task<int> DetectWindows(string[] args)
+{
+    var clock = CreateClock();
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+    var detector = new GameDetector(
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+        Environment.ProcessId);
+
+    // No frame source is running under this verb, so the present rate is genuinely unknown
+    // rather than zero — and Gate B will say so instead of confirming on two signals.
+    // --assume-frames states that one exists without measuring it; named for what it does,
+    // because a flag that quietly satisfies a requirement turns a conjunction into a score.
+    using var sources = new WindowsGameSources(
+        detector, args.Contains("--assume-frames") ? 144.0 : null);
+
+    if (!sources.GpuCountersAvailable)
+    {
+        // Stated, not worked around. Gate B then has a signal it cannot read and will decline to
+        // confirm anything, which is the correct outcome and not a silent one.
+        Console.Error.WriteLine(
+            "  The GPU Engine counter object could not be opened, so 3D work cannot be");
+        Console.Error.WriteLine(
+            $"  attributed to a process and nothing will ever be confirmed. PDH status 0x{sources.GpuStatus:X8}.");
+    }
+
+    var watcher = new GameWatcher(
+        detector, sources.Foreground, sources.ThreeDUtilization, sources.PresentRate);
+
+    Console.WriteLine("  Watching. Nothing is being captured or recorded. Ctrl-C to stop.");
+    Console.WriteLine();
+
+    var last = string.Empty;
+
+    using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+
+    try
+    {
+        while (await timer.WaitForNextTickAsync(cts.Token).ConfigureAwait(false))
+        {
+            var line = watcher.Poll(clock.Now).Explain();
+
+            // Only on change. A line a second for an hour is a log nobody reads.
+            if (line == last) continue;
+
+            last = line;
+            Console.WriteLine($"  {DateTimeOffset.Now:HH:mm:ss}  {line}");
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Ctrl-C.
+    }
+
+    Console.WriteLine();
     return 0;
 }
 
@@ -982,6 +1069,49 @@ static double ParseRefresh(string[] args)
 /// capture: FrameDoctor collects live telemetry on Windows only, and this clock's job is to let
 /// the pipeline above the collectors be exercised anywhere.
 /// </remarks>
+// The three readings game detection needs, on this machine.
+//
+// A class rather than three lambdas at the call site: a lambda closing over a Windows-only API
+// compiles into a closure type that carries no platform attribute, so CA1416 loses the seam it
+// is there to enforce. Holding them here keeps the boundary where it can be checked.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+file sealed class WindowsGameSources : IDisposable
+{
+    private readonly ForegroundWatcher _foreground = new();
+    private readonly GpuEngineReader _gpu = new();
+    private readonly GameDetector _detector;
+    private readonly double? _assumedPresentRateHz;
+
+    public WindowsGameSources(GameDetector detector, double? assumedPresentRateHz)
+    {
+        _detector = detector;
+        _assumedPresentRateHz = assumedPresentRateHz;
+        GpuCountersAvailable = _gpu.Open();
+        GpuStatus = _gpu.LastStatus;
+    }
+
+    public bool GpuCountersAvailable { get; }
+
+    public uint GpuStatus { get; }
+
+    public ForegroundFacts? Foreground() =>
+        _foreground.Read() is { } p
+            ? new ForegroundFacts(p.ProcessId, p.ImagePath, p.SignerSubject)
+            : null;
+
+    /// <summary>Rediscovery slows once a game is confirmed, because its instances stop changing.</summary>
+    public double? ThreeDUtilization(int processId) =>
+        _gpu.ThreeDUtilizationFor(processId, settled: _detector.ConfirmedProcessId is not null);
+
+    public double? PresentRate(int processId)
+    {
+        _ = processId;
+        return _assumedPresentRateHz;
+    }
+
+    public void Dispose() => _gpu.Dispose();
+}
+
 // A clock whose wall-clock anchor is chosen rather than read.
 //
 // Only for building fixtures, where sessions must land on distinct days in a known order. A

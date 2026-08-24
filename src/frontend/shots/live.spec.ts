@@ -285,6 +285,37 @@ test('settings shows values and the command to change them, not dead switches', 
 });
 
 /**
+ * The detection section must read as requirements, never as a live state.
+ *
+ * There is no foreground window and no GPU here, so any state it claimed would be invented. The
+ * assertion is that it says which three things are required and names the command that reports
+ * them, rather than showing a "detected: none" that actually means "we did not look".
+ */
+test('the system view explains what gets measured without claiming to have looked', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'System' }).click();
+  await expect(page.locator('.detection')).toBeVisible({ timeout: 5_000 });
+
+  // All three requirements, and the fact that it is a conjunction rather than a score.
+  await expect(page.locator('.detection__list li')).toHaveCount(3);
+  await expect(page.locator('.detection__lede')).toContainText('Not a score');
+
+  // It says it did not look, and what to run in order to.
+  await expect(page.locator('.detection')).toContainText('Nothing is detected in simulation mode');
+  await expect(page.locator('.detection__command')).toHaveText('framedoctor-engine detect');
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(200);
+
+  await page.locator('.detection').screenshot({ path: `${OUT}/detection.png` });
+});
+
+/**
  * The baseline panel, which is where the product is most tempted to overstate itself.
  *
  * Three things are asserted rather than merely captured: that the panel names what the bar

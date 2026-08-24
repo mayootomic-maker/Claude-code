@@ -156,7 +156,63 @@ export function SystemView({ scenario }: SystemViewProps): JSX.Element {
           </section>
         ))}
       </div>
+
+      <GameDetectionRequirements />
     </div>
+  );
+}
+
+/**
+ * What has to be true before anything is measured at all.
+ *
+ * Every other row on this screen is a live reading. These are not, and the section says so:
+ * detection reads the foreground window and the GPU engine counters, and neither exists in
+ * simulation. Showing a made-up state here would be the exact failure this screen exists to
+ * prevent — and a "detected: none" that meant "we did not look" is worse than saying nothing.
+ *
+ * The requirements are listed because when detection declines, the useful question is which of
+ * the three was missing, and the answer is not guessable from the outside.
+ */
+function GameDetectionRequirements(): JSX.Element {
+  return (
+    <section className="detection">
+      <h2 className="t-subtitle detection__name">Which process gets measured</h2>
+
+      <p className="t-body detection__lede">
+        A process is measured only when all three of these hold at once. Not a score — two
+        strong signals never carry a missing third, because the third is usually what separates a
+        game from something else that is fullscreen and busy.
+      </p>
+
+      <ol className="detection__list">
+        <li className="t-body">
+          It has held the foreground for two seconds. Continuously: alt-tabbing between windows
+          does not accumulate toward either of them.
+        </li>
+        <li className="t-body">
+          It is doing sustained work on the GPU&rsquo;s 3D engine. The video decode engine does
+          not count, or a film would qualify.
+        </li>
+        <li className="t-body">
+          We are receiving frames from it. This is the signal that separates a game from an
+          application that merely holds the foreground and touches the GPU.
+        </li>
+      </ol>
+
+      <p className="t-body-sm detection__note">
+        Windows processes, FrameDoctor itself, and known game launchers are excluded before any
+        of that is considered. A launcher is matched on filename <em>and</em> signer, so a game
+        shipping a similarly named binary is not silently skipped.
+      </p>
+
+      <p className="t-body-sm detection__note">
+        Nothing is detected in simulation mode: there is no foreground window and no GPU. On a
+        real machine{' '}
+        <code className="t-mono-sm detection__command">framedoctor-engine detect</code> reports
+        which process would be measured, and which requirement is unmet when none would be. It
+        starts no capture and records nothing.
+      </p>
+    </section>
   );
 }
 
