@@ -43,6 +43,8 @@ export type BridgeMessage = TickMessage | ConnectionMessage;
 interface WebViewHost {
   addEventListener(type: 'message', handler: (event: { data: unknown }) => void): void;
   removeEventListener(type: 'message', handler: (event: { data: unknown }) => void): void;
+  /** The only way this page makes anything happen. Used by `control.ts` and nowhere else. */
+  postMessage(message: unknown): void;
 }
 
 declare global {

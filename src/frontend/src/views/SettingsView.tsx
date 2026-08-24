@@ -1,4 +1,11 @@
-import { useEffect, useState, type JSX } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
+import {
+  canControl,
+  getSettings,
+  setSetting,
+  type EngineSettings as LiveSettings,
+  type SettingKey,
+} from '../telemetry/control';
 
 /**
  * Settings as the engine actually holds them.
@@ -6,7 +13,7 @@ import { useEffect, useState, type JSX } from 'react';
  * Read from the engine's own file rather than being told the values, so this screen cannot drift
  * away from what the engine would honour.
  */
-interface EngineSettings {
+interface FileSettings {
   readonly path: string;
   /** Whether a settings file has been written yet. Distinct from every value being default. */
   readonly exists: boolean;
@@ -17,27 +24,37 @@ interface EngineSettings {
   readonly simulationMode: boolean;
 }
 
+/** What kind of control a setting takes. */
+type SettingKind =
+  | { readonly kind: 'number'; readonly min: number; readonly max: number; readonly unit: string }
+  | { readonly kind: 'flag' };
+
 interface SettingRow {
-  readonly key: string;
+  readonly key: SettingKey;
   readonly label: string;
   readonly value: string;
   readonly explanation: string;
+  readonly control: SettingKind;
+  /** The value a control starts from, in the form the engine parses. */
+  readonly raw: string;
 }
 
 const base = import.meta.env.BASE_URL ?? '/';
 
-async function loadSettings(): Promise<EngineSettings> {
+async function loadFromFile(): Promise<FileSettings> {
   const response = await fetch(`${base}scenarios/settings.json`);
   if (!response.ok) throw new Error(`Settings unavailable (${response.status})`);
-  return (await response.json()) as EngineSettings;
+  return (await response.json()) as FileSettings;
 }
 
-function rows(settings: EngineSettings): SettingRow[] {
+function rows(settings: FileSettings): SettingRow[] {
   return [
     {
       key: 'retention-days',
       label: 'Keep full frame data for',
       value: `${settings.highResolutionRetentionDays} days`,
+      raw: String(settings.highResolutionRetentionDays),
+      control: { kind: 'number', min: 1, max: 365, unit: 'days' },
       explanation:
         'After this, a session keeps its summary and its events but not the frame-by-frame ' +
         'series. The summary is never deleted — reclaiming space by destroying the session ' +
@@ -49,6 +66,8 @@ function rows(settings: EngineSettings): SettingRow[] {
       key: 'auto-start',
       label: 'Start measuring when a game is detected',
       value: settings.autoStartOnGameDetected ? 'yes' : 'no',
+      raw: String(settings.autoStartOnGameDetected),
+      control: { kind: 'flag' },
       explanation:
         'Off by default. A tool that starts recording without being asked is one you have to ' +
         'trust rather than verify.',
@@ -57,6 +76,8 @@ function rows(settings: EngineSettings): SettingRow[] {
       key: 'keep-measuring',
       label: 'Keep measuring with the window closed',
       value: settings.keepMeasuringWithWindowClosed ? 'yes' : 'no',
+      raw: String(settings.keepMeasuringWithWindowClosed),
+      control: { kind: 'flag' },
       explanation:
         'The measuring process is separate from this window. With this on, closing the window ' +
         'disconnects the display and the session keeps running.',
@@ -65,6 +86,8 @@ function rows(settings: EngineSettings): SettingRow[] {
       key: 'live-window-seconds',
       label: 'Live timeline shows',
       value: `${settings.liveWindowSeconds} seconds`,
+      raw: String(settings.liveWindowSeconds),
+      control: { kind: 'number', min: 15, max: 300, unit: 'seconds' },
       explanation:
         'Between 15 and 300. Below 15 a stutter and its recovery do not fit on screen ' +
         'together; above 300 one pixel column spans more than a second of frames and stops ' +
@@ -77,6 +100,8 @@ function rows(settings: EngineSettings): SettingRow[] {
       // banner above says which one is in force; this row would otherwise appear to contradict
       // it, and would do so in the reassuring direction.
       value: `${settings.simulationMode ? 'on' : 'off'} (saved)`,
+      raw: String(settings.simulationMode),
+      control: { kind: 'flag' },
       explanation:
         'Runs the whole product against synthetic telemetry instead of this machine. Every ' +
         'number stays real pipeline output; only the input is invented, and the interface says ' +
@@ -85,14 +110,20 @@ function rows(settings: EngineSettings): SettingRow[] {
   ];
 }
 
+/** Folds a live reading from the engine over the values read from the file. */
+function merge(file: FileSettings, live: LiveSettings | null): FileSettings {
+  return live === null ? file : { ...file, ...live };
+}
+
 /**
  * Settings, and how to change them.
  *
- * There are no controls on this screen yet, and there are no controls that pretend to be. The
- * command channel from this window to the measuring process is not built, so a switch here would
- * be a switch that does nothing — the exact thing invariant 9 forbids. What is here instead is
- * the current value of every setting, read from the engine's own file, and the command that
- * changes it.
+ * Two modes, and the screen says which one it is in. Connected to a measuring process, every
+ * setting is a real control whose result is whatever the engine stored — including when that
+ * differs from what was asked for, which the engine reports and this screen repeats verbatim.
+ * Not connected, there are no controls at all rather than dead ones, and the command that
+ * changes each setting is shown instead. A switch that does nothing is the exact thing invariant
+ * 9 forbids, and a disabled switch is still a switch.
  *
  * The list is short on purpose. Every setting is one where the honest answer genuinely depends
  * on the person. There is deliberately no detection-sensitivity control: the threshold is
@@ -100,13 +131,49 @@ function rows(settings: EngineSettings): SettingRow[] {
  * away the stutters instead of finding them.
  */
 export function SettingsView(): JSX.Element {
-  const [settings, setSettings] = useState<EngineSettings | null>(null);
+  const [file, setFile] = useState<FileSettings | null>(null);
+  const [live, setLive] = useState<LiveSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<SettingKey | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const connected = canControl();
 
   useEffect(() => {
-    loadSettings()
-      .then(setSettings)
+    loadFromFile()
+      .then(setFile)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+
+    // Only when there is something to ask. An unhosted page answers instantly with a refusal,
+    // and showing that as an error on first load would report a disconnection that is simply
+    // this page running in a browser.
+    if (canControl()) {
+      getSettings().then(
+        (response) => {
+          if (response.settings) setLive(response.settings);
+          else if (response.error) setRefusal(response.error);
+        },
+        () => undefined,
+      );
+    }
+  }, []);
+
+  const change = useCallback(async (key: SettingKey, value: string): Promise<void> => {
+    setBusy(key);
+    setRefusal(null);
+    setNote(null);
+
+    const response = await setSetting(key, value);
+
+    setBusy(null);
+
+    // The settings the engine reports, whether it agreed or refused. A refusal carries the real
+    // values so the screen can put back what it just showed, rather than leaving a rejected
+    // number on display.
+    if (response.settings) setLive(response.settings);
+    if (!response.ok) setRefusal(response.error ?? 'The change was refused.');
+    if (response.note) setNote(response.note);
   }, []);
 
   if (error) {
@@ -117,7 +184,9 @@ export function SettingsView(): JSX.Element {
     );
   }
 
-  if (!settings) return <div className="app__loading t-body">Reading settings…</div>;
+  if (!file) return <div className="app__loading t-body">Reading settings…</div>;
+
+  const settings = merge(file, live);
 
   return (
     <div className="settings">
@@ -134,9 +203,26 @@ export function SettingsView(): JSX.Element {
           {settings.exists
             ? 'These are the values saved on this machine. A measuring process started now would use them.'
             : 'No settings file has been written yet, so these are the defaults a measuring process would start from.'}{' '}
-          Changing them from this window is not built yet, so nothing here is a switch that does
-          nothing — the command that changes each one is shown instead.
+          {connected
+            ? 'Changes go straight to the measuring process, which decides what it will accept — what you see afterwards is what it actually stored.'
+            : 'This window is not connected to a measuring process, so there is nothing here to change it with. The command that changes each setting is shown instead.'}
         </p>
+
+        {refusal ? (
+          <p className="t-body settings__refusal" role="alert">
+            {refusal}
+          </p>
+        ) : null}
+
+        {/*
+          A clamp is not a failure and is not silence either. Reporting the value that was asked
+          for would be the interface repeating a change that did not happen.
+        */}
+        {note ? (
+          <p className="t-body-sm settings__note" role="status">
+            {note}
+          </p>
+        ) : null}
       </header>
 
       <div className="settings__body">
@@ -146,9 +232,16 @@ export function SettingsView(): JSX.Element {
               <dt className="setting__label t-body-strong">{row.label}</dt>
               <dd className="setting__value t-metric-sm">{row.value}</dd>
               <dd className="setting__explanation t-body-sm">{row.explanation}</dd>
-              <dd className="setting__command t-mono-sm">
-                framedoctor-engine settings {row.key} &lt;value&gt;
-              </dd>
+
+              {connected ? (
+                <dd className="setting__control">
+                  <Control row={row} busy={busy === row.key} onChange={change} />
+                </dd>
+              ) : (
+                <dd className="setting__command t-mono-sm">
+                  framedoctor-engine settings {row.key} &lt;value&gt;
+                </dd>
+              )}
             </div>
           ))}
         </dl>
@@ -182,5 +275,79 @@ export function SettingsView(): JSX.Element {
         </aside>
       </div>
     </div>
+  );
+}
+
+/**
+ * The control for one setting.
+ *
+ * Rendered only when there is a measuring process to send to. A number commits on blur or on
+ * Enter rather than on every keystroke: typing "300" through "3" and "30" would otherwise send
+ * three requests, and the first two would be clamped up to the minimum in front of the user.
+ */
+function Control({
+  row,
+  busy,
+  onChange,
+}: {
+  readonly row: SettingRow;
+  readonly busy: boolean;
+  readonly onChange: (key: SettingKey, value: string) => Promise<void>;
+}): JSX.Element {
+  // Null means "show what the engine holds". Anything else is what the user is part-way through
+  // typing. Keeping it as an override rather than a copy means there is no second source of
+  // truth to fall out of date, and no stale value captured in a callback.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  // Deliberately not optimistic. The control shows what the engine has confirmed, never what it
+  // was asked for: a switch that moves before the change lands is a switch that lies whenever the
+  // change is refused or clamped, which is exactly when it matters.
+  if (row.control.kind === 'flag') {
+    const on = row.raw === 'true';
+
+    return (
+      <label className="setting__flag t-body-sm">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => onChange(row.key, String(e.target.checked))}
+        />
+        <span>{on ? 'on' : 'off'}</span>
+      </label>
+    );
+  }
+
+  // Resynced after every attempt, not only after an accepted one. A refused change leaves
+  // `row.raw` unchanged, so without this the field keeps the rejected text — an empty box
+  // sitting next to a value that says 365, with nothing to say which one is real.
+  // Cleared after every attempt, not only after an accepted one. A refused change leaves
+  // `row.raw` unchanged, so without this the field keeps the rejected text — an empty box sitting
+  // next to a value that says 365 days, with nothing to say which one is real.
+  const commit = () => {
+    if (draft === null || draft === row.raw) return;
+
+    void onChange(row.key, draft).then(() => setDraft(null));
+  };
+
+  return (
+    <span className="setting__number">
+      <input
+        className="t-mono-sm"
+        type="number"
+        inputMode="numeric"
+        min={row.control.min}
+        max={row.control.max}
+        value={draft ?? row.raw}
+        disabled={busy}
+        aria-label={row.label}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+      />
+      <span className="setting__unit t-body-sm">{row.control.unit}</span>
+    </span>
   );
 }

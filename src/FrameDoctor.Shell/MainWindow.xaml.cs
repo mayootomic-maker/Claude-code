@@ -26,6 +26,7 @@ public partial class MainWindow : Window, IDisposable
     private const string VirtualHost = "app.framedoctor.local";
 
     private TelemetryBridge? _bridge;
+    private ControlBridge? _control;
 
     public MainWindow()
     {
@@ -132,6 +133,11 @@ public partial class MainWindow : Window, IDisposable
         _bridge = new TelemetryBridge(core);
         _bridge.Start();
 
+        // The other direction, on its own pipe. Started before navigation so a settings screen
+        // opened immediately has somewhere to send its first request.
+        _control = new ControlBridge(core);
+        _control.Start();
+
         core.Navigate($"https://{VirtualHost}/index.html");
     }
 
@@ -155,6 +161,8 @@ public partial class MainWindow : Window, IDisposable
     {
         _bridge?.Dispose();
         _bridge = null;
+        _control?.Dispose();
+        _control = null;
         GC.SuppressFinalize(this);
     }
 }

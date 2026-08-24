@@ -1757,6 +1757,78 @@ body {
   user-select: all;
 }
 
+/* The controls, shown only when there is a measuring process to send to.
+   A disabled switch is still a switch, so when there is nothing to send to
+   these are not rendered at all and the command takes their place. */
+.setting__control {
+  grid-column: 1 / -1;
+  margin: var(--sp-2) 0 0;
+}
+
+.setting__flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.setting__flag input {
+  accent-color: var(--sev-selected);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.setting__number {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.setting__number input {
+  width: 8ch;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: var(--border-default);
+  border-radius: var(--r-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.setting__number input:focus-visible,
+.setting__flag input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.setting__control input:disabled {
+  opacity: 55%;
+  cursor: progress;
+}
+
+.setting__unit {
+  color: var(--text-tertiary);
+}
+
+/* A refusal and a clamp are different facts and are told apart by weight, not
+   only by colour: one is the engine saying no, the other is it saying yes to
+   something adjacent. */
+.settings__refusal {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  max-width: 88ch;
+  color: var(--sev-critical);
+  background: var(--sev-critical-wash);
+  border-radius: var(--r-sm);
+}
+
+.settings__note {
+  margin: var(--sp-3) 0 0;
+  max-width: 88ch;
+  color: var(--sev-warning);
+}
+
 .settings__aside {
   padding: var(--sp-4);
   background: var(--bg-raised);

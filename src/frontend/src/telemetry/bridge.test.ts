@@ -119,6 +119,9 @@ describe('connectBridge', () => {
       webview: {
         addEventListener: (_type, handler) => listeners.push(handler),
         removeEventListener: () => {},
+        // This module never sends. The stub carries the member so the host type stays one
+        // shape — a second, narrower shape here would let the real one grow unnoticed.
+        postMessage: () => {},
       },
     };
 
@@ -148,6 +151,9 @@ describe('connectBridge', () => {
       webview: {
         addEventListener: (_type, handler) => listeners.push(handler),
         removeEventListener: () => {},
+        // This module never sends. The stub carries the member so the host type stays one
+        // shape — a second, narrower shape here would let the real one grow unnoticed.
+        postMessage: () => {},
       },
     };
 

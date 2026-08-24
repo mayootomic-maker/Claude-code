@@ -73,8 +73,8 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Event inspector | Done | Stepped metric panels at native rates; absent metrics keep their panel |
 | Sessions | Done | Reads a fixture round-tripped through the real catalog |
 | System | Done | Every metric listed with its source, working or not |
-| Settings | Done | Real backend; no controls, because the command channel is not built |
-| Screenshot harness | Done | 26 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
+| Settings | Done | Real controls when a measuring process is there, and none at all when it is not — a disabled switch is still a switch |
+| Screenshot harness | Done | 27 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
 
 ## Stage 5 — collection and storage
 
@@ -100,7 +100,7 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | `LiveSession` — bounded streaming pipeline | Done | 15 tests proving it matches the batch analyzer, confidence included |
 | Collector loop | Done | One thread, rented buffers, worst-poll duration tracked |
 | Telemetry pipe server | Done — **Needs Windows** | One client, engine outlives it |
-| `framedoctor-engine` verbs | Done | `probe`, `serve`, `simulate`, `sessions`, `settings`, `reconcile` |
+| `framedoctor-engine` verbs | Done | `probe`, `serve`, `simulate`, `detect`, `sessions`, `retain`, `settings`, `reconcile` |
 | WPF shell + WebView2 | Compiles — **Needs Windows** | Has never been launched; every visual judgement so far is from headless screenshots |
 | Telemetry bridge | Done | 10 tests; a claimed reading with no number renders as absent, never as zero |
 
@@ -192,6 +192,28 @@ confirmed would have its compositor stalls reported as the user's frame pacing.
 | When it runs | Done | Engine start and after a session is recorded. Never on a timer: deleting files while a game runs is the disk activity this product exists to diagnose |
 | `retain` verb | Done | The same pass on demand, so its result is inspectable rather than only ever a side effect |
 
+## Stage 12 — the control channel
+
+| Item | Status | Evidence |
+|---|---|---|
+| Command surface | Done | Three commands, and nothing on the channel can change the system — power policy and process priority go through the change journal and have no door here |
+| Framing | Done | 22 tests; a 64 KB cap, validated before anything is allocated, so a four-byte header claiming two gigabytes costs four bytes to reject |
+| A bad frame ends the connection | Done | There is no way to resynchronise a length-prefixed stream after a wrong length. Malformed JSON is different — the framing held, so it is answered and the connection continues |
+| An unknown command is named, not swallowed | Done | Mapped by an explicit switch rather than `Enum.Parse`, which would collapse "I do not have that command" into "your message was not valid JSON" |
+| Every field is untrusted | Done | 32 handler tests; the key is looked up in a fixed list rather than reflected onto a property, so `HighResolutionRetentionDays` is refused alongside `../../etc/passwd` |
+| One settings implementation | Done | Shared by the command line and the channel. Two would drift, and the drift would be the window accepting a key nobody reviewed |
+| A clamp is reported | Done | The caller asked for 9,999 days and got 365, and is told so. Silently storing something else is a lie the interface would repeat |
+| A refusal carries the real values | Done | So the screen can put back what it just showed instead of leaving a rejected number up for another round trip |
+| Serve loop | Done | 10 tests over an in-memory stream pair, including both framing failures and the counters that make a misbehaving peer visible |
+| Shell relay | Written — **Needs Windows** | A relay, not an authority: it does not decide what is valid, because the engine does and that is where it is tested |
+| Frontend client | Done | 11 tests; answers are matched by id, telemetry ticks on the same event are ignored, and a request that goes unanswered resolves rather than hanging |
+| Editable settings | Done | Real controls when connected, no controls at all when not. Never optimistic: the control shows what the engine confirmed, because a switch that moves before the change lands lies exactly when it is refused or clamped |
+
+The second screenshot found the defect the first one hid: after a refusal the
+number field kept the rejected text while the value beside it showed what the
+engine held, with nothing on screen to say which was real. The draft is now an
+override cleared after every attempt rather than a copy of the value.
+
 ## Council Phase E — what the review found
 
 Three council members reviewed the built product against real screenshots and
@@ -226,8 +248,6 @@ class, and it exists now.
 
 | Item | Why it is not here |
 |---|---|
-| Command channel, shell → engine | Settings are therefore read-only in the interface, and the screen says so rather than showing controls that would do nothing |
-| A command channel from the window to the engine | Settings are read-only in the interface, and the screen says so rather than showing controls that would do nothing |
 | Opening a stored session from the Sessions list | Needs a reader for the segment files. The rows are deliberately not styled as clickable |
 | AMD and Intel GPU sources | The seam and the shared throttle vocabulary are in place for them |
 | Tier 2 sensors (CPU temperature) | Requires a kernel driver. Reported as unavailable with the reason instead |

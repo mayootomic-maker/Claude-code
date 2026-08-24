@@ -266,8 +266,10 @@ test('settings shows values and the command to change them, not dead switches', 
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.locator('.settings')).toBeVisible({ timeout: 5_000 });
 
-  // No form controls at all on this screen, disabled or otherwise.
+  // No form controls at all on this screen, disabled or otherwise. A disabled switch is still a
+  // switch, and there is nothing here for one to talk to.
   await expect(page.locator('.settings input, .settings select, .settings__list button')).toHaveCount(0);
+  await expect(page.locator('.settings__lede')).toContainText('not connected to a measuring process');
 
   // Every setting carries the command that changes it.
   const settings = page.locator('.setting');
@@ -350,4 +352,121 @@ test('the baseline panel states its verdict and its own standing together', asyn
   await page.waitForTimeout(200);
 
   await page.locator('.baseline').screenshot({ path: `${OUT}/baseline.png` });
+});
+
+/**
+ * The same screen with a measuring process on the other end.
+ *
+ * The host object is stubbed, and the stub answers the way the engine does — including refusing
+ * a value and clamping one. That is the point: this asserts the screen shows what the engine
+ * actually stored, not what was asked for, which is the failure mode a settings screen has.
+ */
+test('settings become real controls when there is something to send to', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
+  await page.addInitScript(() => {
+    const listeners: Array<(event: { data: unknown }) => void> = [];
+
+    const settings = {
+      highResolutionRetentionDays: 14,
+      autoStartOnGameDetected: false,
+      keepMeasuringWithWindowClosed: true,
+      liveWindowSeconds: 60,
+      simulationMode: false,
+    };
+
+    (window as unknown as { chrome: unknown }).chrome = {
+      webview: {
+        addEventListener: (_type: string, handler: (event: { data: unknown }) => void) =>
+          listeners.push(handler),
+        removeEventListener: () => {},
+        postMessage: (message: { id: number; command: string; key?: string; value?: string }) => {
+          let response: Record<string, unknown> = { id: message.id, ok: true, settings };
+
+          if (message.command === 'SetSetting') {
+            if (message.key === 'retention-days') {
+              // Mirrors int.TryParse, which is what the engine does: an empty field, a decimal
+              // and "1e3" are all refused rather than coerced.
+              const asked = /^-?\d+$/.test(message.value ?? '') ? Number(message.value) : NaN;
+              if (!Number.isInteger(asked)) {
+                response = {
+                  id: message.id,
+                  ok: false,
+                  error: 'retention-days takes a whole number of days, from 1 to 365.',
+                  settings,
+                };
+              } else {
+                const stored = Math.min(Math.max(asked, 1), 365);
+                settings.highResolutionRetentionDays = stored;
+                response = {
+                  id: message.id,
+                  ok: true,
+                  settings: { ...settings },
+                  note:
+                    asked === stored
+                      ? null
+                      : `${asked} is outside what retention-days accepts — a whole number of days, from 1 to 365. Stored ${stored}.`,
+                };
+              }
+            } else if (message.key === 'auto-start') {
+              settings.autoStartOnGameDetected = message.value === 'true';
+              response = { id: message.id, ok: true, settings: { ...settings } };
+            }
+          }
+
+          setTimeout(() => {
+            for (const handler of listeners) handler({ data: response });
+          }, 0);
+        },
+      },
+    };
+  });
+
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.locator('.settings')).toBeVisible({ timeout: 5_000 });
+
+  await expect(page.locator('.settings__lede')).toContainText('what it actually stored');
+
+  // Real controls, and the command lines are gone — they were the substitute for these.
+  await expect(page.locator('.setting__control input')).toHaveCount(5);
+  await expect(page.locator('.setting__command')).toHaveCount(0);
+
+  // A flag round-trips. Clicked rather than checked, because the control does not move until
+  // the engine confirms — showing a value it has not stored is the failure a settings screen has.
+  await page.locator('.setting__flag input').first().click();
+  await expect(page.locator('.setting').filter({ hasText: 'Start measuring' }).locator('.setting__value'))
+    .toHaveText('yes');
+
+  // A clamped value shows what was stored, and says so rather than reporting what was asked for.
+  const days = page.locator('.setting__number input').first();
+  await days.fill('9999');
+  await days.blur();
+
+  await expect(page.locator('.settings__note')).toContainText('Stored 365');
+  await expect(
+    page.locator('.setting').filter({ hasText: 'Keep full frame data' }).locator('.setting__value'),
+  ).toHaveText('365 days');
+
+  // A refusal is shown as a refusal. Cleared rather than filled with letters, because a number
+  // input will not hold letters — which is the control doing its job, and leaves an empty field
+  // as the refusal a user can actually reach.
+  await days.fill('');
+  await days.blur();
+
+  await expect(page.locator('.settings__refusal')).toContainText('whole number of days');
+
+  // And the field goes back to what the engine holds, rather than keeping the rejected text
+  // beside a value that disagrees with it.
+  await expect(days).toHaveValue('365');
+  await expect(
+    page.locator('.setting').filter({ hasText: 'Keep full frame data' }).locator('.setting__value'),
+  ).toHaveText('365 days');
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(200);
+
+  await page.screenshot({ path: `${OUT}/settings-connected.png` });
 });

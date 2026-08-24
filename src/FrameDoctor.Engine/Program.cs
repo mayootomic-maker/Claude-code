@@ -194,16 +194,42 @@ static async Task<int> ServeWindows(string[] args)
     Console.WriteLine("  Ctrl-C to stop.");
     Console.WriteLine();
 
+    // The control channel runs beside the telemetry one, on its own pipe. A settings change must
+    // not wait behind a backlog of ten-hertz ticks: a control that takes effect a second late is
+    // one that appears not to work.
+    var settingsStore = new SettingsStore(SettingsPath(args));
+    var handler = new ControlHandler(settingsStore, ThisBuild());
+
+    handler.SettingsChanged += changed => Console.WriteLine(
+        $"  Settings changed: keeping frame data for {changed.HighResolutionRetentionDays} day(s), " +
+        $"live window {changed.LiveWindowSeconds} s.");
+
+    await using var control = new ControlServer(handler);
+
     var collecting = loop.RunAsync(cts.Token);
     var serving = ServeClients(server, session, cts.Token);
+    var controlling = control.RunAsync(cts.Token);
 
     try
     {
+        // The control channel is deliberately not in the race. A window disconnecting is not a
+        // reason to stop measuring — that is the whole point of the two-process split — so only
+        // collection ending or the telemetry stream ending stops the run.
         await Task.WhenAny(collecting, serving).ConfigureAwait(false);
     }
     catch (OperationCanceledException)
     {
         // Ctrl-C.
+    }
+
+    await cts.CancelAsync().ConfigureAwait(false);
+
+    try
+    {
+        await controlling.ConfigureAwait(false);
+    }
+    catch (OperationCanceledException)
+    {
     }
 
     var remaining = session.Complete();
@@ -213,6 +239,11 @@ static async Task<int> ServeWindows(string[] args)
     Console.WriteLine($"  {stats.FrameCount:N0} frames over {stats.Elapsed.TotalSeconds:F0} s");
     Console.WriteLine($"  {stats.StutterCount} stutter(s), {remaining.Count} closed at shutdown");
     Console.WriteLine($"  Worst single poll: {loop.WorstPollDuration.TotalMilliseconds:F2} ms");
+    Console.WriteLine(
+        $"  Control channel answered {control.RequestsAnswered} request(s)" +
+        (control.ConnectionsRefused > 0
+            ? $", and dropped {control.ConnectionsRefused} connection(s) that sent something unreadable"
+            : string.Empty) + ".");
 
     return 0;
 }
@@ -1109,40 +1140,21 @@ static int Settings(string[] args)
 
     // Returns the updated settings, or an explanation. A rejected value says what was expected
     // rather than repeating what was given.
+    // One implementation, shared with the control channel.
+    //
+    // Two would drift, and the way they would drift is that the window would accept a key the
+    // command line does not — which is exactly how a control channel grows a surface nobody
+    // reviewed.
     static (FrameDoctorSettings? Updated, string? Error) Apply(
         FrameDoctorSettings current, string key, string value)
     {
-        switch (key)
-        {
-            case "retention-days":
-                return int.TryParse(value, CultureInfo.InvariantCulture, out var days)
-                    ? (current with { HighResolutionRetentionDays = days }, null)
-                    : (null, "retention-days takes a whole number of days, from 1 to 365.");
+        var change = SettingsCommands.Apply(current, key, value);
 
-            case "live-window-seconds":
-                return int.TryParse(value, CultureInfo.InvariantCulture, out var seconds)
-                    ? (current with { LiveWindowSeconds = seconds }, null)
-                    : (null, "live-window-seconds takes a whole number of seconds, from 15 to 300.");
+        // A clamp is not a failure, and it is not silent either. The command line says so on the
+        // way past rather than reporting the value the user typed.
+        if (change.Note is { } note) Console.WriteLine($"  {note}");
 
-            case "auto-start":
-                return bool.TryParse(value, out var autoStart)
-                    ? (current with { AutoStartOnGameDetected = autoStart }, null)
-                    : (null, "auto-start takes true or false.");
-
-            case "keep-measuring":
-                return bool.TryParse(value, out var keep)
-                    ? (current with { KeepMeasuringWithWindowClosed = keep }, null)
-                    : (null, "keep-measuring takes true or false.");
-
-            case "simulation":
-                return bool.TryParse(value, out var simulation)
-                    ? (current with { SimulationMode = simulation }, null)
-                    : (null, "simulation takes true or false.");
-
-            default:
-                return (null,
-                    $"There is no setting called '{key}'. Run `settings` with no arguments to see them all.");
-        }
+        return (change.Updated, change.Error);
     }
 }
 
