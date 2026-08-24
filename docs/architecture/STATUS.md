@@ -264,6 +264,7 @@ These are not defects; they define how work is verified.
 | WiX builds MSIs on Windows only | The package definition is authored and the payload is produced; the MSI itself is not. |
 | No signing certificate | The binaries are unsigned, which Windows SmartScreen will warn about. |
 | Publish output is not committed | `packaging/out` was committed once by mistake and is now ignored; the 150 MB remains in the history until someone rewrites that commit. |
+| CI's browser is not this container's | The screenshot config resolves Chromium at runtime rather than naming the container's copy. Hard-coding it made every CI run fail to launch a browser, and the failure surfaced as a web-server timeout — which is why it survived eight runs. |
 
 ## Requires Windows validation
 
