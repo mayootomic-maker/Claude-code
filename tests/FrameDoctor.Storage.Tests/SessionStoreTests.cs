@@ -168,6 +168,59 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_refused_file_is_not_left_open()
+    {
+        // The file a refusal was about is very likely one of the user's own documents — that is
+        // the whole reason SQLITE_NOTADB is refused instead of recovered from. Holding it open
+        // afterwards means they cannot move, rename or delete it while FrameDoctor is running.
+        //
+        // The original bug was invisible on Linux, where an open file can still be unlinked, so
+        // asserting deletability alone would be a test with teeth on one platform only. The
+        // descriptor count below is what makes it fail on both.
+        var path = Path("not-a-store.db");
+        File.WriteAllBytes(path, new byte[8192]);
+
+        Should.Throw<Exception>(() => SessionStore.Open(path));
+
+        OpenDescriptorsFor(path).ShouldBe(0);
+
+        // And the plain consequence, which is what a user would actually notice. This is the
+        // assertion that failed on Windows, in Dispose, before the fix.
+        Should.NotThrow(() => File.Delete(path));
+    }
+
+    /// <summary>
+    /// How many descriptors this process still holds on a path.
+    /// </summary>
+    /// <remarks>
+    /// Reads <c>/proc/self/fd</c>, so it answers only on Linux and returns zero elsewhere. That
+    /// asymmetry is deliberate rather than a gap: on Windows a leaked handle is caught by the
+    /// delete above, and on Linux nothing else would catch it at all.
+    /// </remarks>
+    private static int OpenDescriptorsFor(string path)
+    {
+        const string fdDir = "/proc/self/fd";
+        if (!Directory.Exists(fdDir)) return 0;
+
+        var target = System.IO.Path.GetFullPath(path);
+        var count = 0;
+
+        foreach (var fd in Directory.GetFiles(fdDir).Concat(Directory.GetDirectories(fdDir)))
+        {
+            // A descriptor can close between listing and resolving, which is not a failure —
+            // it is a descriptor that is no longer open, which is what we are hoping for.
+            try
+            {
+                if (File.ResolveLinkTarget(fd, returnFinalTarget: true)?.FullName == target) count++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        return count;
+    }
+
+    [Fact]
     public void Purging_high_resolution_data_keeps_the_session_summary()
     {
         // Retention must never destroy the session index: that is the regression history.

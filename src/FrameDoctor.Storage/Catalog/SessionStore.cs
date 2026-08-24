@@ -76,7 +76,16 @@ public sealed class SessionStore : IDisposable
 
         if (isNew)
         {
-            Create(connection, buildId);
+            try
+            {
+                Create(connection, buildId);
+            }
+            catch
+            {
+                connection.Dispose();
+                throw;
+            }
+
             return new SessionStore(connection,
                 new StoreOpenResult(StoreAccess.ReadWrite, StoreVersion.Schema, buildId, null));
         }
@@ -100,6 +109,22 @@ public sealed class SessionStore : IDisposable
         {
             connection.Dispose();
             return StartFreshBeside(path, buildId, schema: 0, writtenBy: null);
+        }
+        catch
+        {
+            // Every refusal closes the file it refused.
+            //
+            // This is the path a file that was never a database takes, and it is the common one:
+            // the caller pointed us at the wrong file. SQLite throws SQLITE_NOTADB out of the
+            // first pragma, one line before the explicit dispose in OpenExisting that was
+            // supposed to cover this — so the connection escaped, still open, on every refusal.
+            //
+            // Invisible on Linux, where an open file can be unlinked. On Windows the handle is a
+            // lock: FrameDoctor would hold the user's own document open for the lifetime of the
+            // process, and they could not move, rename or delete it. Found by running the suite
+            // on Windows, where it failed in the test's cleanup rather than its body.
+            connection.Dispose();
+            throw;
         }
     }
 
@@ -127,7 +152,16 @@ public sealed class SessionStore : IDisposable
     {
         var alternate = AlternatePathFor(path);
         var fresh = Connect(alternate);
-        Create(fresh, buildId);
+
+        try
+        {
+            Create(fresh, buildId);
+        }
+        catch
+        {
+            fresh.Dispose();
+            throw;
+        }
 
         return new SessionStore(fresh,
             new StoreOpenResult(StoreAccess.StartedNewStore, schema, writtenBy, alternate));
