@@ -1333,7 +1333,8 @@ body {
 
 .sessions {
   display: grid;
-  grid-template-rows: auto 1fr;
+  /* head, baseline panel, then the table taking what is left. */
+  grid-template-rows: auto auto 1fr;
   min-height: 0;
   height: 100%;
   overflow: hidden;
@@ -1443,6 +1444,167 @@ body {
 
 .sessions__excluded {
   color: var(--sev-warning);
+}
+
+/* ============================================================================
+   Baseline
+
+   The band, not the trend line, is the subject. A point inside the band has not
+   been shown to have moved, and the layout has to make that reading effortless
+   at a glance — which is why the band is a filled region and the points are
+   points, unconnected. Consecutive sessions are separate measurements days
+   apart; a line between them would draw a continuity nothing measured.
+   ============================================================================ */
+
+.baseline {
+  margin: 0 var(--gutter-view) var(--sp-6);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  border: var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+}
+
+.baseline__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+
+.baseline__head h2 {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
+/* Colour carries meaning only. Most verdicts are "no change", which gets the
+   neutral treatment and no accent at all. */
+.baseline__verdict {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.baseline__verdict[data-severity='critical'] {
+  color: var(--sev-critical);
+}
+
+.baseline__verdict[data-severity='warning'] {
+  color: var(--sev-warning);
+}
+
+.baseline__verdict[data-severity='muted'] {
+  color: var(--text-tertiary);
+}
+
+.baseline__detail {
+  margin: 0 0 var(--sp-4);
+  max-width: 92ch;
+  color: var(--text-primary);
+}
+
+.baseline__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-4);
+}
+
+.baseline__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.baseline__figure-label {
+  color: var(--text-tertiary);
+}
+
+.baseline__figure-value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.baseline__figure-unit {
+  margin-left: 0.35em;
+  color: var(--text-tertiary);
+  font-size: 0.82em;
+}
+
+/* Absent is words, and words that do not look like a number. */
+.baseline__figure-absent {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.baseline__strip {
+  margin: 0;
+}
+
+.baseline__strip svg {
+  display: block;
+  background: var(--chart-plot-bg);
+  border: 1px solid var(--line-hairline);
+  border-radius: var(--r-sm);
+}
+
+/* A stroke, not a fill: it marks the boundary without implying a thickness in
+   milliseconds, so a band too thin to fill still reads correctly. */
+.baseline__edge {
+  stroke: var(--sev-normal);
+  stroke-opacity: 45%;
+  stroke-width: 1;
+}
+
+.baseline__band {
+  fill: var(--sev-normal-wash);
+}
+
+.baseline__centre {
+  stroke: var(--chart-baseline);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.baseline__point {
+  fill: var(--chart-trace);
+  fill-opacity: 45%;
+}
+
+/* Only the newest session is emphasised. Colouring every point by its own
+   verdict would turn a history into a rainbow. */
+.baseline__point[data-latest] {
+  fill: var(--text-primary);
+  fill-opacity: 100%;
+  stroke: var(--bg-panel);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.baseline__point[data-severity='critical'] {
+  fill: var(--sev-critical);
+}
+
+.baseline__point[data-severity='warning'] {
+  fill: var(--sev-warning);
+}
+
+.baseline__caption {
+  margin-top: var(--sp-2);
+  color: var(--text-tertiary);
+}
+
+/* Always shown, including when the baseline is trusted. A qualification that
+   appears only when the news is bad teaches a reader to skip it. */
+.baseline__trust {
+  margin: var(--sp-3) 0 0;
+  max-width: 92ch;
+  color: var(--text-tertiary);
+}
+
+.baseline__trust[data-trust='insufficient'],
+.baseline__trust[data-trust='provisional'] {
+  color: var(--text-secondary);
 }
 
 /* ============================================================================

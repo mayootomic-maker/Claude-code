@@ -1,0 +1,272 @@
+[
+  {
+    "id": "f4cff717-d3ff-4f06-9aa6-0af1077b88bb",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 11,
+    "epochUtcTicks": 639224043747486925,
+    "frameCount": 12973,
+    "medianFrameTimeMs": 6.929683096109086,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 0,
+      "trust": "Insufficient",
+      "exists": false,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": null,
+      "spreadMs": null,
+      "describe": "Not enough sessions yet: 0 of 3. A number built from fewer would describe the sessions rather than the machine."
+    },
+    "comparison": {
+      "verdict": "NoBaseline",
+      "metric": "median frame time",
+      "baselineValue": null,
+      "sessionValue": 6.929683096109086,
+      "differenceMs": null,
+      "noiseMs": null,
+      "effectSize": null,
+      "detail": "Not enough sessions yet: 0 of 3. A number built from fewer would describe the sessions rather than the machine."
+    }
+  },
+  {
+    "id": "e8800ca0-0b90-4250-9b17-a4b8921b09e4",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 29,
+    "epochUtcTicks": 639224907747486925,
+    "frameCount": 12964,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 1,
+      "trust": "Insufficient",
+      "exists": false,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": null,
+      "spreadMs": null,
+      "describe": "Not enough sessions yet: 1 of 3. A number built from fewer would describe the sessions rather than the machine."
+    },
+    "comparison": {
+      "verdict": "NoBaseline",
+      "metric": "median frame time",
+      "baselineValue": null,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": null,
+      "noiseMs": null,
+      "effectSize": null,
+      "detail": "Not enough sessions yet: 1 of 3. A number built from fewer would describe the sessions rather than the machine."
+    }
+  },
+  {
+    "id": "e384891d-ab1d-45cc-9238-1e920f8d5dc3",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 47,
+    "epochUtcTicks": 639225771747486925,
+    "frameCount": 12974,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 2,
+      "trust": "Insufficient",
+      "exists": false,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": null,
+      "spreadMs": null,
+      "describe": "Not enough sessions yet: 2 of 3. A number built from fewer would describe the sessions rather than the machine."
+    },
+    "comparison": {
+      "verdict": "NoBaseline",
+      "metric": "median frame time",
+      "baselineValue": null,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": null,
+      "noiseMs": null,
+      "effectSize": null,
+      "detail": "Not enough sessions yet: 2 of 3. A number built from fewer would describe the sessions rather than the machine."
+    }
+  },
+  {
+    "id": "f1271929-1fd5-43e8-bda1-dfddc6cbe4b9",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 63,
+    "epochUtcTicks": 639226635747486925,
+    "frameCount": 12978,
+    "medianFrameTimeMs": 6.929683096109086,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 3,
+      "trust": "Provisional",
+      "exists": true,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": 6.945308106016608,
+      "spreadMs": 0,
+      "describe": "Built from 3 sessions \u2014 enough to show what normal looks like, not enough to call a change a regression. That needs 7."
+    },
+    "comparison": {
+      "verdict": "WithinNoise",
+      "metric": "median frame time",
+      "baselineValue": 6.945308106016608,
+      "sessionValue": 6.929683096109086,
+      "differenceMs": -0.015625009907521914,
+      "noiseMs": 0.1,
+      "effectSize": -0.15625009907521914,
+      "detail": "6.93 ms against a usual 6.95 ms. Differences below 0.10 ms are smaller than the frame-time source resolves, so nothing has been shown to change."
+    }
+  },
+  {
+    "id": "a844b4f0-0691-46c2-91b1-65521b625d57",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 81,
+    "epochUtcTicks": 639227499747486925,
+    "frameCount": 12970,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 4,
+      "trust": "Provisional",
+      "exists": true,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": 6.937495601062847,
+      "spreadMs": 0.007812504953760957,
+      "describe": "Built from 4 sessions \u2014 enough to show what normal looks like, not enough to call a change a regression. That needs 7."
+    },
+    "comparison": {
+      "verdict": "WithinNoise",
+      "metric": "median frame time",
+      "baselineValue": 6.937495601062847,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": 0.007812504953760957,
+      "noiseMs": 0.1,
+      "effectSize": 0.07812504953760957,
+      "detail": "6.95 ms against a usual 6.94 ms. Differences below 0.10 ms are smaller than the frame-time source resolves, so nothing has been shown to change."
+    }
+  },
+  {
+    "id": "1ef416fc-a21f-495f-a140-8942496596d2",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 97,
+    "epochUtcTicks": 639228363747486925,
+    "frameCount": 12960,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 5,
+      "trust": "Provisional",
+      "exists": true,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": 6.945308106016608,
+      "spreadMs": 0,
+      "describe": "Built from 5 sessions \u2014 enough to show what normal looks like, not enough to call a change a regression. That needs 7."
+    },
+    "comparison": {
+      "verdict": "WithinNoise",
+      "metric": "median frame time",
+      "baselineValue": 6.945308106016608,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": 0,
+      "noiseMs": 0.1,
+      "effectSize": 0,
+      "detail": "6.95 ms against a usual 6.95 ms. Differences below 0.10 ms are smaller than the frame-time source resolves, so nothing has been shown to change."
+    }
+  },
+  {
+    "id": "8e96f880-4c0a-4fbf-b0a4-3c9c2b8cf183",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 113,
+    "epochUtcTicks": 639229227747486925,
+    "frameCount": 12966,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 6,
+      "trust": "Provisional",
+      "exists": true,
+      "mayDeclareRegression": false,
+      "medianFrameTimeMs": 6.945308106016608,
+      "spreadMs": 0,
+      "describe": "Built from 6 sessions \u2014 enough to show what normal looks like, not enough to call a change a regression. That needs 7."
+    },
+    "comparison": {
+      "verdict": "WithinNoise",
+      "metric": "median frame time",
+      "baselineValue": 6.945308106016608,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": 0,
+      "noiseMs": 0.1,
+      "effectSize": 0,
+      "detail": "6.95 ms against a usual 6.95 ms. Differences below 0.10 ms are smaller than the frame-time source resolves, so nothing has been shown to change."
+    }
+  },
+  {
+    "id": "d8f29031-5982-46a8-bf8d-e998e1539c25",
+    "game": "Simulated title",
+    "scenario": "healthy",
+    "seed": 131,
+    "epochUtcTicks": 639230091747486925,
+    "frameCount": 12964,
+    "medianFrameTimeMs": 6.945308106016608,
+    "p99FrameTimeMs": 7.382808366400959,
+    "stutterCount": 0,
+    "baseline": {
+      "sessionCount": 7,
+      "trust": "Trusted",
+      "exists": true,
+      "mayDeclareRegression": true,
+      "medianFrameTimeMs": 6.945308106016608,
+      "spreadMs": 0,
+      "describe": "7 sessions of history \u2014 enough for a difference this size to be worth acting on."
+    },
+    "comparison": {
+      "verdict": "WithinNoise",
+      "metric": "median frame time",
+      "baselineValue": 6.945308106016608,
+      "sessionValue": 6.945308106016608,
+      "differenceMs": 0,
+      "noiseMs": 0.1,
+      "effectSize": 0,
+      "detail": "6.95 ms against a usual 6.95 ms. Differences below 0.10 ms are smaller than the frame-time source resolves, so nothing has been shown to change."
+    }
+  },
+  {
+    "id": "873051f5-f3c1-428e-a047-bcd6f19755d9",
+    "game": "Simulated title",
+    "scenario": "gpu-thermal-throttle",
+    "seed": 20260823,
+    "epochUtcTicks": 639230955747486925,
+    "frameCount": 11894,
+    "medianFrameTimeMs": 9.703112419476547,
+    "p99FrameTimeMs": 10.48436335692349,
+    "stutterCount": 3,
+    "baseline": {
+      "sessionCount": 8,
+      "trust": "Trusted",
+      "exists": true,
+      "mayDeclareRegression": true,
+      "medianFrameTimeMs": 6.945308106016608,
+      "spreadMs": 0,
+      "describe": "8 sessions of history \u2014 enough for a difference this size to be worth acting on."
+    },
+    "comparison": {
+      "verdict": "Regression",
+      "metric": "median frame time",
+      "baselineValue": 6.945308106016608,
+      "sessionValue": 9.703112419476547,
+      "differenceMs": 2.757804313459939,
+      "noiseMs": 0.1,
+      "effectSize": 27.57804313459939,
+      "detail": "2.76 ms slower than the usual 6.95 ms, across 8 sessions. That is 27.6 times the smallest difference the frame-time source resolves."
+    }
+  }
+]

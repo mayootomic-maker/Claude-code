@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="FrameDoctor.Diagnostics.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../FrameDoctor.Abstractions/FrameDoctor.Abstractions.csproj" />
     <ProjectReference Include="../FrameDoctor.Pipeline/FrameDoctor.Pipeline.csproj" />
   </ItemGroup>

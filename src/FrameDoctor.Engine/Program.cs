@@ -50,7 +50,7 @@ static int Help()
           framedoctor-engine simulate <id>      Run one scenario through the live pipeline
           framedoctor-engine simulate <id> --save  ... and record it as a session
           framedoctor-engine sessions           List recorded sessions
-          framedoctor-engine export-sessions <f>   Write the session list as JSON
+          framedoctor-engine export-sessions <f>   Write the session and baseline fixtures
           framedoctor-engine settings           Show settings and where they live
           framedoctor-engine settings <k> <v>   Change one setting
           framedoctor-engine reconcile          Put back anything FrameDoctor changed
@@ -445,12 +445,25 @@ static int ExportSessions(string[] args)
     var destination = args.Length > 1 ? args[1] : "sessions.json";
     var scratch = Path.Combine(Path.GetTempPath(), $"framedoctor-export-{Guid.NewGuid():N}.db");
 
+    // Both fixtures come out of this one catalog. They used to be built by two commands into two
+    // scratch stores, and the Sessions screen ended up showing a baseline panel describing a
+    // history that appeared nowhere in the table beneath it — a reader would reasonably have
+    // read the panel as being about the rows they could see.
+    var baselineDestination = Path.Combine(
+        Path.GetDirectoryName(destination) is { Length: > 0 } dir ? dir : ".",
+        "baseline.json");
+
     try
     {
+        List<object> history;
+
         using (var store = SessionStore.Open(scratch))
         {
             var recorder = new SessionRecorder(new SessionRepository(store));
 
+            // One session per scenario: the showcase the table exists to display. Each is its
+            // own configuration — a different game — so none of them is comparable to another,
+            // and none may seed a baseline.
             foreach (var scenario in ScenarioCatalog.All)
             {
                 var (stats, diagnoses) = RunThroughPipeline(scenario);
@@ -463,6 +476,8 @@ static int ExportSessions(string[] args)
                 recorder.Record(config, new StopwatchClock(), stats, diagnoses,
                     baselineEligible: false);
             }
+
+            history = RecordBaselineHistory(store, recorder);
         }
 
         using (var store = SessionStore.Open(scratch))
@@ -484,12 +499,12 @@ static int ExportSessions(string[] args)
                 baselineEligible = r.Session.BaselineEligible,
             });
 
-            var json = System.Text.Json.JsonSerializer.Serialize(payload,
-                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-
-            File.WriteAllText(destination, json);
+            File.WriteAllText(destination, Serialize(payload));
             Console.WriteLine($"  {rows.Count} session(s) -> {destination}");
         }
+
+        File.WriteAllText(baselineDestination, Serialize(history));
+        Console.WriteLine($"  {history.Count} session(s) of history -> {baselineDestination}");
 
         return 0;
     }
@@ -503,8 +518,119 @@ static int ExportSessions(string[] args)
     }
 }
 
+// Absent stays absent. A null dropped from the payload becomes a missing key on the other side,
+// and a missing key becomes `?? 0` — which is how a measurement nobody took becomes a zero.
+static string Serialize(object payload) =>
+    System.Text.Json.JsonSerializer.Serialize(payload,
+        new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
+        });
+
+// Records a genuine history for one configuration and returns what the detector concluded.
+//
+// The data behind the baseline panel. Every number in it is computed by the same BaselineBuilder
+// and RegressionDetector a real machine runs — nothing here is authored. What is chosen is only
+// the *telemetry*: eight healthy runs under distinct seeds, each a genuinely different series,
+// followed by one run of a machine that started thermally throttling. The verdicts that come out
+// are whatever the arithmetic says, including the several that say nothing changed.
+static List<object> RecordBaselineHistory(SessionStore store, SessionRecorder recorder)
+{
+    // One configuration for the whole history. The machine fingerprint is "simulation", and
+    // ConfigRecord.KeyHash folds it in, so no real session can ever land in this baseline — the
+    // isolation is in the key, not in a flag someone could forget to set.
+    var config = new ConfigRecord(
+        new GameRecord("simulated-title.sim", null, "Simulated title"),
+        new MachineRecord("simulation", "Simulated CPU", "Simulated GPU", 32768, null),
+        GpuDriver: "sim-1.0",
+        MonitorHz: 144.0,
+        MonitorWidth: 2560,
+        MonitorHeight: 1440,
+        PowerScheme: null,
+        PowerOverlay: null,
+        GameMode: null,
+        Optimizations: null);
+
+    // Distinct seeds, not repetitions. The same seed twice would give byte-identical sessions
+    // and a baseline with no spread at all, which is the one shape that flatters the detector.
+    int[] seeds = [11, 29, 47, 63, 81, 97, 113, 131];
+
+    var service = new BaselineService(new BaselineRepository(store));
+    var key = config.KeyHash();
+
+    var healthy = ScenarioCatalog.ById("healthy");
+    var throttling = ScenarioCatalog.ById("gpu-thermal-throttle");
+
+    var rows = new List<object>(seeds.Length + 1);
+
+    // Oldest first, one session a day, so the history reads in the order it happened.
+    var epoch = DateTimeOffset.UtcNow.AddDays(-(seeds.Length + 1));
+
+    foreach (var seed in seeds)
+    {
+        rows.Add(RecordAndEvaluate(healthy, seed, epoch));
+        epoch = epoch.AddDays(1);
+    }
+
+    // The same game on the same machine, now thermally throttling. Not a different
+    // configuration — that is the whole point: a config fork would have made this incomparable,
+    // and the user would have been told nothing.
+    rows.Add(RecordAndEvaluate(throttling, 20260823, epoch));
+
+    return rows;
+
+    object RecordAndEvaluate(SimulationScenario scenario, int seed, DateTimeOffset at)
+    {
+        var (stats, diagnoses) = RunThroughPipeline(scenario, seed);
+
+        var id = recorder.Record(config, new FixedEpochClock(at), stats, diagnoses);
+        var standing = service.Evaluate(key, id);
+
+        return new
+        {
+            id = id.ToString(),
+            game = config.Game.DisplayName,
+            scenario = scenario.Id,
+            seed,
+            epochUtcTicks = at.UtcTicks,
+            frameCount = stats.FrameCount,
+            // Null rather than absent-as-zero. A median below its minimum sample size is not a
+            // fast session.
+            medianFrameTimeMs = Finite(stats.MedianFrameTimeMs),
+            p99FrameTimeMs = Finite(stats.P99FrameTimeMs),
+            stutterCount = stats.StutterCount,
+            baseline = new
+            {
+                sessionCount = standing.Baseline.SessionCount,
+                trust = standing.Baseline.Trust.ToString(),
+                exists = standing.Baseline.Exists,
+                mayDeclareRegression = standing.Baseline.MayDeclareRegression,
+                medianFrameTimeMs = standing.Baseline.Exists
+                    ? Finite(standing.Baseline.MedianFrameTimeMs) : null,
+                spreadMs = standing.Baseline.Exists
+                    ? Finite(standing.Baseline.MedianAbsoluteDeviationMs) : null,
+                describe = standing.Baseline.Describe(),
+            },
+            comparison = new
+            {
+                verdict = standing.Median.Verdict.ToString(),
+                metric = standing.Median.Metric,
+                baselineValue = Finite(standing.Median.BaselineValue),
+                sessionValue = Finite(standing.Median.SessionValue),
+                differenceMs = Finite(standing.Median.DifferenceMs),
+                noiseMs = Finite(standing.Median.NoiseMs),
+                effectSize = Finite(standing.Median.EffectSize),
+                detail = standing.Median.Detail,
+            },
+        };
+    }
+
+    static double? Finite(double value) => double.IsFinite(value) ? value : null;
+}
+
 static (LiveStatistics Stats, List<FrameDoctor.Diagnostics.Diagnosis> Diagnoses)
-    RunThroughPipeline(SimulationScenario scenario)
+    RunThroughPipeline(SimulationScenario scenario, int? seed = null)
 {
     var session = new LiveSession(scenario.RefreshRateHz);
     var diagnoses = new List<FrameDoctor.Diagnostics.Diagnosis>();
@@ -512,7 +638,7 @@ static (LiveStatistics Stats, List<FrameDoctor.Diagnostics.Diagnosis> Diagnoses)
 
     var one = new TelemetrySample[1];
 
-    foreach (var sample in scenario.Generate())
+    foreach (var sample in seed is { } s ? scenario.Generate(s) : scenario.Generate())
     {
         if (sample.Metric == MetricId.FrameTime)
         {
@@ -856,6 +982,23 @@ static double ParseRefresh(string[] args)
 /// capture: FrameDoctor collects live telemetry on Windows only, and this clock's job is to let
 /// the pipeline above the collectors be exercised anywhere.
 /// </remarks>
+// A clock whose wall-clock anchor is chosen rather than read.
+//
+// Only for building fixtures, where sessions must land on distinct days in a known order. A
+// real capture must never use this: the epoch is what ties a session's monotonic timestamps to
+// a moment that actually happened.
+file sealed class FixedEpochClock(DateTimeOffset epochUtc) : IMonotonicClock
+{
+    private readonly long _epoch = System.Diagnostics.Stopwatch.GetTimestamp();
+
+    public MonotonicTimestamp Now =>
+        new(System.Diagnostics.Stopwatch.GetElapsedTime(_epoch).Ticks);
+
+    public DateTimeOffset EpochUtc { get; } = epochUtc;
+
+    public DateTimeOffset ToUtc(MonotonicTimestamp timestamp) => EpochUtc + timestamp.SinceEpoch;
+}
+
 file sealed class StopwatchClock : IMonotonicClock
 {
     private readonly long _epoch = System.Diagnostics.Stopwatch.GetTimestamp();

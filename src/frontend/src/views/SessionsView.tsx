@@ -1,4 +1,6 @@
 import { useEffect, useState, type JSX } from 'react';
+import { BaselineTrend } from '../components/BaselineTrend';
+import { loadBaselineHistory, type BaselineSession } from '../telemetry/baseline';
 import {
   loadSessions,
   sessionStartedAt,
@@ -18,10 +20,19 @@ export function SessionsView(): JSX.Element {
   const [sessions, setSessions] = useState<StoredSessionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The baseline history is loaded separately and is allowed to be missing. A machine that has
+  // never built one is the normal early state, and it must not take the session list down with
+  // it — the list is useful on its own.
+  const [history, setHistory] = useState<readonly BaselineSession[]>([]);
+
   useEffect(() => {
     loadSessions()
       .then(setSessions)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+
+    loadBaselineHistory()
+      .then(setHistory)
+      .catch(() => setHistory([]));
   }, []);
 
   if (error) {
@@ -70,6 +81,8 @@ export function SessionsView(): JSX.Element {
           ) : null}
         </p>
       </header>
+
+      <BaselineTrend history={history} />
 
       <div className="sessions__table-wrap">
         <table className="sessions__table">

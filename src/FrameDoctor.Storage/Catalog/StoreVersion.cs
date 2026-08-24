@@ -23,12 +23,21 @@ namespace FrameDoctor.Storage.Catalog;
 public static class StoreVersion
 {
     /// <summary>Current schema version.</summary>
-    public const int Schema = 1;
+    public const int Schema = 2;
 
     /// <summary>Oldest reader version that can still open the current schema.</summary>
+    /// <remarks>
+    /// Still 1. The only v2 change replaced the <c>regression</c> table, which no build ever
+    /// wrote a row to and no build ever read. A v1 build opening a v2 store therefore finds its
+    /// entire history intact, which is the promise this number exists to keep.
+    /// </remarks>
     public const int MinReader = 1;
 
     /// <summary>Oldest writer version that can safely write the current schema.</summary>
+    /// <remarks>
+    /// Still 1, for the same reason: a v1 writer never touches the replaced table, so it cannot
+    /// write a v2 store into a state a v2 reader would misread.
+    /// </remarks>
     public const int MinWriter = 1;
 
     /// <summary>

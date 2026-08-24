@@ -283,3 +283,40 @@ test('settings shows values and the command to change them, not dead switches', 
 
   await page.screenshot({ path: `${OUT}/settings.png` });
 });
+
+/**
+ * The baseline panel, which is where the product is most tempted to overstate itself.
+ *
+ * Three things are asserted rather than merely captured: that the panel names what the bar
+ * actually is, that the verdict and the baseline's own standing are both on screen at once, and
+ * that nothing in it renders an absent measurement as a number.
+ */
+test('the baseline panel states its verdict and its own standing together', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/');
+  await expect(page.getByText('Frame time — last 60 s')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Sessions' }).click();
+  await expect(page.locator('.baseline')).toBeVisible({ timeout: 5_000 });
+
+  // The verdict, and — always, not only when the news is bad — how far the baseline may be used.
+  await expect(page.locator('.baseline__verdict')).not.toBeEmpty();
+  await expect(page.locator('.baseline__trust')).toContainText('sessions');
+
+  // The band is the scale. Without it the points are floating against nothing.
+  await expect(page.locator('.baseline__band')).toHaveCount(1);
+
+  // The axis is not zero-anchored, and the caption says so rather than leaving it to be
+  // discovered by a reader comparing two points.
+  await expect(page.locator('.baseline__caption')).toContainText('rather than to zero');
+
+  const text = await page.locator('.baseline').innerText();
+  expect(text).not.toContain('NaN');
+  expect(text).not.toContain('undefined');
+  expect(text).not.toContain('Infinity');
+
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  await page.waitForTimeout(200);
+
+  await page.locator('.baseline').screenshot({ path: `${OUT}/baseline.png` });
+});

@@ -74,7 +74,7 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Sessions | Done | Reads a fixture round-tripped through the real catalog |
 | System | Done | Every metric listed with its source, working or not |
 | Settings | Done | Real backend; no controls, because the command channel is not built |
-| Screenshot harness | Done | 24 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
+| Screenshot harness | Done | 25 Playwright tests; the simulation banner is asserted in every one, and every screen of every scenario is swept for the string "NaN" |
 
 ## Stage 5 — collection and storage
 
@@ -125,6 +125,35 @@ collector and the one system mutation are written, compiled, and unit-tested beh
 | Clean-machine install / upgrade / uninstall | Not started — **Needs Windows** | — |
 | Code signing | Not started | No certificate |
 
+## Stage 9 — baselines and regression detection
+
+| Item | Status | Evidence |
+|---|---|---|
+| Baseline builder | Done | 22 tests; medians of session medians with a median absolute deviation, three sessions to exist and seven to be trusted |
+| Short sessions dropped, not weighted | Done | A session under 10,000 frames measures a different, shorter thing; weighting would keep its influence non-zero |
+| Regression detector | Done | 22 tests; a difference must clear `max(0.1 ms, 3 × MAD)` symmetrically, so the tool cannot be quick to warn and slow to congratulate |
+| A provisional baseline may not declare | Done | A clear difference against 3–6 sessions returns `IndicativeOnly`, which is kept distinct from "no change" because they lead to different actions |
+| Mismatched sensitivity refused | Done | Floors differing by more than 2× return `NotComparable`; subtracting them would produce a number about the instrument |
+| History query | Done | 20 tests; ineligible and unfinalized sessions excluded, a stored null read back as unavailable rather than zero |
+| Baseline and comparison persistence | Done | Schema v2. Every verdict is stored, including "nothing changed" |
+| Store migration v1 → v2 | Done | 3 tests; a copy is taken first, each step commits its own version, and history survives |
+| Engine wiring | Done | 17 tests; a session is excluded from its own baseline, and a recorded standing does not move when later sessions arrive |
+| Baseline panel | Done | Real fixture from the real catalog; verdict, the bar, and the baseline's own standing on screen together |
+
+The `regression` table designed in Stage 5 was replaced rather than filled. It
+was shaped around an exact rank test — `effect_pct` and `exact_p` — and no such
+test exists: comparing one new session against a history is not a two-sample
+rank problem, and populating `exact_p` would have meant inventing a p-value.
+The `comparison` table that replaced it stores the arithmetic, so anyone can
+recompute the verdict from the three numbers beside it.
+
+**The screenshot caught it again.** The strip chart was reviewed, tested and
+wrong: an SVG `viewBox` with `preserveAspectRatio="none"` stretched every point
+into a horizontal streak, and the newest session — always an end point, and the
+only one carrying a verdict — was drawn half outside the plot. Eight unit tests
+covering the geometry could not see either, because both were introduced by the
+rendering, not the arithmetic. The first capture showed both immediately.
+
 ## Council Phase E — what the review found
 
 Three council members reviewed the built product against real screenshots and
@@ -161,7 +190,6 @@ class, and it exists now.
 |---|---|
 | Command channel, shell → engine | Settings are therefore read-only in the interface, and the screen says so rather than showing controls that would do nothing |
 | Game detection | The engine measures what it is pointed at; automatic detection is Stage 9 |
-| Baselines and regression detection | Sessions record `baselineEligible`; nothing consumes it yet |
 | Retention purge on a schedule | `PurgeHighResolution` exists and is tested; nothing calls it on a timer |
 | A command channel from the window to the engine | Settings are read-only in the interface, and the screen says so rather than showing controls that would do nothing |
 | Opening a stored session from the Sessions list | Needs a reader for the segment files. The rows are deliberately not styled as clickable |

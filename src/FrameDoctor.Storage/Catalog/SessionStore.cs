@@ -219,14 +219,86 @@ public sealed class SessionStore : IDisposable
         Execute(connection, $"PRAGMA user_version = {StoreVersion.Schema};");
     }
 
+    /// <summary>
+    /// Brings an older store up to the current schema, one version at a time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A byte-for-byte copy is taken before the first step. Migration is the one operation that
+    /// can destroy a user's history, and the copy is what makes a failed migration recoverable
+    /// rather than a decision they cannot undo.
+    /// </para>
+    /// <para>
+    /// Each step runs in its own transaction and stamps the new version inside it, so an
+    /// interrupted run resumes from the last completed step rather than repeating one. If a step
+    /// throws, the transaction rolls back and the store is left at its previous version — the
+    /// caller sees the exception, and the backup is still on disk.
+    /// </para>
+    /// </remarks>
     private static void Migrate(SqliteConnection connection, int fromVersion, string buildId)
     {
         foreach (var pragma in StoreSchema.Pragmas) Execute(connection, pragma);
 
-        // Only one schema version exists. When a second arrives, each step runs in its own
-        // transaction and is idempotent, and a backup copy is taken first.
-        _ = fromVersion;
-        _ = buildId;
+        BackUpBeforeMigrating(connection, fromVersion);
+
+        for (var from = fromVersion; from < StoreVersion.Schema; from++)
+        {
+            // Version numbers start at 1, so the step that upgrades from v1 sits at index 0.
+            var index = from - 1;
+            if (index < 0 || index >= StoreSchema.Migrations.Length)
+            {
+                throw new InvalidOperationException(
+                    $"No migration exists from schema {from} to {from + 1}.");
+            }
+
+            using var transaction = connection.BeginTransaction();
+            Execute(connection, StoreSchema.Migrations[index], transaction);
+
+            var to = (from + 1).ToString(CultureInfo.InvariantCulture);
+            WriteMeta(connection, MetaKeys.SchemaVersion, to, transaction);
+            WriteMeta(connection, MetaKeys.LastWrittenByBuild, buildId, transaction);
+            transaction.Commit();
+        }
+
+        Execute(connection, $"PRAGMA user_version = {StoreVersion.Schema};");
+    }
+
+    /// <summary>
+    /// Copies the store aside before it is migrated, best-effort.
+    /// </summary>
+    /// <remarks>
+    /// Best-effort on purpose: a full disk must not stop a user from opening their history.
+    /// The copy uses SQLite's own backup so the write-ahead log is included — copying the file
+    /// with the filesystem would capture a database missing its most recent sessions.
+    /// </remarks>
+    private static void BackUpBeforeMigrating(SqliteConnection connection, int fromVersion)
+    {
+        var path = connection.DataSource;
+        if (string.IsNullOrEmpty(path)) return;
+
+        var backup = $"{path}.v{fromVersion.ToString(CultureInfo.InvariantCulture)}.backup";
+        if (File.Exists(backup)) return;
+
+        try
+        {
+            using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = backup,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+            }.ToString());
+
+            destination.Open();
+            connection.BackupDatabase(destination);
+        }
+        catch (SqliteException)
+        {
+            // No space, or a read-only directory. The migration still runs; it is the copy that
+            // is optional, not the upgrade.
+        }
+        catch (IOException)
+        {
+        }
     }
 
     /// <summary>

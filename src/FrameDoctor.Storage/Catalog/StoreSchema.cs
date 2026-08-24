@@ -216,17 +216,73 @@ internal static class StoreSchema
             PRIMARY KEY(config_id, metric)
         ) WITHOUT ROWID;
 
-        CREATE TABLE regression(
-            id            INTEGER PRIMARY KEY,
-            config_id     INTEGER NOT NULL REFERENCES config(id) ON DELETE CASCADE,
-            metric        INTEGER NOT NULL,
-            detected_utc  INTEGER NOT NULL,
-            baseline_n    INTEGER NOT NULL,
-            new_n         INTEGER NOT NULL,
-            effect_pct    REAL NOT NULL,
-            exact_p       REAL NOT NULL,
-            changed_config TEXT
+        -- One row per comparison of a session against its configuration's baseline, whatever
+        -- the verdict. "No change" is recorded too: a history that only kept the alarms would
+        -- make a run of quiet sessions indistinguishable from a tool that stopped looking.
+        --
+        -- The columns are the arithmetic, not a summary of it. Anyone can recompute the verdict
+        -- from baseline_median, session_value and noise_ms, which is what makes the claim
+        -- inspectable rather than something the user has to take on faith.
+        CREATE TABLE comparison(
+            id              INTEGER PRIMARY KEY,
+            config_id       INTEGER NOT NULL REFERENCES config(id)  ON DELETE CASCADE,
+            session_id      INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+            metric          INTEGER NOT NULL,
+            compared_utc    INTEGER NOT NULL,
+            verdict         INTEGER NOT NULL,
+            baseline_n      INTEGER NOT NULL,
+            baseline_trust  INTEGER NOT NULL,
+            baseline_median REAL,
+            session_value   REAL,
+            difference_ms   REAL,
+            noise_ms        REAL,
+            detail          TEXT NOT NULL
         );
-        CREATE INDEX ix_regression_config ON regression(config_id, detected_utc DESC);
+        CREATE INDEX ix_comparison_config ON comparison(config_id, compared_utc DESC);
+        CREATE UNIQUE INDEX ux_comparison_session ON comparison(session_id, metric);
         """;
+
+    /// <summary>
+    /// Schema migrations, indexed by the version they upgrade <i>from</i>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Migrations[0]</c> takes a v1 store to v2. Each step is one string, applied inside a
+    /// single transaction, and must be safe to re-run: a step that fails halfway leaves the
+    /// store at its old version, and the next launch will try again.
+    /// </para>
+    /// <para>
+    /// <b>v1 → v2</b> replaces the <c>regression</c> table. It was designed around an exact
+    /// rank test — <c>effect_pct</c> and <c>exact_p</c> — and no such test exists: comparing one
+    /// new session against a history is not a two-sample rank problem, and populating
+    /// <c>exact_p</c> would have meant inventing a p-value. The replacement records what is
+    /// actually computed. No released build ever wrote a row to the old table, so nothing is
+    /// lost, which is also why <see cref="StoreVersion.MinReader"/> stays at 1.
+    /// </para>
+    /// </remarks>
+    public static readonly string[] Migrations =
+    [
+        """
+        DROP INDEX IF EXISTS ix_regression_config;
+        DROP TABLE IF EXISTS regression;
+
+        CREATE TABLE IF NOT EXISTS comparison(
+            id              INTEGER PRIMARY KEY,
+            config_id       INTEGER NOT NULL REFERENCES config(id)  ON DELETE CASCADE,
+            session_id      INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+            metric          INTEGER NOT NULL,
+            compared_utc    INTEGER NOT NULL,
+            verdict         INTEGER NOT NULL,
+            baseline_n      INTEGER NOT NULL,
+            baseline_trust  INTEGER NOT NULL,
+            baseline_median REAL,
+            session_value   REAL,
+            difference_ms   REAL,
+            noise_ms        REAL,
+            detail          TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_comparison_config ON comparison(config_id, compared_utc DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_comparison_session ON comparison(session_id, metric);
+        """,
+    ];
 }

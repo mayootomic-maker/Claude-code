@@ -1,8 +1,8 @@
 [
   {
-    "id": "64c59d7b-68c7-4566-8f1c-1d798fe647e2",
+    "id": "86df92c2-96f6-4a95-9c55-ffa8ecea49c3",
     "game": "Unexplained hitch",
-    "epochUtcTicks": 639231249323771031,
+    "epochUtcTicks": 639231819747460911,
     "durationMs": 89994.6921,
     "frameCount": 12952,
     "stutterCount": 1,
@@ -11,9 +11,9 @@
     "baselineEligible": false
   },
   {
-    "id": "d890dfc2-f576-425e-91e7-0258c01dd58e",
+    "id": "bc3fb3ba-6de7-4fd5-8cca-41c254acdb9f",
     "game": "Memory pressure and paging",
-    "epochUtcTicks": 639231249321827031,
+    "epochUtcTicks": 639231819746323655,
     "durationMs": 89999.1855,
     "frameCount": 12542,
     "stutterCount": 2,
@@ -22,9 +22,9 @@
     "baselineEligible": false
   },
   {
-    "id": "67250133-643a-409d-bc6f-ef13a04e3a10",
+    "id": "0f8c8c2e-a583-4fdb-b3e8-8e4741591302",
     "game": "GPU power limit",
-    "epochUtcTicks": 639231249319987679,
+    "epochUtcTicks": 639231819745212611,
     "durationMs": 99993.2925,
     "frameCount": 12201,
     "stutterCount": 5,
@@ -33,9 +33,9 @@
     "baselineEligible": false
   },
   {
-    "id": "2e740fda-aa6c-4ace-8482-753ec37cc90c",
+    "id": "f3d17d36-6424-4281-b369-c18cca8e9375",
     "game": "GPU thermal throttling",
-    "epochUtcTicks": 639231249318423612,
+    "epochUtcTicks": 639231819744184344,
     "durationMs": 99999.5132,
     "frameCount": 11894,
     "stutterCount": 3,
@@ -44,9 +44,9 @@
     "baselineEligible": false
   },
   {
-    "id": "2e86ace8-54f1-41c3-8eea-e23d6cca051d",
+    "id": "4f7bbb93-0f79-4f6d-9d6a-02799fb799ca",
     "game": "CPU frequency collapse",
-    "epochUtcTicks": 639231249316991333,
+    "epochUtcTicks": 639231819743251892,
     "durationMs": 89999.2868,
     "frameCount": 8004,
     "stutterCount": 1,
@@ -55,9 +55,9 @@
     "baselineEligible": false
   },
   {
-    "id": "06709887-d263-4290-bb7b-cd2aad08ed6c",
+    "id": "65e73f8f-5aa3-4d9a-b998-0dca8075c1ac",
     "game": "Background CPU contention",
-    "epochUtcTicks": 639231249315385040,
+    "epochUtcTicks": 639231819742263976,
     "durationMs": 89994.2235,
     "frameCount": 12836,
     "stutterCount": 1,
@@ -66,14 +66,113 @@
     "baselineEligible": false
   },
   {
-    "id": "1704ddb1-41a5-43c3-b477-9f3e4a85565b",
+    "id": "1dc0ae35-59f2-4209-9b39-74e3ea3f343e",
     "game": "Healthy session",
-    "epochUtcTicks": 639231249312753172,
+    "epochUtcTicks": 639231819740533481,
     "durationMs": 89997.75,
     "frameCount": 12964,
     "stutterCount": 0,
     "state": "Finalized",
     "sensitivityFloorMs": 3.472654053008304,
     "baselineEligible": false
+  },
+  {
+    "id": "873051f5-f3c1-428e-a047-bcd6f19755d9",
+    "game": "Simulated title",
+    "epochUtcTicks": 639230955747486925,
+    "durationMs": 99999.5132,
+    "frameCount": 11894,
+    "stutterCount": 3,
+    "state": "Finalized",
+    "sensitivityFloorMs": 4.851556209738273,
+    "baselineEligible": true
+  },
+  {
+    "id": "d8f29031-5982-46a8-bf8d-e998e1539c25",
+    "game": "Simulated title",
+    "epochUtcTicks": 639230091747486925,
+    "durationMs": 89999.2181,
+    "frameCount": 12964,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "8e96f880-4c0a-4fbf-b0a4-3c9c2b8cf183",
+    "game": "Simulated title",
+    "epochUtcTicks": 639229227747486925,
+    "durationMs": 89994.4959,
+    "frameCount": 12966,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "1ef416fc-a21f-495f-a140-8942496596d2",
+    "game": "Simulated title",
+    "epochUtcTicks": 639228363747486925,
+    "durationMs": 89998.0509,
+    "frameCount": 12960,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "a844b4f0-0691-46c2-91b1-65521b625d57",
+    "game": "Simulated title",
+    "epochUtcTicks": 639227499747486925,
+    "durationMs": 89998.2227,
+    "frameCount": 12970,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "f1271929-1fd5-43e8-bda1-dfddc6cbe4b9",
+    "game": "Simulated title",
+    "epochUtcTicks": 639226635747486925,
+    "durationMs": 89995.483,
+    "frameCount": 12978,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.4722222222222223,
+    "baselineEligible": true
+  },
+  {
+    "id": "e384891d-ab1d-45cc-9238-1e920f8d5dc3",
+    "game": "Simulated title",
+    "epochUtcTicks": 639225771747486925,
+    "durationMs": 89998.4698,
+    "frameCount": 12974,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "e8800ca0-0b90-4250-9b17-a4b8921b09e4",
+    "game": "Simulated title",
+    "epochUtcTicks": 639224907747486925,
+    "durationMs": 89995.4515,
+    "frameCount": 12964,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.472654053008304,
+    "baselineEligible": true
+  },
+  {
+    "id": "f4cff717-d3ff-4f06-9aa6-0af1077b88bb",
+    "game": "Simulated title",
+    "epochUtcTicks": 639224043747486925,
+    "durationMs": 89993.7722,
+    "frameCount": 12973,
+    "stutterCount": 0,
+    "state": "Finalized",
+    "sensitivityFloorMs": 3.4722222222222223,
+    "baselineEligible": true
   }
 ]

@@ -228,6 +228,111 @@ public sealed class SessionStoreTests : IDisposable
         list[0].StutterCount.ShouldBe(1);
     }
 
+    [Fact]
+    public void A_v1_store_is_migrated_forward_with_its_history_intact()
+    {
+        var path = Path("migrate.db");
+        var id = Guid.NewGuid();
+
+        using (var store = SessionStore.Open(path))
+        {
+            new SessionRepository(store).Save(SampleSession(id), SampleConfig(), [], []);
+        }
+
+        MakeItLookLikeV1(path);
+
+        using (var store = SessionStore.Open(path))
+        {
+            store.OpenResult.Access.ShouldBe(StoreAccess.ReadWrite);
+            store.OpenResult.SchemaVersion.ShouldBe(StoreVersion.Schema);
+
+            // The point of the migration promise: the user's sessions are still there.
+            new SessionRepository(store).Load(id).ShouldNotBeNull();
+
+            TableExists(store, "comparison").ShouldBeTrue();
+            TableExists(store, "regression").ShouldBeFalse();
+        }
+    }
+
+    [Fact]
+    public void A_migration_leaves_a_copy_of_the_store_it_upgraded()
+    {
+        // Migration is the one operation that can destroy a history. The copy is what makes a
+        // failed one recoverable instead of a decision the user cannot undo.
+        var path = Path("backup.db");
+
+        using (var store = SessionStore.Open(path))
+        {
+            new SessionRepository(store).Save(SampleSession(Guid.NewGuid()), SampleConfig(), [], []);
+        }
+
+        MakeItLookLikeV1(path);
+        using (var _ = SessionStore.Open(path)) { }
+
+        File.Exists($"{path}.v1.backup").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Reopening_an_already_migrated_store_does_not_migrate_again()
+    {
+        var path = Path("idempotent.db");
+        using (var _ = SessionStore.Open(path)) { }
+        MakeItLookLikeV1(path);
+        using (var _ = SessionStore.Open(path)) { }
+
+        var backup = $"{path}.v1.backup";
+        var stamp = File.GetLastWriteTimeUtc(backup);
+
+        using (var store = SessionStore.Open(path))
+        {
+            store.OpenResult.SchemaVersion.ShouldBe(StoreVersion.Schema);
+        }
+
+        // A second migration would overwrite the copy of the store as it was before the first.
+        File.GetLastWriteTimeUtc(backup).ShouldBe(stamp);
+    }
+
+    /// <summary>Rewinds a current store to look like one written by the v1 build.</summary>
+    private static void MakeItLookLikeV1(string path)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            { DataSource = path, Pooling = false }.ToString());
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DROP INDEX IF EXISTS ux_comparison_session;
+            DROP INDEX IF EXISTS ix_comparison_config;
+            DROP TABLE IF EXISTS comparison;
+
+            CREATE TABLE regression(
+                id            INTEGER PRIMARY KEY,
+                config_id     INTEGER NOT NULL REFERENCES config(id) ON DELETE CASCADE,
+                metric        INTEGER NOT NULL,
+                detected_utc  INTEGER NOT NULL,
+                baseline_n    INTEGER NOT NULL,
+                new_n         INTEGER NOT NULL,
+                effect_pct    REAL NOT NULL,
+                exact_p       REAL NOT NULL,
+                changed_config TEXT
+            );
+            CREATE INDEX ix_regression_config ON regression(config_id, detected_utc DESC);
+
+            UPDATE meta SET value = '1' WHERE key = 'schema_version';
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private static bool TableExists(SessionStore store, string table)
+    {
+        using var command = store.Connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$n;";
+        command.Parameters.AddWithValue("$n", table);
+        return Convert.ToInt32(command.ExecuteScalar(),
+            System.Globalization.CultureInfo.InvariantCulture) > 0;
+    }
+
     private static void BumpVersions(string path, int schema, int minReader)
     {
         using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
