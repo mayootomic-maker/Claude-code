@@ -32,6 +32,7 @@ static async Task<int> Run(string[] args)
         "serve" => await Serve(args).ConfigureAwait(false),
         "simulate" => await Simulate(args).ConfigureAwait(false),
         "detect" => await Detect(args).ConfigureAwait(false),
+        "retain" => Retain(args),
         "sessions" => Sessions(args),
         "export-sessions" => ExportSessions(args),
         "settings" => Settings(args),
@@ -55,6 +56,7 @@ static int Help()
           framedoctor-engine simulate <id> --save  ... and record it as a session
           framedoctor-engine detect             Show what would be measured, changing nothing
           framedoctor-engine sessions           List recorded sessions
+          framedoctor-engine retain             Reclaim frame data past the retention window
           framedoctor-engine export-sessions <f>   Write the session and baseline fixtures
           framedoctor-engine settings           Show settings and where they live
           framedoctor-engine settings <k> <v>   Change one setting
@@ -66,6 +68,12 @@ static int Help()
         `detect` is the same promise for game detection: it reports which process
         would be measured and, when none would be, exactly which requirement is
         unmet. It starts no capture and records nothing.
+
+        `retain` deletes frame series older than the retention window and nothing
+        else. Session summaries, events and diagnoses are kept forever — dropping
+        those would destroy the history that regression detection is built on. It
+        runs by itself when the engine starts and when a session is recorded; the
+        verb exists so it can be run on demand and so its result is inspectable.
 
         Sessions are stored under this machine's local application data. Nothing
         leaves it: there is no account, no upload and no analytics.
@@ -164,6 +172,10 @@ static async Task<int> ServeWindows(string[] args)
 
         return 2;
     }
+
+    // Before anything is collected. Retention is disk work, and the only safe time for it is
+    // when nothing is being measured — which is now, and not again until this run ends.
+    ReclaimBeforeCollecting(args);
 
     var session = new LiveSession(refreshHz);
     var loop = new CollectorLoop(sources.Sensors, clock, session);
@@ -374,6 +386,11 @@ static async Task<int> Simulate(string[] args)
             baselineEligible: false);
 
         Console.WriteLine($"  Recorded as session {recordedId} in {path}");
+
+        // Retention runs after a session is written, never during one. This is a moment when
+        // nothing is being measured; a timer would eventually fire during a game.
+        var reclaimed = RunRetention(store, new SettingsStore(SettingsPath(args)).Load(), args);
+        if (reclaimed.Describe() is { } line) Console.WriteLine($"  {line}");
     }
 
     Console.WriteLine();
@@ -479,6 +496,86 @@ static string StorePath(string[] args)
 
     Directory.CreateDirectory(root);
     return Path.Combine(root, "sessions.db");
+}
+
+// Where session segment files live: beside the catalog, in their own directory.
+//
+// Separate from the database so that purging a session's frame series is a file delete costing
+// zero bytes written, rather than a page rewrite inside SQLite. Its own directory so the orphan
+// sweep has somewhere bounded to look — a sweep pointed at a directory holding anything else
+// would be one bug away from deleting it.
+static string SegmentDirectory(string[] args)
+{
+    var root = Path.GetDirectoryName(StorePath(args));
+    if (string.IsNullOrEmpty(root)) return string.Empty;
+
+    var directory = Path.Combine(root, "segments");
+    Directory.CreateDirectory(directory);
+    return directory;
+}
+
+// Reclaims frame series past the retention window.
+static int Retain(string[] args)
+{
+    var path = StorePath(args);
+    using var store = SessionStore.Open(path);
+
+    if (!store.IsWritable)
+    {
+        Console.Error.WriteLine($"  The session store at {path} is not writable.");
+        return 3;
+    }
+
+    var settings = new SettingsStore(SettingsPath(args)).Load();
+    var report = RunRetention(store, settings, args);
+
+    Console.WriteLine();
+    Console.WriteLine($"  {report.Describe() ?? "Nothing to reclaim."}");
+    Console.WriteLine(
+        $"  Keeping frame data for {settings.HighResolutionRetentionDays} day(s). " +
+        "Session summaries are kept forever.");
+    Console.WriteLine();
+
+    return report.Failures > 0 ? 1 : 0;
+}
+
+// One retention pass, and the single place that decides when one happens.
+//
+// Called at engine start and after a session is recorded — both moments when nothing is being
+// measured. Never on a timer during a session: deleting files while a game is running is exactly
+// the disk activity this product exists to diagnose.
+static RetentionReport RunRetention(SessionStore store, FrameDoctorSettings settings, string[] args)
+{
+    var service = new RetentionService(new SessionRepository(store));
+
+    return service.Run(
+        settings.Validated().HighResolutionRetentionDays,
+        SegmentDirectory(args));
+}
+
+// Runs retention at engine start, and says nothing when there was nothing to do.
+//
+// Failures here are reported and not fatal. A store that cannot be opened is a reason not to
+// reclaim disk; it is not a reason to refuse to measure, which is what the user actually asked
+// for.
+static void ReclaimBeforeCollecting(string[] args)
+{
+    try
+    {
+        using var store = SessionStore.Open(StorePath(args));
+        if (!store.IsWritable) return;
+
+        var report = RunRetention(store, new SettingsStore(SettingsPath(args)).Load(), args);
+        if (report.Describe() is { } line) Console.WriteLine($"  {line}");
+    }
+    catch (IOException e)
+    {
+        Console.Error.WriteLine($"  Retention did not run: {e.Message}");
+    }
+    catch (UnauthorizedAccessException e)
+    {
+        Console.Error.WriteLine($"  Retention did not run: {e.Message}");
+    }
 }
 
 // Lists what has been recorded, newest first.

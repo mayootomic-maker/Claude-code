@@ -160,6 +160,70 @@ public sealed class SessionRepository(SessionStore store)
     }
 
     /// <summary>
+    /// Sessions whose high-resolution data has outlived the retention window.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only sessions that still hold a segment. A session already purged has nothing to purge,
+    /// and returning it again would make every sweep look like it did work.
+    /// </para>
+    /// <para>
+    /// Bounded, and oldest first. An unbounded sweep on a store that has been closed for a year
+    /// would purge thousands of sessions in one pass; taking the oldest few hundred means the
+    /// work is spread across launches and the machine is never busy for long.
+    /// </para>
+    /// </remarks>
+    /// <param name="olderThan">Sessions that began before this instant.</param>
+    /// <param name="limit">Most to return in one pass.</param>
+    public IReadOnlyList<(Guid Id, DateTimeOffset Started, string SegmentPath)> ExpiredHighResolution(
+        DateTimeOffset olderThan,
+        int limit = 200)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        using var command = _store.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT uuid, epoch_utc, segment_path
+            FROM session
+            WHERE segment_path IS NOT NULL
+              AND epoch_utc < $before
+            ORDER BY epoch_utc ASC
+            LIMIT $n;
+            """;
+        command.Parameters.AddWithValue("$before", olderThan.UtcTicks);
+        command.Parameters.AddWithValue("$n", limit);
+
+        var result = new List<(Guid, DateTimeOffset, string)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add((
+                new Guid((byte[])reader["uuid"]),
+                new DateTimeOffset(reader.GetInt64(1), TimeSpan.Zero),
+                reader.GetString(2)));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Whether any session in the catalog still points at high-resolution data.
+    /// </summary>
+    /// <remarks>
+    /// The question the orphan sweep asks before deleting a file: not "is this file named like
+    /// ours" but "does anything still reference the session inside it". A file whose session is
+    /// unknown, or whose session has already had its reference cleared, is safe to reclaim.
+    /// </remarks>
+    public bool HasSegment(Guid sessionId)
+    {
+        using var command = _store.Connection.CreateCommand();
+        command.CommandText =
+            "SELECT 1 FROM session WHERE uuid = $u AND segment_path IS NOT NULL;";
+        command.Parameters.AddWithValue("$u", sessionId.ToByteArray());
+
+        return command.ExecuteScalar() is not null;
+    }
+
+    /// <summary>
     /// Deletes a session's high-resolution data while keeping its summary forever.
     /// </summary>
     /// <remarks>

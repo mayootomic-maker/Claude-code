@@ -41,7 +41,9 @@ function rows(settings: EngineSettings): SettingRow[] {
       explanation:
         'After this, a session keeps its summary and its events but not the frame-by-frame ' +
         'series. The summary is never deleted — reclaiming space by destroying the session ' +
-        'index would destroy the regression history, which is what the history is for.',
+        'index would destroy the regression history, which is what the history is for. ' +
+        'The sweep runs when the measuring process starts and after a session is recorded, ' +
+        'never while a game is running.',
     },
     {
       key: 'auto-start',

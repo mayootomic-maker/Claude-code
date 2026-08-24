@@ -79,6 +79,63 @@ public static class SegmentReader
     }
 
     /// <summary>Reads a segment from a stream.</summary>
+    /// <summary>
+    /// Reads only the header, to learn which session a file belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the retention sweep, which has to decide whether a file on disk is an orphan left by
+    /// an interrupted purge or the live segment of a session in progress. Matching on filename
+    /// would be guessing; this asks the file.
+    /// </para>
+    /// <para>
+    /// Returns null for anything that is not a segment, including a file whose header checksum
+    /// fails. A file we cannot identify is one we must not delete — an unreadable header is a
+    /// reason to leave it alone, not a licence to reclaim the space.
+    /// </para>
+    /// </remarks>
+    public static SegmentHeader? TryReadHeader(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var headerBytes = new byte[SegmentFormat.HeaderBytes];
+        if (stream.ReadAtLeast(headerBytes, headerBytes.Length, throwOnEndOfStream: false)
+            < headerBytes.Length)
+        {
+            return null;
+        }
+
+        if (!headerBytes.AsSpan(0, 6).SequenceEqual(SegmentFormat.Magic)) return null;
+
+        var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(headerBytes.AsSpan(40));
+        if (Crc32.HashToUInt32(headerBytes.AsSpan(0, 40)) != storedCrc) return null;
+
+        return new SegmentHeader(
+            BinaryPrimitives.ReadUInt16LittleEndian(headerBytes.AsSpan(6)),
+            new Guid(headerBytes.AsSpan(8, 16)),
+            BinaryPrimitives.ReadInt64LittleEndian(headerBytes.AsSpan(24)),
+            new DateTimeOffset(BinaryPrimitives.ReadInt64LittleEndian(headerBytes.AsSpan(32)), TimeSpan.Zero));
+    }
+
+    /// <summary>Reads a file's header, or null when it is not a readable segment.</summary>
+    public static SegmentHeader? TryReadHeader(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return TryReadHeader(stream);
+        }
+        catch (IOException)
+        {
+            // In use, most likely by the session writing it. Not an orphan.
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static SegmentReadResult Read(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);

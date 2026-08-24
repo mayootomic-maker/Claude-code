@@ -178,6 +178,20 @@ the first to revisit with real hardware. It errs toward declining — a game
 wrongly declined is visible on screen and correctable; a video player wrongly
 confirmed would have its compositor stalls reported as the user's frame pacing.
 
+## Stage 11 — retention
+
+| Item | Status | Evidence |
+|---|---|---|
+| Expired-session query | Done | Bounded and oldest-first, so a store closed for a year is reclaimed across launches rather than in one long pass |
+| `RetentionService` | Done | 17 tests, most of them about what it must *not* delete |
+| Summaries survive forever | Done | A purged session keeps its frames' count, its events, its diagnoses and its aggregates. Only the series goes |
+| A zero-day window is refused | Done | The value comes from a file a user can edit by hand, and reading zero as "keep nothing" would let a typo destroy a history |
+| Orphan sweep | Done | Deletes only a file that carries a valid segment header, whose session the catalog no longer references, and which is older than an hour |
+| A live session's segment is never swept | Done | A session in progress has a file and no committed row, so it looks exactly like an orphan. That test is what stands between the sweep and a session in progress |
+| A file it cannot identify is left and counted | Done | An unreadable header is a reason to leave a file alone, not a licence to reclaim the space — and the count is reported, because silence would look identical to a clean disk |
+| When it runs | Done | Engine start and after a session is recorded. Never on a timer: deleting files while a game runs is the disk activity this product exists to diagnose |
+| `retain` verb | Done | The same pass on demand, so its result is inspectable rather than only ever a side effect |
+
 ## Council Phase E — what the review found
 
 Three council members reviewed the built product against real screenshots and
@@ -213,7 +227,6 @@ class, and it exists now.
 | Item | Why it is not here |
 |---|---|
 | Command channel, shell → engine | Settings are therefore read-only in the interface, and the screen says so rather than showing controls that would do nothing |
-| Retention purge on a schedule | `PurgeHighResolution` exists and is tested; nothing calls it on a timer |
 | A command channel from the window to the engine | Settings are read-only in the interface, and the screen says so rather than showing controls that would do nothing |
 | Opening a stored session from the Sessions list | Needs a reader for the segment files. The rows are deliberately not styled as clickable |
 | AMD and Intel GPU sources | The seam and the shared throttle vocabulary are in place for them |
