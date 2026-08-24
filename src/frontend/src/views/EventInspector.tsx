@@ -154,7 +154,7 @@ export function EventInspector({ scenario, event, onClose }: EventInspectorProps
         />
         <Fact
           label="Confidence"
-          value={explained ? (event.confidence! * 100).toFixed(0) : '—'}
+          value={explained ? (event.confidence * 100).toFixed(0) : '—'}
           unit={explained ? '%' : ''}
           // Without this the number is the number alone, and 60 % reads as weak evidence when
           // the truth is often strong evidence held back by a missing sensor — which is a fact

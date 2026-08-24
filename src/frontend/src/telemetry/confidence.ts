@@ -18,7 +18,14 @@ export enum ConfidenceCap {
   MissingSensor = 4,
 }
 
-const explanations: Record<ConfidenceCap, string> = {
+/**
+ * Keyed by number rather than by the enum.
+ *
+ * The cap arrives from the engine as an integer, and a build that does not know a newly-added cap
+ * would index this with a value that is not a member. Typing the lookup as partial forces the
+ * caller to handle that, instead of the type system promising a string that is not there.
+ */
+const explanations: Partial<Record<number, string>> = {
   [ConfidenceCap.None]: '',
   [ConfidenceCap.Correlational]:
     'attributing a cause is correlational, so certainty is never claimed',
@@ -28,8 +35,9 @@ const explanations: Record<ConfidenceCap, string> = {
 };
 
 /** The cap's explanation, or an empty string when nothing capped the score. */
+/// <remarks>Also empty for a cap this build does not know, which is the honest rendering of it.</remarks>
 export function describeCap(cap: number): string {
-  return explanations[cap as ConfidenceCap] ?? '';
+  return explanations[cap] ?? '';
 }
 
 /**
@@ -40,5 +48,8 @@ export function describeCap(cap: number): string {
  * dishonest to present as fixable.
  */
 export function isCapActionable(cap: number): boolean {
-  return cap === ConfidenceCap.MissingSensor;
+  // Compared as a number on purpose: the value came off the wire and need not be a member of
+  // this enum at all. A cap this build does not know is not actionable, which is the right
+  // answer — we cannot tell the user how to lift a limit we have never heard of.
+  return cap === Number(ConfidenceCap.MissingSensor);
 }

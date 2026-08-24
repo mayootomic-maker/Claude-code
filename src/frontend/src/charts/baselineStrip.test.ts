@@ -15,7 +15,7 @@ describe('stripGeometry', () => {
       H,
     );
 
-    expect(g.points[0]!.y).toBeGreaterThan(g.points[1]!.y!);
+    expect(g.points[0].y).toBeGreaterThan(g.points[1].y!);
   });
 
   it('keeps the band inside the plot even when every session sits far outside it', () => {
@@ -24,7 +24,7 @@ describe('stripGeometry', () => {
 
     expect(g.bandTopY).toBeGreaterThanOrEqual(0);
     expect(g.bandBottomY).toBeLessThanOrEqual(H);
-    expect(g.points[0]!.y).toBeGreaterThanOrEqual(0);
+    expect(g.points[0].y).toBeGreaterThanOrEqual(0);
   });
 
   it('does not divide by zero on a run of identical sessions', () => {
@@ -46,7 +46,7 @@ describe('stripGeometry', () => {
   it('centres a single session rather than pinning it to an edge', () => {
     const g = stripGeometry([{ id: 'a', valueMs: 8.3 }], null, null, H);
 
-    expect(g.points[0]!.x).toBe(0.5);
+    expect(g.points[0].x).toBe(0.5);
   });
 
   it('plots a session with no median as absent rather than at zero', () => {
@@ -62,8 +62,8 @@ describe('stripGeometry', () => {
       H,
     );
 
-    expect(g.points[1]!.y).toBeNull();
-    expect(g.points[1]!.valueMs).toBeNull();
+    expect(g.points[1].y).toBeNull();
+    expect(g.points[1].valueMs).toBeNull();
   });
 
   it('produces no band when there is no baseline', () => {
@@ -77,7 +77,7 @@ describe('stripGeometry', () => {
   it('survives a history with nothing measurable in it', () => {
     const g = stripGeometry([{ id: 'a', valueMs: null }], null, null, H);
 
-    expect(g.points[0]!.y).toBeNull();
+    expect(g.points[0].y).toBeNull();
     expect(Number.isFinite(g.minMs)).toBe(true);
   });
 

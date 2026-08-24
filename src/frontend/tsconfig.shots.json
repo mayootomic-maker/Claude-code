@@ -1,0 +1,19 @@
+{
+  // The screenshot specs. Their own project rather than folded into tsconfig.node.json, because
+  // they legitimately reference browser globals inside page.evaluate callbacks — and giving the
+  // Vite and Playwright config files DOM types so these could compile would let a build script
+  // reference `document` with nothing to object.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.shots.tsbuildinfo"
+  },
+  "include": ["shots"]
+}

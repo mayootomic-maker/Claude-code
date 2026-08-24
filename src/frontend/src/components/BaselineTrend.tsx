@@ -27,7 +27,7 @@ export function BaselineTrend({
 }): JSX.Element | null {
   if (history.length === 0) return null;
 
-  const latest = history[history.length - 1]!;
+  const latest = history[history.length - 1];
   const { baseline, comparison } = latest;
 
   const geometry = stripGeometry(
@@ -157,7 +157,7 @@ function Strip({
   // Drawn in real pixels with no viewBox, so nothing is scaled. An earlier version used a
   // viewBox with preserveAspectRatio="none" and every point came out as a horizontal streak —
   // a defect invisible in review and obvious in the first screenshot.
-  const bandHeight = hasBand ? geometry.bandBottomY! - geometry.bandTopY! : 0;
+  const bandHeight = hasBand ? geometry.bandBottomY - geometry.bandTopY : 0;
 
   // A band thinner than the display can draw is reported as such rather than padded to a
   // visible thickness. Padding it would draw a tolerance wider than the one actually applied.
@@ -180,7 +180,7 @@ function Strip({
             <rect
               className="baseline__band"
               x={0}
-              y={geometry.bandTopY!}
+              y={geometry.bandTopY}
               width="100%"
               height={Math.max(bandHeight, 0)}
             />
@@ -193,15 +193,15 @@ function Strip({
               className="baseline__edge"
               x1={0}
               x2="100%"
-              y1={geometry.bandTopY!}
-              y2={geometry.bandTopY!}
+              y1={geometry.bandTopY}
+              y2={geometry.bandTopY}
             />
             <line
               className="baseline__edge"
               x1={0}
               x2="100%"
-              y1={geometry.bandBottomY!}
-              y2={geometry.bandBottomY!}
+              y1={geometry.bandBottomY}
+              y2={geometry.bandBottomY}
             />
           </>
         ) : null}

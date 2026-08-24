@@ -311,7 +311,10 @@ function Control({
           type="checkbox"
           checked={on}
           disabled={busy}
-          onChange={(e) => onChange(row.key, String(e.target.checked))}
+          // Discarded explicitly. A promise left floating on a change handler is a settings
+          // change whose failure has nowhere to go — and this one's failure is what puts the
+          // refusal on screen.
+          onChange={(e) => void onChange(row.key, String(e.target.checked))}
         />
         <span>{on ? 'on' : 'off'}</span>
       </label>

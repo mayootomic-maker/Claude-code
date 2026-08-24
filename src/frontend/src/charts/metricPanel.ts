@@ -1,4 +1,4 @@
-import { Availability, type Quality } from '../telemetry/availability';
+import { Availability, Quality } from '../telemetry/availability';
 import type { MetricSeries } from '../telemetry/scenario';
 
 export interface MetricPanelTheme {
@@ -201,14 +201,20 @@ export function drawMetricPanel(
   ctx.stroke();
 }
 
-/** How a series' quality should be worded beside its panel. */
+/**
+ * How a series' quality should be worded beside its panel.
+ *
+ * Switched on the enum's members rather than on 1, 2 and 3. The bare numbers were correct and
+ * silently coupled to an ordering nobody would think to check: renumbering `Quality` would have
+ * relabelled every panel on every screen, and nothing would have failed.
+ */
 export function describeQuality(quality: Quality): string | null {
   switch (quality) {
-    case 1:
+    case Quality.Derived:
       return 'derived';
-    case 2:
+    case Quality.Estimated:
       return 'estimated';
-    case 3:
+    case Quality.Degraded:
       return 'degraded';
     default:
       return null;

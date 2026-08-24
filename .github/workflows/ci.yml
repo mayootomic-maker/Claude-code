@@ -53,8 +53,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `tsc -b`, not `tsc --noEmit -p tsconfig.json`. The root tsconfig has `files: []` and only
+      # project references, so without -b it type-checks nothing at all — this step passed a file
+      # declaring `const x: number = 'a string'` for as long as it has existed.
       - name: Types
-        run: pnpm exec tsc --noEmit -p tsconfig.json
+        run: pnpm exec tsc -b
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Unit tests
         run: pnpm exec vitest run
