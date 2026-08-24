@@ -1,0 +1,89 @@
+# Builds the shipping artefacts on a real Windows machine.
+#
+# Everything else in this repository is built on Linux, where the Windows halves compile and
+# cannot execute. This workflow exists because two things are impossible there and neither is
+# optional for a release:
+#
+#   1. The MSI. WiX 5 rejects every directory name on Linux, so packaging/build-installer.sh
+#      stops with an explanation rather than a package.
+#   2. The test suite running on Windows at all. The portable core is tested on Linux by CI;
+#      running the same suite here is what catches a difference between the two, and path
+#      handling and file locking are where that difference lives.
+#
+# What this still does not do, and no CI can: launch the application, read a hardware sensor, or
+# observe a frame. A green tick here means the payload built and the portable tests passed on
+# Windows. It does not mean FrameDoctor has been seen to work — docs/WINDOWS-VALIDATION.md is
+# the list of what has to happen on a real gaming machine, and it is untouched by this file.
+name: Windows package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Windows — test, publish, MSI
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: src/frontend
+        run: pnpm install --frozen-lockfile
+
+      # The whole suite, on Windows. Same tests CI runs on Linux; the point is the platform
+      # underneath them, so it runs before anything is packaged rather than beside it.
+      - name: Test on Windows
+        run: dotnet test -c Release --nologo
+
+      # The same script used in development, not a second copy of its logic in YAML. A packaging
+      # step that only exists in CI is one nobody can reproduce when it breaks.
+      - name: Publish payload
+        shell: bash
+        run: bash packaging/publish.sh win-x64
+
+      - name: Build MSI
+        shell: bash
+        run: bash packaging/build-installer.sh
+
+      # Two artefacts because they answer different questions. The MSI is how the product is
+      # meant to be installed; the portable folder is how someone checks what is in it, or runs
+      # it without installing anything on a machine they would rather not modify.
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrameDoctor-msi
+          path: packaging/out/*.msi
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrameDoctor-portable
+          path: packaging/out/app/
+          if-no-files-found: error
+          retention-days: 30

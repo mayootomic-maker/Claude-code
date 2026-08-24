@@ -20,13 +20,26 @@
 
   <Package Name="FrameDoctor"
            Manufacturer="FrameDoctor"
-           Version="!(bind.FileVersion.ShellExe)"
+           Version="$(Version)"
            UpgradeCode="9f2b7c14-6d3e-4a58-9f0d-2e7a1b4c8d63"
            Scope="perMachine"
            Compressed="yes"
            InstallerVersion="500">
 
     <SummaryInformation Description="Real-time gaming performance diagnostics" />
+
+    <!--
+      The version comes from the build, not from binding to the shell executable's file version.
+
+      `!(bind.FileVersion.ShellExe)` was here first and could never have worked: the payload is
+      harvested by a <Files> element, which generates its own identifiers, so there has never
+      been a File whose Id is ShellExe for the bind to resolve. It failed at MSI build time
+      only, which on this project meant it failed the first time anyone reached that step.
+
+      packaging/build-installer.sh reads the version out of Directory.Build.props, so the number
+      stamped on the package is the same one compiled into the binaries rather than a second
+      copy that drifts.
+    -->
 
     <!--
       An upgrade replaces the previous version rather than installing beside it. Two engines
