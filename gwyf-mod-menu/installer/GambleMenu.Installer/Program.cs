@@ -43,6 +43,7 @@ namespace GambleMenu.Installer
                     return Done(1);
                 }
 
+                _gameDir = gameDir;
                 Info($"Game folder:  {gameDir}");
                 Console.WriteLine();
 
@@ -50,7 +51,7 @@ namespace GambleMenu.Installer
                 // mod menu because they are already playing and want it now.
                 bool wasRunning = HandleRunningGame(gameDir, auto);
 
-                bool ok = uninstall ? Uninstall(gameDir) : Install(gameDir);
+                bool ok = uninstall ? Uninstall(gameDir) : Install(gameDir, auto);
 
                 if (ok && wasRunning) RelaunchGame(gameDir);
                 return Done(ok ? 0 : 1);
@@ -66,8 +67,92 @@ namespace GambleMenu.Installer
 
         // --- install ----------------------------------------------------------------
 
-        private static bool Install(string gameDir)
+        /// <summary>
+        /// Lets the user pick the open key before the game has ever run.
+        ///
+        /// This is the one fallback that cannot fail. Every other route in — a keybind, the
+        /// on-screen tab — can be defeated by a keyboard without that key or by the game
+        /// holding the cursor, and none of them can be fixed from inside a menu you cannot
+        /// open. Writing the choice to the config first sidesteps the whole circle.
+        /// </summary>
+        private static string ChooseOpenKey(bool auto)
         {
+            var choices = new[]
+            {
+                ("F1", "on every keyboard"),
+                ("Insert", "missing on most laptops"),
+                ("Home", "usually present"),
+                ("BackQuote", "the ` key, left of 1"),
+                ("F9", "clear of most game binds"),
+            };
+
+            if (auto) return choices[0].Item1;
+
+            Console.WriteLine("  Which key should open the menu?");
+            Console.WriteLine();
+            for (int i = 0; i < choices.Length; i++)
+                Console.WriteLine($"    [{i + 1}] {choices[i].Item1,-12} {choices[i].Item2}");
+            Console.WriteLine("    [6] something else");
+            Console.WriteLine();
+            Console.Write($"  Choice [1-6, Enter for {choices[0].Item1}]: ");
+
+            string answer = (Console.ReadLine() ?? "").Trim();
+            string chosen = choices[0].Item1;
+
+            if (answer.Length > 0)
+            {
+                if (int.TryParse(answer, out int pick) && pick >= 1 && pick <= choices.Length)
+                {
+                    chosen = choices[pick - 1].Item1;
+                }
+                else if (answer == "6")
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("  Type a Unity KeyCode name, e.g. F4, Backslash, RightShift, Pause.");
+                    Console.Write("  Key: ");
+                    string typed = (Console.ReadLine() ?? "").Trim();
+                    if (typed.Length > 0) chosen = typed;
+                }
+            }
+
+            if (WriteOpenKey(chosen)) Ok($"Menu key set to {chosen}.");
+            else Info($"Could not write the config; the menu will use its default, {choices[0].Item1}.");
+
+            Info("You can change it later in the menu, under Settings.");
+            return chosen;
+        }
+
+        /// <summary>
+        /// Sets menu.key in the plugin's config without disturbing anything else in it.
+        ///
+        /// The file is a flat map of quoted strings, so it is read, the one entry replaced or
+        /// added, and the whole thing written back — never truncated to just this key, which
+        /// would silently wipe an existing setup.
+        /// </summary>
+        private static bool WriteOpenKey(string keyName)
+        {
+            try
+            {
+                string dir = Path.Combine(_gameDir, "BepInEx", "config", "GambleMenu");
+                Directory.CreateDirectory(dir);
+                string path = Path.Combine(dir, "active.json");
+
+                string existing = File.Exists(path) ? File.ReadAllText(path) : null;
+                File.WriteAllText(path, ConfigPatch.Set(existing, "menu.key", keyName));
+                return true;
+            }
+            catch
+            {
+                // The caller reports this; there is no log file to write to yet.
+                return false;
+            }
+        }
+
+        private static string _gameDir;
+
+        private static bool Install(string gameDir, bool auto)
+        {
+            _gameDir = gameDir;
             string bepinexDir = Path.Combine(gameDir, "BepInEx");
             bool alreadyHadBepInEx = Directory.Exists(Path.Combine(bepinexDir, "core"));
 
@@ -110,7 +195,10 @@ namespace GambleMenu.Installer
 
             Ok("Everything is in place.");
             Console.WriteLine();
-            Highlight("  Launch the game and press  INSERT");
+
+            string key = ChooseOpenKey(auto);
+            Console.WriteLine();
+            Highlight($"  Launch the game and press  {key.ToUpperInvariant()}");
             Console.WriteLine();
             Console.WriteLine("  A banner saying \"GambleMenu loaded\" appears for a few seconds at startup.");
             Console.WriteLine("  If you see that banner, the plugin is running and only the key is in doubt.");

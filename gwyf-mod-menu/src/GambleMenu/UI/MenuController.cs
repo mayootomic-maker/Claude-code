@@ -79,7 +79,8 @@ namespace GambleMenu.UI
                 // Secondary path. The primary one lives in OnGUI and does not depend on any
                 // input backend at all; this only adds held-key support and costs nothing
                 // when OnGUI already handled the press this frame.
-                if (InputBridge.GetKeyDown(Settings.MenuKey.Value)) RequestToggle();
+                if (InputBridge.GetKeyDown(Settings.MenuKey.Value) ||
+                    InputBridge.GetKeyDown(Settings.MenuKeyAlt.Value)) RequestToggle();
                 if (InputBridge.GetKeyDown(Settings.PanicKey.Value)) Panic();
                 ModRegistry.PollHotkeys();
             }
@@ -116,6 +117,12 @@ namespace GambleMenu.UI
             {
                 _prevLock = Cursor.lockState;
                 _prevVisible = Cursor.visible;
+                if (!Settings.EverOpened.Value)
+                {
+                    // Records that a way in was found, which retires the on-screen tab.
+                    Settings.EverOpened.Value = true;
+                    ConfigStore.SaveActive();
+                }
             }
             else
             {
@@ -206,6 +213,7 @@ namespace GambleMenu.UI
             if (openAnim > 0.002f) DrawWindow(openAnim, logicalW, logicalH);
 
             DrawStartupBanner(logicalW, logicalH);
+            DrawOpenHandle(logicalW, logicalH);
             if (Settings.Watermark.Value && !_open) DrawWatermark(logicalW);
             if (Settings.ShowToasts.Value) DrawToasts(logicalW, logicalH);
 
@@ -503,7 +511,7 @@ namespace GambleMenu.UI
             if (Widgets.IsCapturingKey) return;
             if (_open && GUIUtility.keyboardControl != 0 && e.keyCode != KeyCode.Escape) return;
 
-            if (e.keyCode == Settings.MenuKey.Value) { RequestToggle(); e.Use(); }
+            if (e.keyCode == Settings.MenuKey.Value || e.keyCode == Settings.MenuKeyAlt.Value) { RequestToggle(); e.Use(); }
             else if (e.keyCode == Settings.PanicKey.Value) { Panic(); e.Use(); }
             else if (e.keyCode == KeyCode.Escape && _open) { SetOpen(false); e.Use(); }
         }
@@ -530,7 +538,9 @@ namespace GambleMenu.UI
             foreach (var b in GameBridge.All) if (b.Ok) ok++;
 
             string title = $"GambleMenu {Plugin.Version} loaded";
-            string hint = $"Press {Settings.MenuKey.Value} to open  ·  {ModRegistry.All.Count} mods  ·  {ok}/{GameBridge.All.Count} bindings";
+            string hint = $"Press {Settings.MenuKey.Value} or {Settings.MenuKeyAlt.Value} to open" +
+                          (Settings.Handle.Index != 2 && !Settings.EverOpened.Value ? ", or click the tab at the edge" : "") +
+                          $"  ·  {ModRegistry.All.Count} mods";
 
             float w = Mathf.Max(Draw.TextWidth(title, Styles.Strong), Draw.TextWidth(hint, Styles.Small)) + 46f;
             var r = new Rect((logicalW - w) * 0.5f, logicalH - 96f, w, 54f);
@@ -543,6 +553,75 @@ namespace GambleMenu.UI
             Draw.Label(new Rect(r.x + 34f, r.y + 9f, r.width - 44f, 18f), title, Styles.Strong, p.Text);
             Draw.Label(new Rect(r.x + 34f, r.y + 28f, r.width - 44f, 16f), hint, Styles.Small, p.TextMuted);
             Draw.Alpha = 1f;
+        }
+
+        /// <summary>
+        /// A small tab at the screen edge that opens the menu when clicked.
+        ///
+        /// This is the escape hatch for the failure that has no other remedy: if no key opens
+        /// the menu, no amount of rebinding inside the menu can help, because you cannot get
+        /// into it to rebind anything. A mouse target needs no keyboard and no input backend.
+        /// </summary>
+        private void DrawOpenHandle(float logicalW, float logicalH)
+        {
+            if (_open) return;
+            if (Settings.Handle.Index == 2) return;                              // Never
+            if (Settings.Handle.Index == 0 && Settings.EverOpened.Value) return; // Until first opened
+
+            var p = Theme.P;
+            Rect r;
+            bool vertical;
+
+            switch (Settings.HandleSide.Index)
+            {
+                case 1: r = new Rect(0f, logicalH * 0.34f, 24f, 84f); vertical = true; break;
+                case 2: r = new Rect(logicalW * 0.5f - 52f, 0f, 104f, 24f); vertical = false; break;
+                default: r = new Rect(logicalW - 24f, logicalH * 0.34f, 24f, 84f); vertical = true; break;
+            }
+
+            bool hover = r.Contains(Event.current.mousePosition);
+            float grow = Anim.To("handle.h", hover ? 1f : 0f, 16f);
+
+            // Grows outward from its edge on hover, so it is obviously clickable without
+            // taking up room the rest of the time.
+            if (vertical)
+            {
+                float extra = grow * 6f;
+                r = Settings.HandleSide.Index == 1
+                    ? new Rect(r.x, r.y, r.width + extra, r.height)
+                    : new Rect(r.x - extra, r.y, r.width + extra, r.height);
+            }
+            else
+            {
+                r = new Rect(r.x, r.y, r.width, r.height + grow * 5f);
+            }
+
+            Draw.Shadow(r, p.Shadow, 8f, 8f, 4);
+            Draw.Card(r, Color.Lerp(p.SurfaceAlt, p.SurfaceHover, grow), Theme.Fade(Theme.Accent, 0.5f + grow * 0.4f), 7f);
+
+            var dot = new Rect(r.x + r.width * 0.5f - 4f, r.y + (vertical ? 12f : r.height * 0.5f - 4f), 8f, 8f);
+            Draw.Round(dot, Theme.Accent, 4f);
+
+            if (vertical)
+            {
+                // Stacked letters: IMGUI cannot rotate text without a matrix push per glyph,
+                // and a five-letter column is legible enough at this size.
+                const string word = "MENU";
+                for (int i = 0; i < word.Length; i++)
+                    Draw.Label(new Rect(r.x, r.y + 26f + i * 12f, r.width, 12f),
+                               word[i].ToString(), Styles.KickerCentre, Color.Lerp(p.TextMuted, p.Text, grow));
+            }
+            else
+            {
+                Draw.Label(new Rect(r.x + 16f, r.y, r.width - 20f, r.height), "MODS", Styles.KickerCentre,
+                           Color.Lerp(p.TextMuted, p.Text, grow));
+            }
+
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && hover)
+            {
+                RequestToggle();
+                Event.current.Use();
+            }
         }
 
         private void DrawWatermark(float logicalW)

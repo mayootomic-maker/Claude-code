@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="ConfigPatch.cs" />
   </ItemGroup>
 
   <!-- BepInEx and the plugin travel inside the exe, so installing works offline and cannot

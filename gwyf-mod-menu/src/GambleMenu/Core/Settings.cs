@@ -13,13 +13,56 @@ namespace GambleMenu.Core
 
         private static T Reg<T>(T o) where T : Option { All.Add(o); return o; }
 
+        /// <summary>
+        /// The primary open key.
+        ///
+        /// F1, not Insert. Insert was the original default and it was a bad one: most laptops,
+        /// and every TKL or 60% keyboard, either hide it behind Fn or omit it entirely, which
+        /// leaves those players with no way into the menu and therefore no way to rebind it.
+        /// </summary>
         public static readonly KeyOption MenuKey = Reg(new KeyOption(
-            "menu.key", "Open menu", KeyCode.Insert,
+            "menu.key", "Open menu", KeyCode.F1,
             "The key that shows and hides this menu."));
+
+        /// <summary>
+        /// A second key that also opens the menu.
+        ///
+        /// Insert alone was a poor default: most laptops, and every TKL or 60% keyboard, either
+        /// put it behind Fn or omit it entirely, which left those players with no way in at all.
+        /// F1 exists on every keyboard ever made.
+        /// </summary>
+        public static readonly KeyOption MenuKeyAlt = Reg(new KeyOption(
+            "menu.key2", "Also opens menu", KeyCode.Insert,
+            "A second key that opens the menu as well."));
 
         public static readonly KeyOption PanicKey = Reg(new KeyOption(
             "menu.panicKey", "Panic key", KeyCode.End,
             "Instantly switches every mod off and closes the menu."));
+
+        /// <summary>
+        /// The on-screen tab that opens the menu with the mouse.
+        ///
+        /// A mouse route in for when no keybind works. It is not a complete substitute: while
+        /// the game holds the cursor locked for looking around, nothing on screen is clickable,
+        /// so the tab only helps where the cursor is already free. The keys remain the reliable
+        /// path, which is why there are two of them and why the installer can set one.
+        ///
+        /// Defaults to disappearing once the menu has been opened, so it proves itself and then
+        /// gets out of the way rather than sitting on screen forever.
+        /// </summary>
+        public static readonly EnumOption Handle = Reg(new EnumOption(
+            "menu.handle", "On-screen open button",
+            new[] { "Until first opened", "Always", "Never" }, 0,
+            "A small tab at the edge of the screen that opens this menu when clicked."));
+
+        public static readonly EnumOption HandleSide = Reg(new EnumOption(
+            "menu.handleSide", "Button position", new[] { "Right", "Left", "Top" }, 0,
+            "Which screen edge the tab sits on.") { VisibleWhen = () => Handle.Index != 2 });
+
+        /// <summary>Not shown in Settings — it is a record of what happened, not a preference.
+        /// The "state." prefix is what keeps it off that page.</summary>
+        public static readonly BoolOption EverOpened = Reg(new BoolOption(
+            "state.everOpened", "Menu has been opened before", false));
 
         public static readonly EnumOption Theme = Reg(new EnumOption(
             "menu.theme", "Theme", new[] { "Midnight", "Slate", "Casino", "Paper", "Contrast" }, 0,

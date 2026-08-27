@@ -4,7 +4,7 @@ An in-game mod menu for **Gamble With Your Friends** — 37 mods across ten cate
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
-Press **Insert** in game.
+Press **F1** in game.
 
 ---
 
@@ -31,6 +31,11 @@ Flags: `--uninstall` removes the plugin and keeps your settings; `--auto` skips 
 **By hand:** install **BepInExPack 5.4.2305** through [r2modman] or [Gale], then drop
 `GambleMenu.dll` into `BepInEx/plugins/`.
 
+The installer asks which key should open the menu and writes it to the config before the
+game ever runs. That matters more than it sounds: every other way in can be defeated — a
+keyboard without that key, a game that swallows the press — and none of them can be fixed
+from inside a menu you cannot open.
+
 Either way, launch the game — a **"GambleMenu loaded"** banner appears for a few seconds.
 That banner is the diagnostic: if you see it, the plugin is running and only the keybind
 could be wrong. If you do not, BepInEx never loaded it — check `BepInEx/LogOutput.log`.
@@ -42,10 +47,21 @@ could be wrong. If you do not, BepInEx never loaded it — check `BepInEx/LogOut
 
 | Key | Does |
 | --- | --- |
-| `Insert` | Open and close the menu |
+| `F1` | Open and close the menu |
+| `Insert` | Does the same — a second key, in case one is taken |
 | `End` | Panic — switch every mod off at once |
 | `Esc` | Closes the menu |
 | *(yours)* | Every mod takes its own hotkey; expand a card to bind one |
+
+**Two open keys, not one.** Insert was the original default and it was the wrong choice:
+most laptops, and every TKL or 60% keyboard, either hide it behind `Fn` or leave it off
+entirely. F1 is on every keyboard ever made, so it leads.
+
+**No key at all?** A small **MENU** tab sits at the edge of the screen and opens the menu when
+clicked. It disappears once you have opened the menu once, and can be set to always-on or off
+in Settings. It is not a full substitute — while the game holds the cursor for looking around,
+nothing on screen is clickable — so it helps in menus rather than mid-spin. The reliable route
+is a key, which is why there are two and why the installer lets you set one up front.
 
 The menu key is read from Unity's own event stream rather than from an input API, so it
 works whether the game enabled the legacy input manager, the Input System package, or both.

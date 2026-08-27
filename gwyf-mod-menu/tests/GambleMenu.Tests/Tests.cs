@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GambleMenu.Core;
 
 namespace GambleMenu.Tests
@@ -32,6 +33,8 @@ namespace GambleMenu.Tests
             FieldLocate();
             FieldReplace();
             FieldRead();
+            Console.WriteLine("ConfigPatch");
+            ConfigPatching();
 
             Console.WriteLine();
             Console.WriteLine($"{_passed} passed, {_failed} failed");
@@ -77,6 +80,52 @@ namespace GambleMenu.Tests
             threw = false;
             try { Json.Read("{\"a\": \"unterminated"); } catch (FormatException) { threw = true; }
             Check("unterminated string throws", threw);
+        }
+
+        // --- ConfigPatch ------------------------------------------------------------
+
+        private static void ConfigPatching()
+        {
+            // Writing into a config the user has already built up must not lose any of it.
+            const string existing =
+                "{\n" +
+                "  \"economy.infinite.value\": \"1000000000000\",\n" +
+                "  \"menu.key\": \"Insert\",\n" +
+                "  \"menu.theme\": \"Casino\",\n" +
+                "  \"saves.editor.name\": \"Save_1730000000\"\n" +
+                "}\n";
+
+            string patched = Installer.ConfigPatch.Set(existing, "menu.key", "F1");
+
+            Check("changes the requested key", patched.Contains("\"menu.key\": \"F1\""));
+            Check("does not leave the old value behind", !patched.Contains("\"Insert\""));
+            Check("keeps an unrelated numeric setting", patched.Contains("\"economy.infinite.value\": \"1000000000000\""));
+            Check("keeps an unrelated enum setting", patched.Contains("\"menu.theme\": \"Casino\""));
+            Check("keeps an unrelated string setting", patched.Contains("\"saves.editor.name\": \"Save_1730000000\""));
+
+            int entries = patched.Split('\n').Count(l => l.Contains(":"));
+            Eq("entry count is unchanged", 4, entries);
+
+            // A first run has no file at all.
+            string fresh = Installer.ConfigPatch.Set(null, "menu.key", "Home");
+            Check("creates a config from nothing", fresh.Contains("\"menu.key\": \"Home\""));
+            Eq("a new config has exactly one entry", 1, fresh.Split('\n').Count(l => l.Contains(":")));
+
+            // Adding a key that was not present must not drop the ones that were.
+            string added = Installer.ConfigPatch.Set(existing, "menu.key2", "Insert");
+            Check("adds a new key", added.Contains("\"menu.key2\": \"Insert\""));
+            Eq("adding grows the config by one", 5, added.Split('\n').Count(l => l.Contains(":")));
+
+            // Escaped content elsewhere in the file must survive untouched.
+            const string withEscapes =
+                "{\n  \"dev.fieldedit.value\": \"C:\\\\Games\\\\said \\\"hi\\\"\",\n  \"menu.key\": \"Insert\"\n}\n";
+            string kept = Installer.ConfigPatch.Set(withEscapes, "menu.key", "F1");
+            Check("preserves escaped backslashes and quotes verbatim",
+                  kept.Contains("C:\\\\Games\\\\said \\\"hi\\\""));
+
+            // And a value arriving raw gets escaped on the way in.
+            string escaped = Installer.ConfigPatch.Set(null, "k", "a\"b\\c");
+            Check("escapes a raw incoming value", escaped.Contains("a\\\"b\\\\c"));
         }
 
         // --- JsonField --------------------------------------------------------------

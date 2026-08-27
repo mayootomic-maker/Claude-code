@@ -20,6 +20,7 @@
     <Compile Include="Tests.cs" />
     <Compile Include="../../src/GambleMenu/Core/Json.cs" />
     <Compile Include="../../src/GambleMenu/Core/JsonField.cs" />
+    <Compile Include="../../installer/GambleMenu.Installer/ConfigPatch.cs" />
   </ItemGroup>
 
 </Project>
