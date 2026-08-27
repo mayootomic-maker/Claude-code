@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 38 mods across eleven categories, 106
+An in-game mod menu for **Gamble With Your Friends** — 39 mods across eleven categories, 118
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -115,10 +115,49 @@ Worth being straight about the ceiling: this changes how *plausible* a change lo
 whether it is visible. Anyone reading the bank still sees the number move. What they will not
 see is a round trillion appearing between two frames.
 
-### Machines — 1
-Marking machines in the world.
+### Machines — 2
+Marking machines, and the spots on them.
 
-**Machine markers** outlines nearby machines where they stand and pins a small panel to each
+#### Outcome mapper — where the losing one is
+
+Everything else here reads *numbers*. This reads **positions**, which is what actually answers
+"which of these is the bad one".
+
+A machine that has already chosen its outcome almost always holds a reference to the object it
+chose — a slot, a segment, a card — or an index into a list of them. That reference is a place
+in the world, so it can simply be drawn on. Two shapes cover nearly every casino machine ever
+written, and this looks for both:
+
+```
+Wheel.winningSegment      -> a field pointing straight at the chosen thing
+Reel.symbols[resultIndex] -> a list of candidates plus an index into it
+```
+
+Which pointer means *good* and which means *ruin* is not knowable in advance, so it does not
+guess — it **learns**. Each time a marker moves, it watches what the balance does next and
+keeps that marker's record. After a few rounds the markers colour themselves:
+
+| | |
+| --- | --- |
+| **red, LOSE** | this spot has preceded losses |
+| **green, WIN** | this spot has preceded gains |
+| **amber, ?** | not seen enough times yet — the tally is shown regardless |
+
+Set *Rounds before colouring* to say how much evidence you want before it commits. Lower reacts
+faster and is wrong more often.
+
+In a game with no money binding, name any rising value under *Outcome comes from* as
+`Class.field` — score, chips, anything that goes up when you win — and it learns against that
+instead.
+
+The honest limit is the same as ever: this reads a decision the game has already made. Where a
+machine picks its result up front and then plays an animation, you will see the answer before
+the animation admits it. Where the pick happens at the very end, there is nothing to read early
+and the marker appears with the result rather than before it.
+
+#### Machine markers
+
+Outlines nearby machines where they stand and pins a small panel to each
 one showing what its state is doing. Three states, readable without reading:
 
 | | |
