@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 152
+An in-game mod menu for **Gamble With Your Friends** — 48 mods across eleven categories, 148
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -116,104 +116,60 @@ whether it is visible. Anyone reading the bank still sees the number move. What 
 see is a round trillion appearing between two frames.
 
 ### Machines — 2
-Marking machines, and the spots on them.
+Reading the machine you are looking at.
 
-#### Outcome mapper — where the losing one is
+#### Table read
 
-Everything else here reads *numbers*. This reads **positions**, which is what actually answers
-"which of these is the bad one".
-
-A machine that has already chosen its outcome almost always holds a reference to the object it
-chose — a slot, a segment, a card — or an index into a list of them. That reference is a place
-in the world, so it can simply be drawn on. Two shapes cover nearly every casino machine ever
-written, and this looks for both:
-
-```
-Wheel.winningSegment      -> a field pointing straight at the chosen thing
-Reel.symbols[resultIndex] -> a list of candidates plus an index into it
-```
-
-Which pointer means *good* and which means *ruin* is not knowable in advance, so it does not
-guess — it **learns**. Each time a marker moves, it watches what the balance does next and
-keeps that marker's record. After a few rounds the markers colour themselves:
+Look at a machine and it tells you what it is, whether a round is running, **where to press**,
+and what it has actually paid.
 
 | | |
 | --- | --- |
-| **red pin, ✗** | this spot has preceded losses |
-| **green pin, ✓** | this spot has preceded gains |
-| **amber pin, ·** | not seen enough times yet |
+| **blue ring** | a round is running on this machine |
+| **gold ring** | ready |
+| **green ring + pin** | the thing to press, with the game's own prompt |
 
-#### How the markers are drawn
+**How it knows.** Every casino game in this game derives from a class called `GameBase`, which
+carries `gameName`, `gameType`, `isPlaying`, `StartGame`, `TryStartGame`, `ResetGame` and
+`Payout`. The button is an `InteractableBase`, and its `InteractableName` *is* the prompt the
+game itself would show you. None of that was inferred — see below.
 
-Coloured boxes around objects with a text plate on each one is the visual language of an ESP
-cheat, and for a good reason: a screen-space rectangle belongs to the *screen*, not to the
-world — it is drawn around whatever happens to be behind it.
+**Payout is hooked at the source.** Rather than watching the bank balance and guessing, the
+mod patches `GameBase.Payout`, so a payout is counted when the game makes one. A balance watch
+cannot tell a win from a purchase, a refund, or another player's luck; the game calling
+`Payout` on a specific machine can only mean one thing. That is where "paid 4 of 11 rounds"
+comes from.
 
-So markers are a **ring on the floor**, projected through the camera so it lies flat in the
-room and tilts with your view, and a **pin** hanging above with an icon rather than a
-sentence. Distant markers shrink and fade instead of stacking up at full strength, and only
-the **nearest** one is captioned — labelling all of them at once is what turns an overlay into
-a wall of text.
+#### Roll state
 
-The same treatment applies to player markers, the object finder and the machine markers, so the
-whole overlay reads as one thing. A `Box` style remains available per mod if you prefer the
-old look.
+The game ships a `SeededRandomManager`, and that is what decides outcomes. Save its state
+before a spin and restore it afterwards to replay a round from the point it was decided. Its
+internals are not documented, so the snapshot is taken by value rather than by name — every
+serialisable field recorded and written back together — which restores the state without
+needing to know its shape. "What is in there?" dumps the manager's fields if you want to look.
 
-Set *Rounds before colouring* to say how much evidence you want before it commits. Lower reacts
-faster and is wrong more often.
+---
 
-In a game with no money binding, name any rising value under *Outcome comes from* as
-`Class.field` — score, chips, anything that goes up when you win — and it learns against that
-instead.
+## How the game-specific parts were worked out
 
-The honest limit is the same as ever: this reads a decision the game has already made. Where a
-machine picks its result up front and then plays an animation, you will see the answer before
-the animation admits it. Where the pick happens at the very end, there is nothing to read early
-and the marker appears with the result rather than before it.
+Not by guessing, and not from a decompiler.
 
-#### Random state
+Five mods for this game are published on Thunderstore, and a compiled .NET assembly records
+every external type and member it references. Those mods were built against the real
+`Assembly-CSharp`, so their reference tables *are* the game's API surface, from the outside:
 
-Where a game rolls through `UnityEngine.Random`, the generator's entire state is a value you can
-copy and put back — so a round can be replayed from the point it was decided. Save the state,
-spin, and if it went badly restore it and burn a value or two so the next roll comes from a
-different place in the stream.
-
-Plenty of games do not use it: a `System.Random` instance, a hand-rolled generator or a
-server-side roll are all common and none are touched by this. That cannot be detected from
-outside, so there is a button that confirms the generator round-trips, and the real test is a
-spin — save, spin, restore, spin again, and see whether the result repeats.
-
-#### Machine markers
-
-Outlines nearby machines where they stand and pins a small panel to each
-one showing what its state is doing. Three states, readable without reading:
-
-| | |
+| Mod | What its reference table gave up |
 | --- | --- |
-| **grey** | idle — nothing about this machine is moving |
-| **amber** | its state is actively changing right now |
-| **green, ringed, PRESS** | your signal condition holds |
+| AutoSlots | `GameBase.TryStartGame`, `Slots`, `PlayerInteract` |
+| More Slots | `GameBase.gameName / gameType / isPlaying / StartGame / Payout / ResetGame` |
+| MachineControl | `CasinoFloor.floorIndex`, `GameBase.GameName`, `ObjectStamp.Floor` |
+| Crash100x | `Crash.Network_hasStarted` — a Mirror SyncVar |
+| MoreUpgrades | `SeededRandomManager`, `GameManager.state`, `Network_dayDuration`, `InteractableBase.InteractableName`, and 35 more |
 
-**How it finds machines.** No class names are involved. Scenery has no custom script on it, so
-anything nearby with a collider, a renderer and a MonoBehaviour from the game's own assembly
-is a candidate — and anything whose state never moves is dropped.
-
-**How it picks what to show.** By watching, not by guessing. An earlier version ranked fields
-by whether the name looked like `result` or `payout`, which is why it was inaccurate: every
-machine has a `value` and most of them mean nothing. This one scores a field on observed
-behaviour — never changes means scenery, changes on every single sample means an animation or
-a clock, and what is worth seeing sits between those, moving in discrete jumps and having
-moved recently.
-
-**Making it say PRESS.** The one thing the mod cannot work out is what a value *means*. So you
-tell it, once: set **Signal: field** to the name shown on the marker, pick a comparison, give
-it a number. From then on that machine is ringed and labelled whenever the condition holds:
-`multiplier` **is at least** `4`, or `roundState` **changes**. The label is yours to write.
-
-Worth being straight about the limit: this reads state that exists. Where a machine rolls its
-result up front and then plays an animation, that result is in a field and you will see it
-before the animation admits it. Where the roll happens at the end, there is nothing to read
-early and no mod can invent it — you will watch the value resolve instead.
+Reading them took a small tool over `System.Reflection.Metadata`. It is why the machine mods
+went from sweeping every collider in range to asking one object a direct question, and why
+`Roll state` now drives the game's own generator instead of `UnityEngine.Random` — which it
+previously did, which was a guess, and which would have appeared to work while changing nothing.
 
 ### Time — 3
 **Day length** (seconds per run in the casino) · **Freeze the day clock** (hold the countdown,

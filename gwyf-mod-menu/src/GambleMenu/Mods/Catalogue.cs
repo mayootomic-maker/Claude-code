@@ -24,8 +24,7 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new DripFeed());
 
             // Machines — reading what one is about to do.
-            ModRegistry.Add(new OutcomeMapper());
-            ModRegistry.Add(new MachineMarkers());
+            ModRegistry.Add(new TableRead());
             ModRegistry.Add(new RandomControl());
 
             // Time — how long a day lasts and how fast it runs.

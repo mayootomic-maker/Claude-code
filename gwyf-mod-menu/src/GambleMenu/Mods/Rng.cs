@@ -1,102 +1,149 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
 using GambleMenu.Core;
 using GambleMenu.UI;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace GambleMenu.Mods
 {
     /// <summary>
-    /// Saves and restores Unity's random number generator.
+    /// Saves and restores the generator this game actually rolls with.
     ///
-    /// Where a game rolls its outcomes through UnityEngine.Random, the generator's whole state
-    /// is a value you can copy and put back — so a round can be replayed from exactly the point
-    /// it was decided. Save the state, spin, and if it went badly restore it and nudge the
-    /// sequence; the next roll then comes from a different place in the stream.
+    /// The first version of this drove UnityEngine.Random, which was a guess and the wrong one.
+    /// The game ships a <c>SeededRandomManager</c> — a name read out of a shipped mod's
+    /// reference table, not inferred — and that is what decides outcomes. Copying Unity's
+    /// generator while the game rolls from its own would have appeared to work and changed
+    /// nothing, which is the worst kind of wrong.
     ///
-    /// The honest caveat is that plenty of games do not use it. A System.Random instance, a
-    /// hand-rolled generator or a server-side roll are all common, and none of them are touched
-    /// by this. There is no way to tell which from outside, so the way to find out is to save a
-    /// state, spin, restore, and see whether the result repeats.
+    /// Its internals are not known, so the snapshot is taken by value rather than by name:
+    /// every serialisable field on the manager is recorded and written back together. That
+    /// restores whatever the state happens to be made of without needing to know its shape.
     /// </summary>
     internal sealed class RandomControl : Mod
     {
         public override string Id => "machines.rng";
-        public override string Name => "Random state";
-        public override string Description => "Save, restore and reseed Unity's random generator, where the game uses it.";
+        public override string Name => "Roll state";
+        public override string Description => "Snapshots the game's own random generator so a round can be replayed from where it was decided.";
         public override Category Cat => Category.Machines;
         public override Authority Auth => Authority.SoloOnly;
         public override bool IsToggle => false;
-        public override string[] Tags => new[] { "rng", "random", "seed", "reroll", "luck", "state", "reset" };
+        public override string[] Tags => new[] { "rng", "random", "seed", "reroll", "luck", "state", "roll" };
+        public override Binding[] Requires => new Binding[] { GameBridge.TSeededRandom };
 
         private IntOption _seed;
-        private IntOption _nudge;
+        private BoolOption _alsoUnity;
 
-        private Random.State? _saved;
-        private string _testResult = "";
+        private readonly Dictionary<FieldInfo, object> _snapshot = new Dictionary<FieldInfo, object>();
+        private UnityEngine.Random.State? _unitySnapshot;
+        private string _status = "Nothing saved yet.";
 
         protected override void Build()
         {
             _seed = Opt(new IntOption("machines.rng.seed", "Seed", 12345, 0, int.MaxValue,
-                "Reseeding makes the sequence repeatable from a known point."));
-            _nudge = Opt(new IntOption("machines.rng.nudge", "Values to burn", 1, 0, 64,
-                "After restoring, draw this many values first so the next roll differs from the one you just had."));
+                "Written into any int field on the manager whose name mentions a seed."));
+            _alsoUnity = Opt(new BoolOption("machines.rng.unity", "Also snapshot Unity's generator", true,
+                "Cheap, and covers anything the game rolls through UnityEngine.Random as well."));
 
-            Act("Save state", () =>
-            {
-                _saved = Random.state;
-                Notifier.Success("Random state saved.");
-            }, "Take this immediately before a spin.");
-
-            Act("Restore state", () =>
-            {
-                if (!_saved.HasValue) { Notifier.Warn("Nothing saved yet."); return; }
-                Random.state = _saved.Value;
-                for (int i = 0; i < _nudge.Value; i++) { float _ = Random.value; }
-                Notifier.Success(_nudge.Value > 0
-                    ? $"Restored, then burned {_nudge.Value} value(s)."
-                    : "Restored exactly.");
-            }, canRun: () => _saved.HasValue);
-
-            Act("Reseed", () =>
-            {
-                Random.InitState(_seed.Value);
-                Notifier.Success($"Reseeded to {_seed.Value}.");
-            }, "Starts the sequence again from a known point.");
-
-            Act("Can this be steered?", TestUsage,
-                "Rolls, restores, and rolls again to confirm the generator round-trips.");
+            Act("Save roll state", Save, "Take this immediately before a spin.");
+            Act("Restore roll state", Restore, "Puts the generator back where it was.",
+                canRun: () => _snapshot.Count > 0 || _unitySnapshot.HasValue);
+            Act("Apply seed", ApplySeed, "Sets any seed field on the manager to the number above.");
+            Act("What is in there?", Inspect, "Writes the manager's fields and values to a dump file.");
         }
 
-        /// <summary>
-        /// Confirms the generator restores predictably.
-        ///
-        /// This proves only that Random itself round-trips — not that the game draws from it,
-        /// which cannot be observed from outside. The message says exactly that rather than
-        /// implying a guarantee it has not earned.
-        /// </summary>
-        private void TestUsage()
+        private Object Manager() => GameBridge.Instance(GameBridge.TSeededRandom);
+
+        /// <summary>Fields worth snapshotting: the value types that can hold generator state.</summary>
+        private static IEnumerable<FieldInfo> StateFields(Type t)
         {
-            var before = Random.state;
-            float a = Random.value;
-            Random.state = before;
-            float b = Random.value;
-            Random.state = before;
-
-            bool deterministic = Mathf.Approximately(a, b);
-            _testResult = deterministic
-                ? "Restoring works here. Whether the game rolls through this generator is the next question, and only a real spin answers it: save a state, spin, restore, spin again. A repeated result means yes."
-                : "Restoring did not reproduce the same value, so this generator cannot be steered.";
-
-            if (deterministic) Notifier.Success("Random state restores correctly — now try it on a real spin.");
-            else Notifier.Warn("This generator does not restore predictably.");
+            foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                if (f.FieldType.IsPrimitive || f.FieldType.IsEnum) yield return f;
         }
 
-        public override float BodyHeight(float width) =>
-            string.IsNullOrEmpty(_testResult) ? 0f : Styles.WrapSmall.CalcHeight(new GUIContent(_testResult), width - 8f) + 8f;
+        private void Save()
+        {
+            _snapshot.Clear();
+            var manager = Manager();
+
+            if (manager != null)
+            {
+                foreach (var f in StateFields(manager.GetType()))
+                {
+                    try { _snapshot[f] = f.GetValue(manager); }
+                    catch { /* a field that will not read simply is not part of the snapshot */ }
+                }
+            }
+
+            if (_alsoUnity.Value) _unitySnapshot = UnityEngine.Random.state;
+
+            _status = manager == null
+                ? "No live SeededRandomManager; Unity's generator saved instead."
+                : $"Saved {_snapshot.Count} field(s) from {manager.GetType().Name}.";
+            Notifier.Success(_status);
+        }
+
+        private void Restore()
+        {
+            var manager = Manager();
+            int written = 0;
+
+            if (manager != null)
+            {
+                foreach (var pair in _snapshot)
+                {
+                    try { pair.Key.SetValue(manager, pair.Value); written++; }
+                    catch { /* read-only or refused; the rest still restore */ }
+                }
+            }
+
+            if (_alsoUnity.Value && _unitySnapshot.HasValue) UnityEngine.Random.state = _unitySnapshot.Value;
+
+            _status = $"Restored {written} field(s).";
+            Notifier.Success(_status);
+        }
+
+        private void ApplySeed()
+        {
+            var manager = Manager();
+            if (manager == null) { Notifier.Warn("No live SeededRandomManager right now."); return; }
+
+            int written = 0;
+            foreach (var f in StateFields(manager.GetType()))
+            {
+                if (f.FieldType != typeof(int)) continue;
+                if (f.Name.IndexOf("seed", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                try { f.SetValue(manager, _seed.Value); written++; } catch { }
+            }
+
+            if (_alsoUnity.Value) UnityEngine.Random.InitState(_seed.Value);
+
+            _status = written > 0
+                ? $"Seed written to {written} field(s)."
+                : "No seed-looking field found; Unity's generator was seeded instead.";
+            Notifier.Info(_status);
+        }
+
+        private void Inspect()
+        {
+            var manager = Manager();
+            if (manager == null) { Notifier.Warn("No live SeededRandomManager right now."); return; }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# {manager.GetType().FullName}").AppendLine();
+            foreach (var f in manager.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                object value;
+                try { value = f.GetValue(manager); } catch (Exception ex) { value = "<threw: " + ex.Message + ">"; }
+                sb.AppendLine($"{f.FieldType.Name,-16} {f.Name,-30} = {Reflect.Describe(value)}");
+            }
+            Dump.Write("roll-state.txt", sb.ToString());
+        }
+
+        public override float BodyHeight(float width) => 20f;
 
         public override void DrawBody(Rect area)
-        {
-            if (string.IsNullOrEmpty(_testResult)) return;
-            Draw.Label(area, _testResult, Styles.WrapSmall, Theme.P.TextMuted);
-        }
+            => Draw.Label(area, _status, Styles.Small, Theme.P.TextMuted);
     }
 }

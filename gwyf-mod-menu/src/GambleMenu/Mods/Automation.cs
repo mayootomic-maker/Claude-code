@@ -244,8 +244,8 @@ namespace GambleMenu.Mods
     internal sealed class SignalAutoPress : Mod
     {
         public override string Id => "auto.signal";
-        public override string Name => "Press on a good signal";
-        public override string Description => "Presses your key when the outcome mapper marks a spot that has been winning.";
+        public override string Name => "Press when ready";
+        public override string Description => "Presses your key whenever the machine you are looking at is ready for another round.";
         public override Category Cat => Category.Automation;
         public override Authority Auth => Authority.SoloOnly;
         public override string[] Tags => new[] { "auto", "signal", "press", "win", "react", "trigger" };
@@ -273,9 +273,8 @@ namespace GambleMenu.Mods
             _readyAt = 0f;
             _fireAt = -1f;
 
-            var mapper = ModRegistry.Get("machines.outcome");
-            if (mapper == null || !mapper.Enabled.Value)
-                Notifier.Warn("Switch on the Outcome mapper as well — this reacts to what that one marks.");
+            if (!GameBridge.TGameBase.Ok)
+                Notifier.Warn("This build does not expose GameBase, so there is no machine state to react to.");
         }
 
         protected override void OnDisable()
@@ -303,10 +302,27 @@ namespace GambleMenu.Mods
 
             if (Time.unscaledTime < _readyAt || _fireAt > 0f) return;
 
-            var mapper = ModRegistry.Get("machines.outcome") as OutcomeMapper;
-            if (mapper == null || !mapper.Enabled.Value || !mapper.FreshWinMarked) return;
-
+            // Fire when the machine you are looking at is idle and therefore ready to start.
+            // Reading isPlaying off the machine beats inferring readiness from the balance:
+            // it is the same flag the game's own interaction check uses.
+            if (!Ready()) return;
             _fireAt = Time.unscaledTime + _delay.Value;
+        }
+
+        /// <summary>True when the aimed machine exists and is not mid-round.</summary>
+        private bool Ready()
+        {
+            if (!GameBridge.TGameBase.Ok || !GameBridge.GbIsPlaying.Ok) return false;
+
+            var cam = Camera.main;
+            if (cam == null) return false;
+            if (!Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, 5f)) return false;
+            if (hit.collider == null) return false;
+
+            var machine = hit.collider.GetComponentInParent(GameBridge.TGameBase.Type) as Component;
+            if (machine == null) return false;
+
+            return GameBridge.GbIsPlaying.Get(machine) is bool playing && !playing;
         }
 
         protected override void OnDrawOverlay() => Hud.Line($"signal    armed · {_presses} press(es)");

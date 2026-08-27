@@ -141,6 +141,17 @@ namespace GambleMenu.Core
         public static readonly TypeBinding TMoneyManager   = Add(new TypeBinding("MoneyManager", "the shared bank account"));
         public static readonly TypeBinding TDialog         = Add(new TypeBinding("ConfirmationDialogManager", "reuse the game's own dialog"));
 
+        // --- the casino itself ------------------------------------------------------
+        // These names were not inferred. They were read out of the reference tables of
+        // five shipped mods for this game (AutoSlots, MachineControl, Crash100x, More Slots,
+        // MoreUpgrades), which were compiled against the real assembly — so every member
+        // below is one the game actually exposes rather than one that seemed plausible.
+        public static readonly TypeBinding TGameBase        = Add(new TypeBinding("GameBase", "the base class every casino game derives from"));
+        public static readonly TypeBinding TInteractable    = Add(new TypeBinding("InteractableBase", "anything the player can press"));
+        public static readonly TypeBinding TPlayerInteract  = Add(new TypeBinding("PlayerInteract", "what the player is currently looking at"));
+        public static readonly TypeBinding TSeededRandom    = Add(new TypeBinding("SeededRandomManager", "the game's own roll source"));
+        public static readonly TypeBinding TCasinoGameType  = Add(new TypeBinding("CasinoGameType", "which game a machine is"));
+
         // --- Mirror ----------------------------------------------------------------
         public static readonly TypeBinding TNetworkServer  = Add(new TypeBinding("Mirror.NetworkServer", "am I the host?"));
         public static readonly TypeBinding TNetworkClient  = Add(new TypeBinding("Mirror.NetworkClient", "am I connected?"));
@@ -161,6 +172,17 @@ namespace GambleMenu.Core
         /// <summary>The day countdown. Named from SandboxMode's note that clients read it as
         /// a synced SyncVar, so the host is the only place writing it means anything.</summary>
         public static FieldBinding DayTimer;
+
+        // GameBase — one machine, fully described.
+        public static FieldBinding GbGameName;
+        public static FieldBinding GbGameType;
+        public static FieldBinding GbIsPlaying;
+        public static MethodBinding GbStartGame;
+        public static MethodBinding GbTryStartGame;
+        public static MethodBinding GbPayout;
+        public static MethodBinding GbResetGame;
+
+        public static MethodBinding InteractableName;
 
         public static MethodBinding CreateNewSave;
         public static MethodBinding DeleteSave;
@@ -193,6 +215,16 @@ namespace GambleMenu.Core
             SdSuccessfulQuota          = AddMember(new FieldBinding(TSaveData, "successfulQuota", null, "days survived"));
 
             DayTimer = AddMember(new FieldBinding(TGameManager, "_timer", null, "the day countdown, in seconds"));
+
+            GbGameName     = AddMember(new FieldBinding(TGameBase, "gameName", typeof(string), "the machine's name"));
+            GbGameType     = AddMember(new FieldBinding(TGameBase, "gameType", null, "which casino game this is"));
+            GbIsPlaying    = AddMember(new FieldBinding(TGameBase, "isPlaying", typeof(bool), "whether a round is running"));
+            GbStartGame    = AddMember(new MethodBinding(TGameBase, "StartGame", null, "begin a round"));
+            GbTryStartGame = AddMember(new MethodBinding(TGameBase, "TryStartGame", null, "what pressing the machine calls"));
+            GbPayout       = AddMember(new MethodBinding(TGameBase, "Payout", null, "the result, at its source"));
+            GbResetGame    = AddMember(new MethodBinding(TGameBase, "ResetGame", null, "end of a round"));
+
+            InteractableName = AddMember(new MethodBinding(TInteractable, "get_InteractableName", null, "the prompt shown for a pressable thing"));
 
             CreateNewSave = AddMember(new MethodBinding(TLocalSaveMgr, "CreateNewSave", new[] { typeof(string) }, "make a save slot"));
             DeleteSave    = AddMember(new MethodBinding(TLocalSaveMgr, "DeleteSave", new[] { typeof(string) }, "remove a save slot"));
