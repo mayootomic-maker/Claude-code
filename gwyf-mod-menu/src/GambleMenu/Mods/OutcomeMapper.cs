@@ -357,6 +357,28 @@ namespace GambleMenu.Mods
             return "MIXED";
         }
 
+        /// <summary>
+        /// True while a marker whose record shows gains has just been chosen.
+        ///
+        /// Exposed so automation can act on this mod's own verdict rather than deriving a
+        /// second one; two systems deciding separately what counts as a win would disagree the
+        /// moment either was tuned, and the one holding the evidence should be the one to say.
+        /// </summary>
+        public bool FreshWinMarked
+        {
+            get
+            {
+                float now = Time.unscaledTime;
+                foreach (var t in _live)
+                {
+                    if (t.Where == null) continue;
+                    if (now - t.Marked > 1.5f) continue;
+                    if (t.Total >= _confidence.Value && t.Bias > 0.2f) return true;
+                }
+                return false;
+            }
+        }
+
         protected override void OnDrawOverlay()
         {
             var cam = Camera.main;

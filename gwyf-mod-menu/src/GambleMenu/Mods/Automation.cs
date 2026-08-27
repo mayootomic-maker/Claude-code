@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using GambleMenu.Core;
 using GambleMenu.UI;
 using UnityEngine;
@@ -228,5 +230,207 @@ namespace GambleMenu.Mods
             _count++;
             Log.Info($"timed backup {_count} of '{name}'");
         }
+    }
+}
+
+namespace GambleMenu.Mods
+{
+    /// <summary>
+    /// Presses a key the moment the outcome mapper marks a favourable result.
+    ///
+    /// It reads that mod's verdict rather than deriving its own, so there is only ever one
+    /// definition of a good result in play and it is the one with the evidence behind it.
+    /// </summary>
+    internal sealed class SignalAutoPress : Mod
+    {
+        public override string Id => "auto.signal";
+        public override string Name => "Press on a good signal";
+        public override string Description => "Presses your key when the outcome mapper marks a spot that has been winning.";
+        public override Category Cat => Category.Automation;
+        public override Authority Auth => Authority.SoloOnly;
+        public override string[] Tags => new[] { "auto", "signal", "press", "win", "react", "trigger" };
+
+        private KeyOption _key;
+        private FloatOption _cooldown;
+        private FloatOption _delay;
+        private int _presses;
+        private float _readyAt;
+        private float _fireAt = -1f;
+
+        protected override void Build()
+        {
+            _key = Opt(new KeyOption("auto.signal.key", "Key to press", KeyCode.E));
+            _delay = Opt(new FloatOption("auto.signal.delay", "Wait before pressing", 0.15f, 0f, 3f,
+                "A human-looking pause. Zero reacts instantly, which no person does.")
+            { Step = 0.05f, Format = "0.00", Unit = "s" });
+            _cooldown = Opt(new FloatOption("auto.signal.cooldown", "Rest after pressing", 2f, 0.2f, 20f)
+            { Step = 0.1f, Format = "0.0", Unit = "s" });
+        }
+
+        protected override void OnEnable()
+        {
+            _presses = 0;
+            _readyAt = 0f;
+            _fireAt = -1f;
+
+            var mapper = ModRegistry.Get("machines.outcome");
+            if (mapper == null || !mapper.Enabled.Value)
+                Notifier.Warn("Switch on the Outcome mapper as well — this reacts to what that one marks.");
+        }
+
+        protected override void OnDisable()
+        {
+            if (_presses > 0) Notifier.Info($"Signal presses stopped after {_presses}.");
+        }
+
+        protected override void OnUpdate()
+        {
+            if (MenuController.IsOpenNow) return;
+
+            if (_fireAt > 0f && Time.unscaledTime >= _fireAt)
+            {
+                _fireAt = -1f;
+                if (!Press.Send(_key.Value))
+                {
+                    Notifier.Error("This game's input backend cannot be driven from a mod — switching off.");
+                    Enabled.Value = false;
+                    return;
+                }
+                _presses++;
+                _readyAt = Time.unscaledTime + _cooldown.Value;
+                return;
+            }
+
+            if (Time.unscaledTime < _readyAt || _fireAt > 0f) return;
+
+            var mapper = ModRegistry.Get("machines.outcome") as OutcomeMapper;
+            if (mapper == null || !mapper.Enabled.Value || !mapper.FreshWinMarked) return;
+
+            _fireAt = Time.unscaledTime + _delay.Value;
+        }
+
+        protected override void OnDrawOverlay() => Hud.Line($"signal    armed · {_presses} press(es)");
+    }
+
+    /// <summary>
+    /// Plays a fixed sequence of keys on a loop.
+    ///
+    /// Where the single auto-press covers "hit one button repeatedly", this covers a round that
+    /// takes several in order — place, confirm, collect — without hard-coding any one game's flow.
+    /// </summary>
+    internal sealed class KeySequence : Mod
+    {
+        public override string Id => "auto.sequence";
+        public override string Name => "Key sequence";
+        public override string Description => "Repeats a list of keys with delays, for rounds that need more than one button.";
+        public override Category Cat => Category.Automation;
+        public override Authority Auth => Authority.SoloOnly;
+        public override string[] Tags => new[] { "macro", "sequence", "auto", "loop", "keys", "afk" };
+
+        private StringOption _script;
+        private FloatOption _restart;
+        private BoolOption _loop;
+
+        private readonly List<(KeyCode key, float wait)> _steps = new List<(KeyCode, float)>();
+        private int _step;
+        private float _nextAt;
+        private int _cycles;
+        private string _parseError;
+
+        protected override void Build()
+        {
+            _script = Opt(new StringOption("auto.sequence.script", "Sequence", "E 1.0, Space 0.5",
+                "A key, then the seconds to wait after it, separated by commas.")
+            { Placeholder = "E 1.0, Space 0.5" });
+            _restart = Opt(new FloatOption("auto.sequence.restart", "Pause between runs", 1f, 0f, 30f)
+            { Step = 0.5f, Format = "0.0", Unit = "s" });
+            _loop = Opt(new BoolOption("auto.sequence.loop", "Repeat forever", true,
+                "Off runs the sequence once, then switches itself off."));
+
+            _script.Changed += Parse;
+        }
+
+        /// <summary>Turns the text into steps, naming the first bad token rather than quietly
+        /// running a shorter sequence than the one that was written.</summary>
+        private void Parse()
+        {
+            _steps.Clear();
+            _parseError = null;
+
+            foreach (var part in (_script.Value ?? "").Split(','))
+            {
+                string text = part.Trim();
+                if (text.Length == 0) continue;
+
+                var bits = text.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (!Enum.TryParse(bits[0], true, out KeyCode key))
+                {
+                    _parseError = $"'{bits[0]}' is not a key name.";
+                    return;
+                }
+
+                float wait = 1f;
+                if (bits.Length > 1 && !float.TryParse(bits[1], System.Globalization.NumberStyles.Float,
+                                                       System.Globalization.CultureInfo.InvariantCulture, out wait))
+                {
+                    _parseError = $"'{bits[1]}' is not a number of seconds.";
+                    return;
+                }
+                _steps.Add((key, Mathf.Max(0.02f, wait)));
+            }
+
+            if (_steps.Count == 0) _parseError = "The sequence is empty.";
+        }
+
+        protected override void OnEnable()
+        {
+            Parse();
+            if (_parseError != null)
+            {
+                Notifier.Error(_parseError);
+                Enabled.Value = false;
+                return;
+            }
+            _step = 0;
+            _cycles = 0;
+            _nextAt = Time.unscaledTime;
+        }
+
+        protected override void OnDisable()
+        {
+            if (_cycles > 0) Notifier.Info($"Sequence stopped after {_cycles} run(s).");
+        }
+
+        protected override void OnUpdate()
+        {
+            if (MenuController.IsOpenNow || _steps.Count == 0) return;
+            if (Time.unscaledTime < _nextAt) return;
+
+            var step = _steps[_step];
+            if (!Press.Send(step.key))
+            {
+                Notifier.Error("This game's input backend cannot be driven from a mod — switching off.");
+                Enabled.Value = false;
+                return;
+            }
+
+            _nextAt = Time.unscaledTime + step.wait;
+            _step++;
+
+            if (_step < _steps.Count) return;
+
+            _step = 0;
+            _cycles++;
+            _nextAt += _restart.Value;
+
+            if (!_loop.Value)
+            {
+                Notifier.Success("Sequence finished.");
+                Enabled.Value = false;
+            }
+        }
+
+        protected override void OnDrawOverlay()
+            => Hud.Line($"sequence  step {_step + 1}/{_steps.Count} · {_cycles} run(s)");
     }
 }

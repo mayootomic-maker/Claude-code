@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 39 mods across eleven categories, 118
+An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 150
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -155,6 +155,18 @@ machine picks its result up front and then plays an animation, you will see the 
 the animation admits it. Where the pick happens at the very end, there is nothing to read early
 and the marker appears with the result rather than before it.
 
+#### Random state
+
+Where a game rolls through `UnityEngine.Random`, the generator's entire state is a value you can
+copy and put back — so a round can be replayed from the point it was decided. Save the state,
+spin, and if it went badly restore it and burn a value or two so the next roll comes from a
+different place in the stream.
+
+Plenty of games do not use it: a `System.Random` instance, a hand-rolled generator or a
+server-side roll are all common and none are touched by this. That cannot be detected from
+outside, so there is a button that confirms the generator round-trips, and the real test is a
+spin — save, spin, restore, spin again, and see whether the result repeats.
+
 #### Machine markers
 
 Outlines nearby machines where they stand and pins a small panel to each
@@ -201,17 +213,28 @@ ceiling is read from the game's own floor table, not guessed) · **Hold current 
 and applied the next time that slot loads. **Save backups** makes timestamped copies and
 restores the newest.
 
-### Player — 4
+### Player — 6
 **Noclip** (WASD, Space/Ctrl, Shift to boost) · **Movement tuning** (finds the player's speed
 and jump values and scales them) · **Position bookmarks** (four teleport slots) ·
 **Position readout**.
+
+**Free camera** unhooks the camera and flies it. It moves the real camera rather than spawning
+a second one — a new camera has to be told the original's culling mask, clear flags, projection
+and post-processing stack to look remotely the same, and gets all of it wrong on a pipeline it
+was not written for. Parent and local transform are restored exactly on exit.
+
+**Third person** pulls the camera off your head, adjustable back/up/sideways. Applied in
+LateUpdate, because a game moves its own camera in Update and an offset applied before that is
+overwritten in the same frame.
 
 ### Visuals — 7
 Nothing here touches game state, so all of it works as a guest.
 
 **Run readout** (bank, quota, still-needed, floor, time left) · **Player markers** (through
 walls, with distance) · **Object finder** (marks anything whose name matches your filter) ·
-**Fullbright** · **Remove fog** · **Field of view** · **Crosshair**.
+**Fullbright** · **Remove fog** · **Field of view** · **Crosshair** · **Zoom** (hold a key for a
+spyglass) · **Hide the game's interface** (F11, for a clean look — toggles canvases rather than
+destroying anything, and optionally hides this menu's overlay too).
 
 ### Performance — 1
 Frames per second. Local rendering only, so it is safe in a lobby and safe as a guest.
@@ -235,12 +258,20 @@ One lever is deliberately missing. `fixedDeltaTime` is the cheapest frames in Un
 one thing here that must not be touched: it changes how often physics steps, which on a host
 changes the simulation every other player is synchronised to.
 
-### Automation — 2
+### Automation — 4
 **Auto key press** repeats a key on a timer — pointed at a machine, it plays it. It is
 deliberately a key repeater rather than an "auto-spin for machine X": the game's seventeen
 games of chance are not something this plugin has names for, and a repeater works on all of
 them instead of on one that was guessed right. **Timed save backups** copies your save every
 few minutes.
+
+**Press on a good signal** fires your key the moment the outcome mapper marks a spot whose
+record shows gains — it reads that mod's verdict rather than deriving a second one, so there is
+only ever one definition of a good result in play. A configurable pause before pressing keeps it
+from reacting faster than a person could.
+
+**Key sequence** repeats a list of keys with delays (`E 1.0, Space 0.5`) for rounds that take
+more than one button. A bad token is named rather than quietly skipped.
 
 ### Session — 2
 **Lobby readout** and **Why is something greyed out?**, which explains your current role and
@@ -279,6 +310,17 @@ dump, no class names. If the game keeps it in a field, this finds it.
 - **Live field editor** — read and write *any* field on *any* live object, by name. Find a
   field in a dump, type its class and field name here, and drive it. No rebuild needed.
 - **Networked object list** — everything Mirror is syncing, with its components.
+- **Method caller** — call any method in the game by name, with arguments. The natural partner
+  to the class dump: where the field editor changes what a value *is*, this runs what the game
+  *does* about it, which is usually the difference between a number that looks right and a game
+  that has actually noticed. Arguments are converted to whatever the overload expects.
+- **Component switch** — find scripts by name and switch them off individually. The blunt
+  instrument for a script that fights the camera, resets a value every frame, or plays an
+  animation you would rather skip. It only toggles `enabled`, never destroys, and everything
+  goes back on when the mod is switched off.
+- **Value graph** — plots any field over time as a sparkline. A number tells you what it is now;
+  a line tells you what it *does* — whether a multiplier climbs smoothly or in steps, where the
+  spikes are. That shape is invisible in text.
 
 ---
 

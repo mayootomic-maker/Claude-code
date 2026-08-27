@@ -15,6 +15,10 @@ namespace GambleMenu.UI
     {
         private static readonly List<string> _lines = new List<string>();
 
+        /// <summary>Set while the screenshot mod is hiding the interface, so our own readout
+        /// vanishes with the game's rather than being the one thing left on screen.</summary>
+        public static bool Suppressed;
+
         public static void Begin() => _lines.Clear();
 
         /// <summary>Queues one line of readout. Safe to call from any mod's overlay pass.</summary>
@@ -25,7 +29,7 @@ namespace GambleMenu.UI
 
         public static void End()
         {
-            if (_lines.Count == 0) return;
+            if (_lines.Count == 0 || Suppressed) return;
             Styles.Build();
 
             var p = Theme.P;

@@ -26,6 +26,7 @@ namespace GambleMenu.Mods
             // Machines — reading what one is about to do.
             ModRegistry.Add(new OutcomeMapper());
             ModRegistry.Add(new MachineMarkers());
+            ModRegistry.Add(new RandomControl());
 
             // Time — how long a day lasts and how fast it runs.
             ModRegistry.Add(new DayLength());
@@ -45,6 +46,8 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new Noclip());
             ModRegistry.Add(new MovementTuning());
             ModRegistry.Add(new Waypoints());
+            ModRegistry.Add(new FreeCamera());
+            ModRegistry.Add(new ThirdPerson());
             ModRegistry.Add(new PlayerReadout());
 
             // Visuals — nothing here touches game state.
@@ -54,6 +57,8 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new Fullbright());
             ModRegistry.Add(new NoFog());
             ModRegistry.Add(new FieldOfView());
+            ModRegistry.Add(new Zoom());
+            ModRegistry.Add(new CleanScreen());
             ModRegistry.Add(new Crosshair());
 
             // Performance — local rendering only.
@@ -61,6 +66,8 @@ namespace GambleMenu.Mods
 
             // Automation.
             ModRegistry.Add(new AutoPress());
+            ModRegistry.Add(new SignalAutoPress());
+            ModRegistry.Add(new KeySequence());
             ModRegistry.Add(new AutoBackup());
 
             // Session.
@@ -69,6 +76,9 @@ namespace GambleMenu.Mods
 
             // Developer — discovery tools for everything the bindings above do not cover.
             ModRegistry.Add(new ValueFinder());
+            ModRegistry.Add(new MethodInvoker());
+            ModRegistry.Add(new ComponentToggler());
+            ModRegistry.Add(new ValueGraph());
             ModRegistry.Add(new AssemblyDumper());
             ModRegistry.Add(new FieldEditor());
             ModRegistry.Add(new NetworkedObjectList());
