@@ -18,6 +18,25 @@ output/koenigsegg_final.mp4    the encoded film (produced by render_all.sh)
 output/koenigsegg_timing_animatic.mp4   cut-timing check, see below
 ```
 
+## First run
+
+The master .blend (~175 MB) and the source model (~176 MB) both exceed
+GitHub's file size limit, so neither is committed. Everything needed to
+regenerate them is. One command:
+
+```bash
+bash project/scripts/bootstrap.sh
+```
+
+It fetches the Koenigsegg Jesko 2020 model (Open3DLab project
+`7de202a0-9d61-4005-8f99-919fbf546349`, CC BY-NC-ND 4.0), stores it read-only
+at `project/source/koenigsegg_source.blend`, and builds
+`project/koenigsegg_final.blend` from the scripts. If you already have the
+model, point at it instead: `KSEG_SOURCE_BLEND=/path/to/jesko.blend`.
+
+Requires Blender 4.2 or newer on PATH (developed against 4.2.5 LTS) and ffmpeg
+for encoding.
+
 ## Rendering the film
 
 Everything is already set up in the .blend: 996 frames at 60 fps, Cycles, AgX,
