@@ -18,6 +18,13 @@
     <Product>GambleMenu</Product>
     <Version>1.1.0</Version>
     <DebugType>none</DebugType>
+    <!--
+      Must run 64-bit. Prefer32Bit is on by default for an AnyCPU exe, and a 32-bit process
+      cannot read MainModule of the 64-bit game — the running-game check would find nothing
+      and silently install over a locked DLL.
+    -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 

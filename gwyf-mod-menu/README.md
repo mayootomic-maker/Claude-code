@@ -13,7 +13,20 @@ Press **Insert** in game.
 **The easy way:** run **GambleMenu-Installer.exe**. It finds your Steam install (including
 libraries on other drives), sets up BepInEx if you do not already have it, installs the
 plugin and then checks the result. It leaves an existing BepInEx setup alone, so it is safe
-to run alongside r2modman or Gale. `--uninstall` removes the plugin and keeps your settings.
+to run alongside r2modman or Gale.
+
+**You can run it while the game is open.** It notices, offers to close the game, install and
+launch it again through Steam, and does the whole thing in one go — roughly twenty seconds.
+Say no and it installs anyway, ready for your next launch.
+
+This restart is not the installer being cautious about file locks. BepInEx installs itself
+into the game at startup by proxying `winhttp`, and it enumerates the plugins folder once,
+at that moment. A mod
+dropped in mid-session is not loaded until the process restarts, no matter how it got there.
+Loading one into a live game means bypassing BepInEx entirely with a Mono injector, which is
+a different piece of software with a real chance of crashing the game.
+
+Flags: `--uninstall` removes the plugin and keeps your settings; `--auto` skips the prompts.
 
 **By hand:** install **BepInExPack 5.4.2305** through [r2modman] or [Gale], then drop
 `GambleMenu.dll` into `BepInEx/plugins/`.

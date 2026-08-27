@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Win32;
 
 namespace GambleMenu.Installer
@@ -21,6 +23,9 @@ namespace GambleMenu.Installer
         private const string GameFolderName = "Gamble With Your Friends";
         private const string SteamAppId = "3892270";
 
+        /// <summary>How long to wait for the game to shut down cleanly before forcing it.</summary>
+        private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(12);
+
         private static int Main(string[] args)
         {
             Console.Title = "GambleMenu Installer";
@@ -29,6 +34,7 @@ namespace GambleMenu.Installer
             try
             {
                 bool uninstall = args.Any(a => a.Equals("--uninstall", StringComparison.OrdinalIgnoreCase));
+                bool auto = args.Any(a => a.Equals("--auto", StringComparison.OrdinalIgnoreCase));
 
                 string gameDir = ResolveGameDirectory(args);
                 if (gameDir == null)
@@ -40,8 +46,14 @@ namespace GambleMenu.Installer
                 Info($"Game folder:  {gameDir}");
                 Console.WriteLine();
 
-                if (uninstall) return Done(Uninstall(gameDir) ? 0 : 1);
-                return Done(Install(gameDir) ? 0 : 1);
+                // Running mid-session is the normal case, not the exception: people install a
+                // mod menu because they are already playing and want it now.
+                bool wasRunning = HandleRunningGame(gameDir, auto);
+
+                bool ok = uninstall ? Uninstall(gameDir) : Install(gameDir);
+
+                if (ok && wasRunning) RelaunchGame(gameDir);
+                return Done(ok ? 0 : 1);
             }
             catch (Exception ex)
             {
@@ -188,6 +200,140 @@ namespace GambleMenu.Installer
             Ok("Plugin removed.");
             Info("BepInEx and your settings were left alone. Settings live in BepInEx\\config\\GambleMenu.");
             return true;
+        }
+
+        // --- running game -----------------------------------------------------------
+
+        /// <summary>
+        /// Every process running out of the game folder.
+        ///
+        /// Matched by executable path rather than by process name: the name is whatever the
+        /// build was called, and matching on a guess would either miss the game or, worse,
+        /// close an unrelated program that happens to share a name.
+        /// </summary>
+        private static List<Process> GameProcesses(string gameDir)
+        {
+            string root = Path.GetFullPath(gameDir).TrimEnd(Path.DirectorySeparatorChar);
+            var found = new List<Process>();
+
+            foreach (var process in Process.GetProcesses())
+            {
+                string path = null;
+                try { path = process.MainModule?.FileName; }
+                catch { /* most processes refuse MainModule; those are not ours anyway */ }
+
+                if (string.IsNullOrEmpty(path)) continue;
+                if (path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    found.Add(process);
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// Closes the game if it is running, so the install can proceed.
+        ///
+        /// This is not politeness about file locks — though a loaded plugin DLL is genuinely
+        /// locked. BepInEx installs itself into the process at startup by proxying winhttp,
+        /// so a plugin dropped in while the game is running is not loaded until the next
+        /// launch no matter what. Restarting is the whole mechanism, not a workaround.
+        /// </summary>
+        private static bool HandleRunningGame(string gameDir, bool auto)
+        {
+            var running = GameProcesses(gameDir);
+            if (running.Count == 0) return false;
+
+            Console.WriteLine();
+            Info("The game is running.");
+            Console.WriteLine();
+            Console.WriteLine("  BepInEx loads into the game at startup, so a mod installed now");
+            Console.WriteLine("  does not appear until the next launch. This installer can close");
+            Console.WriteLine("  the game, install, and start it again for you.");
+            Console.WriteLine();
+
+            if (!auto)
+            {
+                Console.Write("  Close the game, install, and relaunch it? [Y/n] ");
+                string answer = (Console.ReadLine() ?? "").Trim().ToLowerInvariant();
+                if (answer == "n" || answer == "no")
+                {
+                    Console.WriteLine();
+                    Info("Leaving the game alone. Install now, and it will be there after your next restart.");
+                    Console.WriteLine();
+                    // The plugin DLL is locked while loaded, so a re-install over a running
+                    // copy would fail halfway. Say so rather than half-writing.
+                    if (File.Exists(Path.Combine(gameDir, "BepInEx", "plugins", "GambleMenu", "GambleMenu.dll")))
+                        Fail("GambleMenu is already loaded in the running game, so its file is locked. Close the game and run this again.");
+                    return false;
+                }
+            }
+
+            Console.WriteLine();
+            Step("Closing the game");
+            foreach (var process in running)
+            {
+                try
+                {
+                    // Ask first: a clean exit lets the game write its save.
+                    if (!process.CloseMainWindow()) process.Kill();
+                    if (!process.WaitForExit((int)CloseTimeout.TotalMilliseconds))
+                    {
+                        Info("It did not close on its own — stopping it.");
+                        process.Kill();
+                        process.WaitForExit(5000);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Fail($"Could not close the game: {ex.Message}");
+                    Info("Close it yourself, then run this installer again.");
+                    return false;
+                }
+            }
+
+            // Windows releases file handles a moment after the process ends; writing into the
+            // folder immediately can still hit a lock.
+            Thread.Sleep(1200);
+            Ok("Game closed.");
+            Console.WriteLine();
+            return true;
+        }
+
+        private static void RelaunchGame(string gameDir)
+        {
+            Console.WriteLine();
+            Step("Starting the game again");
+
+            // Through Steam where possible: launching the exe directly skips Steam's own
+            // setup and the game's networking expects to have been started by it.
+            try
+            {
+                Process.Start($"steam://rungameid/{SteamAppId}");
+                Ok("Asked Steam to launch the game.");
+                Console.WriteLine();
+                Highlight("  When it loads, press  INSERT");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Info($"Steam would not take the request ({ex.Message}); trying the executable.");
+            }
+
+            try
+            {
+                string exe = Directory.GetFiles(gameDir, "*.exe")
+                                      .FirstOrDefault(f => !Path.GetFileName(f).StartsWith("UnityCrash", StringComparison.OrdinalIgnoreCase));
+                if (exe == null) { Fail("No executable found to launch — start it from Steam."); return; }
+
+                Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = gameDir, UseShellExecute = true });
+                Ok($"Started {Path.GetFileName(exe)}.");
+                Console.WriteLine();
+                Highlight("  When it loads, press  INSERT");
+            }
+            catch (Exception ex)
+            {
+                Fail($"Could not start the game: {ex.Message}");
+                Info("Start it from Steam as usual — the menu is installed either way.");
+            }
         }
 
         // --- locating the game ------------------------------------------------------
