@@ -23,3 +23,7 @@ project/renders/
 output/
 project/source/*.blend
 project/koenigsegg_final.blend
+
+# Blender backup files
+*.blend1
+*.blend2
