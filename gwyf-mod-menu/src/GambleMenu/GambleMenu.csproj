@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>GambleMenu</AssemblyName>
+    <RootNamespace>GambleMenu</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>portable</DebugType>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!-- CS0649: fields assigned only by reflection. CS0436: Unity type collisions across ref sets. -->
+    <NoWarn>CS0649;CS0436</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    The plugin never references Assembly-CSharp. Every game type is resolved by name at
+    runtime through GameBridge, so this builds without the game installed and survives
+    game updates that shuffle internals. See docs/ARCHITECTURE.md.
+  -->
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(MSBuildThisFileDirectory)../../lib/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MSBuildThisFileDirectory)../../lib/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" IncludeAssets="compile" />
+  </ItemGroup>
+
+</Project>

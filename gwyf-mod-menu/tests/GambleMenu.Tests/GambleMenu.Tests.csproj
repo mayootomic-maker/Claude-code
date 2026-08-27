@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>GambleMenu.Tests</AssemblyName>
+    <RootNamespace>GambleMenu.Tests</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!--
+    The two files under test are the only ones in the plugin with no Unity dependency, which
+    is exactly why the save-rewriting logic was pulled into JsonField: a bad edit here
+    corrupts somebody's run, and that is not something to leave to a compile check.
+    They are compiled in directly rather than referenced, so there is no second copy to drift.
+  -->
+  <ItemGroup>
+    <Compile Include="Tests.cs" />
+    <Compile Include="../../src/GambleMenu/Core/Json.cs" />
+    <Compile Include="../../src/GambleMenu/Core/JsonField.cs" />
+  </ItemGroup>
+
+</Project>
