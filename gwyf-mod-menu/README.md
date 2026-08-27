@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 155
+An in-game mod menu for **Gamble With Your Friends** — 50 mods across eleven categories, 161
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -102,7 +102,7 @@ The shared bank account and the loan shark's demand.
 | **Minimum balance** | Never lets the bank drop below your number |
 | **Freeze quota** | Stops the daily demand ramping and holds it where you say |
 | **Adjust quota** | Set today's demand, or top the bank up to exactly cover it |
-| **Never lose** | Turns losing rounds into wins, on any machine, at rates that read as a good night |
+| **Never lose** | Turns losing rounds into wins, on any machine — including an *Always win* setting |
 | **Lucky streak** | Quietly turns some losses into wins, at believable sizes |
 | **Slow drip** | Walks the bank toward a target in payout-sized steps instead of setting it |
 
@@ -124,8 +124,15 @@ shared bank, and four things give that away — so each has a setting:
 | instant credit | **Pay after** — money arrives a beat later, not on the loss frame |
 | implausible totals | **Daily ceiling** — capped against the current quota |
 
-Three presets: *Slight edge* wins a bit more than it loses, *Rarely lose* is the default, and
-*Never lose* rescues everything — which is the setting most likely to be noticed, and it says so.
+Four presets: *Slight edge* wins a bit more than it loses, *Rarely lose* is the default,
+*Never lose* rescues everything, and **Always win** keeps nothing back — every loss reversed,
+paid instantly, no daily ceiling. That last one is the setting people notice, and it says so.
+
+**It reads the game's own ledger.** `PayoutRecord` carries `bet`, `payout`, `isWin`, `isLoss`
+and `gameType`, and `PayoutTracker.GetPlayerRecords()` hands them over — so a loss is known,
+with its exact stake, rather than inferred from the bank moving. A balance watch cannot tell a
+loss from a purchase, a friend's win, or a refund landing in the same instant. Where a build
+does not expose the ledger it falls back to watching the balance and says which it is using.
 
 #### Looking like luck rather than an edit
 
@@ -167,6 +174,25 @@ mod patches `GameBase.Payout`, so a payout is counted when the game makes one. A
 cannot tell a win from a purchase, a refund, or another player's luck; the game calling
 `Payout` on a specific machine can only mean one thing. That is where "paid 4 of 11 rounds"
 comes from.
+
+#### Safe tile
+
+On grid games, marks which squares are safe **before** you pick one.
+
+Games of this shape decide their layout when the round starts and then hide it behind
+unrevealed tiles — so the answer already exists in the tile objects and is simply not being
+shown to you yet.
+
+`MinesweeperTile` is a confirmed type in this game. The towers are not: no published mod names
+one, so rather than invent a class name this finds tiles by shape — a child component of the
+machine carrying a boolean that decides the round (`isMine`, `isBomb`, `isSafe`, `isDragon`
+and similar), with longest-match-first so `isSafe` is never beaten by a stray `safe`. Already
+revealed tiles are skipped.
+
+That covers Minesweeper today and any grid game built the same way, which the towers very
+likely are. If one differs, **What did it find?** writes the tile components and the field it
+read to a dump — and the startup report lists every machine's own fields — so one look closes
+the gap rather than another guess.
 
 #### Roll state
 

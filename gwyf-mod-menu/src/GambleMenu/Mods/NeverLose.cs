@@ -61,8 +61,8 @@ namespace GambleMenu.Mods
         protected override void Build()
         {
             _level = Opt(new EnumOption("economy.neverlose.level", "How safe",
-                new[] { "Slight edge", "Rarely lose", "Never lose" }, 1,
-                "Slight edge wins a bit more than it loses. Never lose rescues everything, and a table that never loses once is the thing people notice."));
+                new[] { "Slight edge", "Rarely lose", "Never lose", "Always win" }, 1,
+                "The first three keep some real losses so a hot streak stays believable. Always win keeps none, pays instantly and ignores the daily ceiling — it is the setting people notice."));
             _level.Changed += ApplyLevel;
 
             _rescueChance = Opt(new FloatOption("economy.neverlose.chance", "Losses rescued", 0.85f, 0.1f, 1f,
@@ -97,6 +97,11 @@ namespace GambleMenu.Mods
                 case 0: _rescueChance.Value = 0.55f; _payout.Value = 1.4f; _maxStreak.Value = 3; break;
                 case 1: _rescueChance.Value = 0.85f; _payout.Value = 1.7f; _maxStreak.Value = 5; break;
                 case 2: _rescueChance.Value = 1.00f; _payout.Value = 2.0f; _maxStreak.Value = 40; break;
+                case 3:
+                    // Nothing held back: every loss reversed, immediately, uncapped.
+                    _rescueChance.Value = 1.00f; _payout.Value = 2.5f; _maxStreak.Value = 40;
+                    _delay.Value = 0f; _dailyCap.Value = 200f; _jitter.Value = 0.15f;
+                    break;
             }
         }
 
@@ -130,6 +135,16 @@ namespace GambleMenu.Mods
             if (!Rounds.TryGetValue(id, out var round)) return;
             Rounds.Remove(id);
 
+            // The game keeps its own ledger of every round, so ask it rather than inferring
+            // from the bank. A balance watch cannot tell a loss from a purchase, a friend's
+            // win, or a refund landing in the same instant; PayoutRecord says outright.
+            if (LatestRecord(out bool lost, out long bet))
+            {
+                if (!lost) { _live.OnRoundWon(); return; }
+                _live.OnRoundLost(bet > 0 ? bet : 0);
+                return;
+            }
+
             long? balance = RunState.Money;
             if (!balance.HasValue) return;
 
@@ -137,6 +152,46 @@ namespace GambleMenu.Mods
             if (delta >= 0) { _live.OnRoundWon(); return; }
 
             _live.OnRoundLost(-delta);
+        }
+
+        /// <summary>
+        /// Reads the newest entry from the game's payout ledger.
+        ///
+        /// Returns false when this build does not expose it, so the caller falls back to
+        /// watching the balance rather than silently doing nothing.
+        /// </summary>
+        private static bool LatestRecord(out bool lost, out long bet)
+        {
+            lost = false;
+            bet = 0;
+
+            if (!GameBridge.GetPlayerRecords.Ok || !GameBridge.PrIsLoss.Ok) return false;
+            if (GameBridge.GetPlayerRecords.Method.GetParameters().Length != 0) return false;
+
+            try
+            {
+                var tracker = GameBridge.Instance(GameBridge.TPayoutTracker);
+                if (tracker == null) return false;
+
+                if (!(GameBridge.GetPlayerRecords.Invoke(tracker) is System.Collections.IEnumerable rows)) return false;
+
+                object newest = null;
+                foreach (var row in rows) newest = row;   // the ledger is appended to, so last is newest
+                if (newest == null) return false;
+
+                if (GameBridge.PrIsLoss.Get(newest) is bool isLoss) lost = isLoss;
+                else return false;
+
+                object staked = GameBridge.PrBet.Ok ? GameBridge.PrBet.Get(newest) : null;
+                if (staked is IConvertible) bet = Convert.ToInt64(staked, CultureInfo.InvariantCulture);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"could not read the payout ledger: {ex.Message}");
+                return false;
+            }
         }
 
         protected override IEnumerable<PatchSpec> Patches()
@@ -193,6 +248,10 @@ namespace GambleMenu.Mods
 
             if (!GameBridge.GbStartGame.Ok || !GameBridge.GbResetGame.Ok)
                 Notifier.Warn("This build does not expose the full round lifecycle, so rounds may not be detected.");
+            else if (GameBridge.GetPlayerRecords.Ok && GameBridge.PrIsLoss.Ok)
+                Notifier.Info("Reading the game's own payout ledger — exact stakes and outcomes.");
+            else
+                Notifier.Info("No payout ledger on this build; falling back to watching the balance.");
         }
 
         protected override void OnDisable()

@@ -26,6 +26,7 @@ namespace GambleMenu.Mods
 
             // Machines — reading what one is about to do.
             ModRegistry.Add(new TableRead());
+            ModRegistry.Add(new TileRead());
             ModRegistry.Add(new RandomControl());
 
             // Time — how long a day lasts and how fast it runs.

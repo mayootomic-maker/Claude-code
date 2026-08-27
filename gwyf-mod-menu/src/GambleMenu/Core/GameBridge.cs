@@ -152,6 +152,12 @@ namespace GambleMenu.Core
         public static readonly TypeBinding TSeededRandom    = Add(new TypeBinding("SeededRandomManager", "the game's own roll source"));
         public static readonly TypeBinding TCasinoGameType  = Add(new TypeBinding("CasinoGameType", "which game a machine is"));
 
+        // The game keeps its own ledger of every round. Reading it beats inferring outcomes
+        // from the bank moving, which cannot tell a win from a purchase or a friend's luck.
+        public static readonly TypeBinding TPayoutTracker   = Add(new TypeBinding("PayoutTracker", "the game's own record of every round"));
+        public static readonly TypeBinding TPayoutRecord    = Add(new TypeBinding("PayoutRecord", "one round: bet, payout, won or lost"));
+        public static readonly TypeBinding TMinesweeperTile = Add(new TypeBinding("MinesweeperTile", "a tile on a grid game"));
+
         // --- Mirror ----------------------------------------------------------------
         public static readonly TypeBinding TNetworkServer  = Add(new TypeBinding("Mirror.NetworkServer", "am I the host?"));
         public static readonly TypeBinding TNetworkClient  = Add(new TypeBinding("Mirror.NetworkClient", "am I connected?"));
@@ -183,6 +189,15 @@ namespace GambleMenu.Core
         public static MethodBinding GbResetGame;
 
         public static MethodBinding InteractableName;
+        public static MethodBinding GbMinBet;
+
+        // PayoutRecord — exact, from the game, per round.
+        public static FieldBinding PrBet;
+        public static FieldBinding PrPayout;
+        public static FieldBinding PrIsWin;
+        public static FieldBinding PrIsLoss;
+        public static FieldBinding PrGameType;
+        public static MethodBinding GetPlayerRecords;
 
         public static MethodBinding CreateNewSave;
         public static MethodBinding DeleteSave;
@@ -225,6 +240,14 @@ namespace GambleMenu.Core
             GbResetGame    = AddMember(new MethodBinding(TGameBase, "ResetGame", null, "end of a round"));
 
             InteractableName = AddMember(new MethodBinding(TInteractable, "get_InteractableName", null, "the prompt shown for a pressable thing"));
+            GbMinBet         = AddMember(new MethodBinding(TGameBase, "get_MinBet", null, "the smallest stake this machine takes"));
+
+            PrBet      = AddMember(new FieldBinding(TPayoutRecord, "bet", null, "what was staked"));
+            PrPayout   = AddMember(new FieldBinding(TPayoutRecord, "payout", null, "what came back"));
+            PrIsWin    = AddMember(new FieldBinding(TPayoutRecord, "isWin", typeof(bool), "the round was won"));
+            PrIsLoss   = AddMember(new FieldBinding(TPayoutRecord, "isLoss", typeof(bool), "the round was lost"));
+            PrGameType = AddMember(new FieldBinding(TPayoutRecord, "gameType", null, "which game the round was on"));
+            GetPlayerRecords = AddMember(new MethodBinding(TPayoutTracker, "GetPlayerRecords", null, "every round this player has played"));
 
             CreateNewSave = AddMember(new MethodBinding(TLocalSaveMgr, "CreateNewSave", new[] { typeof(string) }, "make a save slot"));
             DeleteSave    = AddMember(new MethodBinding(TLocalSaveMgr, "DeleteSave", new[] { typeof(string) }, "remove a save slot"));

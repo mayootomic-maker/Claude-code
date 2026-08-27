@@ -61,6 +61,8 @@ namespace GambleMenu.Mods
         private Component _aimed;
         private Transform _pressTarget;
         private string _pressPrompt;
+        private int _pressCount;
+        private string _minBet;
         private string _title = "";
         private string _subtitle = "";
         private Bounds _bounds;
@@ -211,6 +213,14 @@ namespace GambleMenu.Mods
             object type = GameBridge.GbGameType.Ok ? GameBridge.GbGameType.Get(_aimed) : null;
             _subtitle = type != null ? type.ToString() : "";
 
+            // The smallest stake the machine takes, straight from the machine.
+            _minBet = null;
+            if (GameBridge.GbMinBet.Ok)
+            {
+                object min = GameBridge.GbMinBet.Invoke(_aimed);
+                if (min != null) _minBet = min.ToString();
+            }
+
             var renderers = _aimed.GetComponentsInChildren<Renderer>(false);
             if (renderers.Length > 0)
             {
@@ -244,10 +254,41 @@ namespace GambleMenu.Mods
                 var interactables = _aimed.GetComponentsInChildren(GameBridge.TInteractable.Type, false);
                 if (interactables == null || interactables.Length == 0) return;
 
-                var chosen = interactables[0] as Component;
+                // Pick the one nearest where you are actually looking. Taking the first in the
+                // array was arbitrary: a machine has a bet button, a start button and often a
+                // cash-out, and component order says nothing about which you mean.
+                var cam = Camera.main;
+                Component chosen = null;
+
+                if (cam != null && interactables.Length > 1)
+                {
+                    var origin = cam.transform.position;
+                    var forward = cam.transform.forward;
+                    float best = float.MaxValue;
+
+                    foreach (var candidate in interactables)
+                    {
+                        if (!(candidate is Component ic) || ic == null) continue;
+
+                        var toIt = ic.transform.position - origin;
+                        float along = Vector3.Dot(toIt, forward);
+                        if (along <= 0f) continue;                       // behind the camera
+
+                        // Perpendicular distance from the aim ray: how far off-centre it sits.
+                        float offAxis = Vector3.Cross(forward, toIt).magnitude;
+                        if (offAxis >= best) continue;
+
+                        best = offAxis;
+                        chosen = ic;
+                    }
+                }
+
+                if (chosen == null) chosen = interactables[0] as Component;
                 if (chosen == null) return;
 
                 _pressTarget = chosen.transform;
+                _pressCount = interactables.Length;
+
                 if (GameBridge.InteractableName.Ok)
                     _pressPrompt = GameBridge.InteractableName.Invoke(chosen) as string;
             }
@@ -308,9 +349,9 @@ namespace GambleMenu.Mods
                 if (Hud.Project(cam, pressPos, out Vector2 pressAt))
                 {
                     Hud.Pin(pressAt, 'w', _pressColour.Value, 0.8f);
-                    Hud.PinCaption(new Vector2(pressAt.x, pressAt.y + 4f),
-                                   string.IsNullOrEmpty(_pressPrompt) ? "press here" : _pressPrompt,
-                                   _pressColour.Value, 1f);
+                    string caption = string.IsNullOrEmpty(_pressPrompt) ? "press here" : _pressPrompt;
+                    if (_pressCount > 1) caption += $"   ({_pressCount} here)";
+                    Hud.PinCaption(new Vector2(pressAt.x, pressAt.y + 4f), caption, _pressColour.Value, 1f);
                 }
             }
 
@@ -324,6 +365,8 @@ namespace GambleMenu.Mods
             };
 
             if (!string.IsNullOrEmpty(_subtitle)) rows[0] = $"{_subtitle}  ·  {rows[0]}";
+
+            if (!string.IsNullOrEmpty(_minBet)) rows.Add($"min bet {_minBet}");
 
             if (_showRecord.Value && Records.TryGetValue(_aimed.GetInstanceID(), out var record) && record.Rounds > 0)
             {
