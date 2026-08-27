@@ -120,6 +120,30 @@ namespace GambleMenu.UI
             }
         }
 
+        /// <summary>
+        /// A line between two screen points, at any angle.
+        ///
+        /// The primitive IMGUI lacks and the one everything shaped rather than boxy needs:
+        /// with it, a circle in world space can be projected and stroked as a real ellipse
+        /// instead of being approximated by an axis-aligned rectangle.
+        /// </summary>
+        public static void Line(Vector2 a, Vector2 b, Color c, float thickness = 1.5f)
+        {
+            c = A(c);
+            if (c.a <= 0f) return;
+
+            Vector2 delta = b - a;
+            float length = delta.magnitude;
+            if (length < 0.01f) return;
+
+            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+            var matrix = GUI.matrix;
+            GUIUtility.RotateAroundPivot(angle, a);
+            // Drawn from the pivot outward, so rotation about `a` puts it exactly on the line.
+            Raw(new Rect(a.x, a.y - thickness * 0.5f, length, thickness), c);
+            GUI.matrix = matrix;
+        }
+
         public static void VLine(float x, float y, float height, Color c, float width = 1f) => Fill(new Rect(x, y, width, height), c);
         public static void HLine(float x, float y, float length, Color c, float height = 1f) => Fill(new Rect(x, y, length, height), c);
 

@@ -64,6 +64,8 @@ namespace GambleMenu.Mods
         private IntOption _confidence;
         private BoolOption _onlyChanged;
         private BoolOption _showTally;
+        private EnumOption _style;
+        private FloatOption _ringSize;
         private ColorOption _goodColour, _badColour, _unknownColour;
         private StringOption _outcomeField;
 
@@ -86,7 +88,14 @@ namespace GambleMenu.Mods
                 "How long after a spot is marked to watch for the balance moving.") { Step = 0.5f, Format = "0.#", Unit = "s" });
             _confidence = Opt(new IntOption("machines.outcome.confidence", "Rounds before colouring", 3, 1, 20,
                 "How many observations before a marker is called good or bad. Lower reacts faster and is wrong more often."));
-            _showTally = Opt(new BoolOption("machines.outcome.tally", "Show the record on each marker", true));
+            _showTally = Opt(new BoolOption("machines.outcome.tally", "Show the record on the nearest one", true,
+                "Only the closest marker is captioned. Every marker labelled at once is how an overlay turns into a wall of text."));
+            _style = Opt(new EnumOption("machines.outcome.style", "Marker style",
+                new[] { "Ring and pin", "Box" }, 0,
+                "A ring is drawn on the floor in perspective and reads as part of the room. A box is drawn around the object in screen space, which is the look of a wallhack."));
+            _ringSize = Opt(new FloatOption("machines.outcome.ring", "Ring size", 1.15f, 0.4f, 3f,
+                "Multiplies the object's own footprint.") { Step = 0.05f, Format = "0.00", Unit = "×",
+                VisibleWhen = () => _style.Index == 0 });
 
             _goodColour = Opt(new ColorOption("machines.outcome.good", "Has preceded gains", new Color(0.36f, 0.85f, 0.55f, 1f)));
             _badColour = Opt(new ColorOption("machines.outcome.bad", "Has preceded losses", new Color(0.94f, 0.38f, 0.43f, 1f)));
@@ -384,40 +393,88 @@ namespace GambleMenu.Mods
             var cam = Camera.main;
             if (cam == null) return;
             float now = Time.unscaledTime;
+            var eye = cam.transform.position;
 
-            int drawn = 0;
+            // The nearest marker is the only one captioned. Labelling all of them is what made
+            // the last version read as a debug overlay rather than something designed.
+            OutcomeTarget nearest = null;
+            float nearestDistance = float.MaxValue;
+
+            var visible = new List<(OutcomeTarget target, Bounds bounds, float distance)>();
+
             foreach (var target in _live)
             {
                 if (target.Where == null) continue;
                 if (_onlyChanged.Value && now - target.Marked > _settleWindow.Value) continue;
-                if (++drawn > 24) break;
 
                 var bounds = BoundsOf(target.Where);
-                if (!Hud.ScreenBounds(cam, bounds, out Rect box)) continue;
-                if (box.width < 4f || box.height < 4f) continue;
+                float distance = Vector3.Distance(eye, bounds.center);
+                if (distance > _radius.Value * 1.5f) continue;
 
+                visible.Add((target, bounds, distance));
+                if (distance < nearestDistance) { nearestDistance = distance; nearest = target; }
+                if (visible.Count >= 24) break;
+            }
+
+            foreach (var (target, bounds, distance) in visible)
+            {
                 Color colour = ColourFor(target);
                 bool fresh = now - target.Marked < 1.5f;
 
-                Hud.OutlineBox(box, colour, fresh ? 3f : 1.5f);
+                // Distant markers fade rather than piling up at full strength.
+                float fade = Mathf.Lerp(1f, 0.3f, Mathf.Clamp01(distance / Mathf.Max(1f, _radius.Value)));
+                float previousAlpha = Draw.Alpha;
+                Draw.Alpha = previousAlpha * fade;
 
-                string label = _showTally.Value
-                    ? $"{VerdictFor(target)}   {target.Tally}"
-                    : VerdictFor(target);
-
-                Hud.Marker(new Vector2(box.center.x, box.yMax + 4f), label, colour, 0f);
-
-                if (fresh)
+                if (_style.Index == 1)
                 {
-                    float pulse = 0.5f + 0.5f * Mathf.Sin(now * 7f);
-                    Hud.Callout(box, target.Key.Contains("[") ? "HERE" : VerdictFor(target), colour, pulse);
+                    if (Hud.ScreenBounds(cam, bounds, out Rect box) && box.width > 4f)
+                        Hud.OutlineBox(box, colour, fresh ? 2.5f : 1.5f);
                 }
+                else
+                {
+                    float radius = Mathf.Max(bounds.extents.x, bounds.extents.z) * _ringSize.Value;
+                    if (radius < 0.05f) radius = 0.25f;
+
+                    var floor = new Vector3(bounds.center.x, bounds.min.y + 0.02f, bounds.center.z);
+                    Hud.GroundRing(cam, floor, radius, colour, fresh ? 2.6f : 1.6f);
+
+                    // A second, tighter ring gives a freshly chosen spot a pulse without
+                    // resorting to a flashing colour.
+                    if (fresh)
+                    {
+                        float pulse = 0.55f + 0.45f * Mathf.Sin(now * 6f);
+                        Hud.GroundRing(cam, floor, radius * (0.55f + 0.3f * pulse),
+                                       Theme.Fade(colour, 0.5f * pulse), 1.4f, 28);
+                    }
+                }
+
+                var top = new Vector3(bounds.center.x, bounds.max.y + 0.06f, bounds.center.z);
+                if (Hud.Project(cam, top, out Vector2 tip))
+                {
+                    float scale = Mathf.Lerp(1.05f, 0.62f, Mathf.Clamp01(distance / Mathf.Max(1f, _radius.Value)));
+                    Hud.Pin(tip, GlyphFor(target), colour, scale);
+
+                    if (_showTally.Value && target == nearest)
+                        Hud.PinCaption(new Vector2(tip.x, tip.y + 4f),
+                                       $"{VerdictFor(target)}  ·  {target.Tally}", colour, 1f);
+                }
+
+                Draw.Alpha = previousAlpha;
             }
 
             if (_live.Count == 0)
                 Hud.Line("outcome   nothing is pointing anywhere yet — play a round");
             else if (!_lastOutcomeValue.HasValue)
                 Hud.Line("outcome   marking positions, but no win/lose value to learn from");
+        }
+
+        private char GlyphFor(OutcomeTarget t)
+        {
+            if (t.Total < _confidence.Value) return '?';
+            if (t.Bias > 0.2f) return 'w';
+            if (t.Bias < -0.2f) return 'l';
+            return '?';
         }
 
         private static Bounds BoundsOf(Transform t)

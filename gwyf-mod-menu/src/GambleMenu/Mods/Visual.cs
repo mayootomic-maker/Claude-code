@@ -130,7 +130,7 @@ namespace GambleMenu.Mods
 
         private ColorOption _color;
         private BoolOption _showDistance;
-        private BoolOption _showBox;
+        private EnumOption _style;
         private FloatOption _maxDistance;
 
         private readonly List<GameObject> _targets = new List<GameObject>();
@@ -140,7 +140,9 @@ namespace GambleMenu.Mods
         {
             _color = Opt(new ColorOption("visual.playeresp.color", "Marker colour", new Color(0.36f, 0.78f, 0.55f, 1f)));
             _showDistance = Opt(new BoolOption("visual.playeresp.dist", "Show distance", true));
-            _showBox = Opt(new BoolOption("visual.playeresp.box", "Draw a box", true));
+            _style = Opt(new EnumOption("visual.playeresp.style", "Marker style",
+                new[] { "Ring and pin", "Box" }, 0,
+                "A ring sits on the floor in perspective and reads as part of the room; a box around the player is the look of a wallhack."));
             _maxDistance = Opt(new FloatOption("visual.playeresp.max", "Hide beyond", 120f, 10f, 500f)
             { Step = 5f, Format = "0", Unit = "m" });
         }
@@ -184,6 +186,17 @@ namespace GambleMenu.Mods
             if (cam == null) return;
             var origin = cam.transform.position;
 
+            // Only the closest player is captioned; naming all of them at once is what turns
+            // an overlay into a wall of text.
+            GameObject nearest = null;
+            float nearestDistance = float.MaxValue;
+            foreach (var t in _targets)
+            {
+                if (t == null) continue;
+                float d = Vector3.Distance(origin, t.transform.position);
+                if (d < nearestDistance) { nearestDistance = d; nearest = t; }
+            }
+
             foreach (var target in _targets)
             {
                 if (target == null) continue;
@@ -191,14 +204,27 @@ namespace GambleMenu.Mods
                 float distance = Vector3.Distance(origin, pos);
                 if (distance > _maxDistance.Value) continue;
 
-                if (_showBox.Value)
+                float fade = Mathf.Lerp(1f, 0.35f, Mathf.Clamp01(distance / Mathf.Max(1f, _maxDistance.Value)));
+                float previous = Draw.Alpha;
+                Draw.Alpha = previous * fade;
+
+                if (_style.Index == 1)
+                    Hud.Box(cam, new Bounds(pos + Vector3.up, new Vector3(0.9f, 2f, 0.9f)), _color.Value);
+                else
+                    Hud.GroundRing(cam, pos, 0.55f, _color.Value, 1.8f, 32);
+
+                if (Hud.Project(cam, pos + Vector3.up * 2.0f, out Vector2 screen))
                 {
-                    var bounds = new Bounds(pos + Vector3.up, new Vector3(0.9f, 2f, 0.9f));
-                    Hud.Box(cam, bounds, _color.Value);
+                    float scale = Mathf.Lerp(1f, 0.6f, Mathf.Clamp01(distance / Mathf.Max(1f, _maxDistance.Value)));
+                    Hud.Pin(screen, 'p', _color.Value, scale);
+
+                    if (target == nearest)
+                        Hud.PinCaption(new Vector2(screen.x, screen.y + 4f),
+                                       _showDistance.Value ? $"{target.name}  ·  {distance:0}m" : target.name,
+                                       _color.Value, 1f);
                 }
 
-                if (!Hud.Project(cam, pos + Vector3.up * 2.1f, out Vector2 screen)) continue;
-                Hud.Marker(screen, target.name, _color.Value, _showDistance.Value ? distance : 0f);
+                Draw.Alpha = previous;
             }
         }
     }
@@ -392,13 +418,34 @@ namespace GambleMenu.Mods
             if (cam == null) return;
             var origin = cam.transform.position;
 
+            Transform nearest = null;
+            float nearestDistance = float.MaxValue;
+            foreach (var t in _found)
+            {
+                if (t == null) continue;
+                float d = Vector3.Distance(origin, t.position);
+                if (d < nearestDistance) { nearestDistance = d; nearest = t; }
+            }
+
             foreach (var t in _found)
             {
                 if (t == null) continue;
                 float distance = Vector3.Distance(origin, t.position);
                 if (distance > _maxDistance.Value) continue;
                 if (!Hud.Project(cam, t.position, out Vector2 screen)) continue;
-                Hud.Marker(screen, t.name, _color.Value, _showDistance.Value ? distance : 0f);
+
+                float fade = Mathf.Lerp(1f, 0.3f, Mathf.Clamp01(distance / Mathf.Max(1f, _maxDistance.Value)));
+                float previous = Draw.Alpha;
+                Draw.Alpha = previous * fade;
+
+                Hud.Pin(screen, 'o', _color.Value,
+                        Mathf.Lerp(0.9f, 0.55f, Mathf.Clamp01(distance / Mathf.Max(1f, _maxDistance.Value))));
+
+                if (t == nearest)
+                    Hud.PinCaption(new Vector2(screen.x, screen.y + 4f),
+                                   _showDistance.Value ? $"{t.name}  ·  {distance:0}m" : t.name, _color.Value, 1f);
+
+                Draw.Alpha = previous;
             }
         }
     }

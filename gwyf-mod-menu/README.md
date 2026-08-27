@@ -139,9 +139,25 @@ keeps that marker's record. After a few rounds the markers colour themselves:
 
 | | |
 | --- | --- |
-| **red, LOSE** | this spot has preceded losses |
-| **green, WIN** | this spot has preceded gains |
-| **amber, ?** | not seen enough times yet — the tally is shown regardless |
+| **red pin, ✗** | this spot has preceded losses |
+| **green pin, ✓** | this spot has preceded gains |
+| **amber pin, ·** | not seen enough times yet |
+
+#### How the markers are drawn
+
+Coloured boxes around objects with a text plate on each one is the visual language of an ESP
+cheat, and for a good reason: a screen-space rectangle belongs to the *screen*, not to the
+world — it is drawn around whatever happens to be behind it.
+
+So markers are a **ring on the floor**, projected through the camera so it lies flat in the
+room and tilts with your view, and a **pin** hanging above with an icon rather than a
+sentence. Distant markers shrink and fade instead of stacking up at full strength, and only
+the **nearest** one is captioned — labelling all of them at once is what turns an overlay into
+a wall of text.
+
+The same treatment applies to player markers, the object finder and the machine markers, so the
+whole overlay reads as one thing. A `Box` style remains available per mod if you prefer the
+old look.
 
 Set *Rounds before colouring* to say how much evidence you want before it commits. Lower reacts
 faster and is wrong more often.

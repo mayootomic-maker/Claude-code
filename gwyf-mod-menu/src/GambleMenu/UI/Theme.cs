@@ -111,6 +111,13 @@ namespace GambleMenu.UI
             }
         }
 
+        /// <summary>Readable ink for text or an icon sitting on an arbitrary colour.</summary>
+        public static Color OnAccentFor(Color background)
+        {
+            float luminance = 0.2126f * background.r + 0.7152f * background.g + 0.0722f * background.b;
+            return luminance > 0.55f ? new Color(0.05f, 0.06f, 0.08f, 1f) : Color.white;
+        }
+
         public static Color Fade(Color c, float alpha) => new Color(c.r, c.g, c.b, c.a * alpha);
 
         public static Color Mix(Color a, Color b, float t) => Color.Lerp(a, b, Mathf.Clamp01(t));

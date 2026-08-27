@@ -70,31 +70,12 @@ namespace GambleMenu.UI
             return true;
         }
 
-        public static void Marker(Vector2 screen, string label, Color color, float distance)
-        {
-            Styles.Build();
-
-            const float size = 9f;
-            var dot = new Rect(screen.x - size * 0.5f, screen.y - size * 0.5f, size, size);
-            Draw.Round(dot, color, size * 0.5f);
-            Draw.Outline(new Rect(dot.x - 2f, dot.y - 2f, size + 4f, size + 4f), Theme.Fade(Color.black, 0.45f), (size + 4f) * 0.5f, 1f);
-
-            if (string.IsNullOrEmpty(label)) return;
-
-            string text = distance > 0f ? $"{label}  {distance:0}m" : label;
-            float w = Draw.TextWidth(text, Styles.Small) + 12f;
-            var box = new Rect(screen.x - w * 0.5f, screen.y + 10f, w, 18f);
-
-            Draw.Card(box, Theme.Fade(Color.black, 0.6f), Theme.Fade(color, 0.7f), 4f);
-            Draw.Label(box, text, Styles.SmallCentre, color);
-        }
-
         /// <summary>
         /// Screen-space rectangle covering a world bounds, or false when it is off camera.
         ///
         /// Built from all eight corners: a rectangle derived from the centre point alone
-        /// shrinks wrongly at oblique angles, which is why marker boxes drift off their target
-        /// when you approach a machine from the side.
+        /// shrinks wrongly at oblique angles, which is why naive marker boxes drift off their
+        /// target when you approach from the side.
         /// </summary>
         public static bool ScreenBounds(Camera cam, Bounds bounds, out Rect rect)
         {
@@ -122,7 +103,9 @@ namespace GambleMenu.UI
             return true;
         }
 
-        /// <summary>A full outline around a screen rect, for marking a machine you are on.</summary>
+        /// <summary>A full outline around a screen rect. Kept for the opt-in "Box" marker
+        /// style; the ring below is the default because a box belongs to the screen rather
+        /// than to the room.</summary>
         public static void OutlineBox(Rect r, Color color, float thickness = 2f)
         {
             Draw.Fill(new Rect(r.x, r.y, r.width, thickness), color);
@@ -134,9 +117,9 @@ namespace GambleMenu.UI
         /// <summary>
         /// A titled panel pinned above a world object.
         ///
-        /// Anchored to the thing it describes rather than parked in a screen corner: a readout
-        /// that is not attached to the machine it belongs to is just text, and stops being
-        /// useful the moment there are two machines in view.
+        /// Drawn for one machine at a time. Anchored to the thing it describes rather than
+        /// parked in a screen corner, but a plate on every object at once is exactly the
+        /// clutter the ring-and-pin style exists to avoid.
         /// </summary>
         public static void Plate(Rect anchor, string title, string[] rows, Color accent, bool emphasise)
         {
@@ -161,26 +144,101 @@ namespace GambleMenu.UI
             for (int i = 0; i < rows.Length; i++)
                 Draw.Label(new Rect(r.x + 12f, r.y + 23f + i * 16f, r.width - 20f, 15f),
                            Draw.Elide(rows[i], Styles.Small, r.width - 20f), Styles.Small, p.TextMuted);
-
-            // A stem, so which machine the plate belongs to is never ambiguous.
-            Draw.Fill(new Rect(r.center.x - 1f, r.yMax, 2f, 10f), Theme.Fade(accent, 0.8f));
         }
 
-        /// <summary>The loud one: a ring and a word, drawn on the object itself.</summary>
-        public static void Callout(Rect anchor, string text, Color color, float pulse)
+        /// <summary>
+        /// A ring on the ground around a world position, drawn in true perspective.
+        ///
+        /// This is the marker that does not look like a cheat overlay. A bounding box is the
+        /// visual language of an ESP hack because it is drawn in screen space around whatever
+        /// happens to be there — it belongs to the screen, not to the world. A circle projected
+        /// through the camera lies on the floor, tilts with the view, and reads as something
+        /// placed in the room.
+        /// </summary>
+        public static void GroundRing(Camera cam, Vector3 centre, float radius, Color colour,
+                                      float thickness = 2f, int segments = 40)
         {
+            if (cam == null) return;
+
+            Vector2 previous = Vector2.zero;
+            bool havePrevious = false;
+            Vector2 first = Vector2.zero;
+            bool haveFirst = false;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float angle = i / (float)segments * Mathf.PI * 2f;
+                var point = centre + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+
+                if (!Project(cam, point, out Vector2 s))
+                {
+                    // A ring straddling the camera plane has to break rather than draw a chord
+                    // straight across the screen.
+                    havePrevious = false;
+                    continue;
+                }
+
+                if (!haveFirst) { first = s; haveFirst = true; }
+                if (havePrevious) Draw.Line(previous, s, colour, thickness);
+                previous = s;
+                havePrevious = true;
+            }
+
+            if (havePrevious && haveFirst) Draw.Line(previous, first, colour, thickness);
+        }
+
+        /// <summary>
+        /// A map-pin badge: a disc with a tail, hanging above a point.
+        ///
+        /// Deliberately a shape rather than a labelled rectangle. An icon and a colour carry
+        /// the meaning at a glance and stop the screen turning into a wall of text boxes when
+        /// several machines are in view.
+        /// </summary>
+        public static void Pin(Vector2 tip, char glyph, Color colour, float scale = 1f)
+        {
+            float r = 11f * scale;
+            var centre = new Vector2(tip.x, tip.y - r - 7f * scale);
+
+            // Tail: a triangle drawn as a stack of narrowing lines, so it tapers to the point.
+            int steps = Mathf.Max(3, Mathf.RoundToInt(8f * scale));
+            for (int i = 0; i < steps; i++)
+            {
+                float t = i / (float)steps;
+                float halfWidth = Mathf.Lerp(r * 0.55f, 0.6f, t);
+                float y = Mathf.Lerp(centre.y + r * 0.55f, tip.y, t);
+                Draw.Line(new Vector2(centre.x - halfWidth, y), new Vector2(centre.x + halfWidth, y), colour, 1.6f);
+            }
+
+            var disc = new Rect(centre.x - r, centre.y - r, r * 2f, r * 2f);
+            Draw.Round(disc, colour, r);
+            Draw.Outline(new Rect(disc.x - 1.5f, disc.y - 1.5f, disc.width + 3f, disc.height + 3f),
+                         Theme.Fade(Color.black, 0.35f), r + 1.5f, 1.5f);
+
+            var inner = new Rect(disc.x + r * 0.42f, disc.y + r * 0.42f, r * 1.16f, r * 1.16f);
+            var ink = Theme.OnAccentFor(colour);
+
+            switch (glyph)
+            {
+                case 'w': Draw.Check(inner, ink, 2f * scale); break;
+                case 'l': Draw.Cross(inner, ink, 2f * scale); break;
+                default:  Draw.Dot(inner, ink, 4.5f * scale); break;
+            }
+        }
+
+        /// <summary>A short caption under a pin, for the one marker the player is looking at.</summary>
+        public static void PinCaption(Vector2 tip, string text, Color colour, float alpha)
+        {
+            if (string.IsNullOrEmpty(text) || alpha <= 0.02f) return;
             Styles.Build();
 
-            float size = Mathf.Min(anchor.width, anchor.height) * 0.5f + 14f + pulse * 8f;
-            var centre = anchor.center;
-            var ring = new Rect(centre.x - size * 0.5f, centre.y - size * 0.5f, size, size);
+            float w = Draw.TextWidth(text, Styles.Small) + 16f;
+            var r = new Rect(tip.x - w * 0.5f, tip.y + 6f, w, 19f);
 
-            Draw.Outline(ring, Theme.Fade(color, 0.35f + pulse * 0.5f), size * 0.5f, 3f);
-
-            float w = Draw.TextWidth(text, Styles.Strong) + 20f;
-            var label = new Rect(centre.x - w * 0.5f, ring.yMax + 6f, w, 22f);
-            Draw.Card(label, color, color, 5f);
-            Draw.Label(label, text, Styles.SmallCentre, Theme.OnAccent);
+            float previous = Draw.Alpha;
+            Draw.Alpha = previous * alpha;
+            Draw.Card(r, Theme.Fade(Color.black, 0.55f), Theme.Fade(colour, 0.5f), 5f);
+            Draw.Label(r, text, Styles.SmallCentre, colour);
+            Draw.Alpha = previous;
         }
 
         /// <summary>A box around a world-space bounds, drawn as four edges rather than a fill

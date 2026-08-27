@@ -117,8 +117,8 @@ namespace GambleMenu.Mods
             _aimedOnly = Opt(new BoolOption("machines.markers.aimed", "Only the one I am looking at", false,
                 "On keeps the screen clear when a room is full of machines."));
             _rows = Opt(new IntOption("machines.markers.rows", "Values shown", 3, 0, 8,
-                "How many of the moving values to list on each marker. Zero shows the outline only."));
-            _outline = Opt(new BoolOption("machines.markers.outline", "Outline the machine", true));
+                "How many moving values to list, on the nearest machine only. Zero shows just the ring."));
+            _outline = Opt(new BoolOption("machines.markers.outline", "Ring the machine", true));
 
             _idleColour = Opt(new ColorOption("machines.markers.idle", "Idle colour", new Color(0.55f, 0.60f, 0.68f, 0.55f)));
             _activeColour = Opt(new ColorOption("machines.markers.active", "Changing colour", new Color(0.91f, 0.71f, 0.30f, 1f)));
@@ -324,7 +324,20 @@ namespace GambleMenu.Mods
                 bool active = now - machine.LastChange < 2.5f;
                 Color colour = signal ? _signalColour.Value : active ? _activeColour.Value : _idleColour.Value;
 
-                if (_outline.Value) Hud.OutlineBox(box, colour, signal ? 2.5f : active ? 2f : 1f);
+                var bounds = machine.Bounds();
+
+                if (_outline.Value)
+                {
+                    // A ring on the floor rather than a box in screen space: the box belongs to
+                    // the screen, the ring belongs to the room.
+                    float radius = Mathf.Max(0.25f, Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.15f);
+                    var floor = new Vector3(bounds.center.x, bounds.min.y + 0.02f, bounds.center.z);
+                    Hud.GroundRing(cam, floor, radius, colour, signal ? 2.6f : active ? 2f : 1.4f);
+                }
+
+                if (Hud.Project(cam, new Vector3(bounds.center.x, bounds.max.y + 0.06f, bounds.center.z),
+                                out Vector2 pinAt))
+                    Hud.Pin(pinAt, signal ? 'w' : '?', colour, 0.85f);
 
                 if (_rows.Value > 0)
                 {
@@ -336,15 +349,26 @@ namespace GambleMenu.Mods
                                       .ToArray();
 
                     if (rows.Length == 0) rows = new[] { "nothing has moved yet" };
-                    Hud.Plate(box, machine.Root.name, rows, colour, signal || active);
+                    // Values are worth reading one machine at a time; a plate on every one of
+                    // them is the wall of boxes this was redesigned away from.
+                    if (drawn == 1) Hud.Plate(box, machine.Root.name, rows, colour, signal || active);
                 }
 
                 if (signal)
                 {
-                    // A slow pulse, so the callout reads as live rather than as a static decal.
-                    float pulse = 0.5f + 0.5f * Mathf.Sin(now * 6f);
-                    Hud.Callout(box, string.IsNullOrEmpty(_signalText.Value) ? "NOW" : _signalText.Value,
-                                _signalColour.Value, pulse);
+                    // A second ring, pulsing inside the first — the same idea as a callout
+                    // without a shouting label bolted to the screen.
+                    float pulse = 0.55f + 0.45f * Mathf.Sin(now * 6f);
+                    float radius = Mathf.Max(0.25f, Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.15f);
+                    var floor = new Vector3(bounds.center.x, bounds.min.y + 0.02f, bounds.center.z);
+                    Hud.GroundRing(cam, floor, radius * (0.5f + 0.35f * pulse),
+                                   Theme.Fade(_signalColour.Value, 0.55f * pulse), 1.6f, 28);
+
+                    if (drawn == 1 && Hud.Project(cam, new Vector3(bounds.center.x, bounds.max.y + 0.06f, bounds.center.z),
+                                                  out Vector2 sigAt))
+                        Hud.PinCaption(new Vector2(sigAt.x, sigAt.y + 4f),
+                                       string.IsNullOrEmpty(_signalText.Value) ? "NOW" : _signalText.Value,
+                                       _signalColour.Value, 1f);
                 }
             }
 
