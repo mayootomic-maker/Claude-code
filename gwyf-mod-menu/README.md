@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 48 mods across eleven categories, 148
+An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 155
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -46,6 +46,12 @@ The installer asks which key should open the menu and writes it to the config be
 game ever runs. That matters more than it sounds: every other way in can be defeated — a
 keyboard without that key, a game that swallows the press — and none of them can be fixed
 from inside a menu you cannot open.
+
+**Every launch writes a report.** `BepInEx/config/GambleMenu/startup-report.txt` records which
+bindings resolved, the input backend, how many machines the game exposes and what the plugin can
+see of them — including each machine's own fields. If something does not work, that file is the
+thing to look at (or send), because "it works" and "it does not" are otherwise indistinguishable
+from outside the game. There is a button for it on the Compatibility page.
 
 Either way, launch the game — a **"GambleMenu loaded"** banner appears for a few seconds.
 That banner is the diagnostic: if you see it, the plugin is running and only the keybind
@@ -96,8 +102,30 @@ The shared bank account and the loan shark's demand.
 | **Minimum balance** | Never lets the bank drop below your number |
 | **Freeze quota** | Stops the daily demand ramping and holds it where you say |
 | **Adjust quota** | Set today's demand, or top the bank up to exactly cover it |
+| **Never lose** | Turns losing rounds into wins, on any machine, at rates that read as a good night |
 | **Lucky streak** | Quietly turns some losses into wins, at believable sizes |
 | **Slow drip** | Walks the bank toward a target in payout-sized steps instead of setting it |
+
+#### Never lose — on every machine
+
+It hooks `GameBase`, not any particular machine, so slots, crash, the wheel and the rest are
+covered by one set of patches with nothing per-game to get right. `StartGame` opens a round,
+`Payout` marks it paid, `ResetGame` closes it — a round that closes unpaid is a loss, and its
+size is the balance difference across it.
+
+The hard part is not winning. It is winning at a rate that survives a friend watching the
+shared bank, and four things give that away — so each has a setting:
+
+| Tell | Setting |
+| --- | --- |
+| never losing at all | **Losses rescued** — below 1.00 leaves real losses in |
+| winning every hand in a row | **Most rescues in a row** — then one genuine loss goes through |
+| round-number wins | **Variation** — payouts are jittered off round figures |
+| instant credit | **Pay after** — money arrives a beat later, not on the loss frame |
+| implausible totals | **Daily ceiling** — capped against the current quota |
+
+Three presets: *Slight edge* wins a bit more than it loses, *Rarely lose* is the default, and
+*Never lose* rescues everything — which is the setting most likely to be noticed, and it says so.
 
 #### Looking like luck rather than an edit
 

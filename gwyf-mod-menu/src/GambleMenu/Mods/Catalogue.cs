@@ -11,6 +11,7 @@ namespace GambleMenu.Mods
         public static void RegisterAll()
         {
             // Economy — the shared bank account and the loan shark's demand.
+            ModRegistry.Add(new NeverLose());
             ModRegistry.Add(new InfiniteMoney());
             ModRegistry.Add(new BalanceEditor());
             ModRegistry.Add(new WinningsMultiplier());

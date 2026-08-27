@@ -38,6 +38,10 @@ namespace GambleMenu
                 // is cheaper and far more reliable than each mod null-checking its own.
                 SceneManager.sceneLoaded += OnSceneLoaded;
 
+                // Written every launch, unprompted: "it does not work" and "it works" look
+                // identical from outside the game, and this is the one file that separates them.
+                Diagnostics.WriteStartupReport(Version);
+
                 Log.Info($"ready — {ModRegistry.All.Count} mods registered, press {Settings.MenuKey.Value} to open");
             }
             catch (Exception ex)

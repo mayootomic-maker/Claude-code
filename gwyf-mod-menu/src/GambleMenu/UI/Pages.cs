@@ -662,6 +662,20 @@ namespace GambleMenu.UI
                        Styles.Tiny, p.TextFaint);
             y += summary.height + 10f;
 
+            // The report is written on every launch. It is the single file worth sending when
+            // something does not work, so it is named here rather than left to be discovered.
+            var report = new Rect(r.x, y, r.width - 6f, 56f);
+            Draw.Card(report, p.Surface, p.Border, CardRadius);
+            Draw.Label(new Rect(report.x + 17f, report.y + 9f, report.width - 34f, 16f),
+                       "STARTUP REPORT", Styles.Caption, p.TextFaint);
+            Draw.Label(new Rect(report.x + 17f, report.y + 27f, report.width - 150f, 18f),
+                       "Written every launch — what resolved, what the game exposes, what it can see.",
+                       Styles.Small, p.TextMuted);
+            if (Widgets.Button(new Rect(report.xMax - 128f, report.y + 16f, 112f, 26f), "Open it",
+                               ButtonKind.Normal, true, Diagnostics.ReportPath, "compat.report"))
+                Application.OpenURL("file://" + ConfigStore.Root);
+            y += report.height + 10f;
+
             Draw.Label(new Rect(r.x + 4f, y, r.width, 20f), "INPUT", Styles.Caption, p.TextFaint);
             y += 22f;
             var inputRow = new Rect(r.x, y, r.width - 6f, 32f);
