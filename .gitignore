@@ -21,3 +21,5 @@ reference/shots/
 project/previews/
 project/renders/
 output/
+project/source/*.blend
+project/koenigsegg_final.blend
