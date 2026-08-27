@@ -182,7 +182,8 @@ namespace GambleMenu.Installer
 
             string dllPath = Path.Combine(pluginDir, "GambleMenu.dll");
             File.WriteAllBytes(dllPath, dll);
-            Ok($"Plugin written to {dllPath}");
+            var installed = System.Diagnostics.FileVersionInfo.GetVersionInfo(dllPath);
+            Ok($"Plugin v{installed.FileVersion} written to {dllPath}");
 
             Console.WriteLine();
             Step("Checking the result");
@@ -640,7 +641,8 @@ namespace GambleMenu.Installer
             Console.WriteLine();
             Console.WriteLine("  GambleMenu");
             Console.ResetColor();
-            Console.WriteLine("  a mod menu for Gamble With Your Friends");
+            var v = typeof(Program).Assembly.GetName().Version;
+            Console.WriteLine($"  a mod menu for Gamble With Your Friends   ·   v{v.Major}.{v.Minor}.{v.Build}");
             Console.WriteLine("  ------------------------------------------------");
             Console.WriteLine();
         }

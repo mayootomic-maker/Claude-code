@@ -16,7 +16,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <AssemblyTitle>GambleMenu Installer</AssemblyTitle>
     <Product>GambleMenu</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <DebugType>none</DebugType>
     <!--
       Must run 64-bit. Prefer32Bit is on by default for an AnyCPU exe, and a 32-bit process

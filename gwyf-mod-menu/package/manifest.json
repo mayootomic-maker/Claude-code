@@ -1,6 +1,6 @@
 {
   "name": "GambleMenu",
-  "version_number": "1.0.0",
+  "version_number": "1.2.0",
   "website_url": "",
   "description": "A configurable in-game mod menu: economy, timing, floors, save editing, visuals and live discovery tools. Host-aware so it will not desync your friends.",
   "dependencies": [

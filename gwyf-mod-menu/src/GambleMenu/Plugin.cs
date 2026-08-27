@@ -12,7 +12,14 @@ namespace GambleMenu
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.claude.gamblemenu";
-        public const string Version = "1.0.0";
+        /// <summary>
+        /// Shown in the menu header, the startup banner and the startup report.
+        ///
+        /// Kept in step with the installer and the Thunderstore manifest deliberately: it sat
+        /// at 1.0.0 through twenty-two commits, which meant a freshly installed build and a
+        /// stale one looked identical from inside the game.
+        /// </summary>
+        public const string Version = "1.2.0";
 
         private GameObject _host;
 
