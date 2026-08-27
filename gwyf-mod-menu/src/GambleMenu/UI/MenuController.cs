@@ -18,7 +18,7 @@ namespace GambleMenu.UI
 
         private const float HeaderH = 50f;
         private const float FooterH = 28f;
-        private const float SidebarW = 178f;
+        private const float SidebarW = 192f;
         private const float Radius = 12f;
 
         private bool _open;
@@ -297,6 +297,56 @@ namespace GambleMenu.UI
 
             var search = new Rect(r.xMax - 398f, r.y + (r.height - 28f) * 0.5f, 300f, 28f);
             _search = Widgets.SearchBox(search, _search, ModRegistry.All.Count);
+
+            DrawHeaderChips(new Rect(r.x + titleW + 54f, r.y, search.x - (r.x + titleW + 54f) - 12f, r.height));
+        }
+
+        /// <summary>
+        /// Live run values in the header.
+        ///
+        /// The numbers most of this menu exists to change were previously invisible while
+        /// changing them — you set a balance, closed the menu to look, and reopened it. They
+        /// are only drawn when the game actually exposes them, so in another game the space is
+        /// simply empty rather than showing zeroes.
+        /// </summary>
+        private void DrawHeaderChips(Rect area)
+        {
+            if (area.width < 160f) return;
+            var p = Theme.P;
+
+            long? money = RunState.Money;
+            long? quota = RunState.Quota;
+            if (!money.HasValue && !quota.HasValue) return;
+
+            float x = area.x;
+
+            if (money.HasValue)
+            {
+                string text = Widgets.Compact(money.Value);
+                float w = Draw.TextWidth(text, Styles.Strong) + 46f;
+                var chip = new Rect(x, area.y + (area.height - 24f) * 0.5f, w, 24f);
+                Draw.Card(chip, p.SurfaceSunken, p.Border, 6f);
+                Draw.Round(new Rect(chip.x + 9f, chip.y + 9f, 6f, 6f), Theme.Accent, 3f);
+                Draw.Label(new Rect(chip.x + 21f, chip.y, 26f, chip.height), "bank", Styles.Tiny, p.TextFaint);
+                Draw.Label(new Rect(chip.x + 21f, chip.y, chip.width - 30f, chip.height), text, Styles.SmallRightBold, p.Text);
+                Widgets.SetTooltip(chip, money.Value.ToString("N0", CultureInfo.InvariantCulture));
+                x += w + 8f;
+            }
+
+            if (quota.HasValue && x + 120f < area.xMax)
+            {
+                string text = Widgets.Compact(quota.Value);
+                float w = Draw.TextWidth(text, Styles.Strong) + 48f;
+                var chip = new Rect(x, area.y + (area.height - 24f) * 0.5f, w, 24f);
+                bool covered = money.HasValue && money.Value >= quota.Value;
+
+                Draw.Card(chip, p.SurfaceSunken, p.Border, 6f);
+                Draw.Round(new Rect(chip.x + 9f, chip.y + 9f, 6f, 6f), covered ? p.Success : p.Warn, 3f);
+                Draw.Label(new Rect(chip.x + 21f, chip.y, 30f, chip.height), "quota", Styles.Tiny, p.TextFaint);
+                Draw.Label(new Rect(chip.x + 21f, chip.y, chip.width - 30f, chip.height), text, Styles.SmallRightBold,
+                           covered ? p.Success : p.Text);
+                Widgets.SetTooltip(chip, covered ? "The bank covers today's quota." : "Still short of today's quota.");
+            }
         }
 
         private void DrawSidebar(Rect r)
@@ -338,11 +388,24 @@ namespace GambleMenu.UI
                 if (sel > 0f) Draw.Round(row, Theme.Fade(Theme.Accent, 0.12f * sel), 6f);
                 else if (hl > 0f) Draw.Round(row, Theme.Fade(p.SurfaceHover, hl), 6f);
 
+                // A disc rather than a bar, echoing the pin heads used in the world.
                 if (sel > 0f)
-                    Draw.Round(new Rect(row.x + 2f, row.y + 7f, 3f, row.height - 14f), Theme.Fade(Theme.Accent, sel), 1.5f);
+                {
+                    float d = 5f * sel;
+                    Draw.Round(new Rect(row.x + 2f, row.center.y - d * 0.5f, d, d), Theme.Fade(Theme.Accent, sel), d * 0.5f);
+                }
 
-                var label = new Rect(row.x + 15f, row.y, row.width - 58f, row.height);
-                Draw.Label(label, entry.Title, selected ? Styles.Strong : Styles.Body,
+                // The icon carries the row before the word does — shape is recognised faster
+                // than text, which is the entire reason a nav list has icons at all.
+                var iconColour = selected ? Theme.Accent : Color.Lerp(Theme.Fade(p.TextFaint, 0.9f), p.TextMuted, hl);
+                if (entry.Kind == PageKind.Category)
+                    Icons.Draw(entry.Cat, new Rect(row.x + 11f, row.y + 7f, 15f, 15f), iconColour);
+                else
+                    Draw.Round(new Rect(row.x + 16f, row.y + 12f, 5f, 5f), iconColour, 2.5f);
+
+                var label = new Rect(row.x + 34f, row.y, row.width - 76f, row.height);
+                Draw.Label(label, Draw.Elide(entry.Title, selected ? Styles.Strong : Styles.Body, label.width),
+                           selected ? Styles.Strong : Styles.Body,
                            selected ? p.Text : Color.Lerp(p.TextMuted, p.Text, hl));
 
                 if (entry.Count > 0)
@@ -374,9 +437,16 @@ namespace GambleMenu.UI
             Draw.Fill(r, p.WindowBg);
 
             var inner = new Rect(r.x + 15f, r.y + 12f, r.width - 30f, r.height - 22f);
-            float scroll = _scroll.TryGetValue(_page, out float s) ? s : 0f;
+            // Search results scroll independently of the page underneath them.
+            int scrollKey = string.IsNullOrEmpty(_search) ? _page : -1;
+            float scroll = _scroll.TryGetValue(scrollKey, out float s) ? s : 0f;
 
-            float contentH = _pages.DrawPage(_page, inner, scroll, _search, this);
+            // A search spans the whole menu, so it replaces the category page rather than
+            // filtering inside it.
+            bool searching = !string.IsNullOrEmpty(_search);
+            float contentH = searching
+                ? _pages.DrawSearch(inner, scroll, _search, this)
+                : _pages.DrawPage(_page, inner, scroll, _search, this);
 
             // Wheel handling happens after the draw because the page reports its own height,
             // and clamping to a stale height makes the last row unreachable on the frame a
@@ -389,7 +459,7 @@ namespace GambleMenu.UI
                 e.Use();
             }
             scroll = Mathf.Clamp(scroll, 0f, maxScroll);
-            _scroll[_page] = scroll;
+            _scroll[scrollKey] = scroll;
 
             if (maxScroll > 0f) DrawScrollbar(new Rect(r.xMax - 9f, r.y + 8f, 4f, r.height - 16f), scroll, maxScroll, inner.height, contentH);
         }

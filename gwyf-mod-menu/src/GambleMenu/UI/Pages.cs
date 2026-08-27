@@ -83,6 +83,74 @@ namespace GambleMenu.UI
 
         // --- dispatch ---------------------------------------------------------------
 
+        /// <summary>
+        /// Search results across every category.
+        ///
+        /// The old behaviour filtered only inside the selected category, which is backwards:
+        /// you search precisely because you do not know where a mod lives. Typing now looks
+        /// everywhere, and the category is shown against each hit so the answer also teaches
+        /// you where it was.
+        /// </summary>
+        public float DrawSearch(Rect view, float scroll, string search, MenuController menu)
+        {
+            GUI.BeginGroup(view);
+            Widgets.PushGroup(view);
+            float height;
+
+            try
+            {
+                var r = new Rect(0f, -scroll, view.width, view.height + scroll);
+                var p = Theme.P;
+                float y = r.y;
+
+                var hits = ModRegistry.All
+                                      .Where(Visible)
+                                      .Where(m => m.MatchesSearch(search))
+                                      .OrderBy(m => m.Cat)
+                                      .ToList();
+
+                var head = new Rect(r.x, y, r.width - 6f, 24f);
+                Draw.Label(new Rect(head.x + 2f, head.y, 220f, head.height), "SEARCH", Styles.Kicker, p.TextMuted);
+                Draw.Label(new Rect(head.x + 74f, head.y, head.width - 84f, head.height),
+                           hits.Count == 1 ? $"one match for \u201c{search}\u201d"
+                                           : $"{hits.Count} matches for \u201c{search}\u201d",
+                           Styles.Small, p.TextFaint);
+                y += 33f;
+
+                if (hits.Count == 0)
+                {
+                    DrawEmpty(new Rect(r.x, y, r.width - 6f, 110f),
+                              $"Nothing matches \u201c{search}\u201d.",
+                              "Names, descriptions, categories and option labels are all searched.");
+                    height = y + 110f - r.y;
+                }
+                else
+                {
+                    Category? lastCat = null;
+                    foreach (var mod in hits)
+                    {
+                        if (lastCat != mod.Cat)
+                        {
+                            lastCat = mod.Cat;
+                            var label = new Rect(r.x + 2f, y, r.width, 18f);
+                            Icons.Draw(mod.Cat, new Rect(label.x, label.y + 2f, 13f, 13f), Theme.Fade(p.TextFaint, 0.9f));
+                            Draw.Label(new Rect(label.x + 19f, label.y, 200f, 18f),
+                                       Pretty(mod.Cat).ToUpperInvariant(), Styles.KickerSmall, p.TextFaint);
+                            y += 22f;
+                        }
+                        y += DrawModCard(new Rect(r.x, y, r.width - 6f, 0f), mod, menu) + 7f;
+                    }
+                    height = y - r.y + 4f;
+                }
+            }
+            finally
+            {
+                Widgets.PopGroup(view);
+                GUI.EndGroup();
+            }
+            return height;
+        }
+
         public float DrawPage(int pageIndex, Rect view, float scroll, string search, MenuController menu)
         {
             var entries = SidebarEntries();
@@ -200,6 +268,11 @@ namespace GambleMenu.UI
             Color border = mod.Enabled.Value
                 ? Theme.Fade(Theme.Accent, 0.5f)
                 : Color.Lerp(p.Border, p.BorderStrong, hl);
+
+            // A running mod gets a soft halo, the same trick the world markers use to say
+            // "this one is live" without shouting it in a different colour.
+            if (mod.Enabled.Value)
+                Draw.Shadow(card, Theme.Fade(Theme.Accent, 0.16f), 8f, 7f, 3);
 
             Draw.Card(card, fill, border, 8f);
 

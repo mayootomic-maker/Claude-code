@@ -65,11 +65,11 @@ namespace GambleMenu.Core
             "state.everOpened", "Menu has been opened before", false));
 
         public static readonly EnumOption Theme = Reg(new EnumOption(
-            "menu.theme", "Theme", new[] { "Midnight", "Slate", "Casino", "Paper", "Contrast" }, 0,
+            "menu.theme", "Theme", new[] { "Velvet", "Midnight", "Slate", "Casino", "Paper", "Contrast" }, 0,
             "Colour scheme for the menu and overlays."));
 
         public static readonly ColorOption Accent = Reg(new ColorOption(
-            "menu.accent", "Accent colour", new Color(0.36f, 0.78f, 0.55f, 1f),
+            "menu.accent", "Accent colour", new Color(0.91f, 0.71f, 0.30f, 1f),
             "Used for active toggles, sliders and the selected category."));
 
         public static readonly FloatOption Scale = Reg(new FloatOption(

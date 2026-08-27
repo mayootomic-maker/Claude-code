@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 150
+An in-game mod menu for **Gamble With Your Friends** — 49 mods across eleven categories, 152
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -424,10 +424,29 @@ Save-file edits back the file up first (`Settings → Back up a save before edit
 on by default). Backups are timestamped rather than rolling, because the mistake you need to
 undo is usually noticed several edits later.
 
-**Interface**: five themes (Midnight, Slate, Casino, Paper, Contrast), a free accent colour,
-0.7×–1.8× scale, adjustable opacity, and animations you can switch off. The window is
-draggable and resizable and remembers where you left it. Contrast is a genuine
-high-contrast palette — borders and controls lift with the text, not just the text.
+**Interface**: six themes, a free accent colour, 0.7×–1.8× scale, adjustable opacity, and
+animations you can switch off. The window is draggable and resizable and remembers where you
+left it. Contrast is a genuine high-contrast palette — borders and controls lift with the text,
+not just the text.
+
+The default is **Velvet**: warm charcoal with a gold accent. It exists because the in-world
+markers are warm — gold, red and green against a casino's browns — and a cool blue-grey menu
+next to them read as two different programs. The semantic colours are the same values the
+markers use, so a red on a card and a red on the floor mean the same thing.
+
+Each category carries a drawn icon — a chip, three reels, a clock, a gauge. They are geometry,
+not font glyphs: Unity's built-in font resolves symbols through whatever the host system
+offers, so a symbol that looks right on one machine is a blank box on another, and navigation
+made of blank boxes is unusable.
+
+The header shows the **bank and quota live** while you are changing them. Previously the
+numbers this menu exists to change were invisible while you changed them — you set a balance,
+closed the menu to look, and reopened it. They appear only when the game exposes them, so in
+another game that space is simply empty.
+
+**Search spans everything.** Typing looks across all categories at once and groups the hits by
+where they came from. It used to filter only inside the selected category, which is backwards:
+you search precisely because you do not know where a mod lives.
 
 ---
 

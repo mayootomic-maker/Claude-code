@@ -23,6 +23,26 @@ namespace GambleMenu.UI
 
     internal static class Theme
     {
+        /// <summary>
+        /// The default: warm charcoal with a gold accent.
+        ///
+        /// It exists because the in-world markers are warm — gold, red and green against a
+        /// casino's browns — and a cool blue-grey menu beside them read as two different
+        /// programs. Semantic colours here are the same values the markers use, so a red on a
+        /// card and a red on the floor mean the same thing.
+        /// </summary>
+        private static readonly Palette Velvet = new Palette
+        {
+            Name = "Velvet", SurfaceActive = Hex("241A17"),
+            WindowBg      = Hex("120E0D"), Sidebar    = Hex("0D0A09"), Header = Hex("181211"), Footer = Hex("0D0A09"),
+            Surface       = Hex("1E1716"), SurfaceAlt = Hex("281F1D"), SurfaceHover = Hex("2E2422"), SurfaceSunken = Hex("0F0B0A"),
+            Border        = Hex("322623"), BorderStrong = Hex("4A3A35"), BorderFocus = Hex("6B5349"),
+            Text          = Hex("F2EBE6"), TextMuted  = Hex("A89890"), TextFaint = Hex("6B5D57"), TextInverse = Hex("120E0D"),
+            Danger        = Hex("F0616D"), Warn       = Hex("E9B44C"), Success = Hex("5CD98C"), Info = Hex("6FA8DC"),
+            Scrim         = new Color(0.04f, 0.02f, 0.01f, 0.6f), Shadow = new Color(0f, 0f, 0f, 0.55f),
+            Track         = Hex("3A2C28")
+        };
+
         private static readonly Palette Midnight = new Palette
         {
             Name = "Midnight", SurfaceActive = Hex("181F26"),
@@ -86,7 +106,7 @@ namespace GambleMenu.UI
             Track         = Hex("3A3A3A")
         };
 
-        private static readonly Palette[] Palettes = { Midnight, Slate, Casino, Paper, Contrast };
+        private static readonly Palette[] Palettes = { Velvet, Midnight, Slate, Casino, Paper, Contrast };
 
         public static Palette P
         {
