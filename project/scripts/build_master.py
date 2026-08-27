@@ -117,13 +117,13 @@ def _build_cameras():
     for name, a, b in SH.RANGES:
         s = SH.SHOTS[name]
 
+        cam_a, cam_b, _, _ = SH.shot_poses(name)
+
         aim = bpy.data.objects.new(f"{name}_FOCUS", None)
         aim.empty_display_type = 'SPHERE'
         aim.empty_display_size = 0.06
         focus.objects.link(aim)
-        for f, t in ((a, s["tgt_a"]), (b, s["tgt_b"])):
-            aim.location = t
-            aim.keyframe_insert("location", frame=f)
+        aim.location = s["tgt"]
 
         cam = K.make_camera(f"{name}_CAM", cams, s["lens"])
         cam.data.dof.use_dof = True
@@ -133,7 +133,7 @@ def _build_cameras():
         if "shift" in s:
             cam.data.shift_x, cam.data.shift_y = s["shift"]
 
-        for f, p in ((a, s["cam_a"]), (b, s["cam_b"])):
+        for f, p in ((a, cam_a), (b, cam_b)):
             cam.location = p
             cam.keyframe_insert("location", frame=f)
 

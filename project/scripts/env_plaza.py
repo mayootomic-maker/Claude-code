@@ -259,4 +259,9 @@ def lights():
                  (math.radians(74), 0, math.radians(90)), 22, 7, 420)
     K.area_light("PLZ_BACK", coll, (0.0, -14.0, 5.0),
                  (math.radians(70), 0, math.radians(180)), 20, 6, 380)
+    # Wet tarmac bounces the overcast dome back up. Without it the wheel
+    # arches and lower bodywork go black, which they never do in the reference.
+    K.area_light("PLZ_BOUNCE", coll, (0.0, 0.0, 0.28),
+                 (math.radians(180), 0, 0), 18, 14, 520,
+                 color=(0.97, 0.98, 1.0))
     return coll

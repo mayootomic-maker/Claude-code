@@ -477,7 +477,7 @@ def apply_all(verbose=True):
         if m:
             spec_to_roughness(m, 0.04, 0.12)
             set_bsdf(m, metallic=0.0)
-            emissive(m, 2.6, color=(0.62, 0.006, 0.010))
+            emissive(m, 1.5, color=(0.55, 0.002, 0.004))
             done.append(("taillight", n))
 
     for n in HEADLIGHT_MATS:
@@ -485,7 +485,7 @@ def apply_all(verbose=True):
         if m:
             spec_to_roughness(m, 0.03, 0.10)
             set_bsdf(m, metallic=0.0)
-            emissive(m, 7.0, color=(0.92, 0.90, 0.78))
+            emissive(m, 4.0, color=(0.92, 0.90, 0.80))
             done.append(("headlight", n))
 
     # Side markers, indicators and reversing lamps are OFF on a parked car.
