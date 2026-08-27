@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace GambleMenu.Core
 {
-    internal enum Category { Economy, Machines, Timing, Progression, Saves, Player, Visual, Automation, Session, Developer }
+    internal enum Category { Economy, Machines, Timing, Progression, Saves, Player, Visual, Performance, Automation, Session, Developer }
 
     /// <summary>Where a mod may safely run. The game is co-op over Mirror with a server-
     /// authoritative simulation, so this is about not corrupting a friend's session.</summary>
@@ -205,6 +205,17 @@ namespace GambleMenu.Core
 
         /// <summary>Screen-space drawing while the mod is on, whether or not the menu is open.</summary>
         protected virtual void OnDrawOverlay() { }
+
+        /// <summary>
+        /// Height this mod needs below its options for a custom panel, or zero for none.
+        ///
+        /// Options and action buttons cover most mods. A few — anything with a result list —
+        /// need a real interface, and this is where they get one.
+        /// </summary>
+        public virtual float BodyHeight(float width) => 0f;
+
+        /// <summary>Draws the custom panel. Only called when <see cref="BodyHeight"/> is positive.</summary>
+        public virtual void DrawBody(Rect area) { }
 
         // --- patching --------------------------------------------------------------
 

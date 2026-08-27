@@ -1,8 +1,14 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 36 mods across ten categories, 92
+An in-game mod menu for **Gamble With Your Friends** — 38 mods across eleven categories, 106
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
+
+**It also runs in other Unity games.** Roughly two-thirds of what is here needs no knowledge
+of any particular title: the menu, the profiles, the visuals, noclip, the machine markers, and
+the value finder below — which finds and freezes any number a game is holding without a single
+class name being known in advance. Only the economy, quota, floor and save mods are specific
+to Gamble With Your Friends, and in another game they are simply not listed.
 
 Press **F1** in game.
 
@@ -27,6 +33,11 @@ Loading one into a live game means bypassing BepInEx entirely with a Mono inject
 a different piece of software with a real chance of crashing the game.
 
 Flags: `--uninstall` removes the plugin and keeps your settings; `--auto` skips the prompts.
+
+**Another Unity game?** If the installer cannot find Gamble With Your Friends it lists every
+Unity game in your Steam libraries and lets you pick one. `--game="Some Other Game"` targets a
+title by folder name directly. Detection is by shape — an executable beside a `*_Data` folder —
+so it works for games it has never heard of.
 
 **By hand:** install **BepInExPack 5.4.2305** through [r2modman] or [Gale], then drop
 `GambleMenu.dll` into `BepInEx/plugins/`.
@@ -163,6 +174,28 @@ Nothing here touches game state, so all of it works as a guest.
 walls, with distance) · **Object finder** (marks anything whose name matches your filter) ·
 **Fullbright** · **Remove fog** · **Field of view** · **Crosshair**.
 
+### Performance — 1
+Frames per second. Local rendering only, so it is safe in a lobby and safe as a guest.
+
+**Performance boost** turns down what costs the most, with three presets — *Light* barely
+changes the look, *Aggressive* looks worse and runs a great deal faster — or set each lever
+yourself: shadows, VSync, the frame cap, post-processing, live reflections, soft particles,
+anti-aliasing, texture detail, **render scale**, detail distance and view distance. An FPS
+readout goes on screen so you can see what each change actually bought.
+
+Render scale is the strongest lever and the most visible: it renders below your display
+resolution and scales up. It is applied to the URP pipeline asset through reflection rather
+than a package reference, because a hard reference to URP would stop the whole plugin loading
+in a game that uses the built-in pipeline.
+
+Everything is captured on enable and **restored on disable**. Without that, trying this once
+would leave shadows off and quarter-resolution textures in every session afterwards with
+nothing to blame.
+
+One lever is deliberately missing. `fixedDeltaTime` is the cheapest frames in Unity and the
+one thing here that must not be touched: it changes how often physics steps, which on a host
+changes the simulation every other player is synchronised to.
+
 ### Automation — 2
 **Auto key press** repeats a key on a timer — pointed at a machine, it plays it. It is
 deliberately a key repeater rather than an "auto-spin for machine X": the game's seventeen
@@ -174,8 +207,32 @@ few minutes.
 **Lobby readout** and **Why is something greyed out?**, which explains your current role and
 lists exactly what it is blocking.
 
-### Developer — 3
+### Developer — 4
 The tools that reach past what the menu already knows:
+
+#### Value finder — the one that works anywhere
+
+Search-and-narrow, the way a memory scanner does it, but over managed reflection instead of
+raw addresses.
+
+1. Type a number you can see in game — your balance, your health, an ammo count.
+2. **First scan.** Every numeric field in the scene is checked; a few thousand usually match.
+3. Change it in game, then narrow: **= value**, **changed**, **unchanged**, **increased**,
+   **decreased**.
+4. Repeat twice more and you are usually down to one or two.
+5. **pin** it to the on-screen readout, **freeze** it where it is, or **set** it to anything.
+
+Reflection beats address scanning on every axis that matters here: survivors come back with
+real class and field names (`PlayerWallet.balance`, not `0x7FF6A2C41B08`), nothing has to be
+re-found after a reload, and writes go through the runtime rather than into whatever happens to
+sit at an address.
+
+Do not know the number? Scan for **every number** instead and narrow with increased/decreased
+alone — the standard trick for a value you can only see move, like a hidden timer or a
+concealed stat.
+
+This is the reason the menu is worth installing in a game nobody has mapped. No bindings, no
+dump, no class names. If the game keeps it in a field, this finds it.
 
 - **Dump the game's classes** — writes every game type, field and method to a text file.
   Also dumps just the loaded scene's components, the live run with current values, and a
@@ -223,6 +280,17 @@ The member names came out of a shipped, MIT-licensed mod for this game
 known-good against the build that mod targets.
 
 [SaltedByte/sandboxmode]: https://github.com/SaltedByte/sandboxmode
+
+### In another game
+
+Mods whose game hooks cannot resolve are **hidden**, not greyed out — otherwise the
+title-specific ones would be permanent dead weight in a game they were never written for.
+Turn on *Settings → List unsupported mods* to see them and why. The Compatibility page always
+accounts for all of them regardless.
+
+What carries over unchanged: the whole menu, profiles and themes; fullbright, fog, FOV,
+crosshair, player and object markers; noclip, movement tuning, bookmarks; game speed; the
+machine markers; and the entire Developer tab, value finder included.
 
 ### Three tiers of certainty
 

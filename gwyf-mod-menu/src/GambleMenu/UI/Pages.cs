@@ -39,7 +39,8 @@ namespace GambleMenu.UI
             var list = new List<SidebarEntry>();
             foreach (var cat in ModRegistry.UsedCategories())
             {
-                var mods = ModRegistry.InCategory(cat).ToList();
+                var mods = ModRegistry.InCategory(cat).Where(Visible).ToList();
+                if (mods.Count == 0) continue;
                 list.Add(new SidebarEntry
                 {
                     Title = Pretty(cat),
@@ -58,6 +59,9 @@ namespace GambleMenu.UI
             return list;
         }
 
+        /// <summary>A mod is listed unless this game build cannot support it at all.</summary>
+        private static bool Visible(Mod m) => m.BindingsOk || Settings.ShowUnavailable.Value;
+
         private static string Pretty(Category c)
         {
             switch (c)
@@ -69,6 +73,7 @@ namespace GambleMenu.UI
                 case Category.Saves:       return "Saves";
                 case Category.Player:      return "Player";
                 case Category.Visual:      return "Visuals";
+                case Category.Performance: return "Performance";
                 case Category.Automation:  return "Automation";
                 case Category.Session:     return "Session";
                 case Category.Developer:   return "Developer";
@@ -124,6 +129,7 @@ namespace GambleMenu.UI
                 case Category.Saves:       return "permanent edits, written to disk";
                 case Category.Player:      return "local movement only";
                 case Category.Visual:      return "nothing here touches game state";
+                case Category.Performance: return "frames per second, restored on exit";
                 case Category.Automation:  return "things that run on a timer";
                 case Category.Session:     return "the lobby and your role in it";
                 case Category.Developer:   return "reach past what the menu already knows";
@@ -134,7 +140,7 @@ namespace GambleMenu.UI
         private float DrawMods(Rect r, Category cat, string search, MenuController menu)
         {
             var p = Theme.P;
-            var all = ModRegistry.InCategory(cat).ToList();
+            var all = ModRegistry.InCategory(cat).Where(Visible).ToList();
             var mods = all.Where(m => m.MatchesSearch(search)).ToList();
             int on = all.Count(m => m.Enabled.Value);
 
@@ -299,6 +305,8 @@ namespace GambleMenu.UI
                 if (o is ColorOption c && _colorOpen.Contains(c.Key)) h += 92f;
             }
             if (mod.Actions.Count > 0) h += 34f;
+            float custom = mod.BodyHeight(width - 34f);
+            if (custom > 0f) h += custom + 8f;
             return h + 9f;
         }
 
@@ -341,7 +349,7 @@ namespace GambleMenu.UI
 
             if (mod.Actions.Count > 0)
             {
-                y += 4f;
+                y += 2f;
                 float bx = r.x + pad;
                 foreach (var action in mod.Actions)
                 {
@@ -353,6 +361,19 @@ namespace GambleMenu.UI
                                        action.Tooltip, mod.Id + "." + action.Label))
                         RunAction(mod, action);
                     bx += bw + 8f;
+                }
+                y += 34f;
+            }
+
+            float customH = mod.BodyHeight(r.width - pad * 2f);
+            if (customH > 0f)
+            {
+                try { mod.DrawBody(new Rect(r.x + pad, y + 4f, r.width - pad * 2f, customH)); }
+                catch (Exception ex)
+                {
+                    Log.Error($"{mod.Id} custom body threw: {ex}");
+                    Draw.Label(new Rect(r.x + pad, y + 4f, r.width - pad * 2f, 20f),
+                               "this panel failed to draw — see the log", Styles.Small, Theme.P.Danger);
                 }
             }
         }

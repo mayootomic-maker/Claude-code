@@ -130,6 +130,18 @@ namespace GambleMenu.Core
         public static readonly FloatOption WinW = Reg(new FloatOption("window.w", "Window width", 940f, 720f, 2400f));
         public static readonly FloatOption WinH = Reg(new FloatOption("window.h", "Window height", 620f, 440f, 1600f));
 
+        /// <summary>
+        /// Whether to list mods this game build cannot support.
+        ///
+        /// Off by default because most of this menu is game-agnostic and will be run in games
+        /// it was never written for, where the handful of title-specific mods would otherwise
+        /// be permanent dead weight in the list. The Compatibility page still accounts for
+        /// every one of them.
+        /// </summary>
+        public static readonly BoolOption ShowUnavailable = Reg(new BoolOption(
+            "menu.showUnavailable", "List unsupported mods", false,
+            "Shows mods whose game hooks are missing on this build, greyed out with the reason."));
+
         public static readonly BoolOption VerboseLog = Reg(new BoolOption(
             "debug.verbose", "Verbose logging", false,
             "Writes every binding lookup and patch to the BepInEx log."));

@@ -36,7 +36,8 @@ namespace GambleMenu.Core
         public static IEnumerable<Mod> InCategory(Category cat) => _mods.Where(m => m.Cat == cat);
 
         public static IEnumerable<Category> UsedCategories() =>
-            Enum.GetValues(typeof(Category)).Cast<Category>().Where(c => _mods.Any(m => m.Cat == c));
+            Enum.GetValues(typeof(Category)).Cast<Category>()
+                .Where(c => _mods.Any(m => m.Cat == c && (m.BindingsOk || Settings.ShowUnavailable.Value)));
 
         public static int EnabledCount => _mods.Count(m => m.Enabled.Value);
 

@@ -444,9 +444,12 @@ namespace GambleMenu.Installer
                 return here.TrimEnd(Path.DirectorySeparatorChar);
             }
 
-            // 3. Ask Steam.
-            Step("Looking for the game");
-            var found = FindViaSteam().Where(LooksLikeGame).Distinct().ToList();
+            // 3. Ask Steam. A --game= argument points this at any other title.
+            string wanted = args.FirstOrDefault(a => a.StartsWith("--game=", StringComparison.OrdinalIgnoreCase));
+            string folderName = wanted != null ? wanted.Substring("--game=".Length).Trim('"') : GameFolderName;
+
+            Step($"Looking for {folderName}");
+            var found = FindViaSteam(folderName).Where(LooksLikeGame).Distinct().ToList();
 
             if (found.Count == 1)
             {
@@ -466,8 +469,28 @@ namespace GambleMenu.Installer
                 return null;
             }
 
-            // 4. Give up gracefully and ask.
-            Info("Could not find the game automatically.");
+            // 4. Nothing by that name — offer every Unity game we can see instead. Most of this
+            //    menu is engine-level rather than title-specific, so installing it into another
+            //    game is a normal thing to want rather than a mistake to guard against.
+            Info($"Could not find {folderName} automatically.");
+
+            var unity = FindUnityGames();
+            if (unity.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"  Found {unity.Count} Unity game(s) in your Steam libraries:");
+                Console.WriteLine();
+                for (int i = 0; i < unity.Count; i++)
+                    Console.WriteLine($"    [{i + 1}] {Path.GetFileName(unity[i])}");
+                Console.WriteLine();
+                Console.WriteLine("  Pick a number, or press Enter to type a path instead.");
+                Console.Write("  Choice: ");
+
+                string picked = (Console.ReadLine() ?? "").Trim();
+                if (int.TryParse(picked, out int chosen) && chosen >= 1 && chosen <= unity.Count)
+                    return unity[chosen - 1];
+            }
+
             Console.WriteLine();
             Console.WriteLine("  In Steam: right-click the game, Manage, Browse local files.");
             Console.WriteLine("  Paste that folder path below (or press Enter to cancel).");
@@ -497,7 +520,45 @@ namespace GambleMenu.Installer
             catch { return false; }
         }
 
-        private static IEnumerable<string> FindViaSteam()
+        /// <summary>
+        /// Every Unity game in the user's Steam libraries.
+        ///
+        /// Detected by shape — an executable beside a *_Data folder — rather than against any
+        /// list of titles, which is the same test used to validate a hand-typed path.
+        /// </summary>
+        private static List<string> FindUnityGames()
+        {
+            var games = new List<string>();
+            foreach (var library in SteamLibraries())
+            {
+                string common = Path.Combine(library, "steamapps", "common");
+                if (!Directory.Exists(common)) continue;
+                try
+                {
+                    foreach (var dir in Directory.GetDirectories(common))
+                        if (LooksLikeGame(dir)) games.Add(dir);
+                }
+                catch { /* an unreadable library is simply skipped */ }
+            }
+            return games.Distinct().OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static IEnumerable<string> FindViaSteam(string folderName)
+        {
+            foreach (var library in SteamLibraries())
+            {
+                string candidate = Path.Combine(library, "steamapps", "common", folderName);
+                if (Directory.Exists(candidate)) yield return candidate;
+
+                // Fall back to the app manifest, in case the folder was renamed. The lookup
+                // is done outside an iterator try/catch, which C# does not permit.
+                string byManifest = InstallDirFromManifest(library);
+                if (byManifest != null) yield return byManifest;
+            }
+        }
+
+        /// <summary>Steam's own folder plus every extra library folder it knows about.</summary>
+        private static List<string> SteamLibraries()
         {
             string steamPath = null;
             try
@@ -534,16 +595,7 @@ namespace GambleMenu.Installer
                 libraries.Add($@"{drive}:\SteamLibrary");
             }
 
-            foreach (var library in libraries.Distinct())
-            {
-                string candidate = Path.Combine(library, "steamapps", "common", GameFolderName);
-                if (Directory.Exists(candidate)) yield return candidate;
-
-                // Fall back to the app manifest, in case the folder was renamed. The lookup
-                // is done outside an iterator try/catch, which C# does not permit.
-                string byManifest = InstallDirFromManifest(library);
-                if (byManifest != null) yield return byManifest;
-            }
+            return libraries.Where(l => !string.IsNullOrEmpty(l)).Distinct().ToList();
         }
 
         /// <summary>Reads the install folder Steam recorded for this app id, which survives a

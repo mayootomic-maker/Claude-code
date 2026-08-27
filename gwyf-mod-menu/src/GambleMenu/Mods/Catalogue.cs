@@ -55,6 +55,9 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new FieldOfView());
             ModRegistry.Add(new Crosshair());
 
+            // Performance — local rendering only.
+            ModRegistry.Add(new Performance());
+
             // Automation.
             ModRegistry.Add(new AutoPress());
             ModRegistry.Add(new AutoBackup());
@@ -64,6 +67,7 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new AuthorityStatus());
 
             // Developer — discovery tools for everything the bindings above do not cover.
+            ModRegistry.Add(new ValueFinder());
             ModRegistry.Add(new AssemblyDumper());
             ModRegistry.Add(new FieldEditor());
             ModRegistry.Add(new NetworkedObjectList());
