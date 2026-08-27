@@ -26,8 +26,8 @@ namespace GambleMenu.UI
     /// </summary>
     internal sealed class Pages
     {
-        private const float CardRadius = 9f;
-        private const float RowH = 30f;
+        private const float CardRadius = 8f;
+        private const float RowH = 28f;
 
         private string _newProfileName = "";
         private readonly HashSet<string> _colorOpen = new HashSet<string>();
@@ -63,6 +63,7 @@ namespace GambleMenu.UI
             switch (c)
             {
                 case Category.Economy:     return "Economy";
+                case Category.Machines:    return "Machines";
                 case Category.Timing:      return "Time";
                 case Category.Progression: return "Progression";
                 case Category.Saves:       return "Saves";
@@ -110,27 +111,65 @@ namespace GambleMenu.UI
 
         // --- mods -------------------------------------------------------------------
 
+        /// <summary>Short line under the category heading, so a page opens with context
+        /// rather than dropping straight into a list of switches.</summary>
+        private static string Blurb(Category c)
+        {
+            switch (c)
+            {
+                case Category.Economy:     return "the bank and the loan shark";
+                case Category.Machines:    return "read what a machine is about to do";
+                case Category.Timing:      return "how long a day lasts, and how fast";
+                case Category.Progression: return "the tower and the floors";
+                case Category.Saves:       return "permanent edits, written to disk";
+                case Category.Player:      return "local movement only";
+                case Category.Visual:      return "nothing here touches game state";
+                case Category.Automation:  return "things that run on a timer";
+                case Category.Session:     return "the lobby and your role in it";
+                case Category.Developer:   return "reach past what the menu already knows";
+                default:                   return "";
+            }
+        }
+
         private float DrawMods(Rect r, Category cat, string search, MenuController menu)
         {
-            var mods = ModRegistry.InCategory(cat)
-                                  .Where(m => m.MatchesSearch(search))
-                                  .ToList();
+            var p = Theme.P;
+            var all = ModRegistry.InCategory(cat).ToList();
+            var mods = all.Where(m => m.MatchesSearch(search)).ToList();
+            int on = all.Count(m => m.Enabled.Value);
 
             float y = r.y;
+
+            // --- category heading
+            var head = new Rect(r.x, y, r.width - 6f, 24f);
+            Draw.Label(new Rect(head.x + 2f, head.y, 200f, head.height), Pretty(cat).ToUpperInvariant(), Styles.Kicker, p.TextMuted);
+
+            float kickerW = Draw.TextWidth(Pretty(cat).ToUpperInvariant(), Styles.Kicker) + 20f;
+            string sub = on > 0 ? $"{Blurb(cat)}  ·  {on} of {all.Count} on" : Blurb(cat);
+            Draw.Label(new Rect(head.x + kickerW, head.y, head.width - kickerW - 110f, head.height), sub, Styles.Small, p.TextFaint);
+
+            if (on > 0 && Widgets.Button(new Rect(head.xMax - 96f, head.y, 96f, 22f), "turn all off",
+                                         ButtonKind.Ghost, true, $"Switch off the {on} running mod(s) in this category.",
+                                         "cat.alloff." + cat))
+            {
+                int n = ModRegistry.DisableCategory(cat);
+                Notifier.Info($"{n} mod(s) switched off in {Pretty(cat)}.");
+            }
+            y += 33f;
+
             if (mods.Count == 0)
             {
-                DrawEmpty(new Rect(r.x, y, r.width, 120f),
+                DrawEmpty(new Rect(r.x, y, r.width - 6f, 110f),
                           string.IsNullOrEmpty(search) ? "Nothing in this category yet."
-                                                       : $"No mod in {Pretty(cat)} matches “{search}”.",
+                                                       : $"No mod in {Pretty(cat)} matches \u201c{search}\u201d.",
                           string.IsNullOrEmpty(search) ? null : "Clear the search box to see everything again.");
-                return 120f;
+                return y + 110f - r.y;
             }
 
             foreach (var mod in mods)
-            {
-                y += DrawModCard(new Rect(r.x, y, r.width - 6f, 0f), mod, menu) + 10f;
-            }
-            return y - r.y + 6f;
+                y += DrawModCard(new Rect(r.x, y, r.width - 6f, 0f), mod, menu) + 7f;
+
+            return y - r.y + 4f;
         }
 
         private float DrawModCard(Rect at, Mod mod, MenuController menu)
@@ -143,42 +182,48 @@ namespace GambleMenu.UI
 
             bool hasBody = mod.Options.Count > 0 || mod.Actions.Count > 0 || blocked != null;
             float bodyH = hasBody ? MeasureBody(mod, at.width, blocked) : 0f;
-            float headH = 58f;
+            const float headH = 44f;
             float height = headH + bodyH * exp;
 
             var card = new Rect(at.x, at.y, at.width, height);
             bool hover = card.Contains(Event.current.mousePosition);
             float hl = Anim.To(mod.Id + ".card", hover ? 1f : 0f, 16f);
 
+            Color fill = mod.Enabled.Value ? p.SurfaceActive : p.Surface;
+            fill = Color.Lerp(fill, p.SurfaceHover, hl * 0.45f);
             Color border = mod.Enabled.Value
-                ? Theme.Fade(Theme.Accent, 0.55f)
+                ? Theme.Fade(Theme.Accent, 0.5f)
                 : Color.Lerp(p.Border, p.BorderStrong, hl);
 
-            Draw.Card(card, Color.Lerp(p.Surface, p.SurfaceHover, hl * 0.5f), border, CardRadius);
+            Draw.Card(card, fill, border, 8f);
 
             if (mod.Enabled.Value)
-                Draw.Round(new Rect(card.x + 1f, card.y + 10f, 3f, headH - 20f), Theme.Accent, 1.5f);
+                Draw.Round(new Rect(card.x, card.y + 9f, 3f, 26f), Theme.Accent, 1.5f);
 
-            // --- header row
             var head = new Rect(card.x, card.y, card.width, headH);
-            float textLeft = card.x + 18f;
-            float toggleRight = 58f;
 
-            var nameRect = new Rect(textLeft, head.y + 10f, head.width - toggleRight - 130f, 18f);
+            // Fixed right-hand columns. Deriving the badge position from the title's text
+            // width, as this used to, left every row's badge at a different x — a ragged
+            // edge down the whole list.
+            const float swW = 34f, swH = 18f;
+            var toggleRect = new Rect(head.xMax - 15f - swW, head.y + (headH - swH) * 0.5f, swW, swH);
+            var chevRect   = new Rect(head.xMax - 78f, head.y, 18f, headH);
+            float badgeRight = head.xMax - 84f;
+
+            var nameRect = new Rect(head.x + 16f, head.y + 6f, head.width - 190f, 16f);
             Draw.Label(nameRect, Draw.Elide(mod.Name, Styles.Strong, nameRect.width), Styles.Strong,
                        usable ? p.Text : p.TextMuted);
 
-            float badgeX = textLeft + Draw.TextWidth(mod.Name, Styles.Strong) + 10f;
-            badgeX = DrawModBadges(mod, badgeX, head.y + 11f, usable);
+            var descRect = new Rect(head.x + 16f, head.y + 23f, head.width - 168f, 15f);
+            Draw.Label(descRect, Draw.Elide(mod.Description, Styles.Small, descRect.width), Styles.Small,
+                       usable ? p.TextMuted : Theme.Fade(p.TextMuted, 0.7f));
 
-            var descRect = new Rect(textLeft, head.y + 29f, head.width - toggleRight - 90f, 16f);
-            Draw.Label(descRect, Draw.Elide(mod.Description, Styles.Small, descRect.width), Styles.Small, p.TextMuted);
+            DrawModBadges(mod, badgeRight, head.y + (headH - 15f) * 0.5f, usable);
 
             if (mod.IsToggle)
             {
-                var toggleArea = new Rect(head.xMax - 62f, head.y, 46f, headH);
-                bool now = Widgets.Switch(toggleArea, mod.Id, mod.Enabled.Value, usable,
-                                          usable ? null : blocked);
+                bool now = Widgets.Switch(new Rect(toggleRect.x, head.y, swW, headH), mod.Id,
+                                          mod.Enabled.Value, usable, usable ? null : blocked);
                 if (now != mod.Enabled.Value)
                 {
                     mod.Enabled.Value = now;
@@ -187,14 +232,13 @@ namespace GambleMenu.UI
             }
             else if (!usable)
             {
-                Draw.Lock(new Rect(head.xMax - 54f, head.y, 22f, headH), p.TextFaint);
+                Draw.Lock(new Rect(toggleRect.x + 8f, head.y, 18f, headH), p.TextFaint);
             }
 
             if (hasBody)
             {
-                var chev = new Rect(head.xMax - (mod.IsToggle ? 88f : 62f), head.y, 22f, headH);
-                Draw.Chevron(chev, hover ? p.Text : p.TextFaint, Mathf.Lerp(-90f, 0f, exp));
-                var hit = new Rect(head.x, head.y, head.width - (mod.IsToggle ? 70f : 40f), headH);
+                Draw.Chevron(chevRect, hover ? p.TextMuted : Theme.Fade(p.TextFaint, 0.9f), Mathf.Lerp(-90f, 0f, exp), 1.5f);
+                var hit = new Rect(head.x, head.y, head.width - (mod.IsToggle ? 58f : 30f), headH);
                 if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && hit.Contains(Event.current.mousePosition))
                 {
                     menu.ToggleExpanded(mod.Id);
@@ -202,7 +246,6 @@ namespace GambleMenu.UI
                 }
             }
 
-            // --- body, clipped so a half-open card does not spill past its border
             if (hasBody && exp > 0.002f)
             {
                 var bodyClip = new Rect(card.x + 1f, head.yMax, card.width - 2f, Mathf.Max(0f, height - headH));
@@ -215,42 +258,39 @@ namespace GambleMenu.UI
             return height;
         }
 
-        private float DrawModBadges(Mod mod, float x, float y, bool usable)
+        /// <summary>
+        /// Draws the authority chip, right-aligned at a fixed column.
+        ///
+        /// It is deliberately quiet unless it is actually stopping you: in a category where
+        /// every mod is host-only, seven bright chips down one edge is a stripe of noise that
+        /// says nothing. It lights up only when the rule is currently biting.
+        /// </summary>
+        private void DrawModBadges(Mod mod, float right, float y, bool usable)
         {
             var p = Theme.P;
-            if (mod.Auth == Authority.HostOnly)
-            {
-                var b = new Rect(x, y, 42f, 16f);
-                Widgets.Badge(b, "host", usable ? p.Info : p.TextFaint);
-                x += 48f;
-            }
-            else if (mod.Auth == Authority.SoloOnly)
-            {
-                var b = new Rect(x, y, 40f, 16f);
-                Widgets.Badge(b, "solo", usable ? p.Warn : p.TextFaint);
-                x += 46f;
-            }
+            string text = null;
+            Color colour = p.TextFaint;
 
-            if (mod.Fault != null)
-            {
-                var b = new Rect(x, y, 46f, 16f);
-                Widgets.Badge(b, "error", p.Danger);
-                x += 52f;
-            }
-            else if (!mod.BindingsOk)
-            {
-                var b = new Rect(x, y, 76f, 16f);
-                Widgets.Badge(b, "unavailable", p.TextFaint);
-                x += 82f;
-            }
-            return x;
+            if (mod.Fault != null) { text = "ERROR"; colour = p.Danger; }
+            else if (!mod.BindingsOk) { text = "N/A"; colour = p.TextFaint; }
+            else if (mod.Auth == Authority.HostOnly) { text = "HOST"; colour = usable ? p.TextFaint : p.Info; }
+            else if (mod.Auth == Authority.SoloOnly) { text = "SOLO"; colour = usable ? p.TextFaint : p.Warn; }
+
+            if (text == null) return;
+
+            float w = Draw.TextWidth(text, Styles.KickerSmall) + 12f;
+            var r = new Rect(right - w, y, w, 15f);
+
+            // Only a live block earns a filled chip; otherwise it is a faint label.
+            if (!usable) Draw.Round(r, Theme.Fade(colour, 0.14f), 3f);
+            Draw.Label(r, text, Styles.KickerCentre, colour);
         }
 
         private float MeasureBody(Mod mod, float width, string blocked)
         {
-            float h = 10f;
+            float h = 8f;
             if (blocked != null)
-                h += Styles.WrapSmall.CalcHeight(new GUIContent(blocked), width - 60f) + 18f;
+                h += Styles.WrapSmall.CalcHeight(new GUIContent(blocked), width - 60f) + 16f;
 
             foreach (var o in mod.Options)
             {
@@ -258,15 +298,15 @@ namespace GambleMenu.UI
                 h += RowH;
                 if (o is ColorOption c && _colorOpen.Contains(c.Key)) h += 92f;
             }
-            if (mod.Actions.Count > 0) h += 40f;
-            return h + 12f;
+            if (mod.Actions.Count > 0) h += 34f;
+            return h + 9f;
         }
 
         private void DrawModBody(Rect r, Mod mod, string blocked)
         {
             var p = Theme.P;
-            float y = r.y + 8f;
-            float pad = 17f;
+            float y = r.y + 6f;
+            float pad = 15f;
             float w = r.width - pad * 2f;
 
             Widgets.Divider(new Rect(r.x + pad, y - 6f, w, 1f));
@@ -307,7 +347,7 @@ namespace GambleMenu.UI
                 {
                     bool can = interactable && (action.CanRun == null || action.CanRun());
                     float bw = Mathf.Min(190f, Draw.TextWidth(action.Label, Styles.Body) + 28f);
-                    var br = new Rect(bx, y, bw, 28f);
+                    var br = new Rect(bx, y, bw, 26f);
                     if (bx + bw > r.x + r.width - pad) break; // no wrapping: keep the row honest
                     if (Widgets.Button(br, action.Label, action.Destructive ? ButtonKind.Danger : ButtonKind.Normal, can,
                                        action.Tooltip, mod.Id + "." + action.Label))

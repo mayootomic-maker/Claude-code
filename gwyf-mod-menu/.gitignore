@@ -3,3 +3,5 @@ obj/
 dist/
 lib/*.dll
 .cache/
+installer/*/resources/*.zip
+installer/*/resources/*.dll

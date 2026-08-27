@@ -13,7 +13,10 @@ namespace GambleMenu.UI
         private static bool _built;
 
         public static GUIStyle Body, Small, Tiny, Strong, Title, Heading, Caption;
-        public static GUIStyle BodyRight, SmallRight, BodyCentre, SmallCentre;
+        public static GUIStyle BodyRight, SmallRight, SmallRightBold, TinyRight, BodyCentre, SmallCentre;
+        /// <summary>All-caps section label. Letter-spacing is not available in IMGUI, so the
+        /// separation comes from size and weight instead.</summary>
+        public static GUIStyle Kicker, KickerSmall, KickerCentre;
         public static GUIStyle Mono, MonoSmall;
         public static GUIStyle Field, Wrap, WrapSmall;
 
@@ -32,6 +35,11 @@ namespace GambleMenu.UI
             Heading    = Make(13, FontStyle.Bold,   TextAnchor.MiddleLeft, baseFont);
             Caption    = Make(10, FontStyle.Bold,   TextAnchor.MiddleLeft, baseFont);
 
+            Kicker      = Make(10, FontStyle.Bold,   TextAnchor.MiddleLeft, baseFont);
+            KickerSmall = Make(9,  FontStyle.Bold,   TextAnchor.MiddleLeft, baseFont);
+            KickerCentre = Make(9, FontStyle.Bold,   TextAnchor.MiddleCenter, baseFont);
+            SmallRightBold = Make(11, FontStyle.Bold, TextAnchor.MiddleRight, baseFont);
+            TinyRight   = Make(10, FontStyle.Normal, TextAnchor.MiddleRight,  baseFont);
             BodyRight   = Make(12, FontStyle.Normal, TextAnchor.MiddleRight,  baseFont);
             SmallRight  = Make(11, FontStyle.Normal, TextAnchor.MiddleRight,  baseFont);
             BodyCentre  = Make(12, FontStyle.Normal, TextAnchor.MiddleCenter, baseFont);

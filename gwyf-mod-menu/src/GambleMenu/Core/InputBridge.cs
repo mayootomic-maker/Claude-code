@@ -49,8 +49,11 @@ namespace GambleMenu.Core
             if (_backend != Backend.Unknown) return;
             try
             {
-                // Cheapest possible probe: if legacy input is off, this throws immediately.
-                Input.GetKeyDown(KeyCode.None);
+                // Probe with a real key. KeyCode.None was the original choice and it was
+                // wrong: it is the one value the legacy API can answer without touching the
+                // disabled input manager, so the probe passed on exactly the games where
+                // every subsequent read would throw.
+                Input.GetKeyDown(KeyCode.F13);
                 _backend = Backend.Legacy;
                 Log.Info("input backend: legacy UnityEngine.Input");
             }
@@ -112,12 +115,29 @@ namespace GambleMenu.Core
             switch (_backend)
             {
                 case Backend.Legacy:
-                    try { return Input.GetKeyDown(key); } catch { return false; }
+                    try { return Input.GetKeyDown(key); }
+                    catch (Exception ex) { return Demote(ex, key, _wasPressed); }
                 case Backend.InputSystem:
                     return ReadControl(key, _wasPressed);
                 default:
                     return false;
             }
+        }
+
+        /// <summary>
+        /// Handles the legacy API throwing after we decided it worked.
+        ///
+        /// The original code caught this and returned false, forever and in silence — so a
+        /// game with legacy input disabled produced a menu whose key did nothing, with not a
+        /// line in the log to say why. Re-detecting once and saying so out loud is the whole
+        /// difference between a bug report and a mystery.
+        /// </summary>
+        private static bool Demote(Exception ex, KeyCode key, PropertyInfo prop)
+        {
+            Log.Warn($"legacy input threw ({ex.GetType().Name}: {ex.Message}) — switching to the Input System");
+            _backend = TryBindInputSystem() ? Backend.InputSystem : Backend.None;
+            Log.Info($"input backend is now: {BackendNameRaw()}");
+            return _backend == Backend.InputSystem && ReadControl(key, prop);
         }
 
         public static bool GetKey(KeyCode key)
@@ -127,7 +147,8 @@ namespace GambleMenu.Core
             switch (_backend)
             {
                 case Backend.Legacy:
-                    try { return Input.GetKey(key); } catch { return false; }
+                    try { return Input.GetKey(key); }
+                    catch (Exception ex) { return Demote(ex, key, _isPressed); }
                 case Backend.InputSystem:
                     return ReadControl(key, _isPressed);
                 default:

@@ -21,6 +21,9 @@ namespace GambleMenu.Mods
 
         protected override void OnEnable()
         {
+            // Deliberately not primed here: the first observed balance becomes the baseline,
+            // so switching a watcher on mid-spin cannot mistake the spin already in flight
+            // for a change it caused.
             _primed = false;
         }
 

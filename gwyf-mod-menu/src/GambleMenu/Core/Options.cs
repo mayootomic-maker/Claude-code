@@ -147,7 +147,7 @@ namespace GambleMenu.Core
         {
             Key = key; Label = label; Tooltip = tooltip;
             DefaultValue = defaultValue; Min = min; Max = max;
-            _value = defaultValue; Buffer = defaultValue.ToString(CultureInfo.InvariantCulture);
+            _value = defaultValue; Buffer = Group(defaultValue);
         }
 
         public long Value
@@ -158,10 +158,14 @@ namespace GambleMenu.Core
                 long v = value < Min ? Min : (value > Max ? Max : value);
                 if (_value == v) return;
                 _value = v;
-                Buffer = v.ToString(CultureInfo.InvariantCulture);
+                Buffer = Group(v);
                 RaiseChanged();
             }
         }
+
+        /// <summary>Thousands-grouped rendering. Twelve unbroken digits cannot be read at a
+        /// glance, and this is the field where getting the magnitude wrong matters most.</summary>
+        public static string Group(long v) => v.ToString("N0", CultureInfo.InvariantCulture);
 
         /// <summary>Parses the text buffer into <see cref="Value"/>. Returns false when the
         /// buffer is not a number, so the UI can mark the field rather than silently reverting.</summary>

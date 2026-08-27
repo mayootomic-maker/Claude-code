@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace GambleMenu.Core
 {
-    internal enum Category { Economy, Timing, Progression, Saves, Player, Visual, Automation, Session, Developer }
+    internal enum Category { Economy, Machines, Timing, Progression, Saves, Player, Visual, Automation, Session, Developer }
 
     /// <summary>Where a mod may safely run. The game is co-op over Mirror with a server-
     /// authoritative simulation, so this is about not corrupting a friend's session.</summary>

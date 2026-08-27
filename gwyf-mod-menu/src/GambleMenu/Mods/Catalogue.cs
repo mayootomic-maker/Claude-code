@@ -19,6 +19,14 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new QuotaFreeze());
             ModRegistry.Add(new QuotaEditor());
 
+            // Discreet economy: the same effects shaped to look like variance.
+            ModRegistry.Add(new LuckyStreak());
+            ModRegistry.Add(new DripFeed());
+
+            // Machines — reading what one is about to do.
+            ModRegistry.Add(new MachineReader());
+            ModRegistry.Add(new OutcomeWatch());
+
             // Time — how long a day lasts and how fast it runs.
             ModRegistry.Add(new DayLength());
             ModRegistry.Add(new FreezeDayTimer());

@@ -16,17 +16,20 @@ namespace GambleMenu.UI
         public Color Scrim, Shadow;
         /// <summary>Track colour behind a slider fill or an off switch.</summary>
         public Color Track;
+        /// <summary>Background for a card whose mod is running. Distinct from SurfaceHover so
+        /// an active card still reads as active while the cursor is somewhere else.</summary>
+        public Color SurfaceActive;
     }
 
     internal static class Theme
     {
         private static readonly Palette Midnight = new Palette
         {
-            Name = "Midnight",
-            WindowBg      = Hex("0E1116"), Sidebar    = Hex("0A0D12"), Header = Hex("11151C"), Footer = Hex("0A0D12"),
-            Surface       = Hex("161B23"), SurfaceAlt = Hex("1B212B"), SurfaceHover = Hex("202836"), SurfaceSunken = Hex("0C0F14"),
-            Border        = Hex("242C38"), BorderStrong = Hex("323C4B"), BorderFocus = Hex("4A5568"),
-            Text          = Hex("E6EAF0"), TextMuted  = Hex("9AA5B4"), TextFaint = Hex("636E7E"), TextInverse = Hex("0B0E13"),
+            Name = "Midnight", SurfaceActive = Hex("181F26"),
+            WindowBg      = Hex("0D1014"), Sidebar    = Hex("0A0C10"), Header = Hex("12161D"), Footer = Hex("0A0C10"),
+            Surface       = Hex("171C24"), SurfaceAlt = Hex("1E242E"), SurfaceHover = Hex("222935"), SurfaceSunken = Hex("0B0E13"),
+            Border        = Hex("252D3A"), BorderStrong = Hex("38424F"), BorderFocus = Hex("4A5568"),
+            Text          = Hex("E8ECF2"), TextMuted  = Hex("98A3B2"), TextFaint = Hex("5E6875"), TextInverse = Hex("0B0E13"),
             Danger        = Hex("F0616D"), Warn       = Hex("E9B44C"), Success = Hex("5BD08A"), Info = Hex("5AA9F0"),
             Scrim         = new Color(0f, 0f, 0f, 0.55f), Shadow = new Color(0f, 0f, 0f, 0.45f),
             Track         = Hex("2A3341")
@@ -34,7 +37,7 @@ namespace GambleMenu.UI
 
         private static readonly Palette Slate = new Palette
         {
-            Name = "Slate",
+            Name = "Slate", SurfaceActive = Hex("242B33"),
             WindowBg      = Hex("181A1F"), Sidebar    = Hex("141619"), Header = Hex("1D2026"), Footer = Hex("141619"),
             Surface       = Hex("22262D"), SurfaceAlt = Hex("282D35"), SurfaceHover = Hex("2F353F"), SurfaceSunken = Hex("15181C"),
             Border        = Hex("323842"), BorderStrong = Hex("434B57"), BorderFocus = Hex("5A6473"),
@@ -46,7 +49,7 @@ namespace GambleMenu.UI
 
         private static readonly Palette Casino = new Palette
         {
-            Name = "Casino",
+            Name = "Casino", SurfaceActive = Hex("231A1D"),
             WindowBg      = Hex("120E10"), Sidebar    = Hex("0D0A0C"), Header = Hex("181114"), Footer = Hex("0D0A0C"),
             Surface       = Hex("1E1518"), SurfaceAlt = Hex("251A1E"), SurfaceHover = Hex("2E2025"), SurfaceSunken = Hex("0F0B0D"),
             Border        = Hex("33232A"), BorderStrong = Hex("47323A"), BorderFocus = Hex("6B4650"),
@@ -58,7 +61,7 @@ namespace GambleMenu.UI
 
         private static readonly Palette Paper = new Palette
         {
-            Name = "Paper",
+            Name = "Paper", SurfaceActive = Hex("F2F7F4"),
             WindowBg      = Hex("F5F6F8"), Sidebar    = Hex("ECEEF2"), Header = Hex("FFFFFF"), Footer = Hex("ECEEF2"),
             Surface       = Hex("FFFFFF"), SurfaceAlt = Hex("F7F8FA"), SurfaceHover = Hex("EEF1F5"), SurfaceSunken = Hex("E7EAEF"),
             Border        = Hex("DCE1E8"), BorderStrong = Hex("C3CAD4"), BorderFocus = Hex("9AA5B4"),
@@ -73,7 +76,7 @@ namespace GambleMenu.UI
         /// and tracks are lifted too, so structure survives as well as text.</summary>
         private static readonly Palette Contrast = new Palette
         {
-            Name = "Contrast",
+            Name = "Contrast", SurfaceActive = Hex("132013"),
             WindowBg      = Hex("000000"), Sidebar    = Hex("000000"), Header = Hex("0A0A0A"), Footer = Hex("000000"),
             Surface       = Hex("101010"), SurfaceAlt = Hex("181818"), SurfaceHover = Hex("242424"), SurfaceSunken = Hex("050505"),
             Border        = Hex("5A5A5A"), BorderStrong = Hex("8A8A8A"), BorderFocus = Hex("FFFFFF"),

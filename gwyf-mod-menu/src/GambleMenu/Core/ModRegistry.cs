@@ -88,6 +88,19 @@ namespace GambleMenu.Core
             }
         }
 
+        /// <summary>Switches off every mod in one category, for the header action on its page.</summary>
+        public static int DisableCategory(Category cat)
+        {
+            int n = 0;
+            foreach (var m in _mods)
+            {
+                if (m.Cat != cat || !m.Enabled.Value) continue;
+                m.Enabled.Value = false;
+                n++;
+            }
+            return n;
+        }
+
         /// <summary>Switches everything off. Bound to the panic key and used on shutdown so
         /// the game is never left holding a patched method after the plugin stops.</summary>
         public static void DisableAll(bool quiet = false)

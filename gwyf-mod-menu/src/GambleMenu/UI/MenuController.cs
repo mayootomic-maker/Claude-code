@@ -16,9 +16,9 @@ namespace GambleMenu.UI
     {
         public static MenuController Instance { get; private set; }
 
-        private const float HeaderH = 54f;
-        private const float FooterH = 30f;
-        private const float SidebarW = 186f;
+        private const float HeaderH = 50f;
+        private const float FooterH = 28f;
+        private const float SidebarW = 178f;
         private const float Radius = 12f;
 
         private bool _open;
@@ -33,6 +33,13 @@ namespace GambleMenu.UI
 
         // Cursor state captured on open and put back on close, so a game that hides the
         // cursor during play does not end up with it stuck visible afterwards.
+        /// <summary>Frame of the last toggle, so the OnGUI and Update paths below cannot both
+        /// fire for one keypress and cancel each other out.</summary>
+        private int _lastToggleFrame = -1;
+
+        /// <summary>When the plugin finished loading, for the startup banner.</summary>
+        private float _loadedAt;
+
         private CursorLockMode _prevLock;
         private bool _prevVisible;
         private float _prevTimeScale = 1f;
@@ -48,6 +55,7 @@ namespace GambleMenu.UI
         private void Awake()
         {
             Instance = this;
+            _loadedAt = Time.unscaledTime;
             _prevLock = Cursor.lockState;
             _prevVisible = Cursor.visible;
         }
@@ -68,7 +76,10 @@ namespace GambleMenu.UI
             // toggle the menu you are standing in.
             if (!Widgets.IsCapturingKey)
             {
-                if (InputBridge.GetKeyDown(Settings.MenuKey.Value)) Toggle();
+                // Secondary path. The primary one lives in OnGUI and does not depend on any
+                // input backend at all; this only adds held-key support and costs nothing
+                // when OnGUI already handled the press this frame.
+                if (InputBridge.GetKeyDown(Settings.MenuKey.Value)) RequestToggle();
                 if (InputBridge.GetKeyDown(Settings.PanicKey.Value)) Panic();
                 ModRegistry.PollHotkeys();
             }
@@ -81,6 +92,20 @@ namespace GambleMenu.UI
         private void LateUpdate() => ModRegistry.TickLate();
 
         public void Toggle() => SetOpen(!_open);
+
+        /// <summary>
+        /// Toggles at most once per frame.
+        ///
+        /// Two independent paths watch for the menu key — IMGUI events and the input backend
+        /// — precisely so that one failing does not lock the user out. On a game where both
+        /// work, an unguarded toggle would fire twice and the menu would never appear to open.
+        /// </summary>
+        private void RequestToggle()
+        {
+            if (_lastToggleFrame == Time.frameCount) return;
+            _lastToggleFrame = Time.frameCount;
+            Toggle();
+        }
 
         public void SetOpen(bool open)
         {
@@ -156,6 +181,8 @@ namespace GambleMenu.UI
 
         private void OnGUI()
         {
+            HandleMenuKeyEvent();
+
             Styles.Build();
             Anim.BeginFrame();
             Widgets.BeginFrame();
@@ -178,6 +205,7 @@ namespace GambleMenu.UI
             float openAnim = Anim.To("menu.open", _open ? 1f : 0f, 15f);
             if (openAnim > 0.002f) DrawWindow(openAnim, logicalW, logicalH);
 
+            DrawStartupBanner(logicalW, logicalH);
             if (Settings.Watermark.Value && !_open) DrawWatermark(logicalW);
             if (Settings.ShowToasts.Value) DrawToasts(logicalW, logicalH);
 
@@ -244,21 +272,23 @@ namespace GambleMenu.UI
             Draw.Round(new Rect(r.x, r.y, r.width, r.height + Radius), p.Header, Radius);
             Draw.HLine(r.x, r.yMax - 1f, r.width, p.Border);
 
-            var mark = new Rect(r.x + 18f, r.y + (r.height - 10f) * 0.5f, 10f, 10f);
-            Draw.Round(mark, Theme.Accent, 3f);
+            var mark = new Rect(r.x + 17f, r.y + (r.height - 9f) * 0.5f, 9f, 9f);
+            Draw.Round(mark, Theme.Accent, 2.5f);
 
-            Draw.Label(new Rect(mark.xMax + 10f, r.y, 150f, r.height), "GambleMenu", Styles.Title, p.Text);
+            Draw.Label(new Rect(mark.xMax + 8f, r.y, 150f, r.height), "GambleMenu", Styles.Title, p.Text);
 
-            float titleW = Draw.TextWidth("GambleMenu", Styles.Title) + 44f;
-            var version = new Rect(r.x + titleW, r.y + (r.height - 16f) * 0.5f, 42f, 16f);
-            Widgets.Badge(version, Plugin.Version, p.TextFaint, Theme.Fade(p.TextFaint, 0.10f));
+            float titleW = Draw.TextWidth("GambleMenu", Styles.Title) + 34f;
+            Draw.Label(new Rect(r.x + titleW, r.y, 46f, r.height), Plugin.Version, Styles.Tiny, p.TextFaint);
 
-            var close = new Rect(r.xMax - 44f, r.y + (r.height - 28f) * 0.5f, 28f, 28f);
-            if (Widgets.Button(close, "", ButtonKind.Ghost, true, "Close (or press the menu key)")) SetOpen(false);
-            Draw.Cross(close, p.TextMuted, 1.7f);
+            var close = new Rect(r.xMax - 42f, r.y + (r.height - 28f) * 0.5f, 28f, 28f);
+            if (Widgets.Button(close, "", ButtonKind.Ghost, true, "Close (or press the menu key)", "menu.close")) SetOpen(false);
+            Draw.Cross(close, p.TextMuted, 1.6f);
 
-            var search = new Rect(r.xMax - 300f, r.y + (r.height - 28f) * 0.5f, 240f, 28f);
-            _search = Widgets.SearchBox(search, _search);
+            Draw.Label(new Rect(r.xMax - 92f, r.y, 36f, r.height),
+                       Settings.MenuKey.Value.ToString().ToUpperInvariant(), Styles.TinyRight, Theme.Fade(p.TextFaint, 0.8f));
+
+            var search = new Rect(r.xMax - 398f, r.y + (r.height - 28f) * 0.5f, 300f, 28f);
+            _search = Widgets.SearchBox(search, _search, ModRegistry.All.Count);
         }
 
         private void DrawSidebar(Rect r)
@@ -268,42 +298,55 @@ namespace GambleMenu.UI
             Draw.VLine(r.xMax - 1f, r.y, r.height, p.Border);
 
             var entries = _pages.SidebarEntries();
-            float y = r.y + 10f;
+            float y = r.y + 8f;
+            bool kickerDrawn = false;
 
             for (int i = 0; i < entries.Count; i++)
             {
                 var entry = entries[i];
+
+                if (!kickerDrawn)
+                {
+                    Draw.Label(new Rect(r.x + 18f, y, r.width - 26f, 14f), "MODS", Styles.Kicker, Theme.Fade(p.TextFaint, 0.75f));
+                    y += 18f;
+                    kickerDrawn = true;
+                }
+
                 if (entry.IsSeparator)
                 {
-                    Draw.HLine(r.x + 16f, y + 7f, r.width - 32f, Theme.Fade(p.Border, 0.8f));
-                    y += 15f;
+                    Draw.HLine(r.x + 18f, y + 8f, r.width - 36f, Theme.Fade(p.Border, 0.9f));
+                    y += 17f;
+                    Draw.Label(new Rect(r.x + 18f, y, r.width - 26f, 14f), "SETUP", Styles.Kicker, Theme.Fade(p.TextFaint, 0.75f));
+                    y += 18f;
                     continue;
                 }
 
-                var row = new Rect(r.x + 8f, y, r.width - 16f, 32f);
+                var row = new Rect(r.x + 7f, y, r.width - 14f, 29f);
                 bool selected = _page == i;
                 bool hover = row.Contains(Event.current.mousePosition);
                 float sel = Anim.To($"side.{i}.sel", selected ? 1f : 0f, 18f);
                 float hl = Anim.To($"side.{i}.h", hover && !selected ? 1f : 0f, 18f);
 
-                if (sel > 0f) Draw.Round(row, Theme.Fade(Theme.Accent, 0.13f * sel), 7f);
-                else if (hl > 0f) Draw.Round(row, Theme.Fade(p.SurfaceHover, hl), 7f);
+                if (sel > 0f) Draw.Round(row, Theme.Fade(Theme.Accent, 0.12f * sel), 6f);
+                else if (hl > 0f) Draw.Round(row, Theme.Fade(p.SurfaceHover, hl), 6f);
 
                 if (sel > 0f)
-                    Draw.Round(new Rect(row.x + 2f, row.y + 8f, 3f, row.height - 16f), Theme.Fade(Theme.Accent, sel), 1.5f);
+                    Draw.Round(new Rect(row.x + 2f, row.y + 7f, 3f, row.height - 14f), Theme.Fade(Theme.Accent, sel), 1.5f);
 
-                var label = new Rect(row.x + 16f, row.y, row.width - 60f, row.height);
+                var label = new Rect(row.x + 15f, row.y, row.width - 58f, row.height);
                 Draw.Label(label, entry.Title, selected ? Styles.Strong : Styles.Body,
                            selected ? p.Text : Color.Lerp(p.TextMuted, p.Text, hl));
 
                 if (entry.Count > 0)
                 {
-                    var count = new Rect(row.xMax - 40f, row.y + 7f, 30f, 18f);
+                    // Plain text, not a pill: this is metadata about the row, and a bordered
+                    // chip gave it more weight than the label it belongs to.
                     bool anyOn = entry.ActiveCount > 0;
-                    Widgets.Badge(count,
-                                  anyOn ? $"{entry.ActiveCount}/{entry.Count}" : entry.Count.ToString(CultureInfo.InvariantCulture),
-                                  anyOn ? Theme.Accent : p.TextFaint,
-                                  Theme.Fade(anyOn ? Theme.Accent : p.TextFaint, 0.12f));
+                    var count = new Rect(row.xMax - 46f, row.y, 34f, row.height);
+                    Draw.Label(count,
+                               anyOn ? $"{entry.ActiveCount}/{entry.Count}" : entry.Count.ToString(CultureInfo.InvariantCulture),
+                               anyOn ? Styles.SmallRightBold : Styles.SmallRight,
+                               anyOn ? Theme.Accent : Theme.Fade(p.TextFaint, 0.85f));
                 }
 
                 if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && row.Contains(Event.current.mousePosition))
@@ -313,7 +356,7 @@ namespace GambleMenu.UI
                     Event.current.Use();
                 }
 
-                y += 34f;
+                y += 31f;
             }
         }
 
@@ -322,7 +365,7 @@ namespace GambleMenu.UI
             var p = Theme.P;
             Draw.Fill(r, p.WindowBg);
 
-            var inner = new Rect(r.x + 16f, r.y + 14f, r.width - 32f, r.height - 24f);
+            var inner = new Rect(r.x + 15f, r.y + 12f, r.width - 30f, r.height - 22f);
             float scroll = _scroll.TryGetValue(_page, out float s) ? s : 0f;
 
             float contentH = _pages.DrawPage(_page, inner, scroll, _search, this);
@@ -440,6 +483,66 @@ namespace GambleMenu.UI
             Draw.Shadow(r, Theme.P.Shadow, 7f, 8f, 4);
             Draw.Card(r, Theme.P.SurfaceAlt, Theme.P.BorderStrong, 7f);
             Draw.Label(new Rect(r.x + 9f, r.y + 6f, r.width - 18f, r.height - 12f), tip, Styles.WrapSmall, Theme.P.TextMuted);
+        }
+
+        /// <summary>
+        /// Reads the menu key straight from the IMGUI event stream.
+        ///
+        /// This is the primary toggle and the reason the menu can be trusted to open: OnGUI
+        /// receives key events from the engine itself, so it works whether the project enabled
+        /// the legacy input manager, the Input System package, or both. The previous build
+        /// relied solely on UnityEngine.Input, which throws on a game that disabled it — and
+        /// the menu simply never opened.
+        /// </summary>
+        private void HandleMenuKeyEvent()
+        {
+            var e = Event.current;
+            if (e == null || e.type != EventType.KeyDown) return;
+
+            // A rebind is capturing keys, or the user is typing in a text field.
+            if (Widgets.IsCapturingKey) return;
+            if (_open && GUIUtility.keyboardControl != 0 && e.keyCode != KeyCode.Escape) return;
+
+            if (e.keyCode == Settings.MenuKey.Value) { RequestToggle(); e.Use(); }
+            else if (e.keyCode == Settings.PanicKey.Value) { Panic(); e.Use(); }
+            else if (e.keyCode == KeyCode.Escape && _open) { SetOpen(false); e.Use(); }
+        }
+
+        /// <summary>
+        /// A short-lived banner confirming the plugin is alive.
+        ///
+        /// It exists to split the two failure modes that look identical to a player: "the
+        /// plugin never loaded" and "the plugin loaded but the key does nothing". Seeing this
+        /// means the only thing left to doubt is the keybind.
+        /// </summary>
+        private void DrawStartupBanner(float logicalW, float logicalH)
+        {
+            const float lifetime = 18f;
+            float age = Time.unscaledTime - _loadedAt;
+            if (age > lifetime || _open) return;
+
+            float fade = Mathf.Min(Anim.EaseOutCubic(Mathf.Clamp01(age / 0.35f)),
+                                   Mathf.Clamp01((lifetime - age) / 1.2f));
+            if (fade <= 0.01f) return;
+
+            var p = Theme.P;
+            int ok = 0;
+            foreach (var b in GameBridge.All) if (b.Ok) ok++;
+
+            string title = $"GambleMenu {Plugin.Version} loaded";
+            string hint = $"Press {Settings.MenuKey.Value} to open  ·  {ModRegistry.All.Count} mods  ·  {ok}/{GameBridge.All.Count} bindings";
+
+            float w = Mathf.Max(Draw.TextWidth(title, Styles.Strong), Draw.TextWidth(hint, Styles.Small)) + 46f;
+            var r = new Rect((logicalW - w) * 0.5f, logicalH - 96f, w, 54f);
+
+            Draw.Alpha = fade;
+            Draw.Shadow(r, p.Shadow, 10f, 12f, 5);
+            Draw.Card(r, p.SurfaceAlt, p.BorderStrong, 10f);
+            Draw.Round(new Rect(r.x + 1f, r.y + 10f, 3f, r.height - 20f), Theme.Accent, 1.5f);
+            Draw.Dot(new Rect(r.x + 14f, r.y, 12f, r.height), Theme.Accent, 8f);
+            Draw.Label(new Rect(r.x + 34f, r.y + 9f, r.width - 44f, 18f), title, Styles.Strong, p.Text);
+            Draw.Label(new Rect(r.x + 34f, r.y + 28f, r.width - 44f, 16f), hint, Styles.Small, p.TextMuted);
+            Draw.Alpha = 1f;
         }
 
         private void DrawWatermark(float logicalW)

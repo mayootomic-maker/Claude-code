@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--
+      .NET Framework 4.8 is present on every Windows 10 and 11 install, so the result is a
+      small standalone .exe with nothing for the user to install first. A self-contained
+      .NET 8 publish would have been ~70 MB and a framework-dependent one would have sent
+      them to download a runtime before they could install a mod menu.
+    -->
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>GambleMenu-Installer</AssemblyName>
+    <RootNamespace>GambleMenu.Installer</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyTitle>GambleMenu Installer</AssemblyTitle>
+    <Product>GambleMenu</Product>
+    <Version>1.1.0</Version>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+  <!-- BepInEx and the plugin travel inside the exe, so installing works offline and cannot
+       break when a download URL changes. -->
+  <ItemGroup>
+    <EmbeddedResource Include="resources/BepInExPack.zip" Condition="Exists('resources/BepInExPack.zip')" />
+    <EmbeddedResource Include="resources/GambleMenu.dll" Condition="Exists('resources/GambleMenu.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

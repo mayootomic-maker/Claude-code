@@ -111,7 +111,7 @@ namespace GambleMenu.UI
         /// <summary>The on/off pill. Height is fixed at 20 so it lines up with a text row.</summary>
         public static bool Switch(Rect area, string key, bool value, bool interactable = true, string tooltip = null)
         {
-            const float w = 38f, h = 20f;
+            const float w = 34f, h = 18f;
             var r = new Rect(area.x + area.width - w, area.y + (area.height - h) * 0.5f, w, h);
             var p = Theme.P;
 
@@ -296,7 +296,7 @@ namespace GambleMenu.UI
         {
             var p = Theme.P;
             string id = opt.Key + ".long";
-            float presetW = opt.Presets.Length > 0 ? Mathf.Min(150f, opt.Presets.Length * 42f) : 0f;
+            float presetW = opt.Presets.Length > 0 ? opt.Presets.Length * 48f : 0f;
             var fieldRect = new Rect(r.x, r.y, r.width - presetW - (presetW > 0f ? 6f : 0f), r.height);
 
             bool wasFocused = GUI.GetNameOfFocusedControl() == id;
@@ -312,17 +312,17 @@ namespace GambleMenu.UI
                 if (!opt.CommitBuffer())
                 {
                     Notifier.Warn($"'{opt.Buffer}' is not a whole number — {opt.Label} left at {opt.Value}.");
-                    opt.Buffer = opt.Value.ToString(CultureInfo.InvariantCulture);
+                    opt.Buffer = LongOption.Group(opt.Value);
                 }
                 if (enter) { e.Use(); GUIUtility.keyboardControl = 0; }
             }
 
             for (int i = 0; i < opt.Presets.Length && presetW > 0f; i++)
             {
-                float bw = presetW / opt.Presets.Length;
-                var br = new Rect(fieldRect.xMax + 6f + bw * i, r.y, bw - 2f, r.height);
-                if (Button(br, Compact(opt.Presets[i]), ButtonKind.Ghost, interactable,
-                           $"Set to {opt.Presets[i].ToString("N0", CultureInfo.InvariantCulture)}"))
+                var br = new Rect(fieldRect.xMax + 6f + 48f * i, r.y, 42f, r.height);
+                if (Button(br, Compact(opt.Presets[i]), ButtonKind.Normal, interactable,
+                           $"Set to {opt.Presets[i].ToString("N0", CultureInfo.InvariantCulture)}",
+                           opt.Key + ".preset" + i))
                     opt.Value = opt.Presets[i];
             }
         }
@@ -521,7 +521,7 @@ namespace GambleMenu.UI
             return result;
         }
 
-        public static string SearchBox(Rect r, string value)
+        public static string SearchBox(Rect r, string value, int modCount = 0)
         {
             var p = Theme.P;
             const string id = "gm.search";
@@ -546,7 +546,7 @@ namespace GambleMenu.UI
             string result = GUI.TextField(field, value ?? string.Empty, Styles.Field);
 
             if (string.IsNullOrEmpty(result) && !focused)
-                Draw.Label(field, "Search mods…", Styles.Body, p.TextFaint);
+                Draw.Label(field, modCount > 0 ? $"Search {modCount} mods…" : "Search mods…", Styles.Body, p.TextFaint);
 
             if (!string.IsNullOrEmpty(result))
             {

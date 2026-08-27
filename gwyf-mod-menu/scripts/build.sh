@@ -28,11 +28,23 @@ dotnet run --project tests/GambleMenu.Tests/GambleMenu.Tests.csproj -v quiet
 echo "==> build"
 dotnet build src/GambleMenu/GambleMenu.csproj -c Release -v minimal
 
+echo "==> installer"
+# The installer embeds the plugin and BepInEx, so both are refreshed from this build
+# rather than from whatever happened to be in resources/ last time.
+mkdir -p installer/GambleMenu.Installer/resources
+cp src/GambleMenu/bin/Release/GambleMenu.dll installer/GambleMenu.Installer/resources/
+cp .cache/bepinex.zip installer/GambleMenu.Installer/resources/BepInExPack.zip 2>/dev/null || \
+  curl -sSL -o installer/GambleMenu.Installer/resources/BepInExPack.zip \
+    "https://thunderstore.io/package/download/BepInEx/BepInExPack/$BEPINEX_VERSION/"
+dotnet build installer/GambleMenu.Installer/GambleMenu.Installer.csproj -c Release -v minimal
+
 echo "==> package"
 rm -rf dist && mkdir -p dist/plugins
 cp src/GambleMenu/bin/Release/GambleMenu.dll dist/plugins/
 cp package/manifest.json package/icon.png dist/
 cp README.md dist/
+cp installer/GambleMenu.Installer/bin/Release/GambleMenu-Installer.exe dist/
 
-( cd dist && zip -qr GambleMenu.zip . -x GambleMenu.zip )
-echo "==> dist/GambleMenu.zip"
+( cd dist && zip -qr GambleMenu.zip manifest.json icon.png README.md plugins )
+echo "==> dist/GambleMenu.zip          (for Thunderstore / manual install)"
+echo "==> dist/GambleMenu-Installer.exe (double-click on Windows)"

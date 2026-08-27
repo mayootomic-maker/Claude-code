@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 33 mods across nine categories, 72
+An in-game mod menu for **Gamble With Your Friends** — 37 mods across ten categories, 92
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -10,13 +10,17 @@ Press **Insert** in game.
 
 ## Installing
 
-1. Install **BepInExPack 5.4.2305** for this game — through [r2modman], [Gale], or by
-   unpacking it into the game folder by hand.
-2. Drop `GambleMenu.dll` into `BepInEx/plugins/`.
-3. Launch the game and press **Insert**.
+**The easy way:** run **GambleMenu-Installer.exe**. It finds your Steam install (including
+libraries on other drives), sets up BepInEx if you do not already have it, installs the
+plugin and then checks the result. It leaves an existing BepInEx setup alone, so it is safe
+to run alongside r2modman or Gale. `--uninstall` removes the plugin and keeps your settings.
 
-If nothing appears, open `BepInEx/LogOutput.log` and look for `GambleMenu`. It logs what it
-resolved, what it could not, and why.
+**By hand:** install **BepInExPack 5.4.2305** through [r2modman] or [Gale], then drop
+`GambleMenu.dll` into `BepInEx/plugins/`.
+
+Either way, launch the game — a **"GambleMenu loaded"** banner appears for a few seconds.
+That banner is the diagnostic: if you see it, the plugin is running and only the keybind
+could be wrong. If you do not, BepInEx never loaded it — check `BepInEx/LogOutput.log`.
 
 [r2modman]: https://thunderstore.io/c/gamble-with-your-friends/p/ebkr/r2modman/
 [Gale]: https://thunderstore.io/c/gamble-with-your-friends/p/Kesomannen/GaleModManager/
@@ -27,7 +31,11 @@ resolved, what it could not, and why.
 | --- | --- |
 | `Insert` | Open and close the menu |
 | `End` | Panic — switch every mod off at once |
+| `Esc` | Closes the menu |
 | *(yours)* | Every mod takes its own hotkey; expand a card to bind one |
+
+The menu key is read from Unity's own event stream rather than from an input API, so it
+works whether the game enabled the legacy input manager, the Input System package, or both.
 
 Both are rebindable in **Settings**. Click a key field, press a key; `Esc` cancels,
 `Backspace` clears.
@@ -36,7 +44,7 @@ Both are rebindable in **Settings**. Click a key field, press a key; `Esc` cance
 
 ## The mods
 
-### Economy — 7
+### Economy — 9
 The shared bank account and the loan shark's demand.
 
 | Mod | What it does |
@@ -48,6 +56,44 @@ The shared bank account and the loan shark's demand.
 | **Minimum balance** | Never lets the bank drop below your number |
 | **Freeze quota** | Stops the daily demand ramping and holds it where you say |
 | **Adjust quota** | Set today's demand, or top the bank up to exactly cover it |
+| **Lucky streak** | Quietly turns some losses into wins, at believable sizes |
+| **Slow drip** | Walks the bank toward a target in payout-sized steps instead of setting it |
+
+#### Looking like luck rather than an edit
+
+**Lucky streak** and **Slow drip** exist because the blunt mods are obvious. Three things
+give a money mod away to anyone watching the shared bank: the numbers are round, the size is
+wrong for the stakes in play, and it happens instantly. Both mods fix all three — payouts are
+jittered off round figures, sized against the *current quota* so they stay proportionate as
+the run scales, and paid out over time.
+
+Lucky streak also refuses to be perfect: it caps how many losses in a row it will rescue and
+rests between saves, because nobody wins nine hands running. Set "loss becomes a win" to 1.00
+and you never lose, which is precisely what gives it away — around half reads as a good night.
+
+Worth being straight about the ceiling: this changes how *plausible* a change looks, not
+whether it is visible. Anyone reading the bank still sees the number move. What they will not
+see is a round trillion appearing between two frames.
+
+### Machines — 2
+Reading what a machine is about to do.
+
+| Mod | What it does |
+| --- | --- |
+| **Machine reader** | Aim at a machine to see its live values — multiplier, result, payout, odds |
+| **Outcome watch** | Announces the instant a chosen field changes value |
+
+**Machine reader** is the answer to "how do I know what to press" that needs no class names
+known in advance: it raycasts from the camera, takes whatever component the object carries and
+reads its fields, ranking anything named like a result, payout or multiplier to the top. Press
+**P** to pin a machine so you can look away and keep watching it.
+
+Whether it shows you an outcome *before* it happens depends on the machine. Where the game
+rolls the result up front and then plays an animation, the answer is already sitting in a field
+and this will show it. Where the result is decided at the end of the animation, there is
+nothing to read early and no mod can invent it — you will see the state resolve instead. Turn
+on "show every field" if the ranked view misses something, and use the component name it prints
+with the Developer tab's live field editor to drive whatever you find.
 
 ### Time — 3
 **Day length** (seconds per run in the casino) · **Freeze the day clock** (hold the countdown,
