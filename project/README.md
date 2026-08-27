@@ -14,7 +14,8 @@ project/koenigsegg_final.blend the master scene: car, both locations, all camera
 project/scripts/               build, preview, render, verify and encode
 project/previews/              preview renders and reference/render comparisons
 project/renders/final/         the 1920×1080 PNG sequence
-output/koenigsegg_final.mp4    the encoded film
+output/koenigsegg_final.mp4    the encoded film (produced by render_all.sh)
+output/koenigsegg_timing_animatic.mp4   cut-timing check, see below
 ```
 
 ## Rendering the film
@@ -50,6 +51,14 @@ encode. `encode.sh` runs it before encoding and exits if anything is missing.
 tracing. On the CPU-only container this was developed in, one 1920×1080 frame
 at 256 samples takes minutes, so the full sequence is a GPU job. Preview work
 was done at 800×450 / 40 samples, roughly 25 s per frame.
+
+## The timing animatic
+
+`output/koenigsegg_timing_animatic.mp4` holds each shot's first frame for that
+shot's exact duration: 996 frames, 60 fps, 16.600 s, the same as the reference.
+It is a check on shot order and cut timing, not a render of the film -- there is
+no camera movement in it. Play it against the reference to confirm the edit
+lands on the same beats before committing GPU time to the real sequence.
 
 ## Rebuilding the scene
 
