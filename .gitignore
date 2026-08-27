@@ -13,3 +13,11 @@ app/e2e/shots/
 .env
 .env.*
 !.env.example
+
+# Blender project working files
+reference/frames_overview/
+reference/gap/
+reference/shots/
+project/previews/
+project/renders/
+output/
