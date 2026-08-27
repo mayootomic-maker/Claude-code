@@ -1,297 +1,364 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using GambleMenu.Core;
 using GambleMenu.UI;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace GambleMenu.Mods
 {
-    /// <summary>
-    /// Reads the live state of whatever machine you are looking at.
-    ///
-    /// This is the answer to "how do I know what to press" that does not require knowing a
-    /// single class name in advance: raycast from the camera, take whatever component the hit
-    /// object carries, and read its fields. Machines keep their multiplier, their pending
-    /// result and their payout table in ordinary fields, so aiming at one and listing them is
-    /// the whole trick.
-    ///
-    /// Whether it shows you an outcome *before* it happens depends on the machine. Where the
-    /// game rolls the result up front and then plays an animation, the answer is sitting in a
-    /// field and this will show it. Where the result is decided at the end of the animation,
-    /// there is nothing to read early and no mod can invent it — the readout will show the
-    /// state changing as it resolves instead.
-    /// </summary>
-    internal sealed class MachineReader : Mod
+    /// <summary>One field on a machine, and what it has been observed doing.</summary>
+    internal sealed class TrackedField
     {
-        public override string Id => "machines.reader";
-        public override string Name => "Machine reader";
-        public override string Description => "Aim at a machine to see its live values — multiplier, result, payout, odds.";
-        public override Category Cat => Category.Machines;
-        public override string[] Tags => new[] { "machine", "slot", "automat", "read", "peek", "odds", "outcome", "result", "predict", "what to press" };
+        public Component Owner;
+        public FieldInfo Field;
+        public string Text;
+        public double? Numeric;
+        public float LastChange;
+        public int Changes;
+        public int Samples;
+
+        public string Label => Field.Name;
+
+        /// <summary>Fraction of samples in which this field changed.</summary>
+        public float ChangeRate => Samples == 0 ? 0f : Changes / (float)Samples;
 
         /// <summary>
-        /// Field names worth surfacing first.
+        /// How likely this field is to be the one that matters.
         ///
-        /// Ordered by how directly each tends to answer "what happens if I press now" — a
-        /// field called "result" is worth more than one called "value", so the list is scanned
-        /// in order and the readout keeps that order.
+        /// Name matching was the original approach and it is guesswork — every machine has a
+        /// "value" and most of them are irrelevant. Observed behaviour is evidence instead:
+        /// a field that never changes is scenery, and one that changes on every single sample
+        /// is an animation or a clock, not an outcome. What is worth seeing sits between those,
+        /// changing in discrete jumps, and having changed recently.
         /// </summary>
-        private static readonly string[] Interesting =
+        public float Score(float now)
         {
-            "result", "outcome", "win", "won", "jackpot", "prize", "payout", "reward",
-            "multiplier", "multi", "crash", "target", "roll", "rolled", "next",
-            "odds", "chance", "probability", "weight", "rtp",
-            "bet", "stake", "value", "amount", "spin", "state", "index", "symbol"
-        };
+            if (Changes == 0) return 0f;
 
-        private FloatOption _range;
-        private BoolOption _allFields;
-        private BoolOption _showComponent;
-        private IntOption _maxLines;
-        private KeyOption _pinKey;
-        private ColorOption _colour;
+            float rate = ChangeRate;
+            if (rate > 0.6f) return 0.05f;              // continuous — a timer or a tween
 
-        private GameObject _pinned;
-        private GameObject _current;
-        private readonly List<string> _lines = new List<string>();
-        private float _nextRead;
-
-        protected override void Build()
-        {
-            _range = Opt(new FloatOption("machines.reader.range", "Reach", 6f, 1f, 40f,
-                "How far ahead to look for a machine.") { Step = 0.5f, Format = "0.#", Unit = "m" });
-            _allFields = Opt(new BoolOption("machines.reader.all", "Show every field", false,
-                "Off shows only fields whose names look like a result, odds or payout. On shows everything the component has."));
-            _showComponent = Opt(new BoolOption("machines.reader.type", "Show component names", true,
-                "Useful for the Developer tab — this is the class name to type into the live field editor."));
-            _maxLines = Opt(new IntOption("machines.reader.lines", "Most lines", 14, 4, 40));
-            _pinKey = Opt(new KeyOption("machines.reader.pin", "Pin/unpin target", KeyCode.P,
-                "Locks the readout to the machine you are aiming at, so you can look away and still watch it."));
-            _colour = Opt(new ColorOption("machines.reader.colour", "Marker colour", new Color(0.91f, 0.71f, 0.30f, 1f)));
+            float recency = Mathf.Clamp01(1f - (now - LastChange) / 12f);
+            float discreteness = 1f - Mathf.Abs(rate - 0.12f) / 0.6f;
+            return Mathf.Clamp01(discreteness) * 0.55f + recency * 0.45f;
         }
+    }
 
-        protected override void OnEnable()
-        {
-            _pinned = null;
-            _lines.Clear();
-            _nextRead = 0f;
-        }
+    /// <summary>A candidate machine: an object nearby carrying game code with live state.</summary>
+    internal sealed class TrackedMachine
+    {
+        public GameObject Root;
+        public Renderer[] Renderers;
+        public readonly List<TrackedField> Fields = new List<TrackedField>();
+        public float LastChange;
 
-        protected override void OnUpdate()
+        public bool Alive => Root != null;
+
+        public Bounds Bounds()
         {
-            if (InputBridge.GetKeyDown(_pinKey.Value))
+            var b = new Bounds(Root.transform.position, Vector3.one * 0.4f);
+            bool first = true;
+            foreach (var r in Renderers)
             {
-                if (_pinned != null) { _pinned = null; Notifier.Info("Machine reader unpinned."); }
-                else if (_current != null) { _pinned = _current; Notifier.Success($"Pinned to {_current.name}."); }
-                else Notifier.Warn("Aim at a machine first, then press the pin key.");
+                if (r == null) continue;
+                if (first) { b = r.bounds; first = false; }
+                else b.Encapsulate(r.bounds);
             }
-
-            // Ten reads a second is far more than the eye needs and keeps the reflection cost
-            // off the frame budget.
-            if (Time.unscaledTime < _nextRead) return;
-            _nextRead = Time.unscaledTime + 0.1f;
-
-            var target = _pinned != null ? _pinned : Aimed();
-            _current = _pinned != null ? _pinned : target;
-            Collect(target);
-        }
-
-        private GameObject Aimed()
-        {
-            var cam = Camera.main;
-            if (cam == null) return null;
-            return Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, _range.Value)
-                ? hit.collider != null ? hit.collider.gameObject : null
-                : null;
-        }
-
-        private void Collect(GameObject target)
-        {
-            _lines.Clear();
-            if (target == null) return;
-
-            // Machines are usually a hierarchy: the collider sits on a child while the logic
-            // lives on a parent, so search upward as well as on the hit object itself.
-            var components = new List<MonoBehaviour>();
-            components.AddRange(target.GetComponents<MonoBehaviour>());
-            var parent = target.transform.parent;
-            int hops = 0;
-            while (parent != null && hops++ < 3)
-            {
-                components.AddRange(parent.GetComponents<MonoBehaviour>());
-                parent = parent.parent;
-            }
-
-            foreach (var component in components)
-            {
-                if (component == null) continue;
-                var type = component.GetType();
-                // Unity's own components carry nothing worth reading here.
-                if (type.Namespace != null && type.Namespace.StartsWith("UnityEngine", StringComparison.Ordinal)) continue;
-
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var picked = _allFields.Value ? fields.AsEnumerable() : fields.Where(IsInteresting).OrderBy(Rank);
-                bool headerWritten = false;
-
-                foreach (var field in picked)
-                {
-                    if (_lines.Count >= _maxLines.Value) return;
-                    if (!Readable(field.FieldType)) continue;
-
-                    object value;
-                    try { value = field.GetValue(component); }
-                    catch { continue; }
-
-                    if (!headerWritten && _showComponent.Value)
-                    {
-                        _lines.Add($"— {type.Name} —");
-                        headerWritten = true;
-                    }
-                    _lines.Add($"{field.Name}  =  {Reflect.Describe(value)}");
-                }
-            }
-
-            if (_lines.Count == 0)
-                _lines.Add(_allFields.Value
-                    ? $"{target.name}: no readable fields"
-                    : $"{target.name}: nothing result-shaped — try 'Show every field'");
-        }
-
-        private static bool IsInteresting(FieldInfo f)
-        {
-            string n = f.Name.ToLowerInvariant();
-            foreach (var word in Interesting) if (n.Contains(word)) return true;
-            return false;
-        }
-
-        private static int Rank(FieldInfo f)
-        {
-            string n = f.Name.ToLowerInvariant();
-            for (int i = 0; i < Interesting.Length; i++) if (n.Contains(Interesting[i])) return i;
-            return Interesting.Length;
-        }
-
-        /// <summary>Only value types worth putting on a HUD line; an object reference tells the
-        /// player nothing about what to press.</summary>
-        private static bool Readable(Type t) =>
-            t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal) ||
-            t == typeof(Vector2) || t == typeof(Vector3);
-
-        protected override void OnDrawOverlay()
-        {
-            var target = _pinned != null ? _pinned : _current;
-            if (target == null)
-            {
-                Hud.Line("machine   aim at one");
-                return;
-            }
-
-            Hud.Line(_pinned != null ? $"machine   {target.name}  [pinned]" : $"machine   {target.name}");
-            foreach (var line in _lines) Hud.Line("  " + line);
-
-            var cam = Camera.main;
-            if (cam != null && Hud.Project(cam, target.transform.position, out Vector2 screen))
-                Hud.Marker(screen, _pinned != null ? "pinned" : "reading", _colour.Value, 0f);
+            return b;
         }
     }
 
     /// <summary>
-    /// Watches one machine field and announces the moment it changes.
+    /// Marks machines in the world and shows what their state is doing.
     ///
-    /// Reading a value is only half of "know what to press": the useful signal is often the
-    /// change — a result field populating a beat before the animation admits it. This latches
-    /// onto whatever the reader is pointed at and reports transitions rather than levels.
+    /// The first version of this printed a list of field names into the corner of the screen,
+    /// which was neither accurate nor attached to anything — with two machines in view it told
+    /// you nothing about which was which. This draws on the machines themselves, and picks what
+    /// to show from observed behaviour rather than from field names, because a name is a guess
+    /// and a change you watched happen is evidence.
+    ///
+    /// What it cannot do is tell you what a value *means*. That is what the signal rule below
+    /// is for: once you can see which field moves when you play, you say what counts as good
+    /// and the machine is marked accordingly.
     /// </summary>
-    internal sealed class OutcomeWatch : Mod
+    internal sealed class MachineMarkers : Mod
     {
-        public override string Id => "machines.watch";
-        public override string Name => "Outcome watch";
-        public override string Description => "Announces the instant a machine's chosen field changes value.";
+        public override string Id => "machines.markers";
+        public override string Name => "Machine markers";
+        public override string Description => "Outlines machines in the world and shows the values that are actually moving.";
         public override Category Cat => Category.Machines;
-        public override string[] Tags => new[] { "outcome", "predict", "change", "watch", "alert", "result" };
+        public override string[] Tags => new[] { "machine", "marker", "highlight", "outline", "esp", "slot", "automat", "press", "signal", "predict" };
 
-        private StringOption _fieldName;
-        private FloatOption _range;
-        private BoolOption _toast;
-        private BoolOption _onlyIncrease;
+        private const int MaxMachines = 10;
+        private const int MaxFieldsPerMachine = 28;
 
-        private string _lastValue;
-        private string _lastOwner;
-        private float _nextRead;
+        private FloatOption _radius;
+        private BoolOption _aimedOnly;
+        private IntOption _rows;
+        private ColorOption _idleColour, _activeColour, _signalColour;
+        private BoolOption _outline;
+
+        private StringOption _signalField;
+        private EnumOption _signalTest;
+        private StringOption _signalValue;
+        private StringOption _signalText;
+
+        private readonly List<TrackedMachine> _machines = new List<TrackedMachine>();
+        private float _nextScan, _nextSample;
 
         protected override void Build()
         {
-            _fieldName = Opt(new StringOption("machines.watch.field", "Field name contains", "result",
-                "Matched loosely against the aimed machine's field names.") { Placeholder = "result" });
-            _range = Opt(new FloatOption("machines.watch.range", "Reach", 6f, 1f, 40f) { Step = 0.5f, Format = "0.#", Unit = "m" });
-            _toast = Opt(new BoolOption("machines.watch.toast", "Pop a notification on change", true));
-            _onlyIncrease = Opt(new BoolOption("machines.watch.up", "Only when it goes up", false,
-                "For multipliers that climb — tells you it moved in your favour."));
+            _radius = Opt(new FloatOption("machines.markers.radius", "Search radius", 12f, 2f, 60f,
+                "Machines within this distance of you are tracked.") { Step = 1f, Format = "0", Unit = "m" });
+            _aimedOnly = Opt(new BoolOption("machines.markers.aimed", "Only the one I am looking at", false,
+                "On keeps the screen clear when a room is full of machines."));
+            _rows = Opt(new IntOption("machines.markers.rows", "Values shown", 3, 0, 8,
+                "How many of the moving values to list on each marker. Zero shows the outline only."));
+            _outline = Opt(new BoolOption("machines.markers.outline", "Outline the machine", true));
+
+            _idleColour = Opt(new ColorOption("machines.markers.idle", "Idle colour", new Color(0.55f, 0.60f, 0.68f, 0.55f)));
+            _activeColour = Opt(new ColorOption("machines.markers.active", "Changing colour", new Color(0.91f, 0.71f, 0.30f, 1f)));
+            _signalColour = Opt(new ColorOption("machines.markers.signal", "Signal colour", new Color(0.36f, 0.85f, 0.55f, 1f)));
+
+            _signalField = Opt(new StringOption("machines.markers.sigfield", "Signal: field", "",
+                "Name of the value to watch, from the list on the marker. Leave blank for no signal.")
+            { Placeholder = "(none)" });
+            _signalTest = Opt(new EnumOption("machines.markers.sigtest", "Signal: when",
+                new[] { "is at least", "is at most", "equals", "changes" }, 0,
+                "How the value is compared against the number below.")
+            { VisibleWhen = () => !string.IsNullOrEmpty(_signalField.Value) });
+            _signalValue = Opt(new StringOption("machines.markers.sigvalue", "Signal: value", "2",
+                "Compared numerically when both sides are numbers, otherwise as text.")
+            { VisibleWhen = () => !string.IsNullOrEmpty(_signalField.Value) && _signalTest.Index != 3 });
+            _signalText = Opt(new StringOption("machines.markers.sigtext", "Signal: label", "PRESS",
+                "Shown on the machine when the condition holds.")
+            { VisibleWhen = () => !string.IsNullOrEmpty(_signalField.Value) });
         }
 
         protected override void OnEnable()
         {
-            _lastValue = null;
-            _lastOwner = null;
+            _machines.Clear();
+            _nextScan = 0f;
+            _nextSample = 0f;
         }
+
+        protected override void OnDisable() => _machines.Clear();
 
         protected override void OnUpdate()
         {
-            if (Time.unscaledTime < _nextRead) return;
-            _nextRead = Time.unscaledTime + 0.05f;
+            float now = Time.unscaledTime;
+            if (now >= _nextScan) { _nextScan = now + 1.5f; Scan(); }
+            if (now >= _nextSample) { _nextSample = now + 0.1f; Sample(now); }
+        }
 
-            var cam = Camera.main;
-            if (cam == null) return;
-            if (!Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, _range.Value)) return;
-            if (hit.collider == null) return;
+        // --- discovery --------------------------------------------------------------
 
-            string needle = _fieldName.Value?.Trim();
-            if (string.IsNullOrEmpty(needle)) return;
+        /// <summary>
+        /// Finds nearby objects that carry game code.
+        ///
+        /// There is no list of machine class names to match against, and there does not need to
+        /// be: scenery has no custom MonoBehaviour on it. Anything with a collider, a renderer
+        /// and a script from the game's own assembly is a candidate, and the sampling below
+        /// discards the ones whose state never moves.
+        /// </summary>
+        private void Scan()
+        {
+            var origin = GameBridge.LocalPlayer()?.transform.position
+                         ?? Camera.main?.transform.position;
+            if (!origin.HasValue) return;
 
-            var go = hit.collider.gameObject;
-            foreach (var component in go.GetComponentsInParent<MonoBehaviour>())
+            _machines.RemoveAll(m => !m.Alive ||
+                                     Vector3.Distance(m.Root.transform.position, origin.Value) > _radius.Value * 1.4f);
+
+            Collider[] hits;
+            try { hits = Physics.OverlapSphere(origin.Value, _radius.Value); }
+            catch (Exception ex) { Log.Warn($"machine scan failed: {ex.Message}"); return; }
+
+            foreach (var hit in hits)
             {
-                if (component == null) continue;
-                var type = component.GetType();
-                if (type.Namespace != null && type.Namespace.StartsWith("UnityEngine", StringComparison.Ordinal)) continue;
+                if (_machines.Count >= MaxMachines) break;
+                if (hit == null) continue;
+
+                var root = FindScriptedRoot(hit.gameObject);
+                if (root == null) continue;
+                if (_machines.Any(m => m.Root == root)) continue;
+
+                var renderers = root.GetComponentsInChildren<Renderer>(false);
+                if (renderers.Length == 0) continue;   // nothing to draw on
+
+                var machine = new TrackedMachine { Root = root, Renderers = renderers };
+                CollectFields(machine);
+                if (machine.Fields.Count > 0) _machines.Add(machine);
+            }
+        }
+
+        /// <summary>Walks up from a collider to the object that owns the game's own script.</summary>
+        private static GameObject FindScriptedRoot(GameObject from)
+        {
+            var t = from.transform;
+            int hops = 0;
+            while (t != null && hops++ < 4)
+            {
+                foreach (var mb in t.GetComponents<MonoBehaviour>())
+                {
+                    if (mb == null) continue;
+                    var ns = mb.GetType().Namespace;
+                    if (ns != null && ns.StartsWith("UnityEngine", StringComparison.Ordinal)) continue;
+                    if (ns != null && ns.StartsWith("GambleMenu", StringComparison.Ordinal)) continue;
+                    return t.gameObject;
+                }
+                t = t.parent;
+            }
+            return null;
+        }
+
+        private static void CollectFields(TrackedMachine machine)
+        {
+            foreach (var mb in machine.Root.GetComponents<MonoBehaviour>())
+            {
+                if (mb == null) continue;
+                var type = mb.GetType();
+                var ns = type.Namespace;
+                if (ns != null && (ns.StartsWith("UnityEngine", StringComparison.Ordinal) ||
+                                   ns.StartsWith("GambleMenu", StringComparison.Ordinal))) continue;
 
                 foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (field.Name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-                    object raw;
-                    try { raw = field.GetValue(component); } catch { continue; }
-                    string text = Reflect.Describe(raw);
-                    string owner = $"{type.Name}.{field.Name}";
-
-                    if (owner != _lastOwner) { _lastOwner = owner; _lastValue = text; return; }
-                    if (text == _lastValue) return;
-
-                    bool rose = Rose(_lastValue, text);
-                    string previous = _lastValue;
-                    _lastValue = text;
-
-                    if (_onlyIncrease.Value && !rose) return;
-                    if (_toast.Value) Notifier.Success($"{field.Name}: {previous} → {text}");
-                    return;
+                    if (machine.Fields.Count >= MaxFieldsPerMachine) return;
+                    if (!Readable(field.FieldType)) continue;
+                    machine.Fields.Add(new TrackedField { Owner = mb, Field = field });
                 }
             }
         }
 
-        private static bool Rose(string before, string after)
+        /// <summary>Only values that can be shown as a short string and compared for change.</summary>
+        private static bool Readable(Type t) =>
+            t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal);
+
+        // --- sampling ---------------------------------------------------------------
+
+        private void Sample(float now)
         {
-            return double.TryParse(before, System.Globalization.NumberStyles.Float,
-                                   System.Globalization.CultureInfo.InvariantCulture, out double a) &&
-                   double.TryParse(after, System.Globalization.NumberStyles.Float,
-                                   System.Globalization.CultureInfo.InvariantCulture, out double b) && b > a;
+            foreach (var machine in _machines)
+            {
+                if (!machine.Alive) continue;
+
+                foreach (var f in machine.Fields)
+                {
+                    if (f.Owner == null) continue;
+
+                    object raw;
+                    try { raw = f.Field.GetValue(f.Owner); }
+                    catch { continue; }
+
+                    string text = raw?.ToString() ?? "null";
+                    f.Samples++;
+
+                    if (f.Text != null && text != f.Text)
+                    {
+                        f.Changes++;
+                        f.LastChange = now;
+                        machine.LastChange = now;
+                    }
+                    f.Text = text;
+                    f.Numeric = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
+                        ? n : (double?)null;
+                }
+            }
         }
+
+        // --- signal -----------------------------------------------------------------
+
+        private bool SignalHolds(TrackedMachine machine, float now)
+        {
+            string needle = _signalField.Value?.Trim();
+            if (string.IsNullOrEmpty(needle)) return false;
+
+            var field = machine.Fields.FirstOrDefault(
+                f => f.Label.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (field == null) return false;
+
+            if (_signalTest.Index == 3) return now - field.LastChange < 1.2f;   // "changes"
+
+            string wanted = _signalValue.Value?.Trim() ?? "";
+            if (field.Numeric.HasValue &&
+                double.TryParse(wanted, NumberStyles.Float, CultureInfo.InvariantCulture, out double target))
+            {
+                switch (_signalTest.Index)
+                {
+                    case 0: return field.Numeric.Value >= target;
+                    case 1: return field.Numeric.Value <= target;
+                    default: return Math.Abs(field.Numeric.Value - target) < 0.0001;
+                }
+            }
+            return string.Equals(field.Text, wanted, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // --- drawing ----------------------------------------------------------------
 
         protected override void OnDrawOverlay()
         {
-            if (_lastOwner == null) { Hud.Line("watch     aim at a machine"); return; }
-            Hud.Line($"watch     {_lastOwner} = {_lastValue}");
+            var cam = Camera.main;
+            if (cam == null) return;
+            float now = Time.unscaledTime;
+
+            GameObject aimed = null;
+            if (_aimedOnly.Value &&
+                Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, _radius.Value))
+                aimed = hit.collider != null ? FindScriptedRoot(hit.collider.gameObject) : null;
+
+            int drawn = 0;
+            foreach (var machine in _machines.OrderBy(m => Vector3.Distance(cam.transform.position, m.Root.transform.position)))
+            {
+                if (!machine.Alive) continue;
+                if (_aimedOnly.Value && machine.Root != aimed) continue;
+                if (!Hud.ScreenBounds(cam, machine.Bounds(), out Rect box)) continue;
+                if (box.width < 8f || box.height < 8f) continue;
+                if (++drawn > MaxMachines) break;
+
+                bool signal = SignalHolds(machine, now);
+                bool active = now - machine.LastChange < 2.5f;
+                Color colour = signal ? _signalColour.Value : active ? _activeColour.Value : _idleColour.Value;
+
+                if (_outline.Value) Hud.OutlineBox(box, colour, signal ? 2.5f : active ? 2f : 1f);
+
+                if (_rows.Value > 0)
+                {
+                    var rows = machine.Fields
+                                      .Where(f => f.Changes > 0)
+                                      .OrderByDescending(f => f.Score(now))
+                                      .Take(_rows.Value)
+                                      .Select(f => $"{f.Label}   {Shorten(f.Text)}")
+                                      .ToArray();
+
+                    if (rows.Length == 0) rows = new[] { "nothing has moved yet" };
+                    Hud.Plate(box, machine.Root.name, rows, colour, signal || active);
+                }
+
+                if (signal)
+                {
+                    // A slow pulse, so the callout reads as live rather than as a static decal.
+                    float pulse = 0.5f + 0.5f * Mathf.Sin(now * 6f);
+                    Hud.Callout(box, string.IsNullOrEmpty(_signalText.Value) ? "NOW" : _signalText.Value,
+                                _signalColour.Value, pulse);
+                }
+            }
+
+            if (_machines.Count == 0)
+                Hud.Line("machines   none nearby — walk up to one");
+        }
+
+        private static string Shorten(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            // Long floats are noise at a glance; three decimals is plenty to see a change.
+            if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && s.Length > 8)
+                return d.ToString("0.###", CultureInfo.InvariantCulture);
+            return s.Length > 22 ? s.Substring(0, 21) + "…" : s;
         }
     }
 }

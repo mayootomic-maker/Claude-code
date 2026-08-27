@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 37 mods across ten categories, 92
+An in-game mod menu for **Gamble With Your Friends** — 36 mods across ten categories, 92
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -104,25 +104,38 @@ Worth being straight about the ceiling: this changes how *plausible* a change lo
 whether it is visible. Anyone reading the bank still sees the number move. What they will not
 see is a round trillion appearing between two frames.
 
-### Machines — 2
-Reading what a machine is about to do.
+### Machines — 1
+Marking machines in the world.
 
-| Mod | What it does |
+**Machine markers** outlines nearby machines where they stand and pins a small panel to each
+one showing what its state is doing. Three states, readable without reading:
+
+| | |
 | --- | --- |
-| **Machine reader** | Aim at a machine to see its live values — multiplier, result, payout, odds |
-| **Outcome watch** | Announces the instant a chosen field changes value |
+| **grey** | idle — nothing about this machine is moving |
+| **amber** | its state is actively changing right now |
+| **green, ringed, PRESS** | your signal condition holds |
 
-**Machine reader** is the answer to "how do I know what to press" that needs no class names
-known in advance: it raycasts from the camera, takes whatever component the object carries and
-reads its fields, ranking anything named like a result, payout or multiplier to the top. Press
-**P** to pin a machine so you can look away and keep watching it.
+**How it finds machines.** No class names are involved. Scenery has no custom script on it, so
+anything nearby with a collider, a renderer and a MonoBehaviour from the game's own assembly
+is a candidate — and anything whose state never moves is dropped.
 
-Whether it shows you an outcome *before* it happens depends on the machine. Where the game
-rolls the result up front and then plays an animation, the answer is already sitting in a field
-and this will show it. Where the result is decided at the end of the animation, there is
-nothing to read early and no mod can invent it — you will see the state resolve instead. Turn
-on "show every field" if the ranked view misses something, and use the component name it prints
-with the Developer tab's live field editor to drive whatever you find.
+**How it picks what to show.** By watching, not by guessing. An earlier version ranked fields
+by whether the name looked like `result` or `payout`, which is why it was inaccurate: every
+machine has a `value` and most of them mean nothing. This one scores a field on observed
+behaviour — never changes means scenery, changes on every single sample means an animation or
+a clock, and what is worth seeing sits between those, moving in discrete jumps and having
+moved recently.
+
+**Making it say PRESS.** The one thing the mod cannot work out is what a value *means*. So you
+tell it, once: set **Signal: field** to the name shown on the marker, pick a comparison, give
+it a number. From then on that machine is ringed and labelled whenever the condition holds:
+`multiplier` **is at least** `4`, or `roundState` **changes**. The label is yours to write.
+
+Worth being straight about the limit: this reads state that exists. Where a machine rolls its
+result up front and then plays an animation, that result is in a field and you will see it
+before the animation admits it. Where the roll happens at the end, there is nothing to read
+early and no mod can invent it — you will watch the value resolve instead.
 
 ### Time — 3
 **Day length** (seconds per run in the casino) · **Freeze the day clock** (hold the countdown,

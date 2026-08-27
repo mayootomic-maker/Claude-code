@@ -85,6 +85,100 @@ namespace GambleMenu.UI
             Draw.Label(box, text, Styles.SmallCentre, color);
         }
 
+        /// <summary>
+        /// Screen-space rectangle covering a world bounds, or false when it is off camera.
+        ///
+        /// Built from all eight corners: a rectangle derived from the centre point alone
+        /// shrinks wrongly at oblique angles, which is why marker boxes drift off their target
+        /// when you approach a machine from the side.
+        /// </summary>
+        public static bool ScreenBounds(Camera cam, Bounds bounds, out Rect rect)
+        {
+            rect = default;
+            if (cam == null) return false;
+
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            bool any = false;
+
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = new Vector3(
+                    (i & 1) == 0 ? bounds.min.x : bounds.max.x,
+                    (i & 2) == 0 ? bounds.min.y : bounds.max.y,
+                    (i & 4) == 0 ? bounds.min.z : bounds.max.z);
+
+                if (!Project(cam, corner, out Vector2 s)) continue;
+                any = true;
+                minX = Mathf.Min(minX, s.x); maxX = Mathf.Max(maxX, s.x);
+                minY = Mathf.Min(minY, s.y); maxY = Mathf.Max(maxY, s.y);
+            }
+            if (!any) return false;
+
+            rect = new Rect(minX, minY, maxX - minX, maxY - minY);
+            return true;
+        }
+
+        /// <summary>A full outline around a screen rect, for marking a machine you are on.</summary>
+        public static void OutlineBox(Rect r, Color color, float thickness = 2f)
+        {
+            Draw.Fill(new Rect(r.x, r.y, r.width, thickness), color);
+            Draw.Fill(new Rect(r.x, r.yMax - thickness, r.width, thickness), color);
+            Draw.Fill(new Rect(r.x, r.y, thickness, r.height), color);
+            Draw.Fill(new Rect(r.xMax - thickness, r.y, thickness, r.height), color);
+        }
+
+        /// <summary>
+        /// A titled panel pinned above a world object.
+        ///
+        /// Anchored to the thing it describes rather than parked in a screen corner: a readout
+        /// that is not attached to the machine it belongs to is just text, and stops being
+        /// useful the moment there are two machines in view.
+        /// </summary>
+        public static void Plate(Rect anchor, string title, string[] rows, Color accent, bool emphasise)
+        {
+            Styles.Build();
+            var p = Theme.P;
+
+            float width = Draw.TextWidth(title, Styles.Strong) + 26f;
+            foreach (var row in rows) width = Mathf.Max(width, Draw.TextWidth(row, Styles.Small) + 26f);
+            width = Mathf.Clamp(width, 120f, 340f);
+
+            float height = 24f + rows.Length * 16f + 8f;
+            var r = new Rect(anchor.center.x - width * 0.5f, anchor.y - height - 10f, width, height);
+
+            Draw.Shadow(r, Theme.Fade(Color.black, 0.5f), 8f, 8f, 4);
+            Draw.Card(r, Theme.Fade(p.Surface, 0.94f), emphasise ? accent : Theme.Fade(accent, 0.6f), 8f,
+                      emphasise ? 2f : 1f);
+            Draw.Round(new Rect(r.x + 1f, r.y + 7f, 3f, r.height - 14f), accent, 1.5f);
+
+            Draw.Label(new Rect(r.x + 12f, r.y + 5f, r.width - 20f, 16f),
+                       Draw.Elide(title, Styles.Strong, r.width - 20f), Styles.Strong, p.Text);
+
+            for (int i = 0; i < rows.Length; i++)
+                Draw.Label(new Rect(r.x + 12f, r.y + 23f + i * 16f, r.width - 20f, 15f),
+                           Draw.Elide(rows[i], Styles.Small, r.width - 20f), Styles.Small, p.TextMuted);
+
+            // A stem, so which machine the plate belongs to is never ambiguous.
+            Draw.Fill(new Rect(r.center.x - 1f, r.yMax, 2f, 10f), Theme.Fade(accent, 0.8f));
+        }
+
+        /// <summary>The loud one: a ring and a word, drawn on the object itself.</summary>
+        public static void Callout(Rect anchor, string text, Color color, float pulse)
+        {
+            Styles.Build();
+
+            float size = Mathf.Min(anchor.width, anchor.height) * 0.5f + 14f + pulse * 8f;
+            var centre = anchor.center;
+            var ring = new Rect(centre.x - size * 0.5f, centre.y - size * 0.5f, size, size);
+
+            Draw.Outline(ring, Theme.Fade(color, 0.35f + pulse * 0.5f), size * 0.5f, 3f);
+
+            float w = Draw.TextWidth(text, Styles.Strong) + 20f;
+            var label = new Rect(centre.x - w * 0.5f, ring.yMax + 6f, w, 22f);
+            Draw.Card(label, color, color, 5f);
+            Draw.Label(label, text, Styles.SmallCentre, Theme.OnAccent);
+        }
+
         /// <summary>A box around a world-space bounds, drawn as four edges rather than a fill
         /// so it does not obscure what it is marking.</summary>
         public static void Box(Camera cam, Bounds bounds, Color color)
