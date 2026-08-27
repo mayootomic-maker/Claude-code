@@ -175,4 +175,4 @@ def set_cycles(scene, samples, res_x=1920, res_y=1080, pct=100, denoise=True):
     scene.render.film_transparent = False
     scene.render.fps = FPS
     scene.view_settings.view_transform = 'AgX'
-    scene.view_settings.look = 'AgX - Base Contrast'
+    scene.view_settings.look = 'AgX - Medium High Contrast'

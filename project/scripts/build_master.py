@@ -102,7 +102,7 @@ def _open_door():
 
 def _black_card(coll):
     """S22 is a flat near-black hold measuring about 6/255, not pure black."""
-    m = E._mat("OUTRO_black", None, 0, emit=(1, 1, 1), emit_str=0.0022)
+    m = E._mat("OUTRO_black", None, 0, emit=(1, 1, 1), emit_str=0.0072)
     p = E.plane("OUTRO_CARD", coll, 6, 6, (0, 0, 39.0),
                 rotation=(0, 0, 0), material=m)
     return p
@@ -192,12 +192,12 @@ def main():
     black_ranges = [(a, b) for _, a, b in SH.ranges_by_loc("black")]
     car_ranges = plaza_ranges + hall_ranges
 
+    _open_door()
+
     for coll, rng in ((plaza, plaza_ranges), (plaza_rig, plaza_ranges),
                       (hall, hall_ranges), (hall_rig, hall_ranges),
                       (car, car_ranges), (outro, black_ranges)):
         _keyframe_collection_visibility(coll, rng)
-
-    _open_door()
 
     # --- cameras ---------------------------------------------------------
     _build_cameras()

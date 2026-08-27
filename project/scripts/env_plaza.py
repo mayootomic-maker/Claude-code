@@ -14,17 +14,17 @@ def build():
     coll = K.new_collection(NAME)
 
     tarmac = _wet_tarmac()
-    concrete = E._mat("PLZ_concrete", (0.115, 0.112, 0.105), 0.62)
+    concrete = E._mat("PLZ_concrete", (0.072, 0.070, 0.066), 0.64)
     concrete_dark = E._mat("PLZ_concrete_dark", (0.0115, 0.0112, 0.0110), 0.70)
-    kerb = E._mat("PLZ_kerb", (0.150, 0.148, 0.142), 0.55)
+    kerb = E._mat("PLZ_kerb", (0.098, 0.097, 0.093), 0.58)
     glassbld = E._mat("PLZ_glass", (0.055, 0.062, 0.070), 0.10, metallic=0.0, coat=0.5)
-    stone = E._mat("PLZ_stone", (0.230, 0.212, 0.180), 0.68)
+    stone = E._mat("PLZ_stone", (0.140, 0.129, 0.110), 0.70)
     darkmetal = E._mat("PLZ_darkmetal", (0.030, 0.030, 0.032), 0.38, metallic=0.8)
     foliage = E._mat("PLZ_foliage", (0.028, 0.052, 0.022), 0.80)
     trunk = E._mat("PLZ_trunk", (0.040, 0.034, 0.028), 0.75)
     red = E._mat("PLZ_red", (0.320, 0.030, 0.035), 0.60)
     cone = E._mat("PLZ_cone", (0.420, 0.110, 0.030), 0.62)
-    white = E._mat("PLZ_white", (0.480, 0.480, 0.475), 0.60)
+    white = E._mat("PLZ_white", (0.300, 0.300, 0.297), 0.62)
     pink = E._mat("PLZ_pink", (0.400, 0.075, 0.180), 0.70)
 
     E.plane("PLZ_ground", coll, 260, 260, (0, 0, 0), material=tarmac)
@@ -228,15 +228,15 @@ def world():
     nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])
     mr = nt.nodes.new("ShaderNodeMapRange"); mr.location = (-140, 0)
     mr.clamp = True
-    mr.inputs["From Min"].default_value = -0.18
-    mr.inputs["From Max"].default_value = 0.12
+    mr.inputs["From Min"].default_value = 0.02
+    mr.inputs["From Max"].default_value = 0.34
     nt.links.new(sep.outputs["Z"], mr.inputs["Value"])
     ramp = nt.nodes.new("ShaderNodeValToRGB"); ramp.location = (60, 0)
-    ramp.color_ramp.elements[0].color = (0.170, 0.172, 0.180, 1)   # ground haze
+    ramp.color_ramp.elements[0].color = (0.062, 0.064, 0.070, 1)   # ground haze
     ramp.color_ramp.elements[1].color = (0.980, 0.975, 1.000, 1)   # blown sky
     nt.links.new(mr.outputs["Result"], ramp.inputs["Fac"])
     nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
-    bg.inputs["Strength"].default_value = 1.05
+    bg.inputs["Strength"].default_value = 1.70
     return w
 
 

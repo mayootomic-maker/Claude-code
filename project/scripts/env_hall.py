@@ -18,7 +18,7 @@ def build():
     coll = K.new_collection(NAME)
 
     floor = _screed()
-    conc = E._mat("HAL_concrete", (0.082, 0.079, 0.074), 0.68)
+    conc = E._mat("HAL_concrete", (0.052, 0.050, 0.047), 0.70)
     conc_dark = E._mat("HAL_concrete_dark", (0.072, 0.070, 0.066), 0.70)
     panel = E._mat("HAL_panel", (0.014, 0.014, 0.016), 0.42)
     panel_lit = E._mat("HAL_panel_logo", (0.62, 0.62, 0.63), 0.44)
@@ -41,7 +41,7 @@ def build():
     # --- window wall: the dominant soft key ---------------------------------
     # Tall industrial glazing on the right, blown to white. Emissive rather
     # than transmissive so it lights the car directly and cheaply.
-    win = E._mat("HAL_window", None, 0, emit=(1.0, 0.99, 0.99), emit_str=3.2)
+    win = E._mat("HAL_window", None, 0, emit=(1.0, 0.99, 0.99), emit_str=1.35)
     mull = E._mat("HAL_mullion", (0.020, 0.020, 0.022), 0.45, metallic=0.6)
     for i in range(6):
         y = -13.0 + i * 5.4
@@ -120,8 +120,8 @@ def _screed():
     cr.clamp = True
     cr.inputs["From Min"].default_value = 0.35
     cr.inputs["From Max"].default_value = 0.68
-    cr.inputs["To Min"].default_value = 0.155
-    cr.inputs["To Max"].default_value = 0.245
+    cr.inputs["To Min"].default_value = 0.095
+    cr.inputs["To Max"].default_value = 0.160
     nt.links.new(n1.outputs["Fac"], cr.inputs["Value"])
     nt.links.new(cr.outputs["Result"], b.inputs["Base Color"])
     rr = nt.nodes.new("ShaderNodeMapRange"); rr.location = (-300, 20)
@@ -146,7 +146,7 @@ def world():
         nt.nodes.remove(n)
     out = nt.nodes.new("ShaderNodeOutputWorld")
     bg = nt.nodes.new("ShaderNodeBackground")
-    bg.inputs["Color"].default_value = (0.075, 0.078, 0.088, 1)
+    bg.inputs["Color"].default_value = (0.030, 0.031, 0.036, 1)
     bg.inputs["Strength"].default_value = 1.0
     nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
     return w
@@ -158,19 +158,19 @@ def lights():
     # 1. The window wall as an actual light, camera-right. This is what draws
     #    the long unbroken highlight from nose to sill in S18.
     K.area_light("HAL_KEY_WINDOW", coll, (14.5, 0.5, 4.3),
-                 (math.radians(90), 0, math.radians(90)), 26, 6.2, 3600,
+                 (math.radians(90), 0, math.radians(90)), 26, 6.2, 1050,
                  color=(1.0, 0.99, 0.98))
 
     # 2. Circular ceiling downlights. Small and hard on purpose: these are the
     #    crisp round specular dots on the bonnet in S10 and S17, and a soft box
     #    cannot fake them.
-    disc = E._mat("HAL_downlight", None, 0, emit=(1.0, 0.96, 0.90), emit_str=55.0)
+    disc = E._mat("HAL_downlight", None, 0, emit=(1.0, 0.96, 0.90), emit_str=22.0)
     for i in range(5):
         for j in range(4):
             x = -9.0 + i * 4.6
             y = -7.5 + j * 5.2
             d = bpy.data.lights.new(f"HAL_DL_{i}_{j}", type='POINT')
-            d.energy = 520.0
+            d.energy = 185.0
             d.shadow_soft_size = 0.10
             d.color = (1.0, 0.96, 0.90)
             o = bpy.data.objects.new(f"HAL_DL_{i}_{j}", d)
@@ -182,21 +182,21 @@ def lights():
 
     # 3. Soft ceiling wash so the shadowed side is not dead.
     K.area_light("HAL_FILL_TOP", coll, (-4.0, 2.0, HALL_H - 0.8),
-                 (0, 0, 0), 18, 14, 420, color=(0.96, 0.96, 1.0))
+                 (0, 0, 0), 18, 14, 105, color=(0.96, 0.96, 1.0))
 
     # 4. Weak bounce from the bright screed into the sills.
     # Floor bounce, kept local. A room-sized upward plane lit every wall and
     # every spectator from below and turned the hall into a white void; what
     # the shots actually need is light under the car itself.
     K.area_light("HAL_BOUNCE", coll, (0, 0, 0.18),
-                 (math.radians(180), 0, 0), 6.5, 4.0, 90,
+                 (math.radians(180), 0, 0), 6.5, 4.0, 55,
                  color=(1.0, 0.97, 0.92))
     # Low raking fill on the camera side, at wheel-centre height: this is what
     # puts the carbon spokes, disc and caliper back into the arch.
     K.area_light("HAL_WHEEL_FILL", coll, (-4.2, 1.0, 0.42),
-                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 120,
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 75,
                  color=(1.0, 0.98, 0.95))
     K.area_light("HAL_WHEEL_FILL_R", coll, (-4.2, -1.3, 0.42),
-                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 90,
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 55,
                  color=(1.0, 0.98, 0.95))
     return coll

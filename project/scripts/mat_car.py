@@ -20,10 +20,10 @@ import bpy, math
 # sRGB (20,15,24)-(56,42,57), i.e. linear ~0.007-0.040 with R about equal to B
 # and G well below both: a very dark violet that only shows its colour where
 # light strikes square. The first pass at this was far too bright and too pink.
-PAINT_TINT = (0.0185, 0.0072, 0.0205)
+PAINT_TINT = (0.0125, 0.0049, 0.0139)
 # Sampled from the bonnet stripe in S01: sRGB (201,195,186) mid, (219,212,208)
 # lit -- a satin warm off-white, not gold.
-STRIPE_COLOR = (0.255, 0.229, 0.180)
+STRIPE_COLOR = (0.205, 0.184, 0.145)
 CALIPER_GOLD = (0.520, 0.395, 0.185)
 STRIPE_HALF_WIDTH = 0.076              # metres either side of centreline
 STRIPE_MIN_Z = 0.10                    # keep it off the lower bodywork
@@ -152,7 +152,7 @@ def build_paint(mat, with_stripe=True):
     nt.links.new(wr.outputs["Result"], tint.inputs["Color1"])
 
     base_out = tint.outputs["Color"]
-    rough_val = 0.165
+    rough_val = 0.175
     rough_socket = None
 
     if with_stripe:
@@ -203,14 +203,14 @@ def build_paint(mat, with_stripe=True):
     if with_stripe:
         mmix = nt.nodes.new("ShaderNodeMix"); mmix.location = (320, -220)
         mmix.data_type = 'FLOAT'
-        mmix.inputs["A"].default_value = 0.45
+        mmix.inputs["A"].default_value = 0.42
         mmix.inputs["B"].default_value = 0.0
         nt.links.new(blur.outputs[0], mmix.inputs["Factor"])
         nt.links.new(mmix.outputs["Result"], bsdf.inputs["Metallic"])
     else:
-        bsdf.inputs["Metallic"].default_value = 0.45
+        bsdf.inputs["Metallic"].default_value = 0.42
     bsdf.inputs["IOR"].default_value = 1.47
-    bsdf.inputs["Coat Weight"].default_value = 0.88
+    bsdf.inputs["Coat Weight"].default_value = 0.85
     bsdf.inputs["Coat Roughness"].default_value = 0.032
     bsdf.inputs["Coat IOR"].default_value = 1.52
     if "Coat Tint" in bsdf.inputs:
@@ -477,7 +477,7 @@ def apply_all(verbose=True):
         if m:
             spec_to_roughness(m, 0.04, 0.12)
             set_bsdf(m, metallic=0.0)
-            emissive(m, 1.5, color=(0.55, 0.002, 0.004))
+            emissive(m, 1.1, color=(0.42, 0.0008, 0.0016))
             done.append(("taillight", n))
 
     for n in HEADLIGHT_MATS:
