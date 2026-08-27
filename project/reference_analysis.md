@@ -18,9 +18,10 @@ Timeline target for Blender: **frame 1 → 996 at 60 fps**.
 ## 2. What the reference actually is
 
 This is **not** a studio automotive commercial. It is a hand-held, real-world
-capture of a **Koenigsegg Jesko Absolut** (purple/violet candy over exposed
+capture of a **Koenigsegg Jesko Attack** (purple/violet candy over exposed
 carbon, tan/champagne centre stripe, plate `SPS`) at a car event, cut fast to
-music. Two distinct physical locations are intercut:
+music. The large rear wing identifies it as the Attack rather than the
+long-tailed, wingless Absolut. Two distinct physical locations are intercut:
 
 - **Location A — outdoor plaza.** Overcast white sky, wet tarmac, dense crowds
   of spectators with phones and cameras, trees, a classical building with red
@@ -468,3 +469,47 @@ Plus a bright screed floor giving upward bounce into the sills and wheel wells.
 - **Crowd.** The reference contains dozens of identifiable people, several in
   near-focus (S01, S02, S05). See the implementation plan for how this is
   handled.
+
+
+## 8. Reconstruction notes
+
+Added after the scene was built, recording decisions the analysis above drove.
+
+**Source model.** A Koenigsegg Jesko 2020 GTA V port (Open3DLab project
+`7de202a0-9d61-4005-8f99-919fbf546349`, CC BY-NC-ND 4.0), 274 k triangles,
+already at real-world scale: 4.59 m long, 2.74 m wheelbase, 0.69/0.73 m wheels.
+It is the Attack variant with the correct rear wing, and carries real texture
+detail where the macro shots need it - Michelin sidewall lettering, the
+engraved centre-lock nut, the Koenigsegg caliper text, the JESKO flank script
+and the shield badge. The original file is kept read-only at
+`project/source/koenigsegg_source.blend` and is never written to.
+
+**What the port required.** Every shader was the same stamped graph with a flat
+0.5 roughness, and each one fed its GTA spec map into Principled's "Specular
+IOR Level" - a dielectric reflectance control, not a gloss map - so every
+surface reflected wrongly and identically. Those were rewired to drive
+roughness. Shaders with no diffuse texture kept Blender's 0.8 white default,
+which is why the wing, splitter and underbody first rendered pale. The model
+also carries acid-green, blue and yellow GTA accent trim the reference car does
+not have; those are neutralised to dark carbon.
+
+**Where the reconstruction departs from the reference, and why.**
+
+- *Crowd.* The reference contains dozens of identifiable people, several close
+  to focus. They are rebuilt as simplified figures with correct height, stance
+  spread and clothing value range, which is what survives the depth of field
+  that covers them in almost every shot. Modelling recognisable individuals was
+  out of scope and would not read differently once defocused.
+- *Branding.* The `SPS` plate and the `CARNA` / `DDD performance` display
+  graphics are real third-party marks; they are suggested with generic panels
+  rather than reproduced.
+- *Tyres.* The model's sidewall texture is Michelin, matching the reference.
+  Its inner tyre material is a Pirelli map that the camera never sees.
+- *Door state.* No reference shot contains a door opening, so the door is posed
+  static per shot - closed everywhere except S20, where the reference clearly
+  shows it raised.
+- *Lens values.* Focal lengths were estimated from framing, subject distance
+  and background compression, then corrected against rendered frames. S01 in
+  particular had to come down from 50 mm to 40 mm: at 50 mm, a camera distance
+  that sizes the car correctly puts the band of spectators entirely outside the
+  vertical field, which the reference plainly does not do.

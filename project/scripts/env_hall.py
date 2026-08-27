@@ -185,13 +185,18 @@ def lights():
                  (0, 0, 0), 18, 14, 420, color=(0.96, 0.96, 1.0))
 
     # 4. Weak bounce from the bright screed into the sills.
-    # The bright screed throws a lot of light back up. Without it the wheel
-    # arches, sills and brake hardware read as solid black, which the
-    # reference's indoor wheel shots plainly are not.
-    K.area_light("HAL_BOUNCE", coll, (0, 0, 0.30),
-                 (math.radians(180), 0, 0), 22, 18, 850,
+    # Floor bounce, kept local. A room-sized upward plane lit every wall and
+    # every spectator from below and turned the hall into a white void; what
+    # the shots actually need is light under the car itself.
+    K.area_light("HAL_BOUNCE", coll, (0, 0, 0.18),
+                 (math.radians(180), 0, 0), 6.5, 4.0, 90,
                  color=(1.0, 0.97, 0.92))
-    K.area_light("HAL_ARCH_FILL", coll, (7.5, 1.0, 0.55),
-                 (math.radians(90), 0, math.radians(90)), 9, 1.4, 400,
+    # Low raking fill on the camera side, at wheel-centre height: this is what
+    # puts the carbon spokes, disc and caliper back into the arch.
+    K.area_light("HAL_WHEEL_FILL", coll, (-4.2, 1.0, 0.42),
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 120,
+                 color=(1.0, 0.98, 0.95))
+    K.area_light("HAL_WHEEL_FILL_R", coll, (-4.2, -1.3, 0.42),
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 90,
                  color=(1.0, 0.98, 0.95))
     return coll

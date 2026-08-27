@@ -259,9 +259,15 @@ def lights():
                  (math.radians(74), 0, math.radians(90)), 22, 7, 420)
     K.area_light("PLZ_BACK", coll, (0.0, -14.0, 5.0),
                  (math.radians(70), 0, math.radians(180)), 20, 6, 380)
-    # Wet tarmac bounces the overcast dome back up. Without it the wheel
-    # arches and lower bodywork go black, which they never do in the reference.
-    K.area_light("PLZ_BOUNCE", coll, (0.0, 0.0, 0.28),
-                 (math.radians(180), 0, 0), 18, 14, 520,
+    # Wet-tarmac bounce, kept local to the car. A plaza-sized upward plane lit
+    # the crowd and the buildings from underneath and flattened everything.
+    K.area_light("PLZ_BOUNCE", coll, (0.0, 0.0, 0.18),
+                 (math.radians(180), 0, 0), 6.5, 4.0, 70,
                  color=(0.97, 0.98, 1.0))
+    K.area_light("PLZ_WHEEL_FILL", coll, (-3.4, 1.1, 0.42),
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 95,
+                 color=(0.98, 0.99, 1.0))
+    K.area_light("PLZ_WHEEL_FILL_R", coll, (-3.4, -1.5, 0.42),
+                 (math.radians(90), 0, math.radians(-90)), 3.0, 0.8, 75,
+                 color=(0.98, 0.99, 1.0))
     return coll
