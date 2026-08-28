@@ -130,6 +130,9 @@ def lights():
                  color=(1.0, 0.99, 0.98))
     K.area_light("HAL_WRAP_L", coll, (-4.6, 0.6, 1.0),
                  (math.radians(84), 0, math.radians(-90)), 7, 1.5, 70)
+    K.area_light("HAL_REAR", coll, (-3.0, -4.0, 2.2),
+                 (math.radians(68), 0, math.radians(-142)), 5.5, 1.6, 130,
+                 color=(1.0, 0.99, 0.98))
     for i in range(3):
         d = bpy.data.lights.new(f"HAL_DL_{i}", type='POINT')
         d.energy = 90.0

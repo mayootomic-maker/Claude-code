@@ -98,6 +98,12 @@ def lights():
                  color=(1.0, 0.99, 1.0))
     K.area_light("PLZ_WRAP_L", coll, (-5.2, 0.4, 1.1),
                  (math.radians(84), 0, math.radians(-90)), 8, 1.6, 60)
+    # The rear macros - wing blade, exhaust shroud, rear quarter - sit outside
+    # both of the above and were rendering as near-black shapes. This strip
+    # exists to put a readable grazing highlight across the rear carbon.
+    K.area_light("PLZ_REAR", coll, (-3.4, -4.2, 2.3),
+                 (math.radians(66), 0, math.radians(-142)), 6, 1.8, 150,
+                 color=(1.0, 0.99, 1.0))
     # Wet-tarmac bounce, kept local to the car. A plaza-sized upward plane lit
     # the crowd and the buildings from underneath and flattened everything.
     K.area_light("PLZ_BOUNCE", coll, (0.0, 0.0, 0.18),
