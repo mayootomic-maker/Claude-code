@@ -76,7 +76,6 @@
     build(ctx) {
       const board = GWPhysics.plinkoBoard(ROWS, PITCH);
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#e8505f' }));
 
       const FLOOR = GWStage.FLOOR_Y;
       /* The physics board is built at its own scale and the visuals are scaled
@@ -85,7 +84,7 @@
          pegs, and the measured payout distribution above is for this board at
          this pitch. Scaling the rig moves nothing in the simulation. */
       const SCALE = 0.72;
-      const LIFT = 3.25;
+      const LIFT = 2.75;
       const rig = new THREE.Group();
       rig.position.y = LIFT;
       rig.scale.setScalar(SCALE);
@@ -175,8 +174,8 @@
       ball.visible = false;
       rig.add(ball);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.40, 6.15], [0, 2.25, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.40, 6.15], [0, 2.25, 0]);
 
       return { board, ball, root: g, dispose() { pegGeo.dispose(); pegMat.dispose(); } };
     },

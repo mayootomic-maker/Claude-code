@@ -27,7 +27,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#d9a441' }));
       g.add(GWStage.table({ radius: 1.5, colour: 0x123f27 }));
 
       const coin = ctx.model('coin');
@@ -39,8 +38,8 @@
       shadow.position.y = 0.006;
       g.add(shadow);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 1.55, 3.05], [0, 0.30, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 1.55, 3.05], [0, 0.30, 0]);
 
       // Idle: a slow drift so the table is never a still image.
       const stop = ctx.stage.onTick((dt, now) => {

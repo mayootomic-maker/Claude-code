@@ -51,7 +51,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#e8505f' }));
       g.add(GWStage.table({ radius: 2.1, colour: 0x113e27 }));
 
       const arc = new THREE.Mesh(
@@ -103,8 +102,8 @@
       shoe.receiveShadow = true;
       g.add(shoe);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.85, 3.05], [0, 0.02, -0.04], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.85, 3.05], [0, 0.02, -0.04]);
 
       return {
         root: g,

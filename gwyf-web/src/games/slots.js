@@ -127,7 +127,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#d9a441' }));
 
       const FLOOR = GWStage.FLOOR_Y;
       // Low clearcoat on purpose: a glossy coat on the inside faces of the
@@ -230,8 +229,8 @@
       // whole room and read as a grey slab hanging across the window; the frame
       // and the payline already say "behind glass" without costing a mirror.
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 0.95, 4.25], [0, 0.62, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 0.95, 4.25], [0, 0.62, 0]);
 
       /* Fourteen symbols on each of three drums is forty-two models, and at any
          moment about two thirds of them are round the back of the drum where

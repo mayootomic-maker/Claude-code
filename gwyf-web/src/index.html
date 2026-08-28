@@ -57,6 +57,29 @@
   <main class="stage">
     <canvas id="scene" aria-label="The table"></canvas>
 
+    <div class="reticle" id="reticle" aria-hidden="true"><i></i></div>
+
+    <div class="floortag" id="floorTag" aria-hidden="true"></div>
+
+    <div class="useprompt" id="usePrompt" hidden>
+      <kbd>E</kbd><span id="useLabel"></span><em id="useNote"></em>
+    </div>
+
+    <button class="resume" id="resumeBtn" hidden>
+      <span class="resume__key">Click</span> to look around
+      <em>WASD to walk · E to use · Esc to let go</em>
+    </button>
+
+    <button class="leave" id="leaveBtn" hidden>&larr; Step away</button>
+
+    <div class="touch" id="touchLayer" hidden>
+      <div class="touch__pad" id="touchStick" aria-label="Walk">
+        <span class="touch__ring"></span>
+        <span class="touch__knob" id="touchKnob"></span>
+      </div>
+      <button class="touch__use" id="touchUse">Use</button>
+    </div>
+
     <div class="stage__overlay" id="stageOverlay" aria-hidden="true">
       <div class="live" id="liveReadout" hidden></div>
 
@@ -166,7 +189,13 @@
 <script src="games/mines.js"></script>
 <script src="games/ladder.js"></script>
 <script src="games/chamber.js"></script>
+<script src="world/collision.js"></script>
+<script src="world/level.js"></script>
+<script src="world/player.js"></script>
+<script src="world/crew.js"></script>
 <script src="core/friends.js"></script>
+<script src="ui/loading.js"></script>
+<script src="ui/touch.js"></script>
 <script src="ui/screens.js"></script>
 <script src="ui/modmenu.js"></script>
 <script src="main.js"></script>

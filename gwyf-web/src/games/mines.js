@@ -69,7 +69,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#4fbf7b' }));
       g.add(GWStage.table({ radius: 2.05, colour: 0x113a23 }));
 
       const tiles = [];
@@ -90,8 +89,8 @@
         tiles.push(mesh);
       }
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 3.95, 1.35], [0, -0.02, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 3.95, 1.35], [0, -0.02, 0]);
       return { root: g, tiles, geo, dispose() { geo.dispose(); } };
     },
 

@@ -43,7 +43,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#d9a441' }));
 
       const FLOOR = GWStage.FLOOR_Y;
       const width = DUCKS.length * LANE + 0.55;
@@ -119,8 +118,8 @@
         return { duck, def: d, x: START, bob: ctx.rng.float(0, 6.28) };
       });
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 3.10, 5.35], [0, -0.05, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 3.10, 5.35], [0, -0.05, 0]);
 
       const stop = ctx.stage.onTick((dt, now) => {
         for (const r of racers) {

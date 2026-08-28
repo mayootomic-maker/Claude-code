@@ -50,7 +50,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#4fbf7b' }));
 
       const FLOOR = GWStage.FLOOR_Y;
       const RISE = 0.46, RUN = 0.30;
@@ -63,7 +62,9 @@
         new THREE.MeshStandardMaterial({ color: 0x120c0a, roughness: 1, side: THREE.DoubleSide })
       );
       lip.rotation.x = -Math.PI / 2;
-      lip.position.y = FLOOR + 0.002;
+      // Just proud of the room's carpet, which is now a solid plane at this
+      // height -- coplanar, the two z-fight and the pit flickers.
+      lip.position.y = FLOOR + 0.012;
       g.add(lip);
       const pit = new THREE.Mesh(
         new THREE.CylinderGeometry(1.75, 1.45, 3.2, 40, 1, true),
@@ -112,8 +113,8 @@
       climber.position.set(0, FLOOR + 0.24, 1.45);
       g.add(climber);
 
-      ctx.group.add(g);
-      ctx.stage.frame([2.30, 2.70, 4.85], [0.05, 1.25, -0.45], 3.0);
+      ctx.mount(g);
+      ctx.view([2.30, 2.70, 4.85], [0.05, 1.25, -0.45]);
 
       return { root: g, rungs, climber, home: climber.position.clone(),
                layout: { RISE, RUN }, dispose() {} };

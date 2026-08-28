@@ -283,6 +283,72 @@ def lathe(profile, segments=64, name="lathe", cap=False):
     return obj
 
 
+def loft(sections, segments=20, name="loft"):
+    """A tube through a stack of elliptical cross-sections along Z.
+
+    `sections` is a list of (z, half_x, half_y, forward_offset, side_offset)
+    from bottom to top -- the offsets are optional and default to zero. A
+    section with a zero radius becomes a single vertex, which is how an end is
+    rounded off rather than capped flat, and the offsets are what let a run of
+    sections follow a curve: a lapel is a thin cross-section walking down and
+    out across the front of a chest.
+
+    Bodies are the reason this exists. Stacking spheres for a torso gives a
+    snowman: every joint is a bulge, because two overlapping ellipsoids meet in
+    a circle that catches the light. One surface through the same waypoints has
+    the same silhouette without a seam in it, for roughly a third of the
+    triangles.
+    """
+    me = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+
+    verts, faces, rings = [], [], []
+    for sec in sections:
+        z, rx, ry = sec[0], sec[1], sec[2]
+        oy = sec[3] if len(sec) > 3 else 0.0
+        ox = sec[4] if len(sec) > 4 else 0.0
+        if rx <= 1e-6 or ry <= 1e-6:
+            rings.append([len(verts)])
+            verts.append((ox, oy, z))
+            continue
+        ring = []
+        for i in range(segments):
+            a = TAU * i / segments
+            ring.append(len(verts))
+            verts.append((math.cos(a) * rx + ox, math.sin(a) * ry + oy, z))
+        rings.append(ring)
+
+    for lo, hi in zip(rings, rings[1:]):
+        if len(lo) == 1 and len(hi) == 1:
+            continue
+        if len(lo) == 1:
+            for i in range(len(hi)):
+                faces.append((lo[0], hi[i], hi[(i + 1) % len(hi)]))
+        elif len(hi) == 1:
+            for i in range(len(lo)):
+                faces.append((lo[i], lo[(i + 1) % len(lo)], hi[0]))
+        else:
+            n = min(len(lo), len(hi))
+            for i in range(n):
+                j = (i + 1) % n
+                faces.append((lo[i], lo[j], hi[j], hi[i]))
+    if len(rings[0]) > 1:
+        faces.append(tuple(rings[0]))
+    if len(rings[-1]) > 1:
+        faces.append(tuple(rings[-1]))
+
+    me.from_pydata(verts, [], faces)
+    me.validate()
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+    smooth(obj)
+    return obj
+
+
 def annular_sector(r_in, r_out, a0, a1, z0, z1, steps=8, name="sector"):
     """A solid slice of a ring -- one pocket of a roulette rotor."""
     me = bpy.data.meshes.new(name)

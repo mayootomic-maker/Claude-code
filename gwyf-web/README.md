@@ -3,12 +3,16 @@
 A browser port of the Steam casino crawler, in one HTML file.
 
 Open **`gamble-with-your-friends.html`**. There is no server, no install and no
-network call — double-clicking the file is the whole setup. It is 2.3 MB, which
+network call — double-clicking the file is the whole setup. It is 2.4 MB, which
 includes twelve 3D tables, a physics engine and every model in the game.
 
-Five minutes a day inside the tower. One bank account, shared with three friends
-who can spend it without asking. A quota every night, a debt that grows 8% while
-you sleep, and three ways it ends.
+Five minutes a day inside the tower, in first person. One bank account, shared
+with three friends who walk the same floors and can spend it without asking. A
+quota every night, a debt that grows 8% while you sleep, and three ways it ends.
+
+**WASD** to walk, mouse to look, **E** to use whatever you are stood in front
+of, **Esc** to let the pointer go. On a phone it is a thumbstick, a drag to
+look, and a Use button.
 
 ---
 
@@ -37,6 +41,36 @@ odds panel prints.
 sequence, because that order is what stops any sector of the wheel favouring an
 outside bet. The rotor turns one way, the ball orbits the other, decays off the
 track, crosses the deflectors and drops.
+
+## The tower
+
+It is a building, not a menu. You start in a lobby with a loan shark at his
+terminal, a shop, a shelf your purchases sit on and a pair of doors; getting in
+the limo is what starts the five minutes. Each casino floor is a hall you walk
+around, with the machines standing in it and a lift at the north end.
+
+**The floors are laid out fresh every time you take the lift to one.** Machines
+are placed from candidate slots by the run's own seeded RNG, and a slot is only
+taken if the machine's real footprint fits: clear of the walls, the pillars, the
+lift and everything already placed, *and* with the spot you have to stand in to
+play it clear as well. That last check is not an optimisation. Without it four
+of the twelve landed with their only approach buried in a pillar — placed,
+drawn, lit, and unusable, with the prompt that never appeared as the only clue.
+
+**The friends are in the room.** Mo, Petra, Kez and Den are bodies built from
+four Blender parts joined at their own joints, walking on the same collision
+solver you do. A turn is: pick a table, say so, cross the floor, bet. The money
+moves when the body arrives, not when the decision is made — deciding and
+settling in the same frame is what the first version did, and it put a line in
+the ticker about a roulette win while the winner was still stood by the lift.
+When one of them is about to put the whole account on something, they stop where
+they are and argue about it, and you can walk over and shout at them in person
+rather than pressing Q from across the building.
+
+Two thirds of their turns happen on the floor you are standing on. They can play
+anywhere the bank has opened and a friend upstairs spends the same money — but
+a crew that scatters across four floors is one you only ever meet in the ticker,
+and the game is not called Read About Your Friends.
 
 ## The odds
 
@@ -77,7 +111,18 @@ node gwyf-web/tools/odds.mjs 9000               # audit every published number
 node gwyf-web/tools/shoot.mjs out.png 4         # contact sheet of the model library
 node gwyf-web/tools/measure-plinko.mjs 40000     # re-measure the plinko board
 node gwyf-web/tools/run-loop.mjs                 # play whole runs; check all three endings
+node gwyf-web/tools/walk.mjs                     # walk the tower with real keys, floor by floor
+node gwyf-web/tools/reach.mjs 12                 # every machine usable from its stand point, on 12 layouts
+node gwyf-web/tools/crew-shot.mjs out.png        # the four friends, assembled as the game builds them
+node gwyf-web/tools/postcards.mjs                # one shot of every machine from where you stand at it
 ```
+
+`reach.mjs` is the one that guards the floors. `walk.mjs` asks the harder
+question — can a player actually get across the room to a table — with a
+deliberately dumb pathfinder, so one miss in twelve says more about the
+pathfinder than the building. `reach.mjs` asks the invariant underneath it, on a
+fresh layout each time: standing where the level says to stand and looking where
+it says to look, does the machine answer? A no there is a table nobody can play.
 
 `run-loop.mjs` is the other half of the testing: `drive.mjs` covers the tables,
 this covers the days — quota, strikes, interest, the shark taking things, and
@@ -104,8 +149,9 @@ src/
   core/      rng, config, run state, audio, the friends
   gfx/       model decoder, HDR environment, stage, physics, cards
   games/     twelve games, one file each, all through one contract
-  ui/        screens, mod menu
-tools/       drive, odds, shoot, measure-plinko
+  world/     collision, level generation, the player, the friends' bodies
+  ui/        screens, loading, touch controls, mod menu
+tools/       drive, walk, reach, odds, shoot, postcards, crew-shot, measure-plinko
 build.mjs    inlines the lot into one HTML file
 ```
 
@@ -150,6 +196,12 @@ worth knowing about:
 
 ## Limits, stated
 
+- **There is no pointer lock on a phone**, so the touch build is a second set of
+  inputs rather than a smaller version of the first: a thumbstick that recentres
+  wherever your thumb lands, a drag anywhere else to look, and a Use button. It
+  appears only on a device with a touchscreen and no mouse — a laptop with a
+  touchscreen keeps the keyboard, because a thumbstick pinned over the corner of
+  a desktop window is a bug.
 - **WebGL 2 is required.** There is no 2D fallback, because there is no version
   of this that is not 3D. If the context is refused the page says so plainly.
 - **The web fonts are the one network request.** They come from Google Fonts and

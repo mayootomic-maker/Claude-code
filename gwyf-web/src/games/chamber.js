@@ -49,7 +49,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#b48ce8' }));
       g.add(GWStage.table({ radius: 1.35, colour: 0x1b0f22, rail: 0x241328 }));
 
       // The cylinder stands on end on the baize, chambers toward the player. It
@@ -96,8 +95,8 @@
       lamp.target.position.set(0, 0.7, 0);
       g.add(lamp, lamp.target);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0.15, 1.30, 2.55], [0, 0.70, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0.15, 1.30, 2.55], [0, 0.70, 0]);
 
       return { root: g, rig, cylinder, hammer, flash, dispose() {} };
     },

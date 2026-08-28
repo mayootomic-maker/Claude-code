@@ -25,6 +25,15 @@
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
+    /* Yaw, then pitch, then roll.
+
+       In the default XYZ order the three Euler components are not independent:
+       a camera that is both pitched and yawed has a non-zero z component, so
+       assigning rotation.z -- as the first-person controller does for the lean
+       while strafing -- silently rewrites part of the orientation lookAt just
+       computed. Facing along X that rolled the whole view ninety degrees, which
+       showed up as the signs on the side walls reading bottom to top. */
+    camera.rotation.order = 'YXZ';
 
     // The game's own objects live in here. Swapping tables empties this group
     // and nothing else, so the lights and environment never flicker.
@@ -51,8 +60,14 @@
     rim.position.set(3.6, 2.4, -4.0);
     scene.add(rim);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.16);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.13);
     scene.add(ambient);
+
+    // Sky-and-ground fill. A single ambient term flattens everything to the
+    // same value; a hemisphere keeps the tops of things lighter than their
+    // undersides, which is most of what makes a room read as lit at all.
+    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.30);
+    scene.add(sky);
 
     /* The lamp over the table.
 
@@ -62,6 +77,9 @@
        without it the felt came out near black however high the exposure went.
        No shadow: the directional light already casts them, and a second shadow
        map costs more than the light is worth. */
+    /* The lamp over the table the player is at. In the world each machine has
+       its own shade hung from the ceiling, so this one is switched off while
+       walking and switched back on over whichever table is being played. */
     const lamp = new THREE.SpotLight(0xffe0b4, 42, 11, 0.82, 0.62, 1.5);
     lamp.position.set(0.25, 4.3, 0.9);
     lamp.target.position.set(0, 0.1, 0);
@@ -69,7 +87,7 @@
 
     const state = {
       running: false, last: 0, ticks: new Set(), env: null, envName: null,
-      raf: 0, reduced: false, quality: 1, visible: true,
+      raf: 0, reduced: false, quality: 1, visible: true, manual: false,
       // Rolling frame cost, and how far quality has already been backed off.
       frameCost: 16, tier: 0, sinceCheck: 0, auto: true,
     };
@@ -129,13 +147,14 @@
       scene.environment = state.env;
       const tint = new THREE.Color(GWEnv.ambientTint(name));
       scene.background = tint.clone().multiplyScalar(0.35);
-      // Dense enough that the far side of the room genuinely falls away. At
-      // 0.028 the distant machines stayed crisp black slabs on the horizon and
-      // read as geometry someone forgot to delete.
-      scene.fog = new THREE.FogExp2(tint.clone().multiplyScalar(0.5).getHex(), 0.062);
+      // Light enough to leave a thirty-metre hall readable end to end. The
+      // density that suited a single lit table turned the far wall into a flat
+      // wash and made the whole floor one colour.
+      scene.fog = new THREE.FogExp2(tint.clone().multiplyScalar(0.28).getHex(), 0.020);
       const accent = { velvet: 0xffeedd, crimson: 0xffd0c4, emerald: 0xe6fff0, void: 0xe8e4ff };
       key.color.setHex(accent[name] || 0xffeedd);
       lamp.color.setHex(accent[name] || 0xffe0b4);
+      sky.color.setHex(accent[name] || 0xffd9a8);
     }
 
     function resize() {
@@ -177,11 +196,15 @@
       state.last = now;
 
       // Critically damped-ish follow. Snapping the camera between tables reads
-      // as a cut; easing it reads as walking up to one.
-      const k = 1 - Math.exp(-desired.ease * dt);
-      camera.position.lerp(desired.pos, k);
-      target.lerp(desired.look, k);
-      camera.lookAt(target);
+      // as a cut; easing it reads as walking up to one. While the player is
+      // walking they drive the camera themselves -- easing a first-person view
+      // feels like steering a boat.
+      if (!state.manual) {
+        const k = 1 - Math.exp(-desired.ease * dt);
+        camera.position.lerp(desired.pos, k);
+        target.lerp(desired.look, k);
+        camera.lookAt(target);
+      }
 
       for (const fn of Array.from(state.ticks)) fn(dt, now / 1000);
       renderer.render(scene, camera);
@@ -238,13 +261,21 @@
     resize();
 
     return {
-      renderer, scene, camera, group, key, rim, ambient, lamp, state,
+      renderer, scene, camera, group, key, rim, ambient, sky, lamp, state,
       setEnvironment, resize, frame, snap, start, stop, onTick, clear,
       get envName() { return state.envName; },
       /* Pin the renderer where it is. Used by the mod menu's display page and
          by the screenshot harness, which wants a consistent frame rather than a
          fast one. */
       setQuality(q) { state.quality = q; state.auto = false; state.tier = 0; applyTier(); },
+      /* Hand the camera to the first-person controller, or take it back. */
+      setManualCamera(v) {
+        state.manual = !!v;
+        // Walking: the floor's own lamps light the room. At a table: the
+        // stage lamp adds the pool of light the game was lit for.
+        lamp.visible = !state.manual;
+      },
+      get manualCamera() { return state.manual; },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },
@@ -259,10 +290,15 @@
 
   /* --- shared props ------------------------------------------------------- */
 
-  /* Every table in the building stands on the same floor, at this height.
-     Before there was a floor, each game hung its props in a black void and the
-     whole thing read as objects floating in space rather than as a room. */
-  const FLOOR_Y = -1.05;
+  /* How far a machine's base sits below its playing surface -- which is to say,
+     how tall the tables are.
+
+     0.80m, the height of a real casino table. The first pass used 1.05, and
+     with a 1.62m eye that leaves barely half a metre of clearance: you walk up
+     to a table and the rail cuts across the felt, because you are looking at it
+     almost edge-on. Everything in the building is modelled against this, so it
+     is the one number that sets how the whole place feels to stand in. */
+  const FLOOR_Y = -0.80;
 
   function carpetTexture(accent) {
     const size = 256;
@@ -308,14 +344,11 @@
     return tex;
   }
 
-  /* The room the tables stand in: carpet, a wall behind, and the suggestion of
-     other machines out in the dark. Cheap -- a few hundred triangles -- and it
-     is the difference between a casino and a black background. */
   /* Baize.
 
      A flat colour reads as painted plastic under a spotlight. This gives the
-     cloth a woven nap to catch the light and a soft darkening toward the rail,
-     which is what a real table looks like with a lamp over the middle of it. */
+     cloth a woven nap to catch the light, which is what a real table looks like
+     with a lamp over the middle of it. */
   const feltCache = new Map();
   function feltTexture(hex) {
     const key = String(hex);
@@ -352,54 +385,6 @@
     const out = { map: tex, bump };
     feltCache.set(key, out);
     return out;
-  }
-
-  function room(opts) {
-    const o = Object.assign({ accent: '#d9a441', radius: 15, wall: 0x1a1210 }, opts || {});
-    const g = new THREE.Group();
-
-    const carpet = new THREE.Mesh(
-      new THREE.CircleGeometry(o.radius, 48),
-      new THREE.MeshStandardMaterial({ map: carpetTexture(o.accent), roughness: 0.98, metalness: 0 })
-    );
-    carpet.rotation.x = -Math.PI / 2;
-    carpet.position.y = FLOOR_Y;
-    carpet.receiveShadow = true;
-    g.add(carpet);
-
-    const wall = new THREE.Mesh(
-      new THREE.CylinderGeometry(o.radius, o.radius, 7.5, 40, 1, true),
-      new THREE.MeshStandardMaterial({ color: o.wall, roughness: 0.9, side: THREE.BackSide })
-    );
-    wall.position.y = FLOOR_Y + 3.75;
-    g.add(wall);
-
-    // A warm strip where the wall meets the ceiling, which is what stops the
-    // upper half of every shot being flat black.
-    const cove = new THREE.Mesh(
-      new THREE.CylinderGeometry(o.radius - 0.15, o.radius - 0.15, 0.35, 40, 1, true),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(o.accent).multiplyScalar(0.55),
-                                    side: THREE.BackSide })
-    );
-    cove.position.y = FLOOR_Y + 5.0;
-    g.add(cove);
-
-    // Distant machines. Boxes, seen through fog, at the edge of the light.
-    const silhouette = new THREE.MeshStandardMaterial({ color: 0x0e0a09, roughness: 1 });
-    const cabinet = new THREE.BoxGeometry(1.1, 2.0, 0.9);
-    const far = new THREE.InstancedMesh(cabinet, silhouette, 14);
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2 + 0.4;
-      const r = o.radius - 2.2 - (i % 3) * 0.8;
-      m.makeRotationY(-a);
-      m.setPosition(Math.cos(a) * r, FLOOR_Y + 1.0, Math.sin(a) * r);
-      far.setMatrixAt(i, m);
-    }
-    far.instanceMatrix.needsUpdate = true;
-    g.add(far);
-
-    return g;
   }
 
   /* A felt table. The playing surface is y = 0 in every game, and the pedestal
@@ -491,5 +476,5 @@
     return mesh;
   }
 
-  global.GWStage = { create, table, room, contactShadow, carpetTexture, feltTexture, FLOOR_Y };
+  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture, FLOOR_Y };
 })(window);

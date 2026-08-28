@@ -76,7 +76,6 @@
     build(ctx) {
       const meta = ctx.lib.doc.meta.roulette;
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#e8505f' }));
       g.add(GWStage.table({ radius: 1.9, colour: 0x14442a, rail: 0x2b1a14 }));
 
       const bowl = ctx.model('roulette_bowl');
@@ -95,8 +94,8 @@
       ball.castShadow = true;
       g.add(ball);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.15, 2.95], [0, 0.12, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.15, 2.95], [0, 0.12, 0]);
 
       const track = meta.trackRadius * 1.35;
       const pocketR = meta.pocketRadius * 1.35;

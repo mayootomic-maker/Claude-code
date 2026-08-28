@@ -51,7 +51,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#d9a441' }));
       g.add(GWStage.table({ radius: BOWL + 0.24, colour: 0x134129 }));
 
       const dice = [];
@@ -69,8 +68,8 @@
         dice.push({ holder, inner, shadow });
       }
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.85, 3.55], [0, 0.05, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.85, 3.55], [0, 0.05, 0]);
 
       const stop = ctx.stage.onTick((dt, now) => {
         for (const d of dice) {

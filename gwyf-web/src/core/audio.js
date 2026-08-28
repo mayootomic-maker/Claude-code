@@ -106,6 +106,9 @@
                       noise({ freq: 900 + Math.random() * 1600, decay: 0.05, gain: 0.11,
                               delay: i * 0.055 + Math.random() * 0.03, q: 2.4 }); } },
       tick: () => tone({ type: 'square', from: 2200, decay: 0.022, gain: 0.05, send: 0.05 }),
+      step: () => { noise({ filter: 'lowpass', freq: 260 + Math.random() * 90, decay: 0.085,
+                            gain: 0.055, q: 0.7, send: 0.12 });
+                    tone({ type: 'sine', from: 120, to: 72, decay: 0.07, gain: 0.035, send: 0.1 }); },
       reel: () => noise({ freq: 700, decay: 0.045, gain: 0.09, q: 3.0 }),
       win: () => { [523.25, 659.25, 783.99].forEach((f, i) =>
                       tone({ type: 'triangle', from: f, decay: 0.34, gain: 0.16, delay: i * 0.07, send: 0.45 })); },

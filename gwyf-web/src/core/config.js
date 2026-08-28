@@ -9,6 +9,7 @@
   'use strict';
 
   const DAY_SECONDS = 300;          // the loan shark's five minutes
+  const TOTAL_DAYS = 12;            // the length of the arrangement
   const START_DEBT = 10000;
   const START_BANK = 500;
   const INTEREST = 0.08;            // compounded at the end of every day
@@ -22,7 +23,7 @@
 
   const FLOORS = [
     {
-      id: 'lobby', name: 'The Lobby', env: 'velvet', unlockBank: 0,
+      id: 'lobby', name: 'The Lobby', env: 'velvet', unlockBank: 0, unlockDay: 1,
       tag: 'Ground floor', accent: '#d9a441',
       blurb: 'Sticky carpet, free peanuts, and the only games in the building that '
            + 'will not take your whole night in one go.',
@@ -30,7 +31,7 @@
       minBet: 25, maxBet: 500,
     },
     {
-      id: 'velvet', name: 'Velvet Hall', env: 'crimson', unlockBank: 2500,
+      id: 'velvet', name: 'Velvet Hall', env: 'crimson', unlockBank: 2500, unlockDay: 4,
       tag: 'Second floor', accent: '#e8505f',
       blurb: 'Where the carpet stops being sticky and the drinks stop being free. '
            + 'The tables here have a croupier and a memory.',
@@ -38,7 +39,7 @@
       minBet: 100, maxBet: 2500,
     },
     {
-      id: 'vault', name: 'The Vault', env: 'emerald', unlockBank: 12000,
+      id: 'vault', name: 'The Vault', env: 'emerald', unlockBank: 12000, unlockDay: 7,
       tag: 'Third floor', accent: '#4fbf7b',
       blurb: 'No windows, no clocks, no exit signs. The house keeps the odds in '
            + 'a safe down here and it does not open it for you.',
@@ -46,7 +47,7 @@
       minBet: 250, maxBet: 10000,
     },
     {
-      id: 'penthouse', name: 'The Penthouse', env: 'void', unlockBank: 45000,
+      id: 'penthouse', name: 'The Penthouse', env: 'void', unlockBank: 45000, unlockDay: 10,
       tag: 'Top floor', accent: '#b48ce8',
       blurb: 'One game. It does not have a house edge because it does not need one.',
       games: ['chamber'],
@@ -132,8 +133,41 @@
 
   const SHOUTS_PER_DAY = 3;
 
+  /* The loan shark's daily challenge.
+
+     Offered at his terminal in the lobby and only worth tickets if it is
+     accepted before you get in the limo -- which is the point of it: it asks
+     you to plan the day around a machine you might not have chosen, and the
+     tickets are the only currency that survives a wipe.
+
+     Each one is checked against the day's own tally, kept in
+     state.challengeState, so a challenge cannot be verified by anything except
+     what actually happened. */
+  const CHALLENGES = [
+    { id: 'streak', tickets: 2, text: 'Win three hands in a row',
+      check: (t) => t.bestStreak >= 3 },
+    { id: 'bigwin', tickets: 2, text: 'Take $2,000 or more off a single hand',
+      check: (t) => t.biggestWin >= 2000 },
+    { id: 'tour', tickets: 2, text: 'Play every machine on the floor',
+      check: (t, floor) => floor.games.every((g) => t.played[g]) },
+    { id: 'careful', tickets: 3, text: 'Hit the quota without losing more than $500 on any hand',
+      check: (t, floor, met) => met && t.biggestLoss <= 500 },
+    { id: 'volume', tickets: 2, text: 'Play twelve hands',
+      check: (t) => t.hands >= 12 },
+    { id: 'double', tickets: 3, text: 'Turn one hand into four times its stake',
+      check: (t) => t.bestMultiple >= 4 },
+  ];
+
+  /* Which floors the lift will stop at. In the game this port follows, the
+     tower opens on a schedule -- roughly a floor every three days -- rather
+     than on how rich you are, so a bad run still sees the whole building. */
+  function floorsOpenOn(day) {
+    return FLOORS.map((f, i) => i).filter((i) => day >= FLOORS[i].unlockDay);
+  }
+
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
     quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS,
+    TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);

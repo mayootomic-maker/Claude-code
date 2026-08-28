@@ -40,7 +40,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#e8505f' }));
       g.add(GWStage.table({ radius: 1.95, colour: 0x133f2c }));
       // The stock the cards come off, so the table is not an empty circle.
       const stack = new THREE.Group();
@@ -53,8 +52,8 @@
       }
       g.add(stack);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.0, 2.5], [0, 0.0, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.0, 2.5], [0, 0.0, 0]);
       return { root: g, cards: [], dispose() { wipe(this); } };
     },
 

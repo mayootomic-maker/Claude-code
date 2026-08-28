@@ -104,17 +104,17 @@
           + '<h3 class="rail__label" style="margin-top:1rem">Who is coming in with you</h3>'
           + '<ul class="crew">' + crew + '</ul>'
           + '<div class="sheet__actions">'
-          + '<button class="btn btn--primary" data-go>Open the doors</button>'
+          + '<button class="btn btn--primary" data-go>Into the lobby</button>'
           + (first ? '<button class="btn btn--ghost" data-how>How this works</button>' : '')
           + '</div>',
         wire(sheet) {
           sheet.querySelector('[data-go]').addEventListener('click', () => {
             shell.store.meta.seenIntro = true;
             shell.store.saveMeta();
-            shell.store.s.phase = 'floor';
-            close(true);
-            shell.enterFloor(shell.store.s.floor, shell.store.s.game);
-            shell.store.say('Day ' + shell.store.s.day + '. Quota is ' + money(shell.store.s.quota) + '.', 'house');
+            shell.store.say('Day ' + shell.store.s.day + '. Quota is '
+              + money(shell.store.s.quota) + '.', 'house');
+            // The lobby is where a day starts: the shark, the shop and the limo.
+            shell.enterLobby();
             shell.renderHud();
           });
           const how = sheet.querySelector('[data-how]');
@@ -148,6 +148,49 @@
       };
     },
 
+    shark() {
+      const s = shell.store.s;
+      const offer = currentChallenge();
+      const accepted = s.challenge && s.challenge.accepted;
+      return {
+        title: 'Loan shark',
+        html: '<p class="sheet__kicker">The terminal</p>'
+          + '<h2 class="sheet__title">Day ' + s.day + ' of ' + C.TOTAL_DAYS + '</h2>'
+          + '<div class="report">'
+          + row('Tonight\u2019s quota', money(s.quota), s.bank >= s.quota ? 'good' : 'bad')
+          + row('In the account', money(s.bank))
+          + row('Owed', money(s.debt), 'bad')
+          + row('Missed quotas', s.strikes + ' of ' + C.MAX_STRIKES, s.strikes ? 'bad' : '')
+          + '</div>'
+          + '<h3 class="rail__label" style="margin-top:1.1rem">Tonight\u2019s challenge</h3>'
+          + '<div class="ware" style="cursor:default">'
+          + '<span class="ware__icon">' + (accepted ? '\u2713' : '\ud83c\udfaf') + '</span>'
+          + '<span><span class="ware__name">' + esc(offer.text)
+          + '<span class="ware__price">' + offer.tickets + ' tickets</span></span>'
+          + '<span class="ware__desc">'
+          + (accepted
+            ? 'Accepted. It only pays if it is done before the doors close.'
+            : 'It has to be accepted before you get in the limo. Afterwards it does not count.')
+          + '</span></span></div>'
+          + '<div class="sheet__actions">'
+          + (accepted ? '' : '<button class="btn btn--primary" data-accept>Take it</button>')
+          + '<button class="btn" data-close>Back</button></div>',
+        wire(sheet) {
+          const accept = sheet.querySelector('[data-accept]');
+          if (accept) {
+            accept.addEventListener('click', () => {
+              s.challenge = { id: offer.id, accepted: true };
+              shell.audio.play('cash');
+              shell.store.say('Challenge accepted: ' + offer.text.toLowerCase() + '.', 'house');
+              shell.store.save();
+              show('shark');
+            });
+          }
+          sheet.querySelector('[data-close]').addEventListener('click', close);
+        },
+      };
+    },
+
     tower() {
       const s = shell.store.s;
       const floors = shell.store.unlockedFloors().map((entry, i) => {
@@ -161,7 +204,7 @@
           + '<p class="floorcard__games">' + games.map((g) => g.icon + ' ' + esc(g.name)).join(' · ')
           + ' — bets ' + money(f.minBet) + ' to ' + money(f.maxBet) + '</p></span>'
           + '<span class="floorcard__lock">' + (entry.open ? (i === s.floor ? 'You are here' : 'Open')
-            : 'Opens at ' + money(f.unlockBank)) + '</span></button>';
+            : 'Opens on day ' + entry.opensOn) + '</span></button>';
       }).join('');
 
       const here = C.FLOORS[s.floor];
@@ -171,28 +214,27 @@
         const edge = g.paysAsRtp
           ? (100 - g.bets[0].pays * 100).toFixed(1)
           : (Math.min.apply(null, g.bets.map((b) => GWGames.edge(b))) * 100).toFixed(1);
-        return '<button class="gamecard" data-game="' + id + '">'
+        return '<div class="gamecard gamecard--static">'
           + '<span class="gamecard__icon">' + g.icon + '</span>'
           + '<span class="gamecard__name">' + esc(g.name) + '</span>'
-          + '<span class="gamecard__edge">house takes ' + edge + '%</span></button>';
+          + '<span class="gamecard__edge">house takes ' + edge + '%</span></div>';
       }).join('');
 
       return {
         title: 'The lift', width: 'wide',
         html: '<p class="sheet__kicker">The lift</p><h2 class="sheet__title">Which floor</h2>'
           + '<div class="floors">' + floors + '</div>'
-          + '<h3 class="rail__label" style="margin:1.4rem 0 0.5rem">Tables on ' + esc(here.name) + '</h3>'
+          + '<h3 class="rail__label" style="margin:1.4rem 0 0.5rem">On ' + esc(here.name)
+          + ' — walk over to one</h3>'
           + '<div class="gamegrid">' + tables + '</div>'
-          + '<div class="sheet__actions"><button class="btn" data-close>Back to the table</button></div>',
+          + '<div class="sheet__actions"><button class="btn" data-close>Stay on this floor</button></div>',
         wire(sheet) {
           for (const b of sheet.querySelectorAll('[data-floor]')) {
             b.addEventListener('click', () => {
-              shell.enterFloor(Number(b.dataset.floor));
-              show('tower');
+              const target = Number(b.dataset.floor);
+              if (target === shell.store.s.floor) { close(); return; }
+              shell.enterFloor(target);
             });
-          }
-          for (const b of sheet.querySelectorAll('[data-game]')) {
-            b.addEventListener('click', () => { shell.loadGame(b.dataset.game); close(); });
           }
           sheet.querySelector('[data-close]').addEventListener('click', close);
         },
@@ -207,13 +249,15 @@
 
       if (tab === 'items') {
         body = '<div class="wares">' + C.ITEMS.map((item) => {
-          const owned = shell.store.has(item.id);
+          const waiting = (s.pendingItems || []).indexOf(item.id) >= 0;
+          const owned = shell.store.has(item.id) || waiting;
           const can = !owned && s.bank >= item.price;
           return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
             + (can ? '' : ' disabled') + ' data-item="' + item.id + '">'
             + '<span class="ware__icon">' + item.icon + '</span>'
             + '<span><span class="ware__name">' + esc(item.name)
-            + '<span class="ware__price">' + (owned ? 'owned' : money(item.price)) + '</span></span>'
+            + '<span class="ware__price">'
+            + (waiting ? 'on the shelf' : owned ? 'owned' : money(item.price)) + '</span></span>'
             + '<span class="ware__desc">' + esc(item.desc) + '</span></span></button>';
         }).join('') + '</div>';
       } else if (tab === 'tickets') {
@@ -296,6 +340,8 @@
           + (r.refund ? row('Insurance on your worst loss', '+' + money(r.refund), 'good') : '')
           + row('Quota', (r.met ? '−' : 'unpaid ') + money(r.quota), r.met ? 'good' : 'bad')
           + (r.ticketsEarned ? row('Tickets earned', '+' + r.ticketsEarned + '🎟', 'good') : '')
+          + (r.challengeWon ? row('Challenge: ' + r.challengeWon.text,
+              '+' + r.challengeWon.tickets + '🎟', 'good') : '')
           + (r.taken ? row('The shark takes', r.taken, 'bad') : '')
           + (r.paidOff ? row('Paid against the debt', '−' + money(r.paidOff), 'good') : '')
           + row('Interest on the debt', '+' + money(r.interest), 'bad')
@@ -335,7 +381,7 @@
             });
           }
           const next = sheet.querySelector('[data-next]');
-          if (next) next.addEventListener('click', () => { nextDay(); show('briefing'); });
+          if (next) next.addEventListener('click', () => { nextDay(); shell.enterLobby(); });
           const shopBtn = sheet.querySelector('[data-shop]');
           if (shopBtn) shopBtn.addEventListener('click', () => show('shop', { from: 'report' }));
           const end = sheet.querySelector('[data-end]');
@@ -403,6 +449,7 @@
           sheet.querySelector('[data-again]').addEventListener('click', () => {
             GWState.restart(shell.store);
             shell.unloadGame();
+            shell.setMode('idle');
             shell.renderHud();
             shell.renderCrew();
             show('briefing');
@@ -437,7 +484,18 @@
     const s = shell.store.s;
     if (s.debt <= 0) return 'paid';
     if (s.strikes >= C.MAX_STRIKES) return 'house';
+    // Twelve days is the whole arrangement. Reaching the end still owing means
+    // the tower keeps you.
+    if (s.day >= C.TOTAL_DAYS) return 'house';
     return null;
+  }
+
+  /* The challenge on offer today. Drawn from the run's own seed so it is the
+     same one every time this day is looked at. */
+  function currentChallenge() {
+    const s = shell.store.s;
+    const index = (s.seed + s.day * 7919) % C.CHALLENGES.length;
+    return C.CHALLENGES[index];
   }
 
   /* Settle the day exactly once.
@@ -469,6 +527,19 @@
       taken = takeSomething();
     }
 
+    // The loan shark pays for his own challenge, and only if it was accepted
+    // before the day started and actually done during it.
+    let challengeWon = null;
+    if (s.challenge && s.challenge.accepted) {
+      const def = C.CHALLENGES.find((ch) => ch.id === s.challenge.id);
+      const tally = s.challengeState || GWState.newTally();
+      if (def && def.check(tally, C.FLOORS[s.floor], met)) {
+        meta.tickets += def.tickets;
+        challengeWon = { text: def.text, tickets: def.tickets };
+      }
+    }
+    s.challenge = null;
+
     const rate = shell.store.has('repellent') ? 0.05 : C.INTEREST;
     const interest = Math.round(s.debt * rate);
     s.debt += interest;
@@ -477,7 +548,7 @@
     shell.store.saveMeta();
 
     s.settlement = { day: s.day, opening, closing, refund, met, quota: s.quota,
-                     ticketsEarned, taken, interest, paidOff: 0 };
+                     ticketsEarned, taken, interest, paidOff: 0, challengeWon };
     shell.store.save();
     return s.settlement;
   }
@@ -496,16 +567,22 @@
       + (id === active) + '">' + esc(label) + '</button>';
   }
 
+  /* Buying puts it on the shop's shelf. Someone still has to pick it up.
+
+     That is the shop's rule in the game this follows, and it is a good one: it
+     turns "spend money" into "spend money and then walk over there", which is
+     exactly the sort of thing four people in a hurry get wrong. */
   function buyItem(id) {
     const item = C.ITEMS.find((i) => i.id === id);
     const s = shell.store.s;
-    if (!item || shell.store.has(id) || s.bank < item.price) { shell.audio.play('deny'); return; }
+    if (!s.pendingItems) s.pendingItems = [];
+    const owned = shell.store.has(id) || s.pendingItems.indexOf(id) >= 0;
+    if (!item || owned || s.bank < item.price) { shell.audio.play('deny'); return; }
     s.bank -= item.price;
-    s.items[id] = 1;
+    s.pendingItems.push(id);
     shell.audio.play('cash');
-    shell.store.say('You buy the ' + item.name + '. ' + item.desc, 'good');
-    if (id === 'stopwatch') { s.timeLeft += 45; }
-    if (id === 'crowbar') { s.crowbarFloor = Math.min(C.FLOORS.length - 1, s.floor + 1); }
+    shell.store.say('The ' + item.name + ' goes on the collection shelf. Pick it up '
+      + 'before you get in the limo.', 'warn');
     shell.renderHud();
     shell.store.save();
   }
@@ -583,16 +660,15 @@
     const s = shell.store.s;
     s.day++;
     s.quota = C.quotaFor(s.day);
-    s.timeLeft = C.DAY_SECONDS
-      + (shell.store.has('stopwatch') ? 45 : 0)
-      - (shell.store.sold('kidney') ? 30 : 0);
     s.shouts = C.SHOUTS_PER_DAY + (shell.store.meta.perks.extrashout || 0)
       - (shell.store.sold('finger') ? 1 : 0);
     s.dailyUsed = {};
     s.biggestLossToday = 0;
     s.crowbarFloor = -1;
     s.dayOpeningBank = s.bank;
-    s.phase = 'briefing';
+    s.challenge = null;
+    s.challengeState = GWState.newTally();
+    s.phase = 'lobby';
     for (const mate of s.friends) {
       mate.patience = Math.min(1, mate.patience + 0.45);
       mate.cooldown = 5 + shell.store.rng.next() * 6;

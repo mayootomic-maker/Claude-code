@@ -43,7 +43,6 @@
 
     build(ctx) {
       const g = new THREE.Group();
-      g.add(GWStage.room({ accent: '#4fbf7b' }));
 
       const FLOOR = GWStage.FLOOR_Y;
       const BASE_Y = 0.55;               // where the bottom of the screen sits
@@ -112,8 +111,8 @@
       const glow = new THREE.PointLight(0x5cd98c, 0, 4);
       rig.add(glow);
 
-      ctx.group.add(g);
-      ctx.stage.frame([0, 2.05, 4.85], [0, 1.62, 0], 3.0);
+      ctx.mount(g);
+      ctx.view([0, 2.05, 4.85], [0, 1.62, 0]);
 
       return { root: g, curve, curveGeo, positions, head, glow, dispose() { curveGeo.dispose(); } };
     },

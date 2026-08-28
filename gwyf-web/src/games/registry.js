@@ -85,6 +85,21 @@
         });
       },
 
+      /* Put the machine into the world.
+
+         A game builds its cabinet or table around its own origin and hands it
+         over; the shell parents it to wherever that machine stands on the
+         floor. Games used to add themselves straight to the scene at the world
+         origin, which is fine when the whole game is one table and impossible
+         once there are four machines in a room. */
+      mount(group) { return shell.mountMachine(group); },
+
+      /* Where the camera sits to play this machine, in the machine's own space.
+         The shell turns it into world space using the anchor's transform, so a
+         table rotated to face down the room is still viewed from the player's
+         side of it. */
+      view(position, look) { shell.setMachineView(position, look); },
+
       announce(text, tone) { shell.announce(text, tone); },
       setStatus(text) { shell.setStatus(text); },
 

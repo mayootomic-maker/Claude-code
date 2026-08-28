@@ -73,12 +73,25 @@
       dailyUsed: {},
       biggestLossToday: 0,
       friends,
+      // Bought but not yet collected from the shop's shelf. Getting in the limo
+      // without picking them up leaves them behind, which is the shop's rule in
+      // the game this follows.
+      pendingItems: [],
+      challenge: null,
+      challengeState: newTally(),
       stats: { wagered: 0, hands: 0, biggestWin: 0, biggestLoss: 0, net: 0, byGame: {} },
       modded: false,
       mods: {},
       ending: null,
       ticker: [],
     };
+  }
+
+  /* The day's own tally, which is the only thing a challenge is checked
+     against. */
+  function newTally() {
+    return { streak: 0, bestStreak: 0, biggestWin: 0, biggestLoss: 0,
+             bestMultiple: 0, hands: 0, played: {} };
   }
 
   function Store(state, meta) {
@@ -104,11 +117,17 @@
     return C.FLOORS[this.s.floor];
   };
 
+  /* The lift's stop list.
+
+     Opened by the day, the way the tower does it -- a floor roughly every three
+     days -- with the crowbar and the mod menu as the two ways round it. Gating
+     on the bank instead meant a run that went badly never saw the building. */
   Store.prototype.unlockedFloors = function () {
     const s = this.s;
     return C.FLOORS.map((f, i) => ({
       floor: f, index: i,
-      open: s.mods.allFloors || s.bank >= f.unlockBank || s.crowbarFloor >= i,
+      open: s.mods.allFloors || s.day >= f.unlockDay || s.crowbarFloor >= i,
+      opensOn: f.unlockDay,
     }));
   };
 
@@ -158,6 +177,21 @@
     if (net > s.stats.biggestWin) s.stats.biggestWin = net;
     if (-net > s.stats.biggestLoss) s.stats.biggestLoss = -net;
     if (-net > s.biggestLossToday) s.biggestLossToday = -net;
+
+    // Keep the day's tally for the loan shark's challenge. Done here, in the
+    // one settlement funnel, so no game can win a challenge without the money
+    // having actually moved.
+    if (!s.challengeState) s.challengeState = newTally();
+    const tally = s.challengeState;
+    if (!detail || !detail.by) {
+      tally.hands++;
+      tally.played[game] = true;
+      if (net > 0) { tally.streak++; tally.bestStreak = Math.max(tally.bestStreak, tally.streak); }
+      else if (net < 0) tally.streak = 0;
+      tally.biggestWin = Math.max(tally.biggestWin, net);
+      tally.biggestLoss = Math.max(tally.biggestLoss, -net);
+      if (stake > 0) tally.bestMultiple = Math.max(tally.bestMultiple, (stake + net) / stake);
+    }
 
     const result = { game, stake, multiplier, net, gross: stake + net, detail: detail || null };
     this.emit('resolve', result);
@@ -213,5 +247,5 @@
     return store;
   }
 
-  global.GWState = { create, restart, newRun, loadMeta, saveMeta, RUN_KEY, META_KEY };
+  global.GWState = { create, restart, newRun, newTally, loadMeta, saveMeta, RUN_KEY, META_KEY };
 })(window);
