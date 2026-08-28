@@ -126,8 +126,11 @@ def lights():
     # a long soft strip drawing the flank highlight, and a small hard source
     # for the crisp round specular the reference's ceiling downlights make.
     K.area_light("HAL_FLANK", coll, (6.2, 0.4, 3.4),
-                 (math.radians(66), 0, math.radians(90)), 9, 1.8, 320,
+                 (math.radians(66), 0, math.radians(90)), 11, 0.9, 620,
                  color=(1.0, 0.99, 0.98))
+    K.area_light("HAL_SHOULDER", coll, (-1.6, -1.8, 4.4),
+                 (math.radians(14), 0, math.radians(-6)), 11, 0.75, 380,
+                 color=(1.0, 0.99, 0.99))
     K.area_light("HAL_WRAP_L", coll, (-4.6, 0.6, 1.0),
                  (math.radians(84), 0, math.radians(-90)), 7, 1.5, 70)
     K.area_light("HAL_REAR", coll, (-3.0, -4.0, 2.2),

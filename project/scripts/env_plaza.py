@@ -93,8 +93,18 @@ def lights():
     # draw specific highlights: one long overhead strip along the car to define
     # the shoulder line, and a low wrap so the sills and wheel arches are not
     # left black. Anything more competes with the HDRI and flattens it.
-    K.area_light("PLZ_SHOULDER", coll, (-2.6, 0.6, 6.4),
-                 (math.radians(12), 0, math.radians(-8)), 12, 2.2, 220,
+    # Automotive lighting is reflection design. An overcast HDRI alone gives
+    # the body one enormous dull source and the flanks turn to milky wash;
+    # these long narrow strips exist to lay clean bright lines along the
+    # shoulder and sill that read as shape.
+    K.area_light("PLZ_SHOULDER", coll, (-2.0, -1.6, 4.8),
+                 (math.radians(16), 0, math.radians(-6)), 13, 1.0, 780,
+                 color=(1.0, 0.99, 1.0))
+    K.area_light("PLZ_SHOULDER_R", coll, (2.4, -2.2, 4.6),
+                 (math.radians(-16), 0, math.radians(6)), 11, 0.8, 430,
+                 color=(1.0, 0.99, 1.0))
+    K.area_light("PLZ_SILL", coll, (-4.0, 0.2, 1.5),
+                 (math.radians(78), 0, math.radians(-90)), 10, 0.7, 260,
                  color=(1.0, 0.99, 1.0))
     K.area_light("PLZ_WRAP_L", coll, (-5.2, 0.4, 1.1),
                  (math.radians(84), 0, math.radians(-90)), 8, 1.6, 60)

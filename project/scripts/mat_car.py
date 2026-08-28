@@ -20,7 +20,7 @@ import bpy, math
 # sRGB (20,15,24)-(56,42,57), i.e. linear ~0.007-0.040 with R about equal to B
 # and G well below both: a very dark violet that only shows its colour where
 # light strikes square. The first pass at this was far too bright and too pink.
-PAINT_TINT = (0.0092, 0.0034, 0.0104)
+PAINT_TINT = (0.0105, 0.0026, 0.0138)
 # Sampled from the bonnet stripe in S01: sRGB (201,195,186) mid, (219,212,208)
 # lit -- a satin warm off-white, not gold.
 STRIPE_COLOR = (0.190, 0.168, 0.124)
@@ -153,7 +153,7 @@ def build_paint(mat, with_stripe=True):
     nt.links.new(wr.outputs["Result"], tint.inputs["Color1"])
 
     base_out = tint.outputs["Color"]
-    rough_val = 0.175
+    rough_val = 0.085
     rough_socket = None
 
     if with_stripe:
@@ -204,15 +204,15 @@ def build_paint(mat, with_stripe=True):
     if with_stripe:
         mmix = nt.nodes.new("ShaderNodeMix"); mmix.location = (320, -220)
         mmix.data_type = 'FLOAT'
-        mmix.inputs["A"].default_value = 0.42
+        mmix.inputs["A"].default_value = 0.55
         mmix.inputs["B"].default_value = 0.0
         nt.links.new(blur.outputs[0], mmix.inputs["Factor"])
         nt.links.new(mmix.outputs["Result"], bsdf.inputs["Metallic"])
     else:
-        bsdf.inputs["Metallic"].default_value = 0.42
+        bsdf.inputs["Metallic"].default_value = 0.55
     bsdf.inputs["IOR"].default_value = 1.47
-    bsdf.inputs["Coat Weight"].default_value = 0.85
-    bsdf.inputs["Coat Roughness"].default_value = 0.032
+    bsdf.inputs["Coat Weight"].default_value = 0.95
+    bsdf.inputs["Coat Roughness"].default_value = 0.010
     bsdf.inputs["Coat IOR"].default_value = 1.52
     if "Coat Tint" in bsdf.inputs:
         if with_stripe:
@@ -245,7 +245,7 @@ def build_paint(mat, with_stripe=True):
 
 # ---------------------------------------------------------------------- glass
 
-def build_glass(mat, tint=(0.105, 0.105, 0.120), roughness=0.035, inner=False):
+def build_glass(mat, tint=(0.045, 0.045, 0.058), roughness=0.012, inner=False):
     mat.use_nodes = True
     nt = mat.node_tree
     for n in list(nt.nodes):
@@ -262,8 +262,8 @@ def build_glass(mat, tint=(0.105, 0.105, 0.120), roughness=0.035, inner=False):
     mat.blend_method = 'BLEND'
     mat.use_backface_culling = False
     if inner:
-        b.inputs["Roughness"].default_value = 0.10
-        b.inputs["Base Color"].default_value = (0.055, 0.055, 0.065, 1)
+        b.inputs["Roughness"].default_value = 0.05
+        b.inputs["Base Color"].default_value = (0.022, 0.022, 0.028, 1)
     return mat
 
 
