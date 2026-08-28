@@ -20,7 +20,11 @@ def build():
     glassbld = E._mat("PLZ_glass", (0.055, 0.062, 0.070), 0.10, metallic=0.0, coat=0.5)
     stone = E._mat("PLZ_stone", (0.140, 0.129, 0.110), 0.70)
     darkmetal = E._mat("PLZ_darkmetal", (0.030, 0.030, 0.032), 0.38, metallic=0.8)
-    foliage = E._mat("PLZ_foliage", (0.028, 0.052, 0.022), 0.80)
+    foliage_set = [E._mat("PLZ_foliage_a", (0.026, 0.048, 0.020), 0.80),
+                   E._mat("PLZ_foliage_b", (0.038, 0.066, 0.026), 0.78),
+                   E._mat("PLZ_foliage_c", (0.018, 0.036, 0.017), 0.82),
+                   E._mat("PLZ_foliage_d", (0.050, 0.072, 0.030), 0.76)]
+    foliage = foliage_set[0]
     trunk = E._mat("PLZ_trunk", (0.040, 0.034, 0.028), 0.75)
     red = E._mat("PLZ_red", (0.320, 0.030, 0.035), 0.60)
     cone = E._mat("PLZ_cone", (0.420, 0.110, 0.030), 0.62)
@@ -94,7 +98,7 @@ def build():
     tree_lines = [(-46, 46, -21.0, 1), (-44, 40, 21.5, 1), (-25.0, -25.0, -14, 0)]
     ti = 0
     for x0, x1, yv, along_x in tree_lines:
-        n = 14 if along_x else 8
+        n = 20 if along_x else 11
         for i in range(n):
             if along_x:
                 x = x0 + (x1 - x0) * (i / (n - 1)) + rng.uniform(-1.3, 1.3)
@@ -105,7 +109,7 @@ def build():
             h = rng.uniform(5.0, 7.2)
             E.cyl(f"PLZ_trunk_{ti}", coll, 0.16, h, (x, y, h / 2),
                   material=trunk, verts=8)
-            for k in range(3):
+            for k in range(5):
                 bpy.ops.mesh.primitive_ico_sphere_add(
                     subdivisions=3, radius=rng.uniform(1.5, 2.3),
                     location=(x + rng.uniform(-0.9, 0.9), y + rng.uniform(-0.9, 0.9),
@@ -116,7 +120,7 @@ def build():
                 for c in list(o.users_collection):
                     c.objects.unlink(o)
                 coll.objects.link(o)
-                o.data.materials.append(foliage)
+                o.data.materials.append(rng.choice(foliage_set))
             ti += 1
 
     # --- event dressing -----------------------------------------------------
@@ -153,6 +157,82 @@ def build():
     E.box("PLZ_pillar_a", coll, (0.30, 0.30, 6.0), (-1.62, -2.62, 3.0),
           material=concrete_dark)
     E.box("PLZ_pillar_b", coll, (0.46, 0.46, 6.0), (3.9, -3.1, 3.0), material=concrete)
+
+    # --- mid-ground dressing ------------------------------------------------
+    # Everything here sits between the crowd and the buildings. The first pass
+    # left that band empty, so the defocused background was a flat grey field
+    # with nothing to give it depth or colour. Under this much blur what reads
+    # is value separation and a few saturated accents, not detail.
+    blue = E._mat("PLZ_blue", (0.030, 0.075, 0.240), 0.62)
+    orange = E._mat("PLZ_orange", (0.380, 0.140, 0.020), 0.64)
+    signwhite = E._mat("PLZ_signwhite", (0.520, 0.520, 0.515), 0.58)
+    darkgrey = E._mat("PLZ_darkgrey", (0.030, 0.030, 0.032), 0.60)
+    lamp = E._mat("PLZ_lamp", None, 0, emit=(1.0, 0.94, 0.82), emit_str=6.0)
+    glasslit = E._mat("PLZ_glasslit", None, 0, emit=(0.85, 0.88, 1.0), emit_str=1.5)
+
+    rng2 = random.Random(91)
+
+    # Crowd-barrier runs on both sides: a strong horizontal dark line that
+    # separates the spectators from the road.
+    for sgn in (1, -1):
+        for i in range(11):
+            x = -16.0 + i * 3.2
+            E.box(f"PLZ_barrier_{sgn}_{i}", coll, (2.9, 0.06, 0.10),
+                  (x, sgn * 7.9, 1.05), material=darkgrey)
+            E.box(f"PLZ_barrier2_{sgn}_{i}", coll, (2.9, 0.06, 0.08),
+                  (x, sgn * 7.9, 0.62), material=darkgrey)
+            E.cyl(f"PLZ_barrierleg_{sgn}_{i}", coll, 0.035, 1.1,
+                  (x - 1.45, sgn * 7.9, 0.55), material=darkgrey, verts=8)
+
+    # Event signage: flat boards at varied heights, some lit. These are the
+    # bright and coloured blobs the reference's bokeh is full of.
+    signs = [(-14.5, -16.0, 2.6, signwhite), (-6.0, -17.5, 3.1, red),
+             (7.5, -16.5, 2.4, blue), (15.0, -18.0, 2.9, signwhite),
+             (-19.0, 12.5, 2.8, red), (-4.0, 14.0, 3.2, signwhite),
+             (9.0, 13.0, 2.5, blue), (18.0, 15.0, 3.0, orange)]
+    for i, (x, y, h, mat) in enumerate(signs):
+        E.box(f"PLZ_sign_{i}", coll, (3.4, 0.12, 1.9), (x, y, h), material=mat)
+        E.cyl(f"PLZ_signpost_a{i}", coll, 0.06, h, (x - 1.4, y, h / 2),
+              material=darkgrey, verts=8)
+        E.cyl(f"PLZ_signpost_b{i}", coll, 0.06, h, (x + 1.4, y, h / 2),
+              material=darkgrey, verts=8)
+
+    # Tall event flags: narrow verticals that break up the horizon.
+    for i in range(10):
+        x = -24.0 + i * 5.3 + rng2.uniform(-1.2, 1.2)
+        y = (-19.0 if i % 2 else 16.0) + rng2.uniform(-1.5, 1.5)
+        h = rng2.uniform(5.0, 7.0)
+        mat = rng2.choice([red, blue, signwhite, orange])
+        E.cyl(f"PLZ_flagpole_{i}", coll, 0.05, h, (x, y, h / 2),
+              material=signwhite, verts=8)
+        E.box(f"PLZ_flagcloth_{i}", coll, (0.75, 0.04, h * 0.55),
+              (x + 0.4, y, h * 0.68), material=mat)
+
+    # Street lighting: small hot points that bloom nicely out of focus.
+    for i, (x, y) in enumerate(((-20, -12), (-9, -13), (4, -12.5), (16, -13),
+                                (-18, 11), (-6, 12), (8, 11.5), (20, 12))):
+        E.cyl(f"PLZ_lamppost_{i}", coll, 0.09, 8.0, (x, y, 4.0),
+              material=darkgrey, verts=8)
+        E.box(f"PLZ_lamphead_{i}", coll, (0.55, 0.28, 0.14), (x, y, 8.05),
+              material=lamp)
+
+    # Lit shopfront strips along the far buildings.
+    for i in range(12):
+        E.box(f"PLZ_litstrip_s{i}", coll, (4.2, 0.10, 0.9),
+              (-30 + i * 5.6, -22.4, 2.4), material=glasslit)
+    for i in range(10):
+        E.box(f"PLZ_litstrip_n{i}", coll, (4.2, 0.10, 0.9),
+              (-26 + i * 5.6, 22.4, 2.6), material=glasslit)
+
+    # More parked metal at varied depths and values.
+    carmats = [darkgrey, white, blue, red, E._mat("PLZ_silver", (0.18, 0.18, 0.19), 0.22,
+                                                  metallic=0.75)]
+    for i in range(14):
+        x = -26.0 + i * 4.1 + rng2.uniform(-0.8, 0.8)
+        y = (-15.5 if i % 2 else 15.5) + rng2.uniform(-1.4, 1.4)
+        m = rng2.choice(carmats)
+        E.box(f"PLZ_pcar_{i}", coll, (1.85, 4.5, 0.95), (x, y, 0.5), material=m)
+        E.box(f"PLZ_pcabin_{i}", coll, (1.6, 2.3, 0.6), (x, y - 0.25, 1.28), material=m)
 
     # --- crowd --------------------------------------------------------------
     # Two arcs: a dense ring behind the car and a looser one to the sides.

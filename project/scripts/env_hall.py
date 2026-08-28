@@ -93,9 +93,89 @@ def build():
         E.box(f"HAL_carcab_{i}", coll, (1.65, 2.3, 0.52), (x, y - 0.25, 1.02),
               material=mat)
 
+    # --- more hall structure ------------------------------------------------
+    # The first pass left large empty stretches of floor and wall, so the
+    # background behind the car was a featureless bright field. What the shots
+    # need is depth: something at every distance between the car and the wall,
+    # and a few lit surfaces to give the defocused areas shape.
+    import random as _r
+    rng = _r.Random(404)
+    accent = E._mat("HAL_accent", (0.300, 0.028, 0.030), 0.55)
+    litpanel = E._mat("HAL_litpanel", None, 0, emit=(0.92, 0.94, 1.0), emit_str=2.2)
+    warmpanel = E._mat("HAL_warmpanel", None, 0, emit=(1.0, 0.86, 0.62), emit_str=2.6)
+    silver = E._mat("HAL_silver", (0.190, 0.190, 0.195), 0.24, metallic=0.8)
+    carpet = E._mat("HAL_carpet", (0.022, 0.022, 0.026), 0.78)
+
+    # A second row of columns further back, and capitals on all of them.
+    for i, x in enumerate((-16.0, -6.0, 4.5, 14.0)):
+        E.box(f"HAL_col2_{i}", coll, (1.0, 1.0, HALL_H), (x, 13.0, HALL_H / 2),
+              material=conc)
+    for i, x in enumerate((-11.5, -1.0, 9.5)):
+        for j, y in enumerate((-6.0, 8.5)):
+            E.box(f"HAL_colcap_{i}_{j}", coll, (1.45, 1.45, 0.28),
+                  (x, y, HALL_H - 0.30), material=conc_dark)
+
+    # Ceiling services: ducting and hanging fixtures read as dark banding
+    # across the top of the wide shots.
+    for i in range(4):
+        E.cyl(f"HAL_duct_{i}", coll, 0.38, HALL_W * 0.9,
+              (0, -10.0 + i * 7.0, HALL_H - 1.15),
+              rotation=(0, math.radians(90), 0), material=silver, verts=14)
+    for i in range(6):
+        for j in range(3):
+            x, y = -12.0 + i * 5.0, -6.0 + j * 7.0
+            E.box(f"HAL_pendant_{i}_{j}", coll, (1.6, 0.22, 0.10),
+                  (x, y, HALL_H - 2.05), material=warmpanel)
+            E.cyl(f"HAL_pendantrod_{i}_{j}", coll, 0.014, 1.9,
+                  (x, y, HALL_H - 1.10), material=silver, verts=6)
+
+    # Display plinths and info boards at mid distance.
+    for i, (x, y, w, h) in enumerate(((-14.0, 4.0, 1.5, 1.05),
+                                      (-9.5, 6.5, 1.2, 0.95),
+                                      (12.5, 5.0, 1.6, 1.10),
+                                      (15.5, -2.0, 1.3, 1.00))):
+        E.box(f"HAL_plinth_{i}", coll, (w, w, h), (x, y, h / 2), material=panel)
+        E.box(f"HAL_plinthtop_{i}", coll, (w * 1.08, w * 1.08, 0.05),
+              (x, y, h + 0.02), material=silver)
+    for i, (x, y) in enumerate(((-16.5, 7.5), (-2.5, 12.0), (11.0, 8.0), (16.0, 3.0))):
+        E.box(f"HAL_board_{i}", coll, (2.1, 0.09, 1.35), (x, y, 1.55),
+              material=panel)
+        E.box(f"HAL_boardlit_{i}", coll, (1.75, 0.03, 1.0), (x, y - 0.06, 1.55),
+              material=litpanel)
+        E.cyl(f"HAL_boardleg_{i}", coll, 0.05, 0.9, (x, y, 0.45),
+              material=silver, verts=8)
+
+    # Wall graphics: lit panels break up the bare concrete behind the car.
+    for i in range(6):
+        E.box(f"HAL_wallpanel_{i}", coll, (2.6, 0.06, 1.6),
+              (-13.0 + i * 5.2, 15.16, 4.6), material=litpanel)
+    for i in range(3):
+        E.box(f"HAL_wallaccent_{i}", coll, (0.5, 0.07, 2.4),
+              (-9.0 + i * 9.0, 15.14, 4.6), material=accent)
+
+    # Rope between the stanchions, and a carpet runner under the car.
+    posts = ((-4.6, -5.4), (0.4, -5.9), (5.4, -6.2), (10.0, -5.6))
+    for i in range(len(posts) - 1):
+        (x0, y0), (x1, y1) = posts[i], posts[i + 1]
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        length = math.dist((x0, y0), (x1, y1))
+        ang = math.atan2(y1 - y0, x1 - x0)
+        E.box(f"HAL_rope_{i}", coll, (length, 0.035, 0.035), (mx, my, 0.90),
+              rotation=(0, 0, ang), material=postm)
+    E.plane("HAL_runner", coll, 7.5, 12.0, (0, 0, 0.004), material=carpet)
+
+    # More parked metal behind, at varied values.
+    for i, (x, y, val) in enumerate(((-17.0, 10.0, 0.28), (-2.0, 12.5, 0.045),
+                                     (7.0, 12.0, 0.16), (17.5, 8.5, 0.035))):
+        m = E._mat(f"HAL_bgcar_{i}", (val, val, val * 1.04), 0.17,
+                   metallic=0.55, coat=0.7)
+        E.box(f"HAL_bgcar_{i}", coll, (1.9, 4.6, 0.80), (x, y, 0.43), material=m)
+        E.box(f"HAL_bgcab_{i}", coll, (1.62, 2.4, 0.55), (x, y - 0.28, 1.05),
+              material=m)
+
     # A handful of staff, never in focus.
-    E.crowd_arc(coll, seed=71, count=5, radius_min=10.5, radius_max=13.5,
-                angle_from=55, angle_to=125)
+    E.crowd_arc(coll, seed=71, count=13, radius_min=8.5, radius_max=14.5,
+                angle_from=35, angle_to=145, jitter=1.4)
     return coll
 
 

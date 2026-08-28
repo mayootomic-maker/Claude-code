@@ -122,13 +122,14 @@ def _build_cameras():
     for name, a, b in SH.RANGES:
         s = SH.SHOTS[name]
 
-        cam_a, cam_b, _, _ = SH.shot_poses(name)
-
         aim = bpy.data.objects.new(f"{name}_FOCUS", None)
         aim.empty_display_type = 'SPHERE'
         aim.empty_display_size = 0.06
         focus.objects.link(aim)
         aim.location = s["tgt"]
+        # Two keys so the aim gets an F-curve for the drift modifier below.
+        for f in (a, b):
+            aim.keyframe_insert("location", frame=f)
 
         cam = K.make_camera(f"{name}_CAM", cams, s["lens"])
         cam.data.dof.use_dof = True
@@ -138,25 +139,45 @@ def _build_cameras():
         if "shift" in s:
             cam.data.shift_x, cam.data.shift_y = s["shift"]
 
-        for f, p in ((a, cam_a), (b, cam_b)):
+        for f, p in SH.move_keys(name, a, b):
             cam.location = p
             cam.keyframe_insert("location", frame=f)
 
-        # Ease in and out: nothing in the reference moves at a machine rate.
+        # Smooth through the intermediate samples, easing only at the ends.
+        # AUTO_CLAMPED everywhere flattens each key into a little plateau and
+        # the move visibly stutters; AUTO keeps the middle continuous.
         act = cam.animation_data.action
         for fc in act.fcurves:
-            for kp in fc.keyframe_points:
+            pts = fc.keyframe_points
+            for j, kp in enumerate(pts):
                 kp.interpolation = 'BEZIER'
-                kp.handle_left_type = kp.handle_right_type = 'AUTO_CLAMPED'
+                edge = (j == 0 or j == len(pts) - 1)
+                kp.handle_left_type = kp.handle_right_type = (
+                    'AUTO_CLAMPED' if edge else 'AUTO')
+            fc.update()
 
-        # Handheld float on top of the move.
+        # Handheld float. Slow and shallow: the first pass ran the noise at
+        # about a 0.4 s period, which reads as buzz rather than as a person
+        # holding a camera. Real hand-held drift is well under 1 Hz.
+        seed = sum(ord(c) for c in name)
         if s["shake"] > 0:
             for i, fc in enumerate(act.fcurves):
                 n = fc.modifiers.new('NOISE')
-                n.scale = 26.0 + i * 7.0
-                n.strength = s["shake"]
-                n.phase = 3.7 * (i + 1) + hash(name) % 17
-                n.depth = 1
+                n.scale = 115.0 + i * 23.0
+                n.strength = s["shake"] * 0.85
+                n.phase = 5.1 * (i + 1) + seed % 23
+                n.depth = 0
+            # Drift the aim too. With the camera locked to the target by a
+            # Track To constraint, a perfectly still aim point makes the move
+            # feel motorised no matter what the body is doing.
+            aim_act = aim.animation_data.action
+            drift = min(0.9 * s["shake"], 0.010) * (1.0 if s["lens"] < 100 else 0.35)
+            for i, fc in enumerate(aim_act.fcurves):
+                n = fc.modifiers.new('NOISE')
+                n.scale = 165.0 + i * 31.0
+                n.strength = drift
+                n.phase = 2.3 * (i + 1) + seed % 19
+                n.depth = 0
 
         con = cam.constraints.new('TRACK_TO')
         con.target = aim

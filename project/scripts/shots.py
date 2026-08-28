@@ -173,6 +173,37 @@ def shot_poses(name):
     return a, b, da, db
 
 
+# How many keyframes each camera move is sampled with. Two keyframes make the
+# camera travel the straight chord between its start and end poses; sampling
+# the bearing instead makes it arc around the subject, which is what a dolly or
+# a walking operator actually does and what keeps the reflections sliding along
+# the bodywork instead of swinging across it.
+MOVE_SAMPLES = 9
+
+
+def pose_at(name, t):
+    """Camera position at t in [0, 1], interpolated in bearing/elevation/framing
+    rather than in world space."""
+    s = SHOTS[name]
+    az = s["az_a"] + (s["az_b"] - s["az_a"]) * t
+    el = s["elev_a"] + (s["elev_b"] - s["elev_a"]) * t
+    fw = s["fw_a"] + (s["fw_b"] - s["fw_a"]) * t
+    pos, _ = camera_position(s["tgt"], az, el, fw, s["lens"])
+    return pos
+
+
+def move_keys(name, first, last):
+    """[(frame, position), ...] for one shot's camera move."""
+    if last <= first:
+        return [(first, pose_at(name, 0.0))]
+    n = max(2, MOVE_SAMPLES)
+    out = []
+    for i in range(n):
+        t = i / (n - 1)
+        out.append((round(first + (last - first) * t), pose_at(name, t)))
+    return out
+
+
 def shot_for_frame(f):
     for name, a, b in RANGES:
         if a <= f <= b:
