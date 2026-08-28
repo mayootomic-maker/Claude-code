@@ -357,7 +357,7 @@
     const rows = def.oddsRows ? def.oddsRows() : def.bets.map((b) => ({
       label: b.label, pays: b.pays, prob: b.prob,
     }));
-    let html = '<table><thead><tr><th>Bet</th><th>Pays</th><th>Chance</th><th>House</th></tr></thead><tbody>';
+    let html = '<div class="odds__scroll"><table><thead><tr><th>Bet</th><th>Pays</th><th>Chance</th><th>House</th></tr></thead><tbody>';
     for (const row of rows) {
       if (row.text !== undefined) {
         html += '<tr><td>' + esc(row.label) + '</td><td colspan="3">' + esc(row.text) + '</td></tr>';
@@ -369,7 +369,7 @@
             + (edge <= 0.0001 ? ' odds__edge--good' : '') + '">'
             + (edge * 100).toFixed(1) + '%</td></tr>';
     }
-    html += '</tbody></table><p class="odds__foot">';
+    html += '</tbody></table></div><p class="odds__foot">';
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';

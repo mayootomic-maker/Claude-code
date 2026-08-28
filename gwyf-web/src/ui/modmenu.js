@@ -164,73 +164,91 @@
     store.save();
   }
 
-  function exportSave() {
+  /* Hand the run to the player.
+
+     Three routes, because which one exists depends on where the page is open:
+
+       - Inside the claude.ai artifact viewer, a page cannot download anything
+         by itself. It asks the host, through the `downloads` capability, and
+         the viewer confirms or declines.
+       - Opened from disk or served normally, a blob download is the real thing
+         and works.
+       - Where neither is available, the JSON goes on screen to be copied.
+
+     What matters is that nothing here claims a file was saved unless one was.
+     An <a download> inside a sandboxed frame does nothing at all, silently --
+     no error, no file, no clue -- and reporting success off the back of it is
+     how a player loses a run they think they saved. */
+  async function exportSave() {
     const json = JSON.stringify({
       run: shell.store.s, meta: shell.store.meta, exported: new Date().toISOString(),
     }, null, 2);
+    const filename = 'gamble-with-your-friends-day' + shell.store.s.day + '.json';
 
-    /* Two routes out, because one of them does not always work.
-
-       A page-initiated download -- an <a download> with a blob URL -- is inert
-       inside a sandboxed embed, and it fails silently: no error, no file, no
-       clue. So the clipboard is tried first and the download is offered as
-       well, and whichever succeeded is what the ticker says. Never claim a file
-       was saved without knowing that it was. */
-    const offerDownload = () => {
-      try {
-        const blob = new Blob([json], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'gamble-with-your-friends-day' + shell.store.s.day + '.json';
-        a.rel = 'noopener';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 8000);
-        return true;
-      } catch (err) {
-        return false;
+    const host = global.claude && typeof global.claude.use === 'function' ? global.claude : null;
+    if (host) {
+      let downloads = null;
+      try { downloads = await host.use('downloads'); } catch (err) { downloads = null; }
+      if (downloads) {
+        try {
+          await downloads.save({ filename, data: json });
+          shell.store.say('Run saved as ' + filename + '.', 'good');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') shell.store.say('Save cancelled. Nothing was written.', 'flat');
+          else if (code === 'rate_limited') shell.store.say('Too many save prompts at once. Try again in a moment.', 'warn');
+          else showText(json);
+        }
+        return;
       }
-    };
-
-    const showText = () => {
-      // Last resort: put it on screen so it can be selected and copied by hand.
-      const box = document.createElement('textarea');
-      box.className = 'exportbox';
-      box.readOnly = true;
-      box.value = json;
-      box.setAttribute('aria-label', 'Your run, as JSON. Select all and copy.');
-      const wrap = document.createElement('div');
-      wrap.className = 'screen';
-      const sheet = document.createElement('div');
-      sheet.className = 'sheet sheet--narrow';
-      sheet.innerHTML = '<p class="sheet__kicker">Save data</p>'
-        + '<h2 class="sheet__title">Copy this somewhere</h2>'
-        + '<p class="sheet__lede">This browser would not let the page hand you a '
-        + 'file or reach the clipboard. Select it all and copy it by hand.</p>';
-      sheet.appendChild(box);
-      const done = document.createElement('div');
-      done.className = 'sheet__actions';
-      done.innerHTML = '<button class="btn btn--primary">Done</button>';
-      done.querySelector('button').addEventListener('click', () => wrap.remove());
-      sheet.appendChild(done);
-      wrap.appendChild(sheet);
-      document.body.appendChild(wrap);
-      box.focus();
-      box.select();
-    };
-
-    if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
-      global.navigator.clipboard.writeText(json).then(() => {
-        const downloaded = offerDownload();
-        shell.store.say('Run copied to the clipboard'
-          + (downloaded ? ', and offered as a file.' : '. Paste it somewhere safe.'), 'good');
-      }, () => {
-        if (!offerDownload()) showText();
-        else shell.store.say('Run exported as a file.', 'good');
-      });
+      // The viewer is here but will not save files: do not pretend otherwise.
+      showText(json);
       return;
     }
-    if (offerDownload()) shell.store.say('Run exported as a file.', 'good');
-    else showText();
+
+    try {
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.rel = 'noopener';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+      shell.store.say('Run exported as ' + filename + '.', 'good');
+    } catch (err) {
+      showText(json);
+    }
+  }
+
+  /* Last resort: put it on screen so it can be selected and copied by hand.
+     Offered with the clipboard where the browser allows it. */
+  function showText(json) {
+    const wrap = document.createElement('div');
+    wrap.className = 'screen';
+    const sheet = document.createElement('div');
+    sheet.className = 'sheet sheet--narrow';
+    sheet.innerHTML = '<p class="sheet__kicker">Save data</p>'
+      + '<h2 class="sheet__title">Copy this somewhere</h2>'
+      + '<p class="sheet__lede">This is your whole run. Keep it and the mod menu '
+      + 'can paste it back in later.</p>'
+      + '<textarea class="exportbox" readonly aria-label="Your run, as JSON"></textarea>'
+      + '<div class="sheet__actions"><button class="btn btn--primary" data-copy>Copy it</button>'
+      + '<button class="btn" data-done>Done</button></div>';
+    const box = sheet.querySelector('textarea');
+    box.value = json;
+    wrap.appendChild(sheet);
+    document.body.appendChild(wrap);
+    sheet.querySelector('[data-done]').addEventListener('click', () => wrap.remove());
+    sheet.querySelector('[data-copy]').addEventListener('click', (e) => {
+      const say = (text) => { e.target.textContent = text; };
+      if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
+        global.navigator.clipboard.writeText(json).then(() => say('Copied'), () => say('Select it and copy'));
+      } else {
+        box.focus(); box.select(); say('Select it and copy');
+      }
+    });
+    box.focus();
+    box.select();
   }
 
   function importSave() {

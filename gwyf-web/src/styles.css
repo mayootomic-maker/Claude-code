@@ -70,7 +70,7 @@ html, body {
 
 body { overflow: hidden; }
 
-h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
 
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: 0; background: none; }
@@ -363,7 +363,13 @@ button:disabled { cursor: not-allowed; }
 .disclose__chev { transition: transform 0.2s var(--ease); }
 .disclose[aria-expanded='true'] .disclose__chev { transform: rotate(180deg); }
 
-.odds { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.odds {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  /* The table scrolls inside its own box rather than pushing the page sideways. */
+  overflow: hidden auto; max-width: 100%;
+}
+.odds table { min-width: 17rem; }
+.odds__scroll { overflow-x: auto; }
 .odds table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
 .odds th, .odds td { padding: 0.3rem 0.55rem; text-align: right; }
 .odds th:first-child, .odds td:first-child { text-align: left; }

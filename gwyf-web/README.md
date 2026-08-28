@@ -69,12 +69,20 @@ pip install bpy                                 # Blender as a Python module
 python3 gwyf-web/blender/models.py              # build every model -> assets/models.json
 python3 gwyf-web/blender/models.py die coin     # or just those
 
-node gwyf-web/build.mjs                         # inline everything -> one HTML file
+node gwyf-web/build.mjs                          # inline everything -> one HTML file
+node gwyf-web/build.mjs --fragment               # same page without the <html>/<head>/<body>
+                                                 #   scaffolding, for hosts that supply their own
 node gwyf-web/tools/drive.mjs                   # play every table in Chromium, fail on any error
 node gwyf-web/tools/odds.mjs 9000               # audit every published number
 node gwyf-web/tools/shoot.mjs out.png 4         # contact sheet of the model library
-node gwyf-web/tools/measure-plinko.mjs 40000    # re-measure the plinko board
+node gwyf-web/tools/measure-plinko.mjs 40000     # re-measure the plinko board
+node gwyf-web/tools/run-loop.mjs                 # play whole runs; check all three endings
 ```
+
+`run-loop.mjs` is the other half of the testing: `drive.mjs` covers the tables,
+this covers the days — quota, strikes, interest, the shark taking things, and
+whether each of the three endings can actually be reached. It is what caught
+the debt being unpayable, which made one of them unreachable by playing.
 
 `drive.mjs` opens the built file in Chromium, walks all twelve tables, plays a
 hand at each — answering prompts and clicking tiles on the table — and fails on
@@ -147,7 +155,14 @@ worth knowing about:
 - **The web fonts are the one network request.** They come from Google Fonts and
   the page falls back to a system stack offline; nothing else is fetched.
 - **Saves live in `localStorage`.** The mod menu exports and imports a run as
-  JSON, which is the only defence against a browser clearing site data.
+  JSON, which is the only defence against a browser clearing site data. How the
+  export leaves depends on where the page is open: hosted in a sandboxed viewer
+  a page cannot save a file by itself, so it asks the host and the viewer
+  confirms; opened from disk a blob download is the real thing; where neither
+  works the JSON goes on screen to be copied. Nothing reports a file was saved
+  unless one was — an `<a download>` inside a sandbox does nothing at all,
+  silently, and a player who trusts that message loses the run they thought
+  they had kept.
 - **The seed is drawn once and saved with the run**, so reloading continues the
   same stream rather than re-rolling a spin you did not like.
 - **This is a game about a debt spiral, not an advertisement for one.** There is

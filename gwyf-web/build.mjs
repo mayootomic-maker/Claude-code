@@ -6,7 +6,11 @@
    server, which is the point -- a casino you have to npm install is not a thing
    anybody will actually play.
 
-   Usage: node gwyf-web/build.mjs [--out path] */
+   Usage: node gwyf-web/build.mjs [--out path] [--fragment]
+
+   --fragment emits the same page without its <!doctype>, <html>, <head> or
+   <body> tags, for hosts that supply their own document skeleton and would
+   otherwise end up with one document nested inside another. */
 
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { dirname, resolve, relative } from 'node:path';
@@ -16,7 +20,10 @@ import { gzipSync } from 'node:zlib';
 const here = dirname(fileURLToPath(import.meta.url));
 const src = resolve(here, 'src');
 const outArg = process.argv.indexOf('--out');
-const OUT = outArg > 0 ? resolve(process.argv[outArg + 1]) : resolve(here, 'gamble-with-your-friends.html');
+const FRAGMENT = process.argv.includes('--fragment');
+const OUT = outArg > 0
+  ? resolve(process.argv[outArg + 1])
+  : resolve(here, FRAGMENT ? 'gamble-with-your-friends.fragment.html' : 'gamble-with-your-friends.html');
 
 const read = (p) => readFileSync(p, 'utf8');
 
@@ -54,6 +61,23 @@ html = html.replace('<script>\n' + read(resolve(src, 'core/rng.js')),
 if (html.indexOf('__GW_MODELS__') < 0) {
   console.error('models were not injected: the anchor script moved');
   process.exit(1);
+}
+
+if (FRAGMENT) {
+  // Keep <title>, <meta>, the font <link> and every <style>/<script>; drop only
+  // the document scaffolding the host provides.
+  html = html
+    .replace(/<!doctype html>\s*/i, '')
+    .replace(/<html[^>]*>\s*/i, '')
+    .replace(/<\/html>\s*/i, '')
+    .replace(/<head>\s*/i, '')
+    .replace(/<\/head>\s*/i, '')
+    .replace(/<body>\s*/i, '')
+    .replace(/<\/body>\s*/i, '');
+  if (/<html|<body|<!doctype/i.test(html)) {
+    console.error('fragment still contains document scaffolding');
+    process.exit(1);
+  }
 }
 
 writeFileSync(OUT, html);
