@@ -16,9 +16,14 @@
   const SLOTS = ROWS + 1;
 
   // Measured, symmetric about the middle. Index 6 is the centre slot.
-  const MEASURED = [0.00465, 0.00900, 0.02165, 0.04750, 0.11570, 0.19500, 0.21300,
-                    0.19500, 0.11570, 0.04750, 0.02165, 0.00900, 0.00465];
-  const PAYS = [26, 7.5, 2.9, 1.15, 0.65, 0.35, 0.2, 0.35, 0.65, 1.15, 2.9, 7.5, 26];
+  // Measured over 26,000 drops of this exact board by tools/measure-plinko.mjs,
+  // folded about the centre line. The first table came from 3,000 drops and put
+  // the outermost pocket at 0.465%; it is really 0.594% +/- 0.048, and since
+  // that pocket pays 24x it alone was most of a seven-point error in the
+  // machine's return. A long-tailed payout table cannot be measured cheaply.
+  const MEASURED = [0.00594, 0.01015, 0.02202, 0.04681, 0.11779, 0.18625, 0.22208,
+                    0.18625, 0.11779, 0.04681, 0.02202, 0.01015, 0.00594];
+  const PAYS = [24, 6.9, 2.65, 1.05, 0.6, 0.32, 0.18, 0.32, 0.6, 1.05, 2.65, 6.9, 24];
   const RTP = MEASURED.reduce((sum, p, i) => sum + p * PAYS[i], 0);
 
   const SLOT_COLOUR = (i) => {

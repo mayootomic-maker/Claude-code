@@ -677,3 +677,12 @@ button:disabled { cursor: not-allowed; }
 
 /* the table can be clicked during some hands */
 .stage.is-picking #scene { cursor: pointer; }
+
+.exportbox {
+  width: 100%; min-height: 11rem; margin-top: 0.6rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-sunk); color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.4;
+  resize: vertical;
+}

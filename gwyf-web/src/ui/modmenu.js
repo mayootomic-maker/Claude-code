@@ -127,7 +127,7 @@
     if (id === 'alwaysWin' && s.mods.alwaysWin) s.mods.alwaysLose = false;
     if (id === 'alwaysLose' && s.mods.alwaysLose) s.mods.alwaysWin = false;
     if (s.mods[id]) mark();
-    if (id === 'reducedMotion') shell.stage.setReducedMotion(s.mods.reducedMotion);
+    if (id === 'reducedMotion' && shell.applyMotion) shell.applyMotion();
     if (id === 'quietFriends' || id === 'calmFriends') shell.renderCrew();
     shell.audio.play('click');
     shell.renderHud();
@@ -165,18 +165,77 @@
   }
 
   function exportSave() {
-    const blob = new Blob([JSON.stringify({
+    const json = JSON.stringify({
       run: shell.store.s, meta: shell.store.meta, exported: new Date().toISOString(),
-    }, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'gamble-with-your-friends-day' + shell.store.s.day + '.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    shell.store.say('Run exported.', 'good');
+    }, null, 2);
+
+    /* Two routes out, because one of them does not always work.
+
+       A page-initiated download -- an <a download> with a blob URL -- is inert
+       inside a sandboxed embed, and it fails silently: no error, no file, no
+       clue. So the clipboard is tried first and the download is offered as
+       well, and whichever succeeded is what the ticker says. Never claim a file
+       was saved without knowing that it was. */
+    const offerDownload = () => {
+      try {
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'gamble-with-your-friends-day' + shell.store.s.day + '.json';
+        a.rel = 'noopener';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+        return true;
+      } catch (err) {
+        return false;
+      }
+    };
+
+    const showText = () => {
+      // Last resort: put it on screen so it can be selected and copied by hand.
+      const box = document.createElement('textarea');
+      box.className = 'exportbox';
+      box.readOnly = true;
+      box.value = json;
+      box.setAttribute('aria-label', 'Your run, as JSON. Select all and copy.');
+      const wrap = document.createElement('div');
+      wrap.className = 'screen';
+      const sheet = document.createElement('div');
+      sheet.className = 'sheet sheet--narrow';
+      sheet.innerHTML = '<p class="sheet__kicker">Save data</p>'
+        + '<h2 class="sheet__title">Copy this somewhere</h2>'
+        + '<p class="sheet__lede">This browser would not let the page hand you a '
+        + 'file or reach the clipboard. Select it all and copy it by hand.</p>';
+      sheet.appendChild(box);
+      const done = document.createElement('div');
+      done.className = 'sheet__actions';
+      done.innerHTML = '<button class="btn btn--primary">Done</button>';
+      done.querySelector('button').addEventListener('click', () => wrap.remove());
+      sheet.appendChild(done);
+      wrap.appendChild(sheet);
+      document.body.appendChild(wrap);
+      box.focus();
+      box.select();
+    };
+
+    if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
+      global.navigator.clipboard.writeText(json).then(() => {
+        const downloaded = offerDownload();
+        shell.store.say('Run copied to the clipboard'
+          + (downloaded ? ', and offered as a file.' : '. Paste it somewhere safe.'), 'good');
+      }, () => {
+        if (!offerDownload()) showText();
+        else shell.store.say('Run exported as a file.', 'good');
+      });
+      return;
+    }
+    if (offerDownload()) shell.store.say('Run exported as a file.', 'good');
+    else showText();
   }
 
   function importSave() {
+    // A file picker can be blocked in an embed exactly as a download can, so a
+    // paste box is offered alongside it rather than instead of an error.
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
@@ -186,18 +245,7 @@
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const doc = JSON.parse(String(reader.result));
-          if (!doc.run || doc.run.version !== 2) throw new Error('not a save from this version');
-          shell.store.s = doc.run;
-          shell.store.meta = Object.assign(shell.store.meta, doc.meta || {});
-          shell.store.rng = new GWRng.Rng(doc.run.seed, doc.run.rngCalls || 0);
-          shell.store.save();
-          closeMenu();
-          shell.unloadGame();
-          shell.renderHud();
-          shell.renderCrew();
-          GWScreens.show('briefing');
-          shell.store.say('Run imported. Day ' + doc.run.day + '.', 'good');
+          adopt(JSON.parse(String(reader.result)));
         } catch (err) {
           shell.store.say('That file would not load: ' + err.message, 'bad');
           shell.audio.play('deny');
@@ -206,6 +254,56 @@
       reader.readAsText(file);
     });
     input.click();
+    // If the picker never opens, the mod menu's paste route is the way in.
+    setTimeout(() => {
+      if (!input.files || !input.files.length) {
+        shell.store.say('If no file picker opened, this browser is blocking it. '
+          + 'Paste a saved run into the box instead.', 'warn');
+        pasteImport();
+      }
+    }, 1200);
+  }
+
+  /* Paste a run back in. Works where a file picker does not. */
+  function pasteImport() {
+    if (document.querySelector('.importbox')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'screen importbox';
+    const sheet = document.createElement('div');
+    sheet.className = 'sheet sheet--narrow';
+    sheet.innerHTML = '<p class="sheet__kicker">Save data</p>'
+      + '<h2 class="sheet__title">Paste a run</h2>'
+      + '<p class="sheet__lede">Paste the JSON you exported earlier.</p>'
+      + '<textarea class="exportbox" aria-label="Paste your saved run here"></textarea>'
+      + '<div class="sheet__actions"><button class="btn btn--primary" data-load>Load it</button>'
+      + '<button class="btn" data-cancel>Cancel</button></div>';
+    wrap.appendChild(sheet);
+    document.body.appendChild(wrap);
+    sheet.querySelector('[data-cancel]').addEventListener('click', () => wrap.remove());
+    sheet.querySelector('[data-load]').addEventListener('click', () => {
+      try {
+        adopt(JSON.parse(sheet.querySelector('textarea').value));
+        wrap.remove();
+      } catch (err) {
+        shell.store.say('That would not load: ' + err.message, 'bad');
+        shell.audio.play('deny');
+      }
+    });
+    sheet.querySelector('textarea').focus();
+  }
+
+  function adopt(doc) {
+    if (!doc.run || doc.run.version !== 2) throw new Error('not a save from this version');
+    shell.store.s = doc.run;
+    shell.store.meta = Object.assign(shell.store.meta, doc.meta || {});
+    shell.store.rng = new GWRng.Rng(doc.run.seed, doc.run.rngCalls || 0);
+    shell.store.save();
+    closeMenu();
+    shell.unloadGame();
+    shell.renderHud();
+    shell.renderCrew();
+    GWScreens.show('briefing');
+    shell.store.say('Run imported. Day ' + doc.run.day + '.', 'good');
   }
 
   function wipe() {

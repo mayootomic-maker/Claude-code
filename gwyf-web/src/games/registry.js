@@ -56,6 +56,10 @@
         return new Promise((resolve) => {
           let elapsed = 0;
           const ease = easing || ((x) => x);
+          // Reduced motion shortens animations rather than skipping them. A
+          // coin that teleports to its result tells you nothing about which
+          // face came up, and the whole game is watching things settle.
+          if (shell.stage.state.reduced) seconds = Math.max(seconds * 0.32, 0.12);
           const stop = shell.stage.onTick((dt) => {
             elapsed += dt;
             const raw = Math.min(elapsed / seconds, 1);

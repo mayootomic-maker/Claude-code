@@ -149,10 +149,29 @@
       if (e.key === 'q' || e.key === 'Q') { el.btnShout.click(); }
     });
 
+    /* Reduced motion, from the operating system unless the mod menu overrides
+       it. The CSS media query handles the interface; this is what carries it
+       into the 3D. */
+    const motion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    const applyMotion = () => {
+      const wanted = shell.store.s.mods.reducedMotion || (motion ? motion.matches : false);
+      shell.stage.setReducedMotion(wanted);
+    };
+    if (motion && motion.addEventListener) motion.addEventListener('change', applyMotion);
+    shell.applyMotion = applyMotion;
+    applyMotion();
+
     window.addEventListener('beforeunload', () => shell.store.save());
   }
 
   /* --- the day ------------------------------------------------------------- */
+
+  const WARNINGS = [
+    { at: 60, text: 'One minute before the doors close.', tone: 'warn' },
+    { at: 30, text: 'Thirty seconds.', tone: 'warn' },
+    { at: 10, text: 'Ten seconds. Finish the hand.', tone: 'bad' },
+  ];
+  const warned = new Set();
 
   function startDayLoop() {
     let carry = 0;
@@ -166,6 +185,17 @@
 
       carry += dt;
       if (carry >= 0.25) { carry = 0; renderClock(); renderCrew(); }
+
+      // Warnings on the way down. The clock itself is deliberately not a live
+      // region: announcing it four times a second makes the page unusable with
+      // a screen reader, which is the exact failure mode a countdown invites.
+      for (const mark of WARNINGS) {
+        if (s.timeLeft <= mark.at && !warned.has(mark.at)) {
+          warned.add(mark.at);
+          shell.store.say(mark.text, mark.tone);
+          shell.audio.play(mark.at <= 10 ? 'alarm' : 'tick');
+        }
+      }
 
       if (s.timeLeft <= 0) {
         s.timeLeft = 0;
@@ -181,6 +211,7 @@
     const s = shell.store.s;
     if (s.phase !== 'floor') return;
     s.phase = 'report';
+    warned.clear();
     hideShout();
     shell.audio.play('alarm');
     unloadGame();
@@ -384,6 +415,8 @@
     setStat(el.statDebt, money(s.debt));
     setStat(el.statQuota, money(s.quota));
     el.statTickets.textContent = shell.store.meta.tickets;
+    el.statBank.setAttribute('aria-label', money(s.bank) + ' in the shared account');
+    el.statQuota.setAttribute('aria-label', 'tonight\u2019s quota is ' + money(s.quota));
     el.statDay.textContent = s.day;
     const pctDone = s.quota > 0 ? Math.min(1, s.bank / s.quota) : 1;
     el.quotaFill.style.width = (pctDone * 100).toFixed(1) + '%';
