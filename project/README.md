@@ -84,6 +84,28 @@ It is a check on shot order and cut timing, not a render of the film -- there is
 no camera movement in it. Play it against the reference to confirm the edit
 lands on the same beats before committing GPU time to the real sequence.
 
+## Watching the motion
+
+Stills cannot show whether a camera move is smooth. Two tools do:
+
+```bash
+# one shot, continuous, cheap
+blender -b -noaudio project/koenigsegg_final.blend \
+  -P project/scripts/motion_test.py -- S02 --res 420 --samples 12
+
+# the whole film at preview resolution, resumable like the final render
+blender -b -noaudio project/koenigsegg_final.blend \
+  -P project/scripts/render_final.py -- --res 384 --samples 10 --device CPU --outdir preview
+```
+
+Camera moves are sampled in bearing, elevation and framing rather than in world
+space, so each shot arcs around its subject instead of sliding along the
+straight chord between two poses. Nine keys per shot, AUTO handles through the
+middle and AUTO_CLAMPED at the ends: clamping every key flattens each one into
+a plateau and the move stutters. On top of that sits sub-1 Hz positional noise
+and a slower drift on the focus target - a camera locked to a perfectly still
+aim point reads as motorised however the body moves.
+
 ## Rebuilding the scene
 
 The master .blend is generated, not hand-edited. To change anything, edit the

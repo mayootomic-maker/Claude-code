@@ -1,7 +1,12 @@
 """Final render: 1920x1080, 60 fps, Cycles, lossless PNG sequence, resumable.
 
   blender -b project/koenigsegg_final.blend -P project/scripts/render_final.py \
-      -- [--samples 256] [--start 1] [--end 996] [--device GPU|CPU] [--force]
+      -- [--samples 256] [--start N] [--end N] [--device GPU|CPU] [--force]
+         [--res 1920] [--outdir NAME]
+
+--res and --outdir turn the same resumable renderer into a preview pass: a
+full-length low-resolution run is the only way to watch the whole film move
+without a GPU.
 
 Frames already present in project/renders/final are skipped unless --force is
 given, so an interrupted render resumes instead of starting over. Frames are
@@ -12,6 +17,7 @@ import bpy, sys, os, time
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 samples, start, end, device, force = 256, None, None, "GPU", False
+res_x, outname = 1920, "final"
 i = 0
 while i < len(argv):
     a = argv[i]
@@ -23,6 +29,10 @@ while i < len(argv):
         end = int(argv[i + 1]); i += 2
     elif a == "--device":
         device = argv[i + 1].upper(); i += 2
+    elif a == "--res":
+        res_x = int(argv[i + 1]); i += 2
+    elif a == "--outdir":
+        outname = argv[i + 1]; i += 2
     elif a == "--force":
         force = True; i += 1
     else:
@@ -30,11 +40,11 @@ while i < len(argv):
 
 S = bpy.context.scene
 root = os.path.dirname(os.path.abspath(bpy.data.filepath))
-outdir = os.path.join(root, "renders", "final")
+outdir = os.path.join(root, "renders", outname)
 os.makedirs(outdir, exist_ok=True)
 
-S.render.resolution_x = 1920
-S.render.resolution_y = 1080
+S.render.resolution_x = res_x
+S.render.resolution_y = int(round(res_x * 9 / 16 / 2) * 2)
 S.render.resolution_percentage = 100
 S.render.fps = 60
 S.cycles.samples = samples
@@ -80,7 +90,8 @@ for f in range(first, last + 1):
         todo.append(f)
 
 print(f"RENDER_PLAN total={last - first + 1} todo={len(todo)} samples={samples} "
-      f"device={S.cycles.device}")
+      f"res={S.render.resolution_x}x{S.render.resolution_y} device={S.cycles.device} "
+      f"outdir={outdir}")
 
 t0 = time.time()
 for n, f in enumerate(todo, 1):
