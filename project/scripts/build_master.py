@@ -13,6 +13,7 @@ import mat_car
 import env_common as E
 import env_plaza
 import env_hall
+import env_world
 import shots as SH
 
 OUT = os.path.join(K.ROOT, "koenigsegg_final.blend")
@@ -229,11 +230,21 @@ def main():
     _build_cameras()
 
     # --- world -----------------------------------------------------------
-    # Two worlds are needed; the scene world is switched per location by
-    # keyframing which one is active is not possible, so the plaza dome is the
-    # scene world and the hall is sealed well enough that it barely leaks in.
-    env_hall.world()
-    scene.world = env_plaza.world()
+    # Both HDRIs live in one world and are cross-faded per shot. A world
+    # datablock cannot be swapped on a keyframe, but a node socket can.
+    world, loc_mix, black_mix = env_world.build()
+    scene.world = world
+    hall_frames = [(a, b) for _, a, b in SH.ranges_by_loc("hall")]
+    black_frames = [(a, b) for _, a, b in SH.ranges_by_loc("black")]
+    for node, ranges in ((loc_mix, hall_frames), (black_mix, black_frames)):
+        sock = node.inputs["Fac"]
+        for f, on in _visibility_keys(ranges):
+            sock.default_value = 1.0 if on else 0.0
+            sock.keyframe_insert("default_value", frame=f)
+    if world.node_tree.animation_data and world.node_tree.animation_data.action:
+        for fc in world.node_tree.animation_data.action.fcurves:
+            for kp in fc.keyframe_points:
+                kp.interpolation = 'CONSTANT' 
 
     # --- scene settings ---------------------------------------------------
     K.set_cycles(scene, samples=256, res_x=1920, res_y=1080)

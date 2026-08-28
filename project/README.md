@@ -23,6 +23,29 @@ output/koenigsegg_final.mp4    the encoded film (produced by render_all.sh)
 output/koenigsegg_timing_animatic.mp4   cut-timing check, see below
 ```
 
+## The environments are photographic
+
+Both locations are lit and backed by HDRI environment maps rather than built
+scenery: **Potsdamer Platz** (overcast urban plaza) outdoors and **Aircraft
+Workshop 01** (large industrial interior) indoors, both Poly Haven, CC0.
+
+This replaced roughly a thousand hand-built objects - buildings, trees,
+signage, columns, glazing and a crowd of primitive figures. That approach has a
+hard ceiling: simplified people stay simplified at any blur radius, and flat
+boxes give the paint nothing convincing to reflect, which matters because
+reflections are most of what sells a car render. An environment map supplies
+real light direction, real colour and a real background in one step.
+
+What the HDRI cannot supply is the ground under the car, so each location still
+builds its own: wet tarmac outdoors, polished screed indoors. Both are
+deliberately reflective - the screed mirroring the room is also what hides the
+seam where the ground plane meets the environment at the horizon.
+
+A scene has one world and a world datablock cannot be swapped on a keyframe, so
+both HDRIs live in a single node tree in `env_world.py`, cross-faded by a mix
+factor keyed per shot, with a third state that takes the world to black for the
+outro.
+
 ## First run
 
 The master .blend (~175 MB) and the source model (~176 MB) both exceed
@@ -34,9 +57,9 @@ bash project/scripts/bootstrap.sh
 ```
 
 It fetches the Koenigsegg Jesko 2020 model (Open3DLab project
-`7de202a0-9d61-4005-8f99-919fbf546349`, CC BY-NC-ND 4.0), stores it read-only
-at `project/source/koenigsegg_source.blend`, and builds
-`project/koenigsegg_final.blend` from the scripts. If you already have the
+`7de202a0-9d61-4005-8f99-919fbf546349`, CC BY-NC-ND 4.0), fetches both HDRIs
+from Poly Haven, and builds `project/koenigsegg_final.blend` from the scripts.
+The model is stored read-only at `project/source/koenigsegg_source.blend`. If you already have the
 model, point at it instead: `KSEG_SOURCE_BLEND=/path/to/jesko.blend`.
 
 Requires Blender 4.2 or newer on PATH (developed against 4.2.5 LTS) and ffmpeg
@@ -120,8 +143,9 @@ blender -b -noaudio --factory-startup -P project/scripts/build_master.py
 | `lib_kseg.py` | import the car, flatten the port's rig, shared helpers |
 | `mat_car.py` | rebuild every car material |
 | `env_common.py` | shared environment primitives and the crowd builder |
-| `env_plaza.py` | the outdoor plaza, its overcast world and light rig |
-| `env_hall.py` | the indoor hall, its world and light rig |
+| `env_world.py` | both HDRIs in one world, cross-faded per shot |
+| `env_plaza.py` | the outdoor ground and its highlight-shaping rig |
+| `env_hall.py` | the indoor floor and its highlight-shaping rig |
 | `shots.py` | the 22-shot table: timing, lens, framing, focus |
 | `build_master.py` | assembles all of the above into the master .blend |
 | `export_transforms.py` | dumps the source's world matrices (see below) |

@@ -48,6 +48,34 @@ fi
 chmod 444 "$SRC"   # the source is never written to
 echo "Source model ready: $(du -h "$SRC" | cut -f1)"
 
+# --- HDRIs --------------------------------------------------------------
+# The environments are photographic. Poly Haven publishes these CC0; they are
+# ~25 MB each and are fetched rather than committed.
+HDRI_DIR="$ROOT/project/assets/hdri"
+mkdir -p "$HDRI_DIR"
+for NAME in potsdamer_platz aircraft_workshop_01; do
+  DEST="$HDRI_DIR/${NAME}_4k.hdr"
+  if [ -f "$DEST" ]; then
+    echo "HDRI already present: $(basename "$DEST")"
+    continue
+  fi
+  echo "Downloading HDRI $NAME (~25 MB)..."
+  URL=$(curl -sSL "https://api.polyhaven.com/files/$NAME" | python3 -c "
+import json,sys
+h=json.load(sys.stdin).get('hdri',{})
+for r in ('4k','2k','8k'):
+    if r in h and 'hdr' in h[r]:
+        print(h[r]['hdr']['url']); break
+")
+  if [ -z "$URL" ]; then
+    echo "Could not resolve the download URL for $NAME." >&2
+    exit 1
+  fi
+  curl -sSL -o "$DEST" "$URL"
+  head -c 10 "$DEST" | grep -q "RADIANCE" || {
+    echo "$DEST is not a Radiance HDR." >&2; exit 1; }
+done
+
 echo "Building the master scene..."
 blender -b -noaudio --factory-startup -P "$ROOT/project/scripts/build_master.py"
 echo

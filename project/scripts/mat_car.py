@@ -20,10 +20,10 @@ import bpy, math
 # sRGB (20,15,24)-(56,42,57), i.e. linear ~0.007-0.040 with R about equal to B
 # and G well below both: a very dark violet that only shows its colour where
 # light strikes square. The first pass at this was far too bright and too pink.
-PAINT_TINT = (0.0125, 0.0049, 0.0139)
+PAINT_TINT = (0.0092, 0.0034, 0.0104)
 # Sampled from the bonnet stripe in S01: sRGB (201,195,186) mid, (219,212,208)
 # lit -- a satin warm off-white, not gold.
-STRIPE_COLOR = (0.205, 0.184, 0.145)
+STRIPE_COLOR = (0.190, 0.168, 0.124)
 CALIPER_GOLD = (0.520, 0.395, 0.185)
 STRIPE_HALF_WIDTH = 0.076              # metres either side of centreline
 STRIPE_MIN_Z = 0.10                    # keep it off the lower bodywork

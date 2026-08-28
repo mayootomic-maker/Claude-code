@@ -34,3 +34,6 @@ output/*
 !output/*.mp4
 project/previews/*
 !project/previews/compare/
+
+# Fetched by project/scripts/bootstrap.sh
+project/assets/hdri/
