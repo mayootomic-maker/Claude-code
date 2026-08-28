@@ -20,10 +20,17 @@ reference/gap/
 reference/shots/
 project/previews/
 project/renders/
-output/
 project/source/*.blend
 project/koenigsegg_final.blend
 
 # Blender backup files
 *.blend1
 *.blend2
+__pycache__/
+*.pyc
+# Keep the encoded videos and a set of reference-vs-render comparisons; skip
+# the bulk frame dumps and the PNG sequence.
+output/*
+!output/*.mp4
+project/previews/*
+!project/previews/compare/
