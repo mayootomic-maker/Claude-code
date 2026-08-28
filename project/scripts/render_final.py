@@ -48,6 +48,13 @@ S.render.resolution_y = int(round(res_x * 9 / 16 / 2) * 2)
 S.render.resolution_percentage = 100
 S.render.fps = 60
 S.cycles.samples = samples
+if res_x < 1000:
+    # Preview pass: light paths dominate the cost, and a low-resolution motion
+    # check does not need twelve bounces to read correctly.
+    S.cycles.max_bounces = 6
+    S.cycles.glossy_bounces = 4
+    S.cycles.transmission_bounces = 6
+    S.cycles.transparent_max_bounces = 6
 S.render.image_settings.file_format = 'PNG'
 S.render.image_settings.color_mode = 'RGB'
 S.render.image_settings.color_depth = '8'
