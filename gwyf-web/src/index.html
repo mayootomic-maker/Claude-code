@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" data-theme="velvet">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gamble With Your Friends</title>
+<meta name="description" content="A casino crawler for the browser. One shared bank account, one shared debt, five minutes a day, and three friends who can spend it all.">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app" class="app" hidden>
+
+  <header class="hud" id="hud">
+    <div class="hud__brand">
+      <span class="hud__mark" aria-hidden="true">♠</span>
+      <span class="hud__title">Gamble<em>With</em>Your Friends</span>
+    </div>
+
+    <div class="hud__stats" role="group" aria-label="Run status">
+      <div class="stat stat--bank">
+        <span class="stat__label">Shared account</span>
+        <strong class="stat__value" id="statBank" data-live>$0</strong>
+      </div>
+      <div class="stat stat--debt">
+        <span class="stat__label">Debt</span>
+        <strong class="stat__value" id="statDebt">$0</strong>
+      </div>
+      <div class="stat stat--quota">
+        <span class="stat__label">Tonight's quota</span>
+        <strong class="stat__value" id="statQuota">$0</strong>
+        <div class="quotabar"><i id="quotaFill" style="width:0%"></i></div>
+      </div>
+      <div class="stat stat--tickets">
+        <span class="stat__label">Tickets</span>
+        <strong class="stat__value" id="statTickets">0</strong>
+      </div>
+    </div>
+
+    <div class="hud__clock">
+      <span class="stat__label">Day <b id="statDay">1</b> closes in</span>
+      <strong class="clock" id="statClock" data-live>5:00</strong>
+    </div>
+
+    <div class="hud__tools">
+      <button class="icobtn" id="btnTower" title="Back to the lift (Esc)" aria-label="Back to the lift">🛗</button>
+      <button class="icobtn" id="btnShop" title="The back office (B)" aria-label="Open the back office">🧳</button>
+      <button class="icobtn" id="btnSound" title="Sound" aria-pressed="true" aria-label="Toggle sound">🔊</button>
+      <button class="icobtn" id="btnMenu" title="Mod menu (F1)" aria-label="Open the mod menu">⚙</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <canvas id="scene" aria-label="The table"></canvas>
+
+    <div class="stage__overlay" id="stageOverlay" aria-hidden="true">
+      <div class="live" id="liveReadout" hidden></div>
+
+      <div class="resultcard" id="resultCard" hidden>
+        <span class="resultcard__headline" id="resultHeadline"></span>
+        <span class="resultcard__amount" id="resultAmount"></span>
+      </div>
+    </div>
+
+    <div class="shouts" id="shoutBar" hidden>
+      <button class="shout" id="btnShout">
+        <span class="shout__icon" aria-hidden="true">📢</span>
+        <span class="shout__text">Shout them down</span>
+        <span class="shout__count" id="shoutCount">3</span>
+      </button>
+    </div>
+  </main>
+
+  <aside class="rail" id="rail">
+    <div class="rail__head">
+      <span class="rail__icon" id="gameIcon" aria-hidden="true">🪙</span>
+      <div>
+        <h2 class="rail__title" id="gameName">Coin Toss</h2>
+        <p class="rail__blurb" id="gameBlurb"></p>
+      </div>
+    </div>
+
+    <div class="rail__section">
+      <h3 class="rail__label">Your bet</h3>
+      <div class="bets" id="betList" role="radiogroup" aria-label="Bet"></div>
+      <div class="extra" id="betExtra"></div>
+    </div>
+
+    <div class="rail__section">
+      <h3 class="rail__label" id="stakeLabel">Stake</h3>
+      <div class="stake">
+        <button class="stake__step" id="stakeDown" aria-label="Lower the stake">−</button>
+        <input class="stake__input" id="stakeInput" inputmode="numeric" aria-labelledby="stakeLabel" value="25">
+        <button class="stake__step" id="stakeUp" aria-label="Raise the stake">+</button>
+      </div>
+      <div class="chips" id="chipRow"></div>
+    </div>
+
+    <p class="status" id="gameStatus" role="status"></p>
+
+    <button class="play" id="btnPlay">
+      <span id="playText">Place it</span>
+      <span class="play__sub" id="playSub"></span>
+    </button>
+
+    <div class="prompt" id="promptBox" role="group" aria-label="Your move"></div>
+
+    <div class="rail__section rail__section--odds">
+      <button class="disclose" id="oddsToggle" aria-expanded="false" aria-controls="oddsPanel">
+        <span>What the house takes</span><span class="disclose__chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="odds" id="oddsPanel" hidden></div>
+    </div>
+
+    <div class="rail__section rail__section--crew">
+      <h3 class="rail__label">The crew</h3>
+      <ul class="crew" id="crewList"></ul>
+    </div>
+  </aside>
+
+  <footer class="ticker" id="ticker" aria-live="polite" aria-label="What everyone is saying"></footer>
+</div>
+
+<div class="screens" id="screens"></div>
+
+<div class="boot" id="boot">
+  <div class="boot__inner">
+    <div class="boot__mark" aria-hidden="true">♠</div>
+    <p class="boot__text" id="bootText">Opening the doors…</p>
+    <div class="boot__bar"><i id="bootFill"></i></div>
+  </div>
+</div>
+
+<noscript>
+  <div class="boot"><div class="boot__inner">
+    <div class="boot__mark">♠</div>
+    <p class="boot__text">This one needs JavaScript. The whole casino is JavaScript.</p>
+  </div></div>
+</noscript>
+
+<script src="../vendor/three.min.js"></script>
+<script src="../vendor/cannon.min.js"></script>
+<script src="core/rng.js"></script>
+<script src="core/config.js"></script>
+<script src="core/state.js"></script>
+<script src="core/audio.js"></script>
+<script src="gfx/models.js"></script>
+<script src="gfx/env.js"></script>
+<script src="gfx/stage.js"></script>
+<script src="gfx/physics.js"></script>
+<script src="gfx/cards.js"></script>
+<script src="games/registry.js"></script>
+<script src="games/coinflip.js"></script>
+<script src="games/dice.js"></script>
+<script src="games/slots.js"></script>
+<script src="games/duckrace.js"></script>
+<script src="games/roulette.js"></script>
+<script src="games/blackjack.js"></script>
+<script src="games/highlow.js"></script>
+<script src="games/plinko.js"></script>
+<script src="games/crash.js"></script>
+<script src="games/mines.js"></script>
+<script src="games/ladder.js"></script>
+<script src="games/chamber.js"></script>
+<script src="core/friends.js"></script>
+<script src="ui/screens.js"></script>
+<script src="ui/modmenu.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
