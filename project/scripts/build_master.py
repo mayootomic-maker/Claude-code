@@ -14,6 +14,7 @@ import env_common as E
 import env_plaza
 import env_hall
 import env_world
+import comp
 import shots as SH
 
 OUT = os.path.join(K.ROOT, "koenigsegg_final.blend")
@@ -258,6 +259,9 @@ def main():
     scene.render.image_settings.color_depth = '8'
     scene.render.image_settings.compression = 15
     scene.render.filepath = os.path.join(K.ROOT, "renders", "final", "f_")
+
+    # Camera and film character: bloom, chromatic aberration, vignette, grain.
+    comp.build(scene)
 
     bpy.ops.wm.save_as_mainfile(filepath=OUT)
     print("MASTER_SAVED", OUT)
