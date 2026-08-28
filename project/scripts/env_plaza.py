@@ -6,6 +6,7 @@ need, not from a plan of a real venue. The car is at the origin facing +Y.
 import bpy, math, random
 import env_common as E
 import lib_kseg as K
+from env_hall import _rough_surface
 
 NAME = "ENV_PLAZA"
 
@@ -14,11 +15,11 @@ def build():
     coll = K.new_collection(NAME)
 
     tarmac = _wet_tarmac()
-    concrete = E._mat("PLZ_concrete", (0.072, 0.070, 0.066), 0.64)
+    concrete = _rough_surface("PLZ_concrete", 0.072, 0.64, 0.075, 0.19, bump=0.40)
     concrete_dark = E._mat("PLZ_concrete_dark", (0.0115, 0.0112, 0.0110), 0.70)
-    kerb = E._mat("PLZ_kerb", (0.098, 0.097, 0.093), 0.58)
-    glassbld = E._mat("PLZ_glass", (0.055, 0.062, 0.070), 0.10, metallic=0.0, coat=0.5)
-    stone = E._mat("PLZ_stone", (0.140, 0.129, 0.110), 0.70)
+    kerb = _rough_surface("PLZ_kerb", 0.098, 0.58, 0.55, 0.22, bump=0.30)
+    glassbld = _rough_surface("PLZ_glass", 0.058, 0.12, 0.30, 0.30, bump=0.06)
+    stone = _rough_surface("PLZ_stone", 0.140, 0.70, 0.06, 0.20, bump=0.42)
     darkmetal = E._mat("PLZ_darkmetal", (0.030, 0.030, 0.032), 0.38, metallic=0.8)
     foliage_set = [E._mat("PLZ_foliage_a", (0.026, 0.048, 0.020), 0.80),
                    E._mat("PLZ_foliage_b", (0.038, 0.066, 0.026), 0.78),
