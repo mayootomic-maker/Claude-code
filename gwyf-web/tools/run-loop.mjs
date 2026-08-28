@@ -18,6 +18,34 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
 
+/* Getting onto a floor.
+
+   The day does not begin on the briefing screen any more -- that opens the
+   lobby, and the five minutes start when you get in the limo. Every scenario
+   here drives days rather than rooms, so each one boards the limo itself and
+   waits for the floor to finish loading before ending the day on it. Installed
+   on the page so all three scenarios call the same one. */
+async function installBoarding(page) {
+  await page.evaluate(() => {
+    window.__onTheFloor = async () => {
+      const shell = window.GWShell;
+      // Wait for whatever room is already loading before asking for another.
+      // Calling boardLimo while the lobby is still building hits the shell's
+      // own re-entry guard, does nothing, and leaves the day never started --
+      // which reads exactly like the report screen having no way forward.
+      const quiet = async () => {
+        for (let i = 0; i < 400 && (GWLoading.isOpen() || shell.floorBusy); i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      };
+      await quiet();
+      if (shell.store.s.phase !== 'floor') shell.boardLimo();
+      await quiet();
+      await new Promise((r) => setTimeout(r, 60));
+    };
+  });
+}
+
 async function play(label, setup) {
   const page = await browser.newPage({ viewport: { width: 1200, height: 780 } });
   const errors = [];
@@ -34,6 +62,7 @@ async function play(label, setup) {
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
   await page.click('[data-go]');
   await page.waitForTimeout(300);
+  await installBoarding(page);
 
   const result = await page.evaluate(async (setupName) => {
     const shell = window.GWShell;
@@ -48,6 +77,7 @@ async function play(label, setup) {
       else s.bank = day < 3 ? s.quota + 5 : 0;
       if (setupName === 'pay' && s.day >= 3) s.debt = 0;
 
+      await window.__onTheFloor();
       shell.endDay();
       await new Promise((r) => setTimeout(r, 120));
       log.push('day ' + s.day + ': strikes ' + s.strikes + ', debt ' + Math.round(s.debt)
@@ -58,10 +88,6 @@ async function play(label, setup) {
       if (end) { end.click(); await new Promise((r) => setTimeout(r, 200)); break; }
       if (!next) { log.push('NO WAY FORWARD from the report screen'); break; }
       next.click();
-      await new Promise((r) => setTimeout(r, 150));
-      const go = document.querySelector('[data-go]');
-      if (!go) { log.push('NO BRIEFING after the report'); break; }
-      go.click();
       await new Promise((r) => setTimeout(r, 150));
     }
     return {
@@ -102,6 +128,7 @@ for (const [label, setup] of [['paid', 'pay'], ['house', 'fail'], ['mixed', 'mix
   await page.reload();
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
   await page.click('[data-go]');
+  await installBoarding(page);
   const paid = await page.evaluate(async () => {
     const shell = window.GWShell;
     shell.store.s.mods.quietFriends = true;
@@ -109,6 +136,7 @@ for (const [label, setup] of [['paid', 'pay'], ['house', 'fail'], ['mixed', 'mix
     for (let i = 0; i < 8 && !shell.store.s.ending; i++) {
       const s = shell.store.s;
       s.bank = s.quota + s.debt + 500;      // a very good night
+      await window.__onTheFloor();
       shell.endDay();
       await new Promise((r) => setTimeout(r, 150));
       const pay = document.querySelectorAll('[data-pay]');
@@ -123,8 +151,6 @@ for (const [label, setup] of [['paid', 'pay'], ['house', 'fail'], ['mixed', 'mix
       if (!next) { log.push('NO WAY FORWARD'); break; }
       next.click();
       await new Promise((r) => setTimeout(r, 150));
-      const go = document.querySelector('[data-go]');
-      if (go) { go.click(); await new Promise((r) => setTimeout(r, 150)); }
     }
     return { log, ending: shell.store.s.ending,
              title: (document.querySelector('.sheet__title') || {}).textContent };
@@ -148,12 +174,14 @@ await page.evaluate(() => localStorage.clear());
 await page.reload();
 await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
 await page.click('[data-go]');
+await installBoarding(page);
 const runner = await page.evaluate(async () => {
   const shell = window.GWShell;
   shell.store.s.mods.quietFriends = true;
   shell.store.s.day = 5;
   shell.store.s.quota = GWConfig.quotaFor(5);
   shell.store.s.bank = shell.store.s.quota + 4000;
+  await window.__onTheFloor();
   shell.endDay();
   await new Promise((r) => setTimeout(r, 200));
   const run = document.querySelector('[data-run]');
