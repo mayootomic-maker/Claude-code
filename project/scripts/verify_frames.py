@@ -5,7 +5,9 @@ import os, sys, struct
 
 root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 outdir = os.path.join(root, "renders", "final")
-first, last = 1, 996
+sys.path.insert(0, os.path.join(root, "scripts"))
+import shots as SH
+first, last = SH.FIRST_FRAME, SH.LAST_FRAME
 if len(sys.argv) > 2:
     first, last = int(sys.argv[1]), int(sys.argv[2])
 

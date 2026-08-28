@@ -3,6 +3,11 @@
 A shot-for-shot Blender reconstruction of `reference/koenigsegg_reference.mp4`
 (1920×1080, 60 fps, 16.600 s, 996 frames, 22 shots).
 
+The rebuild keeps the reference's shot order and relative rhythm but holds each
+shot longer: `DURATION_SCALE` in `shots.py` is `1.5`, giving **1496 frames /
+24.933 s** at 60 fps. The reference cuts every 0.70 s, which is too quick to
+read the detail shots. Set `DURATION_SCALE = 1.0` to match it frame for frame.
+
 ## Layout
 
 ```
@@ -39,7 +44,7 @@ for encoding.
 
 ## Rendering the film
 
-Everything is already set up in the .blend: 996 frames at 60 fps, Cycles, AgX,
+Everything is already set up in the .blend: 1496 frames at 60 fps, Cycles, AgX,
 motion blur, per-shot depth of field, and camera bindings on the timeline.
 
 ```bash
@@ -62,7 +67,7 @@ GPU backend (OptiX, CUDA, HIP, oneAPI, Metal) and falls back to CPU with a
 printed notice rather than silently rendering slowly. `--force` re-renders
 frames that are already present.
 
-`verify_frames.py` checks that all 996 frames exist, are non-trivial in size and
+`verify_frames.py` checks that every expected frame exists, are non-trivial in size and
 end with a valid PNG `IEND` marker, so a half-written frame cannot reach the
 encode. `encode.sh` runs it before encoding and exits if anything is missing.
 
@@ -97,6 +102,8 @@ blender -b -noaudio --factory-startup -P project/scripts/build_master.py
 | `env_hall.py` | the indoor hall, its world and light rig |
 | `shots.py` | the 22-shot table: timing, lens, framing, focus |
 | `build_master.py` | assembles all of the above into the master .blend |
+| `export_transforms.py` | dumps the source's world matrices (see below) |
+| `validate_scene.py` | structural check on the built .blend; gates rendering |
 
 Diagnostics used while building, kept because they are useful again:
 `inspect_model.py` (writes `scene_inventory.json`), `probe_mats.py` (which
@@ -139,6 +146,20 @@ construction and each shot is tuned in terms a cinematographer would use.
 - **Bounce lights are deliberately small.** Room-sized upward area lights lit
   the crowd and the walls from below and flattened both locations into white
   voids. The fills that replaced them are local to the car.
+- **The car's placement comes from `source_transforms.json`, not the parents.**
+  The port's wheels are positioned through a parent chain ending in bone
+  parenting. Appending those objects and re-parenting them crashes Blender's
+  depsgraph, so `link_car()` cuts every parent before anything is linked - and
+  that throws the placement away with it. The world matrices are exported once
+  by `export_transforms.py` (with the source opened as the main file, where the
+  depsgraph resolves) and re-applied on import. Assuming those parents were
+  identity transforms scattered three wheels outside the bodywork and left one
+  inside the cabin.
+- **The ground lift is measured, and the parent inverse is identity.** The lift
+  comes from the lowest vertex at import time. Setting the children's
+  `matrix_parent_inverse` to the inverse of the root's matrix - the usual "keep
+  transform" idiom - cancels the root's own transform, which silently left the
+  whole car sunk 0.35 m into the ground.
 - **The indoor look needs both light systems.** The big window key draws the
   long flank highlight; the small ceiling downlights make the crisp round
   specular dots on the bonnet. Dropping either one loses half the look.

@@ -35,7 +35,8 @@ CARBON_MATS = ("vehicle_mesh.011", "vehicle_mesh.009", "vehicle_mesh.034",
 TYRE_MATS = ("vehicle_tire.017", "vehicle_tire.013")
 # The model carries acid-green, blue and yellow GTA accent trim that the
 # reference car simply does not have. They are neutralised to dark carbon.
-NEUTRALIZE_MATS = ("vehicle_mesh.023", "vehicle_mesh.022", "vehicle_mesh.029")
+NEUTRALIZE_MATS = ("vehicle_mesh.023", "vehicle_mesh.022", "vehicle_mesh.029",
+                   "vehicle_mesh.030")
 HUB_OBJECTS = ("hub_lf", "hub_rf", "hub_lr", "hub_rr")
 DISC_MATS = ("vehicle_tire.015",)
 WHEEL_MATS = ("vehicle_tire.014",)
@@ -268,6 +269,24 @@ def build_glass(mat, tint=(0.105, 0.105, 0.120), roughness=0.035, inner=False):
 
 # ------------------------------------------------- re-tune an imported shader
 
+
+def _links_into(nt, node, socket_name):
+    """Links feeding one input socket.
+
+    Compared by node identity and socket name rather than `link.to_socket is
+    node.inputs[name]`. Blender hands back a fresh Python wrapper on each
+    property access, so the `is` test silently matched nothing and several
+    rewires quietly did nothing at all.
+    """
+    return [l for l in nt.links
+            if l.to_node == node and l.to_socket.name == socket_name]
+
+
+def _unlink(nt, node, socket_name):
+    for l in _links_into(nt, node, socket_name):
+        nt.links.remove(l)
+
+
 def _nodes(mat):
     nt = mat.node_tree
     return (nt,
@@ -283,9 +302,7 @@ def spec_to_roughness(mat, lo, hi):
     nt, b, _, spec, _ = _nodes(mat)
     if not b:
         return
-    for l in list(nt.links):
-        if l.to_socket is b.inputs.get("Specular IOR Level"):
-            nt.links.remove(l)
+    _unlink(nt, b, "Specular IOR Level")
     b.inputs["Specular IOR Level"].default_value = 0.5
     if not spec:
         b.inputs["Roughness"].default_value = (lo + hi) * 0.5
@@ -305,9 +322,7 @@ def opaque(mat):
     nt, b, _, _, _ = _nodes(mat)
     if not b:
         return
-    for l in list(nt.links):
-        if l.to_socket is b.inputs.get("Alpha"):
-            nt.links.remove(l)
+    _unlink(nt, b, "Alpha")
     b.inputs["Alpha"].default_value = 1.0
     mat.blend_method = 'OPAQUE'
 
@@ -335,6 +350,7 @@ def hue_shift_diffuse(mat, hue, sat, val):
     nt, b, diff, _, _ = _nodes(mat)
     if not (b and diff):
         return
+    _unlink(nt, b, "Base Color")
     hsv = nt.nodes.new("ShaderNodeHueSaturation"); hsv.location = (-260, 200)
     hsv.inputs["Hue"].default_value = hue
     hsv.inputs["Saturation"].default_value = sat
@@ -349,12 +365,9 @@ def emissive(mat, strength, color=None):
         return
     b.inputs["Emission Strength"].default_value = strength
     if color:
-        for l in list(nt.links):
-            if l.to_socket is b.inputs.get("Emission Color"):
-                nt.links.remove(l)
+        _unlink(nt, b, "Emission Color")
         b.inputs["Emission Color"].default_value = (*color, 1)
-    elif diff and not any(l.to_socket is b.inputs.get("Emission Color")
-                          for l in nt.links):
+    elif diff and not _links_into(nt, b, "Emission Color"):
         nt.links.new(diff.outputs["Color"], b.inputs["Emission Color"])
 
 
@@ -430,9 +443,22 @@ def apply_all(verbose=True):
             opaque(m)
             spec_to_roughness(m, 0.68, 0.88)
             set_bsdf(m, metallic=0.0, coat_weight=0.0, ior=1.5)
-            _, b, diff, _, _ = _nodes(m)
+            nt, b, diff, _, _ = _nodes(m)
             if b and not diff:
                 b.inputs["Base Color"].default_value = (0.016, 0.016, 0.017, 1)
+            elif b and diff:
+                # Rubber is dark and its printed lettering is dim. Left as
+                # authored, the white sidewall text read as bright pinstripes
+                # around the rim in every wheel shot. A plain Mix in multiply
+                # mode keeps the lettering legible while pulling the whole
+                # texture down into rubber values.
+                _unlink(nt, b, "Base Color")
+                dim = nt.nodes.new("ShaderNodeMixRGB"); dim.location = (-260, 240)
+                dim.blend_type = 'MULTIPLY'
+                dim.inputs["Fac"].default_value = 1.0
+                dim.inputs["Color2"].default_value = (0.22, 0.22, 0.215, 1)
+                nt.links.new(diff.outputs["Color"], dim.inputs["Color1"])
+                nt.links.new(dim.outputs["Color"], b.inputs["Base Color"])
             normal_strength(m, 1.6)
             done.append(("tyre", n))
 
@@ -442,9 +468,7 @@ def apply_all(verbose=True):
             opaque(m)
             nt, b, diff, _, _ = _nodes(m)
             if b:
-                for l in list(nt.links):
-                    if l.to_socket is b.inputs.get("Base Color"):
-                        nt.links.remove(l)
+                _unlink(nt, b, "Base Color")
                 b.inputs["Base Color"].default_value = (0.016, 0.016, 0.018, 1)
             spec_to_roughness(m, 0.26, 0.44)
             set_bsdf(m, metallic=0.0, coat_weight=0.2, coat_roughness=0.08)
@@ -457,7 +481,7 @@ def apply_all(verbose=True):
         if m:
             opaque(m)
             # The source texture is warm; carbon-ceramic reads neutral grey.
-            hue_shift_diffuse(m, 0.5, 0.12, 0.85)
+            hue_shift_diffuse(m, 0.5, 0.05, 0.62)
             spec_to_roughness(m, 0.30, 0.48)
             set_bsdf(m, metallic=0.55)
             normal_strength(m, 1.2)

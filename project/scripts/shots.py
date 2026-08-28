@@ -28,7 +28,9 @@ import math
 FPS = 60
 SENSOR = 36.0
 
-RANGES = [
+# The reference's own cuts, at its 60 fps: (name, first frame, last frame).
+# 22 shots, 996 frames, 16.600 s, averaging 0.70 s a shot.
+REF_RANGES = [
     ("S01", 1, 56), ("S02", 57, 100), ("S03", 101, 142), ("S04", 143, 180),
     ("S05", 181, 269), ("S06", 270, 310), ("S07", 311, 352), ("S08", 353, 392),
     ("S09", 393, 436), ("S10", 437, 478), ("S11", 479, 523), ("S12", 524, 561),
@@ -36,6 +38,25 @@ RANGES = [
     ("S17", 733, 772), ("S18", 773, 812), ("S19", 813, 854), ("S20", 855, 899),
     ("S21", 900, 939), ("S22", 940, 996),
 ]
+
+# Every shot is held this much longer than the reference. The reference cuts
+# every 0.70 s, which is too quick to read the detail shots in a rendered
+# version; 1.5x gives each shot about a second while keeping the relative
+# rhythm - S05 stays the long one, S22 stays the outro hold - exactly as the
+# reference has it. Set to 1.0 to match the reference frame for frame.
+DURATION_SCALE = 1.5
+
+
+def _scaled_ranges(scale):
+    out, cursor = [], 1
+    for name, a, b in REF_RANGES:
+        length = max(1, round((b - a + 1) * scale))
+        out.append((name, cursor, cursor + length - 1))
+        cursor += length
+    return out
+
+
+RANGES = _scaled_ranges(DURATION_SCALE)
 
 SHOTS = {
 "S01": dict(loc="plaza", lens=40, fstop=2.0, shake=0.010,

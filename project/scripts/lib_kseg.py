@@ -4,14 +4,15 @@ Everything here is deterministic and idempotent so the master scene can be
 rebuilt from the untouched source .blend at any time.
 """
 import bpy, os, math, json
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_BLEND = os.path.join(ROOT, "source", "koenigsegg_source.blend")
+TRANSFORMS_JSON = os.path.join(ROOT, "source_transforms.json")
 
-# Measured from the source file (see project/scene_inventory.json).
-# Car runs along Y with the nose at +Y; wheel contact patch sits at Z=-0.3891.
-WHEEL_BOTTOM_Z = -0.3891
+# The car runs along Y with the nose at +Y. The ground lift is measured from
+# the geometry at import time rather than hard-coded, because the hard-coded
+# value was read off a wheel that turned out to be mispositioned.
 # Objects in the source that are scene dressing from the original author,
 # not part of the car.
 SOURCE_JUNK = {"Plane", "Text", "Camera", "Spot", "Spot.001"}
@@ -35,15 +36,26 @@ def purge_scene():
 def link_car(target_collection_name="KOENIGSEGG"):
     """Append every car object from the untouched source into a named collection.
 
-    The source is a GTA V port whose meshes hang off an armature by bone
-    parenting. Nothing in this film animates the car body, and those bone
-    relations make Blender's dependency graph fall over once the objects are
-    re-parented, so the hierarchy is flattened on import: world matrices are
-    baked, parents cleared, and the armature and rig empties discarded.
+    The source is a GTA V port whose meshes hang off empties that are in turn
+    bone-parented to an armature. Appending those objects and then re-parenting
+    them makes Blender's dependency graph fall over, so every parent is cut
+    before anything is linked into the scene.
 
-    Returns (collection, root_empty). The car is lifted so the tyres rest on
-    Z=0, which every camera and environment in this project assumes.
+    Cutting the parents also throws away the placement they carried -- and for
+    the four wheels that placement is the only thing putting them in the arches.
+    An earlier version assumed all the parents were identity transforms; they
+    are not, and the result was three wheels scattered outside the bodywork and
+    one sitting inside the cabin. The real world matrices are read back from
+    project/source_transforms.json, exported by export_transforms.py with the
+    source opened as the main file, where the depsgraph resolves normally.
+
+    The car is then lifted so its lowest vertex rests on Z=0, which every
+    camera, light and environment in this project assumes.
+
+    Returns (collection, root_empty).
     """
+    transforms = _load_source_transforms()
+
     with bpy.data.libraries.load(SOURCE_BLEND, link=False) as (src, dst):
         dst.objects = [n for n in src.objects if n not in SOURCE_JUNK]
 
@@ -51,12 +63,6 @@ def link_car(target_collection_name="KOENIGSEGG"):
     bpy.context.scene.collection.children.link(coll)
 
     loaded = [o for o in dst.objects if o is not None]
-
-    # Cut the bone parenting *before* anything enters the scene. Once these
-    # objects are linked, Blender builds a dependency graph, fails to resolve
-    # the armature bone relations the port carries, and crashes. Nothing here
-    # is deformed by the rig, and every parent in the source contributes an
-    # identity transform, so clearing them loses no placement.
     for ob in loaded:
         ob.parent = None
         ob.parent_type = 'OBJECT'
@@ -64,6 +70,17 @@ def link_car(target_collection_name="KOENIGSEGG"):
 
     for ob in loaded:
         coll.objects.link(ob)
+
+    missing = []
+    for ob in loaded:
+        m = transforms.get(ob.name)
+        if m is None:
+            missing.append(ob.name)
+            continue
+        ob.matrix_world = Matrix(m)
+    if missing:
+        raise RuntimeError(
+            "no exported transform for: %s -- rerun export_transforms.py" % missing)
     bpy.context.view_layer.update()
 
     # The armature and the port's rig empties have no further purpose.
@@ -72,18 +89,47 @@ def link_car(target_collection_name="KOENIGSEGG"):
             bpy.data.objects.remove(ob, do_unlink=True)
             loaded.remove(ob)
 
+    lift = -_lowest_vertex_z(loaded)
+
     root = bpy.data.objects.new("KSEG_ROOT", None)
     root.empty_display_type = 'PLAIN_AXES'
     root.empty_display_size = 1.5
     coll.objects.link(root)
-    root.location = (0.0, 0.0, -WHEEL_BOTTOM_Z)
-    bpy.context.view_layer.update()
 
+    # An identity parent inverse is deliberate. Setting it to the inverse of the
+    # root's matrix -- the usual "keep transform" idiom -- cancels the root's
+    # own transform, which is why the ground lift silently did nothing and the
+    # whole car rendered sunk into the tarmac.
     for ob in loaded:
         ob.parent = root
-        ob.matrix_parent_inverse = root.matrix_world.inverted()
+        ob.matrix_parent_inverse = Matrix.Identity(4)
+    root.location = (0.0, 0.0, lift)
     bpy.context.view_layer.update()
     return coll, root
+
+
+def _load_source_transforms():
+    if not os.path.exists(TRANSFORMS_JSON):
+        raise RuntimeError(
+            "%s is missing. Generate it with:\n"
+            "  blender -b -noaudio %s -P %s/export_transforms.py"
+            % (TRANSFORMS_JSON, SOURCE_BLEND, os.path.join(ROOT, "scripts")))
+    with open(TRANSFORMS_JSON) as f:
+        return json.load(f)
+
+
+def _lowest_vertex_z(objects):
+    """True lowest point, from vertices rather than bounding boxes."""
+    lo = 1e9
+    for ob in objects:
+        if ob.type != 'MESH':
+            continue
+        mw = ob.matrix_world
+        for v in ob.data.vertices:
+            z = (mw @ v.co).z
+            if z < lo:
+                lo = z
+    return lo
 
 
 def car_objects():

@@ -9,7 +9,6 @@ from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib_kseg as K
-from lib_kseg import WHEEL_BOTTOM_Z
 import mat_car
 import env_common as E
 import env_plaza
@@ -72,18 +71,24 @@ def _open_door():
     door = bpy.data.objects.get("door_dside_f")
     if not door:
         return None
+    from mathutils import Matrix
+    hinge = Vector((-0.72, 0.98, 0.50))   # model space, before the ground lift
+
     piv = bpy.data.objects.new("DOOR_L_PIVOT", None)
     piv.empty_display_type = 'ARROWS'
     piv.empty_display_size = 0.3
     bpy.data.collections["KOENIGSEGG"].objects.link(piv)
-    # Placed in world space, not under KSEG_ROOT: reading the pivot's world
-    # matrix before the depsgraph had resolved its own parent gave the door a
-    # stale parent inverse, which left it hanging open in every shot.
-    piv.location = (-0.72, 0.98, 0.12 - WHEEL_BOTTOM_Z)
-    bpy.context.view_layer.update()
+    # Sits under KSEG_ROOT so it inherits the ground lift with the rest of the
+    # car. Both inverses are written explicitly instead of read back from
+    # matrix_world, which is stale until the depsgraph has evaluated and once
+    # left the door hanging open in every shot.
+    root = bpy.data.objects.get("KSEG_ROOT")
+    piv.parent = root
+    piv.matrix_parent_inverse = Matrix.Identity(4)
+    piv.location = hinge
 
     door.parent = piv
-    door.matrix_parent_inverse = piv.matrix_world.inverted()
+    door.matrix_parent_inverse = Matrix.Translation(-hinge)
     bpy.context.view_layer.update()
 
     a, b = SH.RANGES[19][1], SH.RANGES[19][2]   # S20

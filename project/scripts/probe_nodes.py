@@ -2,8 +2,9 @@ import bpy, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib_kseg as K
 K.purge_scene(); K.link_car()
-for name in ["vehicle_paint1", "vehicle_mesh.011", "vehicle_tire.017", "vehicle_vehglass",
-             "vehicle_mesh.023", "vehicle_lightsemissive.004", "vehicle_tire.014"]:
+import sys as _s
+names = _s.argv[_s.argv.index("--")+1:] if "--" in _s.argv else ["vehicle_mesh.029"]
+for name in names:
     m = bpy.data.materials.get(name)
     print(f"\n=== {name} === use_nodes={m.use_nodes if m else None} blend={getattr(m,'blend_method',None)}")
     if not m or not m.use_nodes:
