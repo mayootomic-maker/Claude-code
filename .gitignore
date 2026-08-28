@@ -13,3 +13,27 @@ app/e2e/shots/
 .env
 .env.*
 !.env.example
+
+# Blender project working files
+reference/frames_overview/
+reference/gap/
+reference/shots/
+project/previews/
+project/renders/
+project/source/*.blend
+project/koenigsegg_final.blend
+
+# Blender backup files
+*.blend1
+*.blend2
+__pycache__/
+*.pyc
+# Keep the encoded videos and a set of reference-vs-render comparisons; skip
+# the bulk frame dumps and the PNG sequence.
+output/*
+!output/*.mp4
+project/previews/*
+!project/previews/compare/
+
+# Fetched by project/scripts/bootstrap.sh
+project/assets/hdri/
