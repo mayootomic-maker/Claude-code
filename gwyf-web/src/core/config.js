@@ -24,7 +24,7 @@
   const FLOORS = [
     {
       id: 'lobby', name: 'The Lobby', env: 'velvet', unlockBank: 0, unlockDay: 1,
-      tag: 'Ground floor', accent: '#d9a441',
+      tag: 'Ground floor', accent: '#e0913f',
       blurb: 'Sticky carpet, free peanuts, and the only games in the building that '
            + 'will not take your whole night in one go.',
       games: ['coinflip', 'dice', 'slots', 'duckrace'],
@@ -32,7 +32,7 @@
     },
     {
       id: 'velvet', name: 'Velvet Hall', env: 'crimson', unlockBank: 2500, unlockDay: 4,
-      tag: 'Second floor', accent: '#e8505f',
+      tag: 'Second floor', accent: '#ff3fd0',
       blurb: 'Where the carpet stops being sticky and the drinks stop being free. '
            + 'The tables here have a croupier and a memory.',
       games: ['roulette', 'blackjack', 'highlow', 'plinko'],
@@ -40,7 +40,7 @@
     },
     {
       id: 'vault', name: 'The Vault', env: 'emerald', unlockBank: 12000, unlockDay: 7,
-      tag: 'Third floor', accent: '#4fbf7b',
+      tag: 'Third floor', accent: '#8fe6ff',
       blurb: 'No windows, no clocks, no exit signs. The house keeps the odds in '
            + 'a safe down here and it does not open it for you.',
       games: ['crash', 'mines', 'ladder'],
@@ -48,7 +48,7 @@
     },
     {
       id: 'penthouse', name: 'The Penthouse', env: 'void', unlockBank: 45000, unlockDay: 10,
-      tag: 'Top floor', accent: '#b48ce8',
+      tag: 'Top floor', accent: '#e8c46a',
       blurb: 'One game. It does not have a house edge because it does not need one.',
       games: ['chamber'],
       minBet: 1000, maxBet: 100000,

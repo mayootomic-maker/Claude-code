@@ -10,12 +10,40 @@
   'use strict';
 
   const EYE = 1.62;
+  const CROUCH_EYE = 1.05;
   const RADIUS = 0.34;
   const WALK = 3.1;
   const RUN = 5.0;
+  const CROUCH_WALK = 1.5;
   const ACCEL = 14;
+  /* Jumping.
+
+     Real gravity at 9.81 m/s² gives a hang time that feels like the moon in a
+     first-person game, so this is more than double it and the impulse is set to
+     match: a 0.62 m apex reached in a bit over a third of a second, which is
+     the shape every shooter has converged on. */
+  const GRAVITY = 22;
+  const JUMP = 5.2;
+  const CROUCH_RATE = 9;       // how fast you drop and stand back up
   const REACH = 1.9;   // from the edge of a machine, not its centre
   const FOV_DOT = 0.32;        // roughly 70 degrees either side of straight ahead
+
+  /* The first mouse event after a lock is not a mouse movement.
+
+     `movementX` is the distance from the pointer's previous position, and
+     taking the lock warps the pointer to the middle of the screen -- so the
+     first event after the warp reports the distance from wherever you clicked
+     to wherever the browser put it. That arrives as one delta of several
+     hundred pixels and throws the view at the ceiling the instant you click to
+     play, which is not something you can recover from by moving the mouse back:
+     it is a real turn, and it happens again every time you click in.
+
+     So the first event after a lock is dropped, and everything after it is
+     clamped. A real mouse reports a few dozen pixels per event even when it is
+     flicked across a desk; a single event past MAX_STEP is the browser having a
+     moment rather than a person moving their hand. */
+  const MAX_STEP = 140;
+  const SETTLE = 80;           // ms after a lock in which deltas are still suspect
 
   function create(opts) {
     const stage = opts.stage;
@@ -27,11 +55,22 @@
       vel: new THREE.Vector3(),
       yaw: 0, pitch: 0,
       bob: 0, stepped: 0,
+      // Vertical, which the collision solver knows nothing about: the floor is
+      // flat, so the ground is always y = 0 and a jump is one number.
+      y: 0, vy: 0, grounded: true,
+      crouching: false, height: EYE,
+      // What the camera is actually pointing at, which trails the input when
+      // camera smoothing is on. The real game eases this and lets you turn it
+      // off; both are here for the same reason.
+      viewYaw: 0, viewPitch: 0, smoothing: 0.35, headBob: true,
       active: false,
       locked: false,
       level: null,
       nearest: null,
       sensitivity: 0.0022,
+      invert: false,
+      lockedAt: 0,
+      warmup: false,
       // Touch devices drive these instead of the keyboard.
       stick: { x: 0, y: 0 },
       lookDelta: { x: 0, y: 0 },
@@ -43,11 +82,19 @@
       KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b',
       KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
     };
+    const CROUCH_KEYS = { ControlLeft: 1, ControlRight: 1, KeyC: 1 };
 
     function onKeyDown(e) {
       if (e.target && e.target.tagName === 'INPUT') return;
       if (MOVE_KEYS[e.code]) { keys.add(MOVE_KEYS[e.code]); e.preventDefault(); }
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.sprinting = true;
+      if (CROUCH_KEYS[e.code]) { state.crouching = true; e.preventDefault(); }
+      if (e.code === 'Space') {
+        // Held space must not machine-gun the jump; the ground check does that
+        // on its own, but the browser also scrolls on space by default.
+        e.preventDefault();
+        if (state.active) jump();
+      }
       if (e.code === 'KeyE' || e.code === 'Enter') {
         if (state.active && opts.onInteract) opts.onInteract(state.nearest);
       }
@@ -55,13 +102,29 @@
     function onKeyUp(e) {
       if (MOVE_KEYS[e.code]) keys.delete(MOVE_KEYS[e.code]);
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.sprinting = false;
+      if (CROUCH_KEYS[e.code]) state.crouching = false;
     }
-    function onBlur() { keys.clear(); state.sprinting = false; }
+    function onBlur() { keys.clear(); state.sprinting = false; state.crouching = false; }
+
+    function jump() {
+      if (!state.grounded) return;
+      state.vy = JUMP;
+      state.grounded = false;
+      audio.play('step');
+    }
 
     function onMouseMove(e) {
       if (!state.locked || !state.active) return;
-      state.yaw -= e.movementX * state.sensitivity;
-      state.pitch -= e.movementY * state.sensitivity;
+      if (state.warmup) {
+        // One event, or any event inside the settling window, whichever lasts
+        // longer -- browsers differ on how many they emit across the warp.
+        state.warmup = false;
+        if (global.performance.now() - state.lockedAt < SETTLE) return;
+      }
+      const dx = Math.max(-MAX_STEP, Math.min(MAX_STEP, e.movementX || 0));
+      const dy = Math.max(-MAX_STEP, Math.min(MAX_STEP, e.movementY || 0));
+      state.yaw -= dx * state.sensitivity;
+      state.pitch -= dy * state.sensitivity * (state.invert ? -1 : 1);
       clampPitch();
     }
 
@@ -72,6 +135,10 @@
 
     function onLockChange() {
       state.locked = global.document.pointerLockElement === canvas;
+      if (state.locked) {
+        state.lockedAt = global.performance.now();
+        state.warmup = true;
+      }
       if (opts.onLockChange) opts.onLockChange(state.locked);
       if (!state.locked) keys.clear();
     }
@@ -99,7 +166,11 @@
       state.pos.set(level.spawn.x, 0, level.spawn.z);
       state.yaw = level.spawn.angle;
       state.pitch = -0.05;
+      state.viewYaw = state.yaw;
+      state.viewPitch = state.pitch;
       state.vel.set(0, 0, 0);
+      state.y = 0; state.vy = 0; state.grounded = true;
+      state.crouching = false; state.height = EYE;
       state.bob = 0;
       state.nearest = null;
     }
@@ -107,16 +178,20 @@
     function eye(out) {
       return (out || new THREE.Vector3()).set(
         state.pos.x,
-        EYE + Math.sin(state.bob) * 0.045,
+        state.y + state.height + (state.headBob ? Math.sin(state.bob) * 0.045 : 0),
         state.pos.z
       );
     }
 
+    /* Where the camera is pointing. Everything that asks what the player is
+       looking at asks this, including the interaction test -- aiming off the
+       input angle while the camera trails behind it means the prompt appears
+       for a machine that is not on screen yet. */
     function forward(out) {
       return (out || new THREE.Vector3()).set(
-        -Math.sin(state.yaw) * Math.cos(state.pitch),
-        Math.sin(state.pitch),
-        -Math.cos(state.yaw) * Math.cos(state.pitch)
+        -Math.sin(state.viewYaw) * Math.cos(state.viewPitch),
+        Math.sin(state.viewPitch),
+        -Math.cos(state.viewYaw) * Math.cos(state.viewPitch)
       );
     }
 
@@ -130,8 +205,11 @@
       // Touch look is applied as a delta because there is no pointer lock on a
       // phone; the keyboard path goes through mousemove instead.
       if (state.lookDelta.x || state.lookDelta.y) {
-        state.yaw -= state.lookDelta.x * 0.0045;
-        state.pitch -= state.lookDelta.y * 0.0045;
+        // Touch drags are scaled off the same setting, so one sensitivity
+        // control covers both ways of playing.
+        const k = state.sensitivity * 2.0;
+        state.yaw -= state.lookDelta.x * k;
+        state.pitch -= state.lookDelta.y * k * (state.invert ? -1 : 1);
         state.lookDelta.x = 0; state.lookDelta.y = 0;
         clampPitch();
       }
@@ -143,7 +221,8 @@
       const mag = Math.hypot(ix, iz);
       if (mag > 1) { ix /= mag; iz /= mag; }
 
-      const speed = state.sprinting ? RUN : WALK;
+      // Crouching beats sprinting: holding both should not be a fast crouch.
+      const speed = state.crouching ? CROUCH_WALK : state.sprinting ? RUN : WALK;
       const sin = Math.sin(state.yaw), cos = Math.cos(state.yaw);
       // Forward is -Z rotated by yaw; strafe is its perpendicular.
       const wantX = (-sin * iz + cos * ix) * speed;
@@ -158,14 +237,51 @@
       state.level.solids.resolve(state.pos, RADIUS);
       state.level.solids.bound(state.pos, RADIUS);
 
+      /* Up and down. The floor is flat and the ceiling is well out of reach,
+         so the whole of it is one number falling under gravity until it hits
+         zero. Landing is announced, because a jump with no landing sound reads
+         as the world having no floor. */
+      state.vy -= GRAVITY * dt;
+      state.y += state.vy * dt;
+      if (state.y <= 0) {
+        if (!state.grounded && state.vy < -3) audio.play('step');
+        state.y = 0;
+        state.vy = 0;
+        state.grounded = true;
+      }
+
+      const wantHeight = state.crouching ? CROUCH_EYE : EYE;
+      state.height += (wantHeight - state.height) * Math.min(1, CROUCH_RATE * dt);
+
       const moved = Math.hypot(state.vel.x, state.vel.z);
-      if (moved > 0.4) {
+      // No head bob in mid-air: bobbing while your feet are off the ground is
+      // the one place it stops reading as footsteps and starts reading as a
+      // camera fault.
+      if (moved > 0.4 && state.grounded) {
         state.bob += dt * moved * 2.1;
         state.stepped += moved * dt;
         if (state.stepped > 1.5) { state.stepped = 0; audio.play('step'); }
       } else {
         state.bob += dt * 0.6;
         state.stepped = 1.2;
+      }
+
+      /* Camera smoothing.
+
+         The real game eases the view and lets you turn that off, which is the
+         difference between a camera that feels weighty and one that feels
+         loose. Zero smoothing is exact 1:1 tracking; the setting is a time
+         constant, so the same value behaves the same at any frame rate. */
+      if (state.smoothing > 0.001) {
+        const k = 1 - Math.exp(-dt / (state.smoothing * 0.12));
+        let d = state.yaw - state.viewYaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        state.viewYaw += d * k;
+        state.viewPitch += (state.pitch - state.viewPitch) * k;
+      } else {
+        state.viewYaw = state.yaw;
+        state.viewPitch = state.pitch;
       }
 
       // Camera
@@ -230,6 +346,20 @@
         if (!v) { keys.clear(); state.nearest = null; }
       },
       get locked() { return state.locked; },
+      /* Look settings, applied live. Kept here rather than read from the store
+         every frame so the controller stays the only thing that knows how a
+         mouse becomes an angle. */
+      setLook(opts_) {
+        if (typeof opts_.sensitivity === 'number' && opts_.sensitivity > 0) {
+          state.sensitivity = opts_.sensitivity;
+        }
+        if (typeof opts_.invert === 'boolean') state.invert = opts_.invert;
+        if (typeof opts_.smoothing === 'number') {
+          state.smoothing = Math.max(0, Math.min(1, opts_.smoothing));
+        }
+        if (typeof opts_.headBob === 'boolean') state.headBob = opts_.headBob;
+      },
+      jump,
       get nearest() { return state.nearest; },
       /* Turn to face a point in the world -- the machine's own focal point,
          which for a table is the middle of the felt and for a slot cabinet is
@@ -240,8 +370,12 @@
         const dz = target.z - state.pos.z;
         state.yaw = Math.atan2(-dx, -dz);
         const flat = Math.hypot(dx, dz) || 1e-6;
-        state.pitch = Math.atan2(target.y - (EYE), flat);
+        state.pitch = Math.atan2(target.y - (state.y + state.height), flat);
         clampPitch();
+        // Turning to face something is a cut, not a pan: the smoothed view has
+        // to arrive with it or the aim test and the picture disagree.
+        state.viewYaw = state.yaw;
+        state.viewPitch = state.pitch;
       },
       dispose() {
         global.removeEventListener('keydown', onKeyDown);

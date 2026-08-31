@@ -44,9 +44,9 @@
 
 /* Floors repaint one variable each. */
 [data-floor='lobby']     { --accent: #d9a441; --accent-ink: #241704; }
-[data-floor='velvet']    { --accent: #e8505f; --accent-ink: #2a0709; }
-[data-floor='vault']     { --accent: #4fbf7b; --accent-ink: #04220f; }
-[data-floor='penthouse'] { --accent: #b48ce8; --accent-ink: #1b0c2c; }
+[data-floor='velvet']    { --accent: #ff5fd8; --accent-ink: #2c0524; }
+[data-floor='vault']     { --accent: #8fe6ff; --accent-ink: #04202c; }
+[data-floor='penthouse'] { --accent: #e8c46a; --accent-ink: #2a1c04; }
 
 * { box-sizing: border-box; }
 
@@ -939,3 +939,51 @@ button:disabled { cursor: not-allowed; }
    to move up out from under both of them. */
 .is-touch .useprompt { bottom: 10.5rem; }
 .is-touch .shouts { bottom: auto; top: 2.6rem; left: 0.7rem; }
+
+
+/* A settings row that carries a slider rather than a switch. */
+.modrow__slider { display: flex; align-items: center; gap: 0.6rem; }
+.modrow__slider input[type='range'] { width: 8rem; accent-color: var(--accent); }
+.modrow__slider output {
+  min-width: 3.2rem; text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem; color: var(--text-muted);
+}
+
+
+/* --- grain and vignette --------------------------------------------------
+   Every in-game frame of the real thing carries a fine halftone dither and a
+   soft darkening into the corners. Both are done here in CSS over the canvas
+   rather than as render passes: a full-screen pass costs a second draw of the
+   whole frame on a machine that may already be struggling, and this costs
+   nothing at all. */
+
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  /* Two background layers, and deliberately no box-shadow.
+
+     The first pass drew the vignette as an inset box-shadow with a 12rem blur.
+     A blur that size is recomputed over the whole stage every frame, and on a
+     software rasteriser it cost more than the 3D did -- the table harness went
+     from passing to timing out on a screenshot. A radial gradient is rasterised
+     once and costs nothing after that.
+
+     The dither is a 3px dot grid, barely there; any coarser and it reads as a
+     dirty screen rather than as print. */
+  background-image:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.035) 0.5px, transparent 0.6px),
+    radial-gradient(ellipse 78% 78% at 50% 48%, transparent 40%, rgb(0 0 0 / 0.62) 100%);
+  background-size: 3px 3px, 100% 100%;
+}
+
+/* At a table the grain stays and the vignette tightens -- the real game's
+   close shots are noticeably darker at the edges than its walking ones. */
+.app.is-table .stage::after {
+  background-image:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.035) 0.5px, transparent 0.6px),
+    radial-gradient(ellipse 70% 70% at 50% 48%, transparent 32%, rgb(0 0 0 / 0.72) 100%);
+}

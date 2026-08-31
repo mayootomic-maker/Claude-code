@@ -19,7 +19,7 @@
   const el = {};
   const shell = {
     stage: null, lib: null, store: null, audio: null, friends: null,
-    player: null, level: null, anchors: [], crew: null, touch: null,
+    player: null, level: null, anchors: [], crew: null, touch: null, hands: null,
     mode: 'boot',
     game: null, handle: null, ctx: null, anchor: null,
     busy: false, stake: 25, pending: null, endAfterHand: false,
@@ -109,6 +109,15 @@
       player: shell.player, canvas: el.scene, el, onInteract: interact,
     });
 
+    /* Your own hands, parented to the camera.
+
+       The camera has to be in the scene for its children to be drawn -- a
+       camera three.js is rendering from is not necessarily one it is walking,
+       and hands hung off a camera outside the graph simply never appear. */
+    shell.hands = GWCrew.buildHands(shell.lib);
+    shell.stage.scene.add(shell.stage.camera);
+    shell.stage.camera.add(shell.hands.group);
+
     wire();
     shell.store.on('say', renderTicker);
     shell.store.on('bank', () => { renderHud(); refreshPlayButton(); });
@@ -160,9 +169,13 @@
       // canvas is a look-drag that ended, and asking for the pointer there
       // pops a permission bar over the game for nothing.
       if (shell.touch) return;
-      if (shell.mode === 'world' && !GWScreens.isOpen() && !shell.player.locked) {
-        shell.player.lock();
-      }
+      if (shell.mode !== 'world' || GWScreens.isOpen()) return;
+      // Click to take the pointer; once you have it, click is the other half of
+      // E. Every first-person game in existence lets you use the thing you are
+      // looking at by clicking on it, and a prompt that only answers to a key
+      // reads as a machine that is broken.
+      if (shell.player.locked) interact();
+      else shell.player.lock();
     });
     el.resumeBtn.addEventListener('click', () => shell.player.lock());
     el.leaveBtn.addEventListener('click', leaveMachine);
@@ -228,6 +241,21 @@
     if (motion && motion.addEventListener) motion.addEventListener('change', applyMotion);
     shell.applyMotion = applyMotion;
     applyMotion();
+
+    /* Look settings, from the player's own preferences rather than the run.
+       0.0022 rad per pixel is the middle of the range every first-person game
+       lands in; the slider multiplies it. */
+    const applyLook = () => {
+      const meta = shell.store.meta;
+      shell.player.setLook({
+        sensitivity: 0.0022 * (Number(meta.look) || 1),
+        invert: !!meta.invertY,
+        smoothing: typeof meta.smoothing === 'number' ? meta.smoothing : 0.35,
+        headBob: meta.headBob !== false,
+      });
+    };
+    shell.applyLook = applyLook;
+    applyLook();
   }
 
   /* --- the day ------------------------------------------------------------- */
@@ -247,6 +275,9 @@
       if (shell.mode === 'world' && shell.player.active) {
         shell.player.update(dt);
         updateReticle();
+        const ps = shell.player.state;
+        shell.hands.update(ps.bob, Math.hypot(ps.vel.x, ps.vel.z), ps.vy,
+                           (GWPlayer.EYE - ps.height) / 0.57);
       }
 
       // The crew keeps moving whatever you are doing. Freezing them while you
@@ -314,6 +345,9 @@
     shell.stage.setManualCamera(mode === 'world');
     el.leaveBtn.hidden = mode !== 'table';
     el.usePrompt.hidden = true;
+    // Your hands belong to walking around, not to sitting at a table -- at a
+    // table the camera is across the felt and they would hang in mid-air.
+    shell.hands.group.visible = mode === 'world';
     if (shell.touch) shell.touch.setVisible(mode === 'world');
     if (mode !== 'world') {
       shell.player.unlock();
@@ -484,9 +518,18 @@
     try {
       record.handle = def.build(ctx);
     } catch (err) {
+      /* A table that could not be built is taken off the floor.
+
+         Leaving its anchor in place leaves a spot on the carpet that lights up
+         the use prompt and then does nothing when you press it -- which is a
+         worse failure than an empty patch of floor, because it looks like the
+         key is broken rather than like something went wrong. */
       console.error('[gwyf] could not build ' + def.id, err);
       shell.level.group.remove(holder);
       shell.building = null;
+      const i = shell.level.anchors.indexOf(anchor);
+      if (i >= 0) shell.level.anchors.splice(i, 1);
+      shell.store.say('The ' + def.name + ' is out of order tonight.', 'bad');
       return null;
     }
     shell.building = null;
@@ -581,7 +624,11 @@
     if (near && near.anchor.kind === 'fixture') { useFixture(near.anchor.action); return; }
     if (near && near.anchor.kind === 'friend') { shoutAt(near.anchor.mateId); return; }
     if (near && near.anchor.record) { useMachine(near.anchor.record); return; }
-    if (shell.player.inLift()) callLift();
+    if (shell.player.inLift()) { callLift(); return; }
+    // Pressing use with nothing in front of you has to answer. Doing nothing at
+    // all is indistinguishable from the key not working, which is what it gets
+    // reported as.
+    shell.audio.play('deny');
   }
 
   /* The shout, aimed. The Q key spends the same shout from anywhere on the
@@ -634,7 +681,14 @@
   }
 
   function useMachine(record) {
-    if (!record.view) return;
+    if (!record.view) {
+      // Every game declares one during build; if one ever does not, say so
+      // rather than swallowing the keypress.
+      console.error('[gwyf] ' + record.def.id + ' never declared a camera view');
+      shell.store.say('Cannot get a seat at the ' + record.def.name + '.', 'bad');
+      shell.audio.play('deny');
+      return;
+    }
     shell.game = record.def;
     shell.handle = record.handle;
     shell.ctx = record.ctx;
@@ -1107,6 +1161,7 @@
   Object.assign(shell, {
     prompt,
     setLive,
+    interact,
     announce(text, tone) { shell.store.say(text, tone || 'flat'); },
     setStatus(text) { el.gameStatus.textContent = text || ''; },
     highlight() {},

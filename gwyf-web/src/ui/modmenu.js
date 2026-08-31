@@ -52,6 +52,12 @@
       { id: 'quietFriends', name: 'Nobody plays', desc: 'They stop touching the account entirely.' },
     ],
     display: [
+      { pref: 'look', name: 'Look sensitivity', desc: 'How far the view turns for the same hand movement.',
+        min: 0.25, max: 3, step: 0.05 },
+      { pref: 'invertY', name: 'Invert look', desc: 'Push the mouse forward to look down.' },
+      { pref: 'smoothing', name: 'Camera smoothing', desc: 'How much the view eases behind the mouse. Zero is exact.',
+        min: 0, max: 1, step: 0.05 },
+      { pref: 'headBob', name: 'Head bob', desc: 'The walk in the camera. Off holds it steady.' },
       { id: 'reducedMotion', name: 'Reduce motion', desc: 'Shorter animations everywhere.' },
       { act: 'quality', name: 'Halve the resolution', desc: 'For a machine that is struggling.' },
       { act: 'fullQuality', name: 'Full resolution', desc: 'Put it back.' },
@@ -89,10 +95,7 @@
       const on = mod.id ? !!s.mods[mod.id] : false;
       return '<div class="modrow"><span><span class="modrow__name">' + esc(mod.name)
         + '</span><br><span class="modrow__desc">' + esc(mod.desc) + '</span></span>'
-        + (mod.id
-          ? '<button class="switch" role="switch" aria-checked="' + on + '" data-mod="' + mod.id
-            + '" aria-label="' + esc(mod.name) + '"><i></i></button>'
-          : '<button class="btn" data-act="' + mod.act + '">Do it</button>')
+        + control(mod, s, on)
         + '</div>';
     }).join('');
 
@@ -117,6 +120,49 @@
     for (const b of node.querySelectorAll('[data-act]')) {
       b.addEventListener('click', () => { act(b.dataset.act); render(); });
     }
+    for (const b of node.querySelectorAll('[data-pref]')) {
+      if (b.tagName === 'INPUT') {
+        // Live, not on release: a sensitivity you cannot feel while dragging is
+        // one you have to set by guessing.
+        b.addEventListener('input', () => {
+          setPref(b.dataset.pref, Number(b.value));
+          const out = b.parentElement.querySelector('output');
+          if (out) out.textContent = Number(b.value).toFixed(2) + '\u00d7';
+        });
+      } else {
+        b.addEventListener('click', () => {
+          setPref(b.dataset.pref, !shell.store.meta[b.dataset.pref]);
+          shell.audio.play('click');
+          render();
+        });
+      }
+    }
+  }
+
+  /* Three kinds of row. `mod` flips a flag the games read and marks the run,
+     `act` does something once, and `pref` is a control setting -- it belongs to
+     the person, not the run, so it saves to meta and never marks anything. */
+  function control(mod, s, on) {
+    if (mod.id) {
+      return '<button class="switch" role="switch" aria-checked="' + on + '" data-mod="' + mod.id
+        + '" aria-label="' + esc(mod.name) + '"><i></i></button>';
+    }
+    if (mod.act) return '<button class="btn" data-act="' + mod.act + '">Do it</button>';
+    const value = shell.store.meta[mod.pref];
+    if (mod.min === undefined) {
+      return '<button class="switch" role="switch" aria-checked="' + !!value + '" data-pref="' + mod.pref
+        + '" aria-label="' + esc(mod.name) + '"><i></i></button>';
+    }
+    return '<span class="modrow__slider"><input type="range" data-pref="' + mod.pref
+      + '" min="' + mod.min + '" max="' + mod.max + '" step="' + mod.step
+      + '" value="' + value + '" aria-label="' + esc(mod.name) + '">'
+      + '<output>' + (+value).toFixed(2) + '×</output></span>';
+  }
+
+  function setPref(name, value) {
+    shell.store.meta[name] = value;
+    shell.store.saveMeta();
+    if (shell.applyLook) shell.applyLook();
   }
 
   function flip(id) {

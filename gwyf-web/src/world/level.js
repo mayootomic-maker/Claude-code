@@ -41,11 +41,26 @@
      The room should recede and the lit tables should carry the eye. A first
      pass had walls only a little darker than the carpet and the whole floor
      came out as one orange smear with the machines lost in it. */
+  /* The four rooms, drawn from what the real game's floors actually are.
+
+     Reference: a classic Vegas floor in oxblood and plum under warm neon; a
+     black-light floor that is all magenta and cyan over bare purple concrete; a
+     white-marble atrium with glass and gold; and a gold rotunda in red and
+     gilt. The first pass here was warm charcoal and gold on all four, which
+     made the whole tower one room repeated with the lights changed.
+
+     Dark shell, bright carpet: the room should recede and the lit tables should
+     carry the eye. An earlier pass had walls only a little darker than the
+     carpet and a floor came out as one smear with the machines lost in it. */
   const THEME = {
-    lobby: { carpet: '#c08c2e', wall: 0x180f0c, trim: 0xa8792c, neon: 0xffc978, ceiling: 0x0c0806 },
-    velvet: { carpet: '#a8303c', wall: 0x1a0b0e, trim: 0x9c4149, neon: 0xff7d88, ceiling: 0x0e0709 },
-    vault: { carpet: '#2f7a50', wall: 0x0b1610, trim: 0x3a8560, neon: 0x7cf0ab, ceiling: 0x060d09 },
-    penthouse: { carpet: '#7d5bb0', wall: 0x120c1f, trim: 0x6e51a0, neon: 0xd0b0ff, ceiling: 0x080513 },
+    // Floor 0 -- the classic floor. Paisley red-and-gold carpet, maroon walls.
+    lobby: { carpet: '#8f2f45', wall: 0x2a0f18, trim: 0xc79a3e, neon: 0xffbf6b, ceiling: 0x160810 },
+    // Floor 1 -- the black-light room. Magenta and cyan over purple concrete.
+    velvet: { carpet: '#4a2560', wall: 0x220b33, trim: 0x22d3ee, neon: 0xff3fd0, ceiling: 0x120520 },
+    // Floor 2 -- the marble atrium. Pale stone, glass, teal shadow, gold trim.
+    vault: { carpet: '#9fb6b2', wall: 0x16283c, trim: 0xdfcb94, neon: 0x8fe6ff, ceiling: 0x0c1524 },
+    // Floor 3 -- the gold rotunda. Red-and-gold mosaic under a gilt ceiling.
+    penthouse: { carpet: '#8a2731', wall: 0x2a1410, trim: 0xe0b060, neon: 0xffd98a, ceiling: 0x180b08 },
   };
 
   /* Big enough for their machines with room to walk between them.

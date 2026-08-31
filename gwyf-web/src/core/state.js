@@ -37,6 +37,10 @@
     return Object.assign({
       tickets: 0, perks: {}, runs: 0, best: 0, endings: {}, theme: 'velvet',
       muted: false, reducedMotion: null, seenIntro: false,
+      // Controls, not mods. These live with the tickets because they are a
+      // property of the person playing rather than of the run, and switching
+      // one must never mark a run as modded.
+      look: 1.0, invertY: false, smoothing: 0.35, headBob: true,
     }, meta || {});
   }
 

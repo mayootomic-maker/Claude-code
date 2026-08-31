@@ -619,275 +619,201 @@ def revolver_cylinder():
 
 # --- the friends ------------------------------------------------------------
 
-"""A person, in four pieces.
+"""The people, in four pieces.
 
-   The friends are the title of the game and until now they were a ticker feed.
-   Putting them in the room means a body that can walk, and a body that can walk
-   is one that comes apart at the joints: a torso, a head on the neck, an arm
-   from the shoulder and a leg from the hip. Each is authored with its own joint
-   at the origin -- see `rig_yup` -- so the game rotates a limb about the point
-   it actually turns about, and one arm mesh serves both sides unmirrored,
-   because every part is symmetric about the body's centre plane and a negative
-   scale would reverse the winding and turn the limb inside out.
+   These are not humans. The game this follows draws everyone -- you included --
+   as a bowling pin about two heads tall: a wide oval head sat on a tapered,
+   footless teardrop body with no legs at all, two enormous eyes that take up
+   most of the face under one thick brow bar, and a pair of mitten hands that
+   float unattached beside the body. That is the single most recognisable thing
+   about it, and an earlier pass here modelled realistic adults in suits, which
+   looked fine and belonged to a different game.
 
-   Everything soft is a `loft` through cross-sections rather than a stack of
-   spheres. The first pass was spheres and the friends came out as balloon
-   animals: every overlap is a bulge, and a chest made of three ellipsoids has
-   two waists. One surface through the same waypoints is the same silhouette
-   with nothing to catch the light on.
+   So: `pin_body`, `pin_head`, `pin_hand`, and a few hats. The hands are one
+   mesh used twice and are symmetric about the body's centre plane, so no
+   negative scale is needed to mirror one -- that would reverse the winding and
+   turn it inside out.
 
-   Proportions are a real 1.78 m adult, because the player's eye is at 1.62 m
-   and a character built to a stylised height stands in the same room looking
-   like a mistake. Skin, hair, jacket and trousers are tinted per friend in the
-   game, so the four are one set of meshes and four palettes.
+   The body is a single loft rather than a stack of spheres. A pin is one
+   continuous curve from the floor to the neck; built from ellipsoids it comes
+   out as a snowman, because every overlap is a bulge.
+
+   Height is 1.52 m, not the ~1.2 m two heads would give. The rooms here are
+   built around a 1.62 m eye, and a character short enough to be strictly
+   correct stands in them looking like a child who wandered in.
 """
 
-CREW = {
-    "height": 1.78,
-    "hip": 0.92,         # hip joint above the carpet
-    "neck": 0.585,       # neck joint, above the hip
-    "shoulder": 0.515,   # shoulder joint, above the hip
-    "shoulderX": 0.155,
-    "hipX": 0.088,
-    "arm": 0.61,
-    "leg": 0.92,
+PIN = {
+    "height": 1.52,
+    "neck": 0.905,       # where the head sits, above the floor
+    "hand": 0.560,       # resting height of the floating hands
+    "handX": 0.410,      # how far out to the side they hover
+    "brow": 1.265,       # the brow bar, for anything that wants to aim at a face
 }
 
 
-def _crew_mats():
+def _pin_mats():
     return {
-        "skin": mat("crew_skin", (0.62, 0.44, 0.34), roughness=0.60),
-        "jacket": mat("crew_jacket", (0.42, 0.42, 0.44), roughness=0.74),
-        "shirt": mat("crew_shirt", (0.82, 0.81, 0.78), roughness=0.66),
-        "tie": mat("crew_tie", (0.20, 0.05, 0.07), roughness=0.42, clearcoat=0.3),
-        "hair": mat("crew_hair", (0.10, 0.075, 0.055), roughness=0.80),
-        "trouser": mat("crew_trouser", (0.13, 0.13, 0.15), roughness=0.82),
-        "shoe": mat("crew_shoe", (0.035, 0.032, 0.030), roughness=0.32, clearcoat=0.5),
-        "eye": mat("crew_eye", (0.020, 0.018, 0.020), roughness=0.12, clearcoat=1.0),
-        "white": mat("crew_sclera", (0.84, 0.83, 0.81), roughness=0.18, clearcoat=0.8),
-        "mouth": mat("crew_mouth", (0.34, 0.19, 0.17), roughness=0.55),
+        # The one flat pastel the whole body is painted in; the game tints this
+        # per person, so what is authored here is only a mid-tone to tint from.
+        "body": mat("pin_body", (0.62, 0.60, 0.58), roughness=0.72),
+        "white": mat("pin_eye_white", (0.92, 0.91, 0.89), roughness=0.24, clearcoat=0.6),
+        "dark": mat("pin_eye_dark", (0.030, 0.028, 0.032), roughness=0.20, clearcoat=0.7),
+        "mouth": mat("pin_mouth", (0.55, 0.15, 0.20), roughness=0.45),
+        "felt": mat("pin_felt", (0.10, 0.09, 0.11), roughness=0.85),
+        "gold": mat("pin_gold", (0.72, 0.54, 0.20), metallic=1.0, roughness=0.26),
     }
 
 
-def _torso():
+@model
+def pin_body():
     reset()
-    m = _crew_mats()
-    parts = []
-
-    # Hips, waist, ribcage, shoulders, and the slope into the neck. The shoulder
-    # line is two sections a few centimetres apart: one gradual taper from chest
-    # to neck gives a body with no shoulders to hang the arms off.
+    m = _pin_mats()
+    # Floor to neck. Widest low down, which is what makes it a pin rather than
+    # a cone, and rounded off at the bottom because it has no feet to stand on.
     body = loft([
-        (-0.078, 0.157, 0.108),
-        (-0.040, 0.158, 0.1085),
-        (0.000, 0.158, 0.109),
-        (0.120, 0.156, 0.106, 0.004),
-        (0.240, 0.145, 0.097, 0.006),
-        (0.340, 0.164, 0.106, 0.006),
-        (0.440, 0.193, 0.118, 0.004),
-        (0.500, 0.204, 0.121, 0.000),
-        (0.528, 0.203, 0.120, -0.001),
-        (0.548, 0.191, 0.114, -0.002),
-        (0.566, 0.166, 0.107, -0.003),
-        (0.580, 0.130, 0.097, -0.004),
-        (0.590, 0.106, 0.087, -0.005),
-    ], segments=22, name="torso")
-    parts.append(apply(body, m["jacket"]))
-
-    # A collar and a tie, both lofts that follow the chest.
-    #
-    # The first pass did these as beveled cubes and they read as slabs bolted to
-    # a mannequin: a flat box laid on a curved chest stands off it at the edges,
-    # and two of them at the shoulders looked like American football padding. A
-    # thin cross-section walked down the front lies on the body instead. Lapels
-    # went the same way for the same reason and are not coming back -- two flaps
-    # on a curved chest read as a bathrobe however carefully they are placed,
-    # and a buttoned jacket says suit just as clearly.
-    collar = loft([
-        (0.566, 0.104, 0.092, -0.004),
-        (0.596, 0.088, 0.080, -0.005),
-        (0.620, 0.074, 0.070, -0.006),
-    ], segments=20, name="collar")
-    parts.append(apply(collar, m["shirt"]))
-
-    tie = loft([
-        (0.268, 0.000, 0.000, 0.100),
-        (0.282, 0.014, 0.007, 0.102),
-        (0.380, 0.020, 0.008, 0.112),
-        (0.470, 0.021, 0.008, 0.121),
-        (0.520, 0.018, 0.008, 0.122),
-        (0.545, 0.014, 0.010, 0.118),
-        (0.566, 0.011, 0.009, 0.110),
-        (0.576, 0.000, 0.000, 0.106),
-    ], segments=10, name="tie")
-    parts.append(apply(tie, m["tie"]))
-
-    # Two buttons down the front, which is what tells you the jacket is done up.
-    for z in (0.215, 0.290):
-        b = cylinder(0.011, 0.006, verts=10, location=(0, 0, z), rotation=(math.radians(90), 0, 0))
-        b.location.y = 0.107
-        parts.append(apply(b, m["shoe"]))
-
+        (0.000, 0.148, 0.148),
+        (0.018, 0.203, 0.203),
+        (0.058, 0.260, 0.258),
+        (0.138, 0.301, 0.297),
+        (0.250, 0.312, 0.308),
+        (0.380, 0.298, 0.294),
+        (0.520, 0.262, 0.258),
+        (0.650, 0.223, 0.221),
+        (0.762, 0.198, 0.197),
+        (0.855, 0.184, 0.185),
+        (0.905, 0.178, 0.180),
+    ], segments=28, name="pin")
+    parts = [apply(body, m["body"])]
     for o in parts:
         smooth(o)
     rig_yup(parts, (0, 0, 0))
-    PACK.add("person_torso", parts)
-
-
-HEAD_DROP = 0.050    # see the bottom of _head
-
-
-def _head():
-    reset()
-    m = _crew_mats()
-    parts = []
-
-    # Neck, jaw, cheeks, cranium. A head is the one part where the difference
-    # between a person and a mannequin is a couple of centimetres of jaw.
-    head = loft([
-        (-0.060, 0.000, 0.000),
-        (-0.045, 0.044, 0.046),
-        (0.030, 0.050, 0.052),
-        (0.075, 0.054, 0.057, 0.002),
-        (0.100, 0.064, 0.071, 0.006),
-        (0.135, 0.075, 0.085, 0.008),
-        (0.180, 0.085, 0.094, 0.005),
-        (0.228, 0.089, 0.096, 0.000),
-        (0.272, 0.082, 0.088, -0.005),
-        (0.306, 0.058, 0.061, -0.008),
-        (0.326, 0.000, 0.000, -0.008),
-    ], segments=22, name="head")
-    parts.append(apply(head, m["skin"]))
-
-    nose = loft([
-        (0.168, 0.000, 0.000, 0.082),
-        (0.180, 0.013, 0.011, 0.090),
-        (0.205, 0.011, 0.009, 0.093),
-        (0.234, 0.006, 0.005, 0.086),
-    ], segments=12, name="nose")
-    parts.append(apply(nose, m["skin"]))
-
-    for sx in (-1, 1):
-        ear = sphere(1.0, (sx * 0.088, -0.004, 0.198), 12, 8)
-        ear.scale = (0.012, 0.024, 0.031)
-        parts.append(apply(ear, m["skin"]))
-        # Set into the head, not stuck on it. The first pass had them 4 mm
-        # proud of the socket, which from across a room is a pair of marbles.
-        white = sphere(0.0165, (sx * 0.034, 0.073, 0.226), 12, 8)
-        white.scale = (1.0, 0.80, 1.0)
-        parts.append(apply(white, m["white"]))
-        pupil = sphere(0.0092, (sx * 0.034, 0.082, 0.225), 10, 6)
-        parts.append(apply(pupil, m["eye"]))
-        brow = loft([
-            (0.246, 0.000, 0.000, 0.070, sx * 0.014),
-            (0.249, 0.006, 0.004, 0.078, sx * 0.028),
-            (0.250, 0.006, 0.004, 0.076, sx * 0.044),
-            (0.247, 0.000, 0.000, 0.068, sx * 0.056),
-        ], segments=8, name="brow")
-        parts.append(apply(brow, m["hair"]))
-
-    mouth = sphere(1.0, (0, 0.070, 0.148), 14, 8)
-    mouth.scale = (0.024, 0.010, 0.005)
-    parts.append(apply(mouth, m["mouth"]))
-
-    # Hair is a second scalp, cut back off the face. A cap dropped on top gives
-    # a swimmer; a person needs a hairline, and a hairline is a boolean.
-    hair = loft([
-        (0.150, 0.000, 0.000, -0.006),
-        (0.165, 0.078, 0.086, -0.006),
-        (0.200, 0.089, 0.098, -0.006),
-        (0.240, 0.093, 0.100, -0.008),
-        (0.280, 0.086, 0.092, -0.010),
-        (0.312, 0.060, 0.064, -0.012),
-        (0.334, 0.000, 0.000, -0.012),
-    ], segments=22, name="hair")
-    face_cut = cube(size=1, location=(0, 0.150, 0.155), rotation=(math.radians(-12), 0, 0),
-                    scale=(0.34, 0.20, 0.20))
-    face_cut.hide_render = True
-    b = hair.modifiers.new("hairline", "BOOLEAN")
-    b.operation, b.object, b.solver = "DIFFERENCE", face_cut, "EXACT"
-    parts.append(apply(hair, m["hair"]))
-
-    for o in parts:
-        smooth(o)
-    # Authored from the chin up, then dropped onto the neck. A neck long enough
-    # to model the jaw clear of the collar is a neck too long to look at, and
-    # the cutter has to come down with it or the hairline slides up the skull.
-    for o in bpy.context.scene.objects:
-        if o.type == "MESH":
-            o.location.z -= HEAD_DROP
-    rig_yup(parts, (0, 0, 0))
-    PACK.add("person_head", parts)
-
-
-def _arm():
-    reset()
-    m = _crew_mats()
-    sleeve = loft([
-        (0.048, 0.000, 0.000),
-        (0.032, 0.040, 0.041),
-        (0.000, 0.056, 0.057),
-        (-0.090, 0.056, 0.057),
-        (-0.230, 0.047, 0.049),
-        (-0.285, 0.045, 0.048),
-        (-0.380, 0.042, 0.044),
-        (-0.470, 0.036, 0.038),
-        (-0.498, 0.034, 0.036),
-    ], segments=16, name="sleeve")
-    cuff = cylinder(0.038, 0.030, verts=16, location=(0, 0.004, -0.505))
-    hand = loft([
-        (-0.495, 0.030, 0.026, 0.006),
-        (-0.520, 0.036, 0.028, 0.008),
-        (-0.560, 0.038, 0.026, 0.010),
-        (-0.590, 0.033, 0.021, 0.010),
-        (-0.610, 0.000, 0.000, 0.010),
-    ], segments=14, name="hand")
-    parts = [apply(sleeve, m["jacket"]), apply(cuff, m["shirt"]), apply(hand, m["skin"])]
-    for o in parts:
-        smooth(o)
-    rig_yup(parts, (0, 0, 0))
-    PACK.add("person_arm", parts)
-
-
-def _leg():
-    reset()
-    m = _crew_mats()
-    trouser = loft([
-        (0.060, 0.000, 0.000),
-        (0.040, 0.070, 0.074),
-        (-0.040, 0.086, 0.091),
-        (-0.200, 0.078, 0.083),
-        (-0.390, 0.067, 0.071),
-        (-0.445, 0.064, 0.069),
-        (-0.530, 0.061, 0.066),
-        (-0.620, 0.055, 0.059),
-        (-0.780, 0.045, 0.048),
-        (-0.865, 0.042, 0.045),
-    ], segments=16, name="trouser")
-    shoe = cube(size=1, location=(0, 0.052, -0.888), scale=(0.088, 0.260, 0.066))
-    bevel(shoe, width=0.024, segments=3)
-    heel = cube(size=1, location=(0, -0.048, -0.900), scale=(0.078, 0.070, 0.042))
-    bevel(heel, width=0.012, segments=2)
-    ankle = sphere(1.0, (0, 0.004, -0.858), 14, 10)
-    ankle.scale = (0.043, 0.046, 0.040)
-    parts = [apply(trouser, m["trouser"]), apply(shoe, m["shoe"]),
-             apply(heel, m["shoe"]), apply(ankle, m["shoe"])]
-    for o in parts:
-        smooth(o)
-    rig_yup(parts, (0, 0, 0))
-    PACK.add("person_leg", parts)
+    PACK.add("pin_body", parts)
+    PACK.meta["pin"] = dict(PIN)
 
 
 @model
-def person():
-    _torso()
-    _head()
-    _arm()
-    _leg()
-    # The joints, in metres above the carpet or above the hip. The game places
-    # four meshes at these points; deriving them a second time in JavaScript is
-    # how a head ends up floating a centimetre off its neck.
-    PACK.meta["person"] = dict(CREW)
+def pin_head():
+    reset()
+    m = _pin_mats()
+    parts = []
+
+    # A wide oval, authored from its underside so the game can sit it on the
+    # neck and turn it there.
+    skull = loft([
+        (0.000, 0.146, 0.138),
+        (0.028, 0.216, 0.198),
+        (0.086, 0.275, 0.248),
+        (0.166, 0.299, 0.267),
+        (0.258, 0.295, 0.263),
+        (0.356, 0.261, 0.235),
+        (0.436, 0.190, 0.172),
+        (0.488, 0.092, 0.084),
+        (0.508, 0.000, 0.000),
+    ], segments=24, name="skull")
+    parts.append(apply(skull, m["body"]))
+
+    for sx in (-1, 1):
+        # Enormous, and proud of the face rather than set into it -- they are
+        # most of the head, and a socket would hide the thing that carries the
+        # whole expression.
+        white = sphere(0.116, (sx * 0.120, 0.126, 0.262), 20, 12)
+        white.scale = (1.0, 0.86, 1.06)
+        parts.append(apply(white, m["white"]))
+        pupil = sphere(0.058, (sx * 0.120, 0.212, 0.256), 14, 9)
+        pupil.scale = (1.0, 0.72, 1.10)
+        parts.append(apply(pupil, m["dark"]))
+
+    # One thick brow bar across both eyes, which is the whole eyebrow.
+    brow = cube(size=1, location=(0, 0.182, 0.350),
+                rotation=(math.radians(-10), 0, 0), scale=(0.395, 0.058, 0.054))
+    bevel(brow, width=0.018, segments=3)
+    parts.append(apply(brow, m["dark"]))
+
+    mouth = sphere(1.0, (0, 0.236, 0.132), 14, 9)
+    mouth.scale = (0.052, 0.030, 0.036)
+    parts.append(apply(mouth, m["mouth"]))
+
+    for o in parts:
+        smooth(o)
+    rig_yup(parts, (0, 0, 0))
+    PACK.add("pin_head", parts)
+
+
+@model
+def pin_hand():
+    reset()
+    m = _pin_mats()
+    # A mitten: one fat palm with three finger lobes over the top and a thumb
+    # off the side. Authored around its own centre, because it floats -- there
+    # is no wrist for it to hinge on.
+    palm = sphere(1.0, (0, 0, 0), 16, 10)
+    palm.scale = (0.104, 0.074, 0.116)
+    parts = [apply(palm, m["body"])]
+    for i, x in enumerate((-0.046, 0.0, 0.046)):
+        lobe = sphere(1.0, (x * 1.18, 0.010, 0.102 - abs(x) * 0.24), 12, 8)
+        lobe.scale = (0.036, 0.048, 0.058)
+        parts.append(apply(lobe, m["body"]))
+    thumb = sphere(1.0, (0.096, 0.004, -0.008), 12, 8)
+    thumb.scale = (0.048, 0.043, 0.062)
+    parts.append(apply(thumb, m["body"]))
+    for o in parts:
+        smooth(o)
+    rig_yup(parts, (0, 0, 0))
+    PACK.add("pin_hand", parts)
+
+
+@model
+def pin_hats():
+    """Three hats and a monocle, authored to sit on the crown of a head.
+
+    The game leans hard on cosmetics -- fez, top hat, boater, monocle, bow ties
+    -- and four identical pastel pins in a room read as one character repeated.
+    Each of these is its own mesh so the game can hand a different one to each
+    friend and leave somebody bare-headed."""
+    for name, build in (("pin_hat_top", _hat_top), ("pin_hat_fez", _hat_fez),
+                        ("pin_hat_boater", _hat_boater), ("pin_monocle", _monocle)):
+        reset()
+        m = _pin_mats()
+        parts = build(m)
+        for o in parts:
+            smooth(o)
+        rig_yup(parts, (0, 0, 0))
+        PACK.add(name, parts)
+
+
+def _hat_top(m):
+    brim = cylinder(0.250, 0.022, verts=40, location=(0, 0, 0.011))
+    bevel(brim, width=0.008, segments=2)
+    crown = cylinder(0.163, 0.250, verts=40, location=(0, 0, 0.147))
+    band = cylinder(0.170, 0.048, verts=40, location=(0, 0, 0.052))
+    return [apply(brim, m["felt"]), apply(crown, m["felt"]), apply(band, m["gold"])]
+
+
+def _hat_fez(m):
+    body = cone(0.150, 0.128, 0.190, verts=32, location=(0, 0, 0.095))
+    top = cylinder(0.128, 0.014, verts=32, location=(0, 0, 0.197))
+    # The tassel, which is the only reason anyone recognises a fez.
+    cord = cylinder(0.010, 0.150, verts=10, location=(0.070, 0, 0.150))
+    cord.rotation_euler = (0, math.radians(24), 0)
+    knot = sphere(0.026, (0.105, 0, 0.082), 14, 10)
+    return [apply(body, m["mouth"]), apply(top, m["mouth"]),
+            apply(cord, m["gold"]), apply(knot, m["gold"])]
+
+
+def _hat_boater(m):
+    brim = cylinder(0.268, 0.018, verts=40, location=(0, 0, 0.009))
+    bevel(brim, width=0.010, segments=2)
+    crown = cylinder(0.170, 0.092, verts=40, location=(0, 0, 0.064))
+    band = cylinder(0.176, 0.030, verts=40, location=(0, 0, 0.040))
+    return [apply(brim, m["body"]), apply(crown, m["body"]), apply(band, m["mouth"])]
+
+
+def _monocle(m):
+    ring = torus(0.132, 0.015, location=(0, 0, 0), major_seg=32, minor_seg=10)
+    chain = cylinder(0.005, 0.105, verts=8, location=(0.126, -0.082, 0))
+    chain.rotation_euler = (0, 0, math.radians(-16))
+    return [apply(ring, m["gold"]), apply(chain, m["gold"])]
 
 
 def main():

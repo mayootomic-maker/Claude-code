@@ -68,13 +68,14 @@ const report = await page.evaluate(() => {
       scene.add(holder);
 
       if (row === 1) {
-        // Mid-stride, with the arms swinging: the pose that shows whether the
-        // limbs are hinged where a person's are.
-        body.legs[0].rotation.x = 0.55;
-        body.legs[1].rotation.x = -0.55;
-        body.arms[0].rotation.x = -0.42;
-        body.arms[1].rotation.x = 0.42;
-        body.root.position.y = 0.02;
+        // Mid-waddle: rolled onto one side with the hands swung across. There
+        // are no legs to put mid-stride -- that is the point of the design.
+        body.root.rotation.z = 0.10;
+        body.root.rotation.x = 0.09;
+        body.root.position.y = 0.035;
+        body.hands[0].position.z += 0.20;
+        body.hands[1].position.z -= 0.20;
+        body.head.rotation.y = -0.3;
       }
       if (!tris[id]) {
         let n = 0;
@@ -87,8 +88,8 @@ const report = await page.evaluate(() => {
       renderer.setScissor(vx, vy, 320, cellH);
       renderer.setScissorTest(true);
       cam.aspect = 320 / cellH;
-      cam.position.set(0, 1.05, 4.4);
-      cam.lookAt(0, 0.95, 0);
+      cam.position.set(0, 0.95, 3.4);
+      cam.lookAt(0, 0.80, 0);
       cam.updateProjectionMatrix();
       renderer.render(scene, cam);
       scene.remove(holder);

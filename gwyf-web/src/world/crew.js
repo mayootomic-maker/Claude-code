@@ -23,43 +23,35 @@
      body: four identical silhouettes across a room is what makes a crowd read
      as clones, and it is cheaper to fix here than with four more models. */
   const LOOK = {
-    mo: { skin: 0x8a5a3c, hair: 0x18110e, jacket: 0xd8a13c, trouser: 0x2b2219,
-          height: 1.005, build: 1.06 },
-    petra: { skin: 0xc9976f, hair: 0x59341d, jacket: 0x3f8f5e, trouser: 0x1d2622,
-             height: 0.955, build: 0.93 },
-    kez: { skin: 0x7d5539, hair: 0x2a1c30, jacket: 0x4f86c6, trouser: 0x242935,
-           height: 0.94, build: 0.99 },
-    den: { skin: 0xd2a37e, hair: 0x6b3a24, jacket: 0xc0424e, trouser: 0x261b1b,
-           height: 1.05, build: 1.15 },
+    mo: { body: 0xf2c14e, hat: 'pin_hat_fez', height: 1.02, width: 1.05 },
+    petra: { body: 0x6fcf97, hat: 'pin_monocle', height: 0.95, width: 0.93 },
+    kez: { body: 0x7fb3ec, hat: 'pin_hat_boater', height: 0.92, width: 1.00 },
+    den: { body: 0xef6f79, hat: 'pin_hat_top', height: 1.06, width: 1.12 },
   };
-  const FALLBACK = { skin: 0xb08a68, hair: 0x241a14, jacket: 0x8a8a90,
-                     trouser: 0x22232a, height: 1, build: 1 };
+  const FALLBACK = { body: 0xc9a9d4, hat: null, height: 1, width: 1 };
 
-  /* Material name in the export -> which slot of the palette tints it. */
-  const TINT = {
-    crew_skin: 'skin', crew_hair: 'hair', crew_jacket: 'jacket', crew_trouser: 'trouser',
-  };
+  /* The body is one flat colour, so there is exactly one material to tint --
+     which is the point of the design. Eyes, brow, mouth and hats are shared. */
+  const TINT = { pin_body: 'body' };
 
   const WALK = 1.7;             // metres a second, unhurried
   const HURRY = 2.7;            // when they are on their way to do something stupid
   const RADIUS = 0.36;
   const TURN = 7.0;             // radians a second the body turns to face where it is going
 
-  /* Build one body out of the four exported parts.
+  /* Build one body out of its parts.
 
-     Exported separately and assembled here because each part is authored with
-     its own joint at the origin: the arm turns about its shoulder because that
-     is where its vertices start, not because a rig says so. Both sides use the
-     same arm and leg mesh unmirrored -- the parts are symmetric about the body's
-     centre plane, and mirroring with a negative scale would reverse the winding
-     and turn every limb inside out. */
+     A pin, a head, and two hands that are not attached to anything -- there are
+     no arms and no legs to attach them to. The hands float beside the body and
+     are driven directly, which is why they hang off the root rather than off a
+     shoulder: in this design there is no shoulder. */
   function buildBody(lib, look) {
-    const J = (lib.doc.meta && lib.doc.meta.person) || {
-      hip: 0.92, neck: 0.62, shoulder: 0.555, shoulderX: 0.185, hipX: 0.088,
+    const J = (lib.doc.meta && lib.doc.meta.pin) || {
+      height: 1.52, neck: 0.905, hand: 0.560, handX: 0.335, brow: 1.265,
     };
     const group = new THREE.Group();
     const owned = [];
-    const tints = {};
+    let skin = null;
 
     function part(name) {
       const obj = GWModels.instance(lib, name);
@@ -69,63 +61,68 @@
         // disposed by this module, so the stage's own sweep must leave both
         // alone -- it frees anything in the scene group it is not told about.
         o.userData.shared = true;
-        const slot = TINT[o.material.name];
-        if (!slot) return;
-        if (!tints[slot]) {
-          const m = o.material.clone();
-          m.color = new THREE.Color(look[slot]);
-          tints[slot] = m;
-          owned.push(m);
+        if (!TINT[o.material.name]) return;
+        if (!skin) {
+          skin = o.material.clone();
+          skin.color = new THREE.Color(look.body);
+          owned.push(skin);
         }
-        o.material = tints[slot];
+        o.material = skin;
       });
       return obj;
     }
 
-    // One node above the feet carries the bob and the lean, so the walk cycle
+    // One node above the floor carries the bob and the lean, so the waddle
     // never has to touch the group the world positions.
     const root = new THREE.Group();
     group.add(root);
 
-    /* The trunk is a pivot with the mesh hung under it, not the mesh itself.
-       Build has to widen the chest without widening what is attached to it: an
-       earlier version scaled the torso node and took the arms and head with it,
-       so the broad friend had a broad head and fat arms and a shoulder joint
-       pushed out past his own silhouette. */
-    const torso = new THREE.Group();
-    torso.position.y = J.hip;
-    root.add(torso);
-    const trunk = part('person_torso');
-    trunk.scale.set(look.build, 1, look.build);
-    torso.add(trunk);
+    const trunk = part('pin_body');
+    trunk.scale.set(look.width, 1, look.width);
+    root.add(trunk);
 
-    const head = part('person_head');
+    // The head is its own node so it can turn and tilt on the neck.
+    const head = new THREE.Group();
     head.position.y = J.neck;
-    torso.add(head);
+    root.add(head);
+    head.add(part('pin_head'));
 
-    const arms = [];
-    for (const side of [-1, 1]) {
-      const arm = part('person_arm');
-      // Shoulders move out with the build; the arm hanging off them does not.
-      arm.position.set(side * J.shoulderX * look.build, J.shoulder, 0);
-      // A few degrees out from the body, or the hands swing through the hips.
-      arm.rotation.z = side * 0.07;
-      torso.add(arm);
-      arms.push(arm);
+    if (look.hat) {
+      const hat = part(look.hat);
+      // A monocle hangs on the face; a hat sits on the crown.
+      /* A monocle hangs on the face; a hat sits on the crown.
+
+         The face is at -Z: models are authored facing Blender's +Y and the
+         export turns that into three.js's -Z, so a monocle at +Z hangs off the
+         back of the head. The ring is also authored flat and stood up here --
+         rotating it in Blender means reasoning about two chained rotations
+         through the Y-up rig, which produced a halo round the head twice. */
+      if (look.hat === 'pin_monocle') {
+        hat.position.set(-0.120, 0.262, -0.232);
+        hat.rotation.x = Math.PI / 2;
+      } else {
+        hat.position.y = 0.395;
+      }
+      head.add(hat);
     }
 
-    const legs = [];
+    const hands = [];
     for (const side of [-1, 1]) {
-      const leg = part('person_leg');
-      leg.position.set(side * J.hipX, J.hip, 0);
-      root.add(leg);
-      legs.push(leg);
+      const hand = part('pin_hand');
+      hand.position.set(side * J.handX * look.width, J.hand, 0.06);
+      // The mitten is modelled once and used on both sides. It is symmetric
+      // about the body's centre plane, so it needs turning rather than
+      // mirroring -- a negative scale would reverse the winding and turn it
+      // inside out.
+      hand.rotation.y = side < 0 ? Math.PI : 0;
+      root.add(hand);
+      hands.push(hand);
     }
 
     group.scale.setScalar(look.height);
 
     return {
-      group, root, torso, trunk, head, arms, legs, joints: J,
+      group, root, trunk, head, hands, joints: J,
       dispose() { for (const m of owned) m.dispose(); },
     };
   }
@@ -230,7 +227,7 @@
       // Small. A label you can read at four metres is a billboard at two, and
       // three of them turn a room into a scoreboard with a casino behind it.
       const tag = makeTag(mate.name, mate.colour, { size: 0.155, font: 30 });
-      tag.position.y = body.joints.hip + body.joints.neck + 0.34;
+      tag.position.y = body.joints.height * 0.98;
       body.group.add(tag);
 
       const person = {
@@ -239,6 +236,7 @@
         dest: null, at: null, state: 'idle',
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
         mood: 0, moodLeft: 0, idleFor: 0, tilting: false, anchor: null,
+        lookAtPlayer: 0,
       };
       spawnAt(person);
       group.add(body.group);
@@ -343,7 +341,7 @@
         person.bubble.userData.dispose();
       }
       const bubble = makeTag(text, person.mate.colour, { size: 0.125, font: 26, wrap: 20 });
-      bubble.position.y = person.body.joints.hip + person.body.joints.neck + 0.34
+      bubble.position.y = person.body.joints.height * 0.98
         + tagHalf(person) + 0.05 + bubble.scale.y / 2;
       person.body.group.add(bubble);
       person.bubble = bubble;
@@ -462,7 +460,7 @@
             person.blocked = Math.max(0, person.blocked - dt);
           }
           person.wantYaw = Math.atan2(-dirX, -dirZ);
-          person.cycle += (moved / dt) * dt * 2.6;
+          person.cycle += moved * 2.0;
         }
       } else if (person.state === 'play' && person.at) {
         // Stand at the table facing it.
@@ -476,13 +474,48 @@
           person.idleFor = 0;
           person.dest = freeSpot(person.pos);
           person.state = 'idle';
-        } else if (playerPos && person.idleFor > 0.4) {
-          // Look at whoever walks past.
-          const d = Math.hypot(playerPos.x - person.pos.x, playerPos.z - person.pos.z);
-          if (d < 4.5) {
-            person.wantYaw = Math.atan2(-(playerPos.x - person.pos.x),
-                                        -(playerPos.z - person.pos.z));
+        }
+      }
+
+      /* Look at whoever walks past -- with the head, not the whole body.
+
+         Turning the body to face you is what a shop mannequin on a turntable
+         does; turning just the head, and only as far as a neck goes, is what a
+         person does. Past that the body comes round with it. */
+      person.lookAtPlayer = 0;
+      if (playerPos) {
+        const dx = playerPos.x - person.pos.x;
+        const dz = playerPos.z - person.pos.z;
+        if (Math.hypot(dx, dz) < 5.0) {
+          let off = Math.atan2(-dx, -dz) - person.yaw;
+          while (off > Math.PI) off -= Math.PI * 2;
+          while (off < -Math.PI) off += Math.PI * 2;
+          if (Math.abs(off) < 1.9) {
+            person.lookAtPlayer = Math.max(-0.85, Math.min(0.85, off));
+          } else if (!person.dest) {
+            // Behind them: they turn round rather than crane over a shoulder.
+            person.wantYaw = Math.atan2(-dx, -dz);
           }
+        }
+      }
+
+      /* Step out of the player's way.
+
+         The bodies are not in the collision world -- putting them there risks
+         wedging the player into a corner behind one -- so instead they push
+         themselves out of the player's space. Standing inside somebody is very
+         visible now that they are a metre and a half of solid colour. */
+      if (playerPos) {
+        const gx = person.pos.x - playerPos.x;
+        const gz = person.pos.z - playerPos.z;
+        const gap = Math.hypot(gx, gz);
+        const want = RADIUS + 0.42;
+        if (gap < want && gap > 1e-4) {
+          const push = (want - gap) * Math.min(1, dt * 9);
+          person.pos.x += (gx / gap) * push;
+          person.pos.z += (gz / gap) * push;
+          level.solids.resolve(person.pos, RADIUS);
+          level.solids.bound(person.pos, RADIUS);
         }
       }
 
@@ -497,71 +530,95 @@
       pose(person, dt, speed);
     }
 
-    /* The walk cycle, and everything that is not one.
+    /* The waddle, and everything that is not one.
 
-       Driven by the distance covered rather than by time, so a friend squeezing
-       past a pillar at half speed takes half-length steps instead of moon
-       walking. */
+       There are no legs to swing, so the walk is a rock: the body leans into
+       its direction of travel and rolls side to side, the hands swing against
+       that roll, and the whole thing rises and falls on each step. Driven by
+       distance covered rather than by time, so somebody squeezing past a pillar
+       at half speed takes half-length steps instead of moon walking. */
     function pose(person, dt, speed) {
       const body = person.body;
+      const J = body.joints;
       const moving = speed > 0.05;
-      const swing = moving ? Math.min(0.62, speed * 0.30) : 0;
+      const swing = moving ? Math.min(1.0, speed * 0.42) : 0;
       const s = Math.sin(person.cycle);
       const c = Math.cos(person.cycle);
 
-      body.legs[0].rotation.x = s * swing;
-      body.legs[1].rotation.x = -s * swing;
-      body.root.position.y = moving ? Math.abs(c) * 0.028 : 0;
-      body.root.rotation.z = moving ? -s * 0.02 : 0;
+      let lean = 0, rise = 0, headTilt = 0, headTurn = 0;
+      let roll = 0;
+      let handSwing = 0, handLift = 0, handOut = 0;
 
-      let armSwing = -s * swing * 0.8;
-      let reach = 0, lean = 0, headTilt = 0;
+      if (moving) {
+        roll = s * 0.10 * (swing / 1.0 + 0.4);
+        rise = Math.abs(c) * 0.035;
+        lean = 0.09 * swing;
+        handSwing = -s * 0.22 * swing;
+        handLift = Math.abs(c) * 0.03;
+      } else {
+        // Breathing, and a slow shift of weight.
+        person.cycle += dt * 1.2;
+        rise = Math.sin(person.cycle) * 0.008;
+        roll = Math.sin(person.cycle * 0.5) * 0.02;
+        handLift = Math.sin(person.cycle + 0.7) * 0.012;
+      }
 
       if (person.state === 'play' && !moving) {
-        // Leaning in over the table with a hand out on it.
-        lean = 0.14;
-        reach = -0.95 + Math.sin(person.cycle * 0.7) * 0.05;
-        person.cycle += dt * 1.4;
-      } else if (!moving) {
-        // Breathing, and a slow shift of weight.
-        person.cycle += dt * 1.1;
-        armSwing = Math.sin(person.cycle) * 0.02;
-        body.root.rotation.z = Math.sin(person.cycle * 0.5) * 0.012;
+        // Leaning in over the table with both hands out on it.
+        lean = 0.16;
+        handOut = 0.20;
+        handLift = -0.10 + Math.sin(person.cycle * 0.7) * 0.02;
       }
 
       if (person.moodLeft > 0) {
         const k = Math.min(1, person.moodLeft / 2.4);
         if (person.mood > 0) {
-          // Arms up. Nobody wins quietly.
-          armSwing = -2.3 * k + Math.sin(person.cycle * 6) * 0.18 * k;
-          body.root.position.y += Math.abs(Math.sin(person.cycle * 5)) * 0.06 * k;
-          reach = 0;
-          headTilt = -0.18 * k;
+          // Hands up, and a hop. Nobody wins quietly.
+          handLift = 0.62 * k + Math.sin(person.cycle * 7) * 0.05 * k;
+          handOut = 0.16 * k;
+          rise += Math.abs(Math.sin(person.cycle * 5)) * 0.09 * k;
+          headTilt = -0.16 * k;
+          lean = -0.06 * k;
+          person.cycle += dt * 3.0;
         } else if (person.mood < 0) {
-          lean += 0.22 * k;
-          headTilt = 0.34 * k;
-          armSwing = 0.10 * k;
-          reach = 0;
+          lean += 0.26 * k;
+          headTilt = 0.30 * k;
+          handLift = -0.10 * k;
+          handOut = -0.05 * k;
         }
       }
 
       if (person.tilting) {
-        // Wound up: shoulders forward, and a shake nobody can miss across a
-        // room, because a few seconds is all you get to notice it.
-        person.cycle += dt * 2.0;
-        lean += 0.10;
-        armSwing = -0.55 + Math.sin(person.cycle * 9) * 0.09;
-        headTilt = -0.08;
+        // Wound up: leaning in, hands shaking, and a shake nobody can miss
+        // across a room -- a few seconds is all you get to notice it.
+        person.cycle += dt * 2.4;
+        lean += 0.12;
+        roll += Math.sin(person.cycle * 11) * 0.05;
+        handLift = 0.16 + Math.sin(person.cycle * 13) * 0.05;
+        handOut = 0.12;
+        headTilt = -0.06;
       }
+
+      // Look at whoever is nearby while standing about.
+      if (person.lookAtPlayer) headTurn = person.lookAtPlayer;
+
+      body.root.position.y = rise;
+      body.root.rotation.z = roll;
+      body.root.rotation.x = lean;
+      body.head.rotation.x = headTilt;
+      body.head.rotation.y = headTurn;
 
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1;
-        const arm = body.arms[i];
-        arm.rotation.x = (reach ? reach : armSwing * (i === 0 ? 1 : -1));
-        arm.rotation.z = side * 0.07;
+        const hand = body.hands[i];
+        hand.position.set(
+          side * (J.handX * person.look.width + handOut),
+          J.hand + handLift + (i === 0 ? handSwing : -handSwing) * 0.35,
+          0.06 + (i === 0 ? handSwing : -handSwing)
+        );
+        hand.rotation.z = side * (0.10 + handLift * 0.6);
+        hand.rotation.y = side < 0 ? Math.PI : 0;
       }
-      body.torso.rotation.x = lean;
-      body.head.rotation.x = headTilt;
     }
 
     function dispose() {
@@ -584,5 +641,71 @@
     };
   }
 
-  global.GWCrew = { create, buildBody, LOOK };
+  /* The player's own hands.
+
+     In the game this follows your two mitten hands sit in the bottom corners of
+     the screen in very nearly every frame, tinted your own colour, and their
+     absence is one of the loudest things missing from a port of it. They are
+     the same mesh the friends use, parented to the camera, and they bob with
+     the walk and dip on a landing -- which is also the cheapest way to make a
+     first-person camera feel like it belongs to a body. */
+  const YOU = { body: 0xd9a441 };
+
+  function buildHands(lib, colour) {
+    const group = new THREE.Group();
+    const owned = [];
+    let skin = null;
+    const hands = [];
+    for (const side of [-1, 1]) {
+      const hand = GWModels.instance(lib, 'pin_hand');
+      hand.traverse((o) => {
+        if (!o.isMesh) return;
+        o.userData.shared = true;
+        // These are drawn a few centimetres from the lens; a shadow cast from
+        // there lands across the whole room.
+        o.castShadow = false;
+        o.receiveShadow = false;
+        if (!TINT[o.material.name]) return;
+        if (!skin) {
+          skin = o.material.clone();
+          skin.color = new THREE.Color(colour === undefined ? YOU.body : colour);
+          owned.push(skin);
+        }
+        o.material = skin;
+      });
+      hand.scale.setScalar(0.48);
+      hand.rotation.y = side < 0 ? Math.PI : 0;
+      group.add(hand);
+      hands.push(hand);
+    }
+    group.renderOrder = 10;
+    return {
+      group, hands,
+      /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
+         `fall` the vertical velocity so they drop when you do. */
+      update(bob, speed, fall, crouch) {
+        const sway = Math.sin(bob) * Math.min(0.035, speed * 0.012);
+        const lift = Math.abs(Math.cos(bob)) * Math.min(0.03, speed * 0.010);
+        const drop = Math.max(-0.10, Math.min(0.10, -fall * 0.016));
+        for (let i = 0; i < 2; i++) {
+          const side = i === 0 ? -1 : 1;
+          /* Low in the frame but inside it.
+
+             At a 38-degree vertical field of view the bottom edge at 0.52 m is
+             about 0.18 m below the axis, so a hand parked at -0.30 is off the
+             screen entirely -- which is where the first pass put them. */
+          hands[i].position.set(
+            side * (0.285 - crouch * 0.02) + sway * side,
+            -0.190 + lift - drop - crouch * 0.03,
+            -0.52 + Math.abs(sway) * 0.4
+          );
+          hands[i].rotation.z = side * (0.35 + sway * 2.0);
+          hands[i].rotation.x = -0.35 + lift * 2.0;
+        }
+      },
+      dispose() { for (const m of owned) m.dispose(); },
+    };
+  }
+
+  global.GWCrew = { create, buildBody, buildHands, LOOK, YOU };
 })(window);

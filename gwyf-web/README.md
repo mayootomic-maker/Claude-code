@@ -10,9 +10,11 @@ Five minutes a day inside the tower, in first person. One bank account, shared
 with three friends who walk the same floors and can spend it without asking. A
 quota every night, a debt that grows 8% while you sleep, and three ways it ends.
 
-**WASD** to walk, mouse to look, **E** to use whatever you are stood in front
-of, **Esc** to let the pointer go. On a phone it is a thumbstick, a drag to
-look, and a Use button.
+**WASD** to walk, **Shift** to run, **Space** to jump, **Ctrl** to crouch, mouse
+to look, **E** or a click to use whatever you are stood in front of, **Esc** to
+let the pointer go. Look sensitivity, invert, camera smoothing and head bob are
+in the menu behind the gear. On a phone it is a thumbstick, a drag to look, and
+a Use button.
 
 ---
 
@@ -57,9 +59,12 @@ play it clear as well. That last check is not an optimisation. Without it four
 of the twelve landed with their only approach buried in a pillar — placed,
 drawn, lit, and unusable, with the prompt that never appeared as the only clue.
 
-**The friends are in the room.** Mo, Petra, Kez and Den are bodies built from
-four Blender parts joined at their own joints, walking on the same collision
-solver you do. A turn is: pick a table, say so, cross the floor, bet. The money
+**The friends are in the room.** Mo, Petra, Kez and Den are bowling pins about
+two heads tall -- a wide oval head on a tapered footless body with no legs, two
+enormous eyes under one thick brow bar, and a pair of mitten hands that float
+unattached beside them, which is what the game this follows draws everybody as.
+Your own two hands sit in the bottom corners of the screen, tinted your colour.
+They walk on the same collision solver you do. A turn is: pick a table, say so, cross the floor, bet. The money
 moves when the body arrives, not when the decision is made — deciding and
 settling in the same frame is what the first version did, and it put a line in
 the ticker about a roulette win while the winner was still stood by the lift.
@@ -71,6 +76,32 @@ Two thirds of their turns happen on the floor you are standing on. They can play
 anywhere the bank has opened and a friend upstairs spends the same money — but
 a crew that scatters across four floors is one you only ever meet in the ticker,
 and the game is not called Read About Your Friends.
+
+## Matching the original
+
+The look here is not invented. It is drawn from the actual game -- Steam app
+3892270 -- read off its own screenshots rather than from memory:
+
+- **The characters.** Bowling-pin bodies, no legs, floating mitten hands, eyes
+  that take up most of the face, flat pastel colours, and a hat each. An earlier
+  pass here modelled realistic adults in suits; they looked fine and belonged to
+  a different game.
+- **The floors.** Four rooms rather than one repeated: a classic floor in
+  oxblood and gold, a black-light room that is all magenta and cyan over purple
+  concrete, a cool marble vault, and a gold rotunda. The first pass was warm
+  charcoal and gold on all four.
+- **The frame.** A fine halftone dither and a vignette into the corners, both of
+  which every in-game shot of the original carries. They are CSS layers over the
+  canvas, not render passes -- a full-screen pass costs a second draw of the
+  frame on a machine that may already be struggling. The first attempt did the
+  vignette as a 12rem inset box-shadow, which is recomputed every frame, and it
+  cost more than the 3D did: `drive.mjs` went from passing to timing out.
+- **The movement.** Run, jump and crouch, and camera smoothing that can be
+  turned off, because the original exposes exactly those under Accessibility.
+
+What could not be verified, and so was not copied: the floor names, the UI
+typeface, and any of the original's actual movement numbers -- none are
+published, and guessing them and calling it a match would be worse than this.
 
 ## The odds
 
