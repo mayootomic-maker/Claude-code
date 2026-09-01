@@ -150,7 +150,7 @@ FACES = {
 def die():
     reset()
     body = cube(size=H * 2)
-    bevel(body, width=0.085, segments=6)
+    bevel(body, width=0.085, segments=3)
     smooth(body)
     apply(body, IVORY())
 
@@ -165,7 +165,7 @@ def die():
         for x, y in PIPS[value]:
             out = H + (PIP_R - PIP_DEPTH)
             pos = tuple(n[i] * out + u[i] * x * PIP_OFF + v[i] * y * PIP_OFF for i in range(3))
-            cutters.append(apply(sphere(PIP_R, pos, 28, 14), dark))
+            cutters.append(apply(sphere(PIP_R, pos, 14, 8), dark))
     cutter = join(cutters)
     cutter.hide_render = True
     m = body.modifiers.new("pips", "BOOLEAN")
@@ -190,8 +190,8 @@ def die():
 def coin():
     reset()
     R, T = 0.5, 0.076
-    body = cylinder(R, T * 2, verts=112)
-    bevel(body, width=0.016, segments=4)
+    body = cylinder(R, T * 2, verts=40)
+    bevel(body, width=0.016, segments=2)
     smooth(body)
     apply(body, GOLD())
 
@@ -233,8 +233,8 @@ def _chip(body_col, trim_col, tag):
     body_mat = mat(f"{tag}_body", body_col, roughness=0.52)
     trim_mat = mat(f"{tag}_trim", trim_col, roughness=0.44)
 
-    body = apply(cylinder(R, T * 2, verts=96), body_mat)
-    bevel(body, width=0.012, segments=3)
+    body = apply(cylinder(R, T * 2, verts=36), body_mat)
+    bevel(body, width=0.012, segments=2)
     smooth(body)
 
     # Edge spots and a centre inlay: the two features that separate a clay chip
@@ -243,12 +243,12 @@ def _chip(body_col, trim_col, tag):
     for k in range(8):
         a = lib.TAU * k / 8
         s = annular_sector(R * 0.90, R * 1.004, a - 0.16, a + 0.16, -T * 0.62, T * 0.62,
-                           steps=5, name=f"{tag}_spot{k}")
+                           steps=2, name=f"{tag}_spot{k}")
         spots.append(apply(s, trim_mat))
 
-    inlays = [apply(cylinder(R * 0.60, 0.008, verts=72, location=(0, 0, z)), trim_mat)
+    inlays = [apply(cylinder(R * 0.60, 0.008, verts=28, location=(0, 0, z)), trim_mat)
               for z in (T + 0.002, -T - 0.002)]
-    rings = [apply(torus(R * 0.72, 0.008, location=(0, 0, z), major_seg=72, minor_seg=8), trim_mat)
+    rings = [apply(torus(R * 0.72, 0.008, location=(0, 0, z), major_seg=28, minor_seg=5), trim_mat)
              for z in (T - 0.002, -T + 0.002)]
     return [body, *spots, *inlays, *rings]
 
@@ -294,7 +294,7 @@ def roulette_bowl():
         (R_TRACK - 0.05, 0.145), (R_POCKET_O + 0.03, 0.055),
         (R_POCKET_O + 0.005, 0.030), (R_POCKET_O + 0.005, 0.000),
         (R_OUT, 0.000),
-    ], segments=128, name="bowl")
+    ], segments=44, name="bowl")
     apply(bowl, wood)
 
     rim = apply(torus(R_OUT - 0.012, 0.026, location=(0, 0, 0.232), major_seg=128), gold)
@@ -333,7 +333,7 @@ def roulette_rotor():
         (0.0, 0.030), (R_POCKET_I - 0.02, 0.030), (R_POCKET_I, 0.010),
         (R_POCKET_O, 0.010), (R_POCKET_O, 0.052), (R_POCKET_O + 0.004, 0.052),
         (R_POCKET_O + 0.004, -0.020), (0.0, -0.020),
-    ], segments=128, name="rotor_base"), gold)
+    ], segments=44, name="rotor_base"), gold)
     parts.append(base)
 
     for i, number in enumerate(WHEEL):
@@ -341,7 +341,7 @@ def roulette_rotor():
         a1 = a0 + step
         colour = green if number == 0 else (red if number in REDS else black)
         floor_ = annular_sector(R_POCKET_I, R_POCKET_O, a0 + 0.012, a1 - 0.012,
-                                0.010, 0.014, steps=4, name=f"p{number}")
+                                0.010, 0.014, steps=2, name=f"p{number}")
         parts.append(apply(floor_, colour))
         pockets.append(round(i * step, 6))
 
@@ -365,7 +365,7 @@ def roulette_rotor():
         (0.0, 0.205), (0.032, 0.200), (0.062, 0.170), (0.058, 0.140),
         (0.090, 0.112), (0.135, 0.092), (0.120, 0.070), (0.185, 0.056),
         (0.26, 0.042), (R_TURRET, 0.034), (R_TURRET, 0.026), (0.0, 0.026),
-    ], segments=96, name="turret"), gold)
+    ], segments=32, name="turret"), gold)
     parts.append(turret)
     for k in range(4):
         a = lib.TAU * k / 4 + math.pi / 4
@@ -426,8 +426,8 @@ def symbols():
         skin = mat("sym_cherry", (0.30, 0.014, 0.030), roughness=0.16, clearcoat=1.0)
         leafm = mat("sym_leaf", (0.045, 0.16, 0.035), roughness=0.42)
         stemm = mat("sym_stem", (0.10, 0.075, 0.030), roughness=0.60)
-        a = apply(sphere(0.30, (-0.26, 0, -0.26), 40, 20), skin)
-        b = apply(sphere(0.245, (0.28, 0.04, -0.34), 40, 20), skin)
+        a = apply(sphere(0.30, (-0.26, 0, -0.26), 18, 11), skin)
+        b = apply(sphere(0.245, (0.28, 0.04, -0.34), 18, 11), skin)
         stems = []
         for (x, y, z), tilt in (((-0.26, 0, -0.26), -20), ((0.28, 0.04, -0.34), 16)):
             st = cylinder(0.020, 0.62, verts=12,
@@ -448,10 +448,10 @@ def symbols():
             (0.454, -0.082), (0.468, -0.120), (0.436, -0.126), (0.398, -0.070),
             (0.348, 0.040), (0.288, 0.196), (0.226, 0.372), (0.150, 0.500),
             (0.000, 0.540),
-        ], segments=72, name="bell"), gold())
+        ], segments=28, name="bell"), gold())
         loop = apply(torus(0.062, 0.020, location=(0, 0, 0.700), rotation=(math.pi / 2, 0, 0),
                            major_seg=32, minor_seg=10), gold())
-        clapper = apply(sphere(0.10, (0, 0, -0.16), 32, 16), brass())
+        clapper = apply(sphere(0.10, (0, 0, -0.16), 14, 9), brass())
         band = apply(torus(0.462, 0.024, location=(0, 0, -0.108), major_seg=72), brass())
         return [body, loop, clapper, band]
 
@@ -471,7 +471,7 @@ def symbols():
     def skull():
         bone = mat("sym_bone", (0.60, 0.575, 0.50), roughness=0.44)
         dark = mat("sym_socket", (0.012, 0.010, 0.010), roughness=0.70)
-        cranium = sphere(0.44, (0, 0, 0.10), 48, 26)
+        cranium = sphere(0.44, (0, 0, 0.10), 20, 12)
         cranium.scale = (1.0, 0.92, 1.06)
         apply(cranium, bone)
         cranium.data.materials.append(dark)
@@ -483,7 +483,7 @@ def symbols():
 
         # Sockets and nose are drilled with the same material-transfer trick as
         # the dice pips, so they are real hollows rather than dark decals.
-        cutters = [apply(sphere(0.155, (x, -0.36, 0.11), 28, 14), dark) for x in (-0.175, 0.175)]
+        cutters = [apply(sphere(0.155, (x, -0.36, 0.11), 14, 9), dark) for x in (-0.175, 0.175)]
         nose = apply(cone(0.11, 0.0, 0.30, location=(0, -0.34, -0.10),
                           rotation=(math.radians(-90), 0, 0), verts=3), dark)
         cut = join(cutters + [nose])
@@ -508,7 +508,7 @@ def symbols():
         nails = []
         for k in range(6):
             a = math.radians(28 + k * 25)
-            nails.append(apply(sphere(0.038, (math.cos(a) * 0.44, math.sin(a) * 0.44, 0.055), 20, 10),
+            nails.append(apply(sphere(0.038, (math.cos(a) * 0.44, math.sin(a) * 0.44, 0.055), 10, 7),
                                BRASS()))
         return [shoe, *nails]
 
@@ -536,27 +536,27 @@ def duck():
     orange = mat("duck_beak", (0.68, 0.19, 0.014), roughness=0.34)
     eye = mat("duck_eye", (0.008, 0.007, 0.007), roughness=0.14, clearcoat=1.0)
 
-    body = sphere(0.50, (0, -0.04, -0.06), 36, 20)
+    body = sphere(0.50, (0, -0.04, -0.06), 18, 11)
     body.scale = (0.80, 1.00, 0.74)
     apply(body, yellow)
 
-    breast = sphere(0.30, (0, 0.26, 0.02), 36, 20)
+    breast = sphere(0.30, (0, 0.26, 0.02), 16, 10)
     breast.scale = (0.86, 0.90, 1.05)
     apply(breast, yellow)
 
     # A visible neck is the whole difference between a duck and a snowman.
     neck = apply(lathe([(0.0, 0.40), (0.135, 0.375), (0.155, 0.20),
                         (0.205, 0.04), (0.24, -0.06), (0.0, -0.08)],
-                       segments=40, name="neck"), yellow)
+                       segments=18, name="neck"), yellow)
     neck.location = (0, 0.20, 0.20)
 
-    head = sphere(0.255, (0, 0.235, 0.60), 40, 22)
+    head = sphere(0.255, (0, 0.235, 0.60), 18, 11)
     head.scale = (0.96, 1.02, 1.00)
     apply(head, yellow)
 
     beak = apply(lathe([(0.0, 0.0), (0.105, 0.015), (0.135, 0.075),
                         (0.115, 0.155), (0.055, 0.205), (0.0, 0.210)],
-                       segments=28, name="beak"), orange)
+                       segments=14, name="beak"), orange)
     beak.rotation_euler = (math.radians(84), 0, 0)
     beak.location = (0, 0.44, 0.575)
     beak.scale = (1.0, 1.0, 0.62)
@@ -567,10 +567,10 @@ def duck():
     smooth(tail)
     apply(tail, yellow)
 
-    eyes = [apply(sphere(0.040, (x, 0.395, 0.655), 20, 12), eye) for x in (-0.140, 0.140)]
+    eyes = [apply(sphere(0.040, (x, 0.395, 0.655), 12, 8), eye) for x in (-0.140, 0.140)]
     wings = []
     for sx in (-1, 1):
-        w = sphere(0.26, (sx * 0.335, -0.06, -0.02), 32, 18)
+        w = sphere(0.26, (sx * 0.335, -0.06, -0.02), 16, 10)
         w.scale = (0.30, 0.92, 0.78)
         wings.append(apply(w, yellow))
 
@@ -588,7 +588,7 @@ def revolver_cylinder():
     steel = mat("gun_steel", (0.44, 0.455, 0.48), metallic=1.0, roughness=0.26)
     dark = mat("gun_bore", (0.006, 0.006, 0.007), roughness=0.85)
 
-    body = cylinder(0.50, 0.86, verts=72)
+    body = cylinder(0.50, 0.86, verts=32)
     bevel(body, width=0.035, segments=4)
     smooth(body)
     apply(body, steel)
@@ -599,10 +599,10 @@ def revolver_cylinder():
     bores, flutes = [], []
     for k in range(6):
         a = lib.TAU * k / 6
-        bores.append(apply(cylinder(0.135, 1.0, verts=28,
+        bores.append(apply(cylinder(0.135, 1.0, verts=16,
                                     location=(math.cos(a) * 0.30, math.sin(a) * 0.30, 0)), dark))
         fa = a + lib.TAU / 12
-        f = cylinder(0.115, 0.68, verts=28,
+        f = cylinder(0.115, 0.68, verts=16,
                      location=(math.cos(fa) * 0.56, math.sin(fa) * 0.56, 0))
         flutes.append(apply(f, dark))
     cut = join(bores + flutes)

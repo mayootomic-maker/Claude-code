@@ -41,7 +41,7 @@
       'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
-      'touchUse']) {
+      'touchUse', 'guide', 'guideArrow', 'guideText']) {
       el[id] = $(id);
     }
     el.stage = document.querySelector('.stage');
@@ -250,7 +250,7 @@
       shell.player.setLook({
         sensitivity: 0.0022 * (Number(meta.look) || 1),
         invert: !!meta.invertY,
-        smoothing: typeof meta.smoothing === 'number' ? meta.smoothing : 0.35,
+        smoothing: typeof meta.smoothing === 'number' ? meta.smoothing : 0,
         headBob: meta.headBob !== false,
       });
     };
@@ -279,6 +279,8 @@
         shell.hands.update(ps.bob, Math.hypot(ps.vel.x, ps.vel.z), ps.vy,
                            (GWPlayer.EYE - ps.height) / 0.57);
       }
+
+      if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
 
       // The crew keeps moving whatever you are doing. Freezing them while you
       // are sat at a table is how you look up from the roulette and find three
@@ -345,6 +347,7 @@
     shell.stage.setManualCamera(mode === 'world');
     el.leaveBtn.hidden = mode !== 'table';
     el.usePrompt.hidden = true;
+    if (mode !== 'world') el.guide.hidden = true;
     // Your hands belong to walking around, not to sitting at a table -- at a
     // table the camera is across the felt and they would hang in mid-air.
     shell.hands.group.visible = mode === 'world';
@@ -383,6 +386,8 @@
 
     shell.level = GWLevel.buildLobby({ rng: shell.store.rng });
     shell.stage.group.add(shell.level.group);
+    shell.stage.setLightSites(shell.level.sites);
+    fogForRoom();
     shell.crew = makeCrew();
     GWLoading.step('Opening the shop');
     await frame();
@@ -447,6 +452,8 @@
 
     shell.level = GWLevel.build({ floor: index, rng: shell.store.rng });
     shell.stage.group.add(shell.level.group);
+    shell.stage.setLightSites(shell.level.sites);
+    fogForRoom();
     GWLoading.step('Building the floor');
     await frame();
 
@@ -469,6 +476,37 @@
     shell.store.say('Floor ' + index + '. ' + def.name + '.', 'house');
     shell.store.save();
     shell.floorBusy = false;
+  }
+
+  /* Fog sized to the room it is in.
+
+     Pinned to one distance it is wrong in both directions: a twenty-metre far
+     plane turned the lobby black three metres past the rug, and the same
+     setting fogs nothing at all in a thirty-four metre hall. Scaled to the
+     room, the far wall is always dim and always there. */
+  function fogForRoom() {
+    const size = shell.level.size;
+    const far = Math.max(size.w, size.d) * 1.08;
+    shell.stage.setFog(shell.level.theme.ceiling, far * 0.34, far);
+  }
+
+  /* Drop the machines you cannot see anyway.
+
+     A slot cabinet is forty-odd symbol meshes and a duck race is a row of
+     ducks; drawn from the far end of a hall they cost as much as they do from
+     the stool in front of them and contribute a handful of fogged-out pixels.
+     Anything past the fog's own far plane is switched off, so nothing ever pops
+     -- by the time a machine is dropped it has already faded into the wall
+     colour. three.js frustum-culls what is behind you on its own; this is for
+     what is in front of you and too far away to read. */
+  function cullDistantMachines() {
+    const far = shell.stage.fogFar;
+    const eye = shell.player.state.pos;
+    for (const record of shell.anchors) {
+      const p = record.anchor.position;
+      const dx = p.x - eye.x, dz = p.z - eye.z;
+      record.holder.visible = (dx * dx + dz * dz) < far * far;
+    }
   }
 
   /* Put the friends in the room.
@@ -574,6 +612,7 @@
       shell.level.dispose();
       shell.level = null;
     }
+    shell.stage.setLightSites(null);
     shell.stage.clear();
     shell.game = null;
     shell.handle = null;
@@ -616,6 +655,63 @@
       el.useLabel.textContent = 'Take the lift';
       el.useNote.textContent = 'Choose a floor';
     }
+  }
+
+  /* What to do next, and which way it is.
+
+     Four counters in a room and no idea which one you want is a room you
+     wander -- reported, not guessed. This names the next step and points at it:
+     the arrow turns to the target relative to where you are facing, so it reads
+     as a direction rather than as a caption. It goes away once you are close
+     enough that the use prompt has taken over, because two labels for the same
+     object is worse than one. */
+  function nextStep() {
+    const s = shell.store.s;
+    if (!shell.level) return null;
+    if (shell.level.isLobby) {
+      if (!s.challenge) return { action: 'shark', text: 'Loan shark — take tonight\u2019s quota' };
+      if (s.pendingItems && s.pendingItems.length) {
+        return { action: 'collect', text: 'Pick your shopping up off the shelf' };
+      }
+      return { action: 'limo', text: 'Get in the limo to start the day' };
+    }
+    // On a floor: play until the quota is met, then the lift is the way on.
+    if (s.bank < s.quota) return { text: 'Make ' + money(s.quota - s.bank) + ' before the doors close' };
+    return { lift: true, text: 'Quota met — the lift is at the north end' };
+  }
+
+  const guideTo = new THREE.Vector3();
+  function updateGuide() {
+    const step = nextStep();
+    if (!step || GWScreens.isOpen()) { el.guide.hidden = true; return; }
+
+    let target = null;
+    if (step.action) {
+      const anchor = shell.level.anchors.find((a) => a.action === step.action);
+      if (anchor) target = anchor.stand;
+    } else if (step.lift) {
+      guideTo.set(shell.level.lift.x, 0, shell.level.lift.z);
+      target = guideTo;
+    }
+
+    // Standing at it already: the use prompt says the rest.
+    const here = shell.player.state.pos;
+    if (target && Math.hypot(target.x - here.x, target.z - here.z) < 2.0) {
+      el.guide.hidden = true;
+      return;
+    }
+
+    el.guide.hidden = false;
+    if (el.guideText.textContent !== step.text) el.guideText.textContent = step.text;
+    if (!target) {
+      el.guideArrow.style.transform = '';
+      el.guideArrow.textContent = '\u2666';
+      return;
+    }
+    el.guideArrow.textContent = '\u2191';
+    // Bearing to the target, less where the player is looking, so up is ahead.
+    const bearing = Math.atan2(-(target.x - here.x), -(target.z - here.z));
+    el.guideArrow.style.transform = 'rotate(' + (shell.player.state.viewYaw - bearing) + 'rad)';
   }
 
   function interact() {
@@ -696,6 +792,7 @@
     shell.store.s.game = record.def.id;
 
     setMode('table');
+    record.holder.visible = true;
     record.holder.updateMatrixWorld();
     const pos = record.view.pos.clone().applyMatrix4(record.holder.matrixWorld);
     const look = record.view.look.clone().applyMatrix4(record.holder.matrixWorld);

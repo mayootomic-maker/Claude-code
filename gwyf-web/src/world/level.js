@@ -86,7 +86,10 @@
     const solids = new global.GWCollision.World();
     solids.setBounds(-halfW, -halfD, halfW, halfD);
     const disposables = [];
-    const lights = [];
+    /* Where this room would like light rather than the lights themselves.
+       stage.js owns a small fixed pool and deals it to the nearest of these --
+       see the comment there for why the count has to stay constant. */
+    const sites = { points: [], spots: [] };
 
     const track = (thing) => { disposables.push(thing); return thing; };
 
@@ -167,10 +170,12 @@
         // A light in every other panel. The panels carry the look; these carry
         // the room, and without enough of them the floor between the tables is
         // a dark corridor you cannot see your way across.
-        if ((i + j) % 2 === 0) lights.push(makeCeilingLight(theme, x, z));
+        if ((i + j) % 2 === 0) {
+          sites.points.push({ at: new THREE.Vector3(x, WALL_H - 0.4, z),
+                              colour: theme.neon, intensity: 22, distance: 14 });
+        }
       }
     }
-    for (const light of lights) group.add(light);
 
     // A glowing strip where the walls meet the ceiling.
     for (const [x, z, w, d] of [[0, -halfD + 0.3, W, 0.08], [0, halfD - 0.3, W, 0.08],
@@ -195,9 +200,8 @@
     liftFloor.rotation.x = -Math.PI / 2;
     liftFloor.position.set(0, 0.012, liftZ);
     group.add(liftFloor);
-    const liftGlow = new THREE.PointLight(theme.neon, 6, 6);
-    liftGlow.position.set(0, 2.6, liftZ);
-    group.add(liftGlow);
+    sites.points.push({ at: new THREE.Vector3(0, 2.6, liftZ),
+                        colour: theme.neon, intensity: 8, distance: 7 });
     group.add(sign('LIFT', 0, 2.55, liftZ + liftD / 2 + 0.02, theme.neon, 1.8, 0));
 
     /* --- pillars ---------------------------------------------------------- */
@@ -355,10 +359,11 @@
     /* --- a lamp over every table ------------------------------------------ */
 
     for (const anchor of anchors) {
-      const lamp = new THREE.SpotLight(0xffe6c2, 46, 10, 0.66, 0.5, 1.3);
-      lamp.position.set(anchor.position.x, WALL_H - 0.5, anchor.position.z);
-      lamp.target.position.set(anchor.position.x, 0.4, anchor.position.z);
-      group.add(lamp, lamp.target);
+      sites.spots.push({
+        at: new THREE.Vector3(anchor.position.x, WALL_H - 0.5, anchor.position.z),
+        aim: new THREE.Vector3(anchor.position.x, 0.4, anchor.position.z),
+        colour: 0xffe6c2, intensity: 46, distance: 10, angle: 0.66,
+      });
       // The shade, so the light has somewhere to come from.
       const shade = new THREE.Mesh(
         track(new THREE.ConeGeometry(0.55, 0.42, 16, 1, true)),
@@ -378,8 +383,10 @@
     // Just outside the lift, looking into the room.
     const spawn = { x: 0, z: lift.z + lift.d / 2 + 1.1, angle: Math.PI };
 
+    mergeStatic(group);
+
     return {
-      group, solids, anchors, spawn, lift, theme,
+      group, solids, anchors, spawn, lift, theme, sites,
       size: { w: W, d: D, height: WALL_H },
       name: floorDef.name,
       dispose() {
@@ -388,6 +395,80 @@
     };
   }
 
+
+
+  /* Fold the room's boxes into one mesh per material.
+
+     A hall is built from a few hundred slabs -- wall panels, rails, skirting,
+     ceiling strips, pillars and their collars -- and every one of them was its
+     own draw call. Measured at 343 draw calls on the busiest floor, which is
+     several hundred more than the room deserves; the machines standing in it
+     account for about twenty.
+
+     Only static, untextured, indexed geometry is folded: anything with a map
+     (the carpet) keeps its own UVs, and anything added after the room is built
+     (the machines, the friends) is never seen by this. Merging is done by hand
+     because BufferGeometryUtils lives in three's examples and ships only as an
+     ES module, which the single-file build cannot import. */
+  function mergeStatic(root) {
+    root.updateMatrixWorld(true);
+    const byMaterial = new Map();
+    const originals = [];
+    root.traverse((o) => {
+      if (!o.isMesh || o.userData.keepSeparate) return;
+      const geo = o.geometry;
+      if (!geo || !geo.index || !geo.attributes.position || !geo.attributes.normal) return;
+      if (o.material.map) return;
+      const key = o.material.uuid;
+      if (!byMaterial.has(key)) byMaterial.set(key, { material: o.material, items: [] });
+      byMaterial.get(key).items.push(o);
+      originals.push(o);
+    });
+
+    const normalMatrix = new THREE.Matrix3();
+    const vertex = new THREE.Vector3();
+    const merged = [];
+    for (const bucket of byMaterial.values()) {
+      if (bucket.items.length < 2) continue;
+      let verts = 0, indices = 0;
+      for (const mesh of bucket.items) {
+        verts += mesh.geometry.attributes.position.count;
+        indices += mesh.geometry.index.count;
+      }
+      const position = new Float32Array(verts * 3);
+      const normal = new Float32Array(verts * 3);
+      const index = verts > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
+      let v = 0, i = 0;
+      for (const mesh of bucket.items) {
+        const geo = mesh.geometry;
+        const p = geo.attributes.position, n = geo.attributes.normal, ix = geo.index;
+        normalMatrix.getNormalMatrix(mesh.matrixWorld);
+        const base = v;
+        for (let k = 0; k < p.count; k++, v++) {
+          vertex.fromBufferAttribute(p, k).applyMatrix4(mesh.matrixWorld);
+          position[v * 3] = vertex.x; position[v * 3 + 1] = vertex.y; position[v * 3 + 2] = vertex.z;
+          vertex.fromBufferAttribute(n, k).applyMatrix3(normalMatrix).normalize();
+          normal[v * 3] = vertex.x; normal[v * 3 + 1] = vertex.y; normal[v * 3 + 2] = vertex.z;
+        }
+        for (let k = 0; k < ix.count; k++, i++) index[i] = ix.getX(k) + base;
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+      geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+      geometry.setIndex(new THREE.BufferAttribute(index, 1));
+      geometry.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geometry, bucket.material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      merged.push({ mesh, items: bucket.items });
+    }
+
+    for (const { mesh, items } of merged) {
+      for (const old of items) if (old.parent) old.parent.remove(old);
+      root.add(mesh);
+    }
+    return merged.length;
+  }
 
   /* Panelling.
 
@@ -410,12 +491,6 @@
       add(cx, cz, Math.max(w, 0.06), Math.max(d, 0.06), height * 0.52, 1.16, 'panel');
       add(cx, cz, Math.max(w, 0.06) * 1.06, Math.max(d, 0.06) * 1.06, 0.06, 1.16 + height * 0.52, 'rail');
     }
-  }
-
-  function makeCeilingLight(theme, x, z) {
-    const light = new THREE.PointLight(theme.neon, 16, 13, 1.7);
-    light.position.set(x, WALL_H - 0.4, z);
-    return light;
   }
 
   /* Lit lettering on a wall. Canvas on a plane -- extruded text would be
@@ -474,6 +549,7 @@
     const solids = new global.GWCollision.World();
     solids.setBounds(-halfW, -halfD, halfW, halfD);
     const disposables = [];
+    const sites = { points: [], spots: [] };
     const track = (t) => { disposables.push(t); return t; };
 
     const carpetTex = GWStage.carpetTexture(theme.carpet);
@@ -538,12 +614,9 @@
     panelRun(addPanel, { x1: halfW - 0.22, z1: -halfD + 1.5, x2: halfW - 0.22, z2: halfD - 1.5,
                          inward: { x: -1, z: 0 }, height: WALL_H - 1.8 });
 
-    const lights = [];
     for (const [x, z] of [[-6, -4], [6, -4], [-6, 4], [6, 4], [0, 0], [0, -6], [0, 6]]) {
-      const light = new THREE.PointLight(theme.neon, 22, 15, 1.6);
-      light.position.set(x, WALL_H - 0.5, z);
-      group.add(light);
-      lights.push(light);
+      sites.points.push({ at: new THREE.Vector3(x, WALL_H - 0.5, z),
+                          colour: theme.neon, intensity: 24, distance: 15 });
       const panel = new THREE.Mesh(track(new THREE.PlaneGeometry(2.6, 0.4)), glowMat);
       panel.rotation.x = Math.PI / 2;
       panel.position.set(x, WALL_H - 0.03, z);
@@ -577,9 +650,8 @@
       screen.rotation.y = rot;
       group.add(screen);
 
-      const lamp = new THREE.PointLight(colour || theme.neon, 3.2, 4.5);
-      lamp.position.set(x + face.x * 0.6, 1.9, z + face.z * 0.6);
-      group.add(lamp);
+      sites.points.push({ at: new THREE.Vector3(x + face.x * 0.6, 1.9, z + face.z * 0.6),
+                          colour: colour || theme.neon, intensity: 5, distance: 5 });
 
       const standAt = new THREE.Vector3(
         x + face.x * (depth + 1.6), 0, z + face.z * (depth + 1.6));
@@ -624,9 +696,8 @@
     }
     slab(0, halfD - 0.62, doorW + 0.5, 0.34, 0.22, 3.0, trimMat, null);
     group.add(sign('TO THE CASINO', 0, 3.9, halfD - 0.78, theme.neon, 4.6, Math.PI));
-    const doorGlow = new THREE.PointLight(theme.neon, 9, 7);
-    doorGlow.position.set(0, 4.4, halfD - 2.4);
-    group.add(doorGlow);
+    sites.points.push({ at: new THREE.Vector3(0, 4.4, halfD - 2.4),
+                        colour: theme.neon, intensity: 11, distance: 8 });
     anchors.push({
       kind: 'fixture', action: 'limo', label: 'The limo',
       position: new THREE.Vector3(0, 0, halfD - 0.62),
@@ -651,8 +722,10 @@
       slab(2.5 + dx, 1.5 + dz, 1.5, 0.8, 0.45, 0, wallMat, 'seat');
     }
 
+    mergeStatic(group);
+
     return {
-      group, solids, anchors, theme,
+      group, solids, anchors, theme, sites,
       lift: { x: 0, z: halfD - 1.6, w: doorW, d: 1.6 },
       spawn: { x: 3.0, z: -3.0, angle: 0.4 },
       size: { w: W, d: D, height: WALL_H },
@@ -662,5 +735,5 @@
     };
   }
 
-  global.GWLevel = { build, buildLobby, sign, FOOTPRINT, THEME, SIZE, WALL_H };
+  global.GWLevel = { build, buildLobby, sign, mergeStatic, FOOTPRINT, THEME, SIZE, WALL_H };
 })(window);

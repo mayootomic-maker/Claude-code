@@ -23,6 +23,14 @@
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const scene = new THREE.Scene();
+    /* Fog, set per room.
+
+       It earns its place twice. A casino floor at night should fall away into
+       the dark rather than show you every table in the building at full
+       brightness, and once the far end of the room is fogged out, machines out
+       there can be dropped entirely without anyone seeing them go -- which is
+       what makes the distance culling in main.js free rather than a pop. */
+    scene.fog = new THREE.Fog(0x120e0d, 12, 40);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
     /* Yaw, then pitch, then roll.
@@ -60,13 +68,80 @@
     rim.position.set(3.6, 2.4, -4.0);
     scene.add(rim);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.13);
-    scene.add(ambient);
+    /* A fixed pool of room lights.
+
+       Rooms used to add a light per ceiling panel and a lamp per table, which
+       came to twenty-three of them on the busiest floor. three.js compiles
+       every light in the scene into every material's shader and evaluates all
+       of them for every pixel, so that is the single most expensive thing the
+       game was doing -- measured at over half a second a frame on the floor
+       with the most lights, with the quality ladder already at half resolution
+       and shadows off.
+
+       The pool is a constant size and never changes. That matters as much as
+       the count: three.js keys its shader programs on how many lights there
+       are, so switching lights on and off as you walk recompiles every material
+       in the room mid-stride, which is a far worse stutter than the cost it
+       saves. Instead the level hands over a list of places a light should be,
+       and each frame the pool is dealt to the nearest of them. Unused slots go
+       to zero intensity rather than invisible, for the same reason. */
+    const POOL_POINTS = 6;
+    const POOL_SPOTS = 2;
+    const pool = { points: [], spots: [] };
+    for (let i = 0; i < POOL_POINTS; i++) {
+      const l = new THREE.PointLight(0xffffff, 0, 12, 1.7);
+      scene.add(l);
+      pool.points.push(l);
+    }
+    for (let i = 0; i < POOL_SPOTS; i++) {
+      const l = new THREE.SpotLight(0xffffff, 0, 10, 0.66, 0.5, 1.3);
+      scene.add(l, l.target);
+      pool.spots.push(l);
+    }
+    let sites = { points: [], spots: [] };
+
+    /* Deal the pool to the nearest sites. Distance is measured to the camera,
+       which in world mode is the player's head. */
+    const dealt = [];
+    function dealLights() {
+      for (const kind of ['points', 'spots']) {
+        const list = sites[kind] || [];
+        const slots = pool[kind];
+        dealt.length = 0;
+        for (const site of list) {
+          site._d = camera.position.distanceToSquared(site.at);
+          dealt.push(site);
+        }
+        dealt.sort((a, b) => a._d - b._d);
+        for (let i = 0; i < slots.length; i++) {
+          const slot = slots[i];
+          const site = dealt[i];
+          if (!site) { slot.intensity = 0; continue; }
+          slot.position.copy(site.at);
+          slot.color.set(site.colour);
+          slot.intensity = site.intensity;
+          slot.distance = site.distance || 12;
+          if (site.aim && slot.target) {
+            slot.target.position.copy(site.aim);
+            slot.target.updateMatrixWorld();
+          }
+          if (site.angle !== undefined) slot.angle = site.angle;
+        }
+      }
+    }
+
+    /* A small flat term under the hemisphere.
+
+       Six pooled point lights cannot reach the far end of a thirty-metre hall,
+       and cutting this to zero to save a light left rooms that were black
+       beyond the nearest few lamps. A room has to be visible first and cheap
+       second. */
+    const ambient = new THREE.AmbientLight(0xffffff, 0.16);
 
     // Sky-and-ground fill. A single ambient term flattens everything to the
     // same value; a hemisphere keeps the tops of things lighter than their
     // undersides, which is most of what makes a room read as lit at all.
-    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.30);
+    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.62);
     scene.add(sky);
 
     /* The lamp over the table.
@@ -207,6 +282,7 @@
       }
 
       for (const fn of Array.from(state.ticks)) fn(dt, now / 1000);
+      dealLights();
       renderer.render(scene, camera);
       watchPerformance(raw);
     }
@@ -262,6 +338,15 @@
 
     return {
       renderer, scene, camera, group, key, rim, ambient, sky, lamp, state,
+      /* Where a room would like light. See the pool above: the level asks,
+         the stage decides how many of the asks it can afford. */
+      setLightSites(next) { sites = next || { points: [], spots: [] }; },
+      setFog(colour, near, far) {
+        scene.fog.color.set(colour);
+        scene.fog.near = near;
+        scene.fog.far = far;
+      },
+      get fogFar() { return scene.fog.far; },
       setEnvironment, resize, frame, snap, start, stop, onTick, clear,
       get envName() { return state.envName; },
       /* Pin the renderer where it is. Used by the mod menu's display page and

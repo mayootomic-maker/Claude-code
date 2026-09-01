@@ -62,7 +62,7 @@
       // What the camera is actually pointing at, which trails the input when
       // camera smoothing is on. The real game eases this and lets you turn it
       // off; both are here for the same reason.
-      viewYaw: 0, viewPitch: 0, smoothing: 0.35, headBob: true,
+      viewYaw: 0, viewPitch: 0, smoothing: 0, headBob: true,
       active: false,
       locked: false,
       level: null,

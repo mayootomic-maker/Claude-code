@@ -55,7 +55,7 @@
       { pref: 'look', name: 'Look sensitivity', desc: 'How far the view turns for the same hand movement.',
         min: 0.25, max: 3, step: 0.05 },
       { pref: 'invertY', name: 'Invert look', desc: 'Push the mouse forward to look down.' },
-      { pref: 'smoothing', name: 'Camera smoothing', desc: 'How much the view eases behind the mouse. Zero is exact.',
+      { pref: 'smoothing', name: 'Camera smoothing', desc: 'How much the view lags the mouse. Zero, the default, is exact.',
         min: 0, max: 1, step: 0.05 },
       { pref: 'headBob', name: 'Head bob', desc: 'The walk in the camera. Off holds it steady.' },
       { id: 'reducedMotion', name: 'Reduce motion', desc: 'Shorter animations everywhere.' },
