@@ -31,7 +31,21 @@
        there can be dropped entirely without anyone seeing them go -- which is
        what makes the distance culling in main.js free rather than a pop. */
     scene.fog = new THREE.Fog(0x120e0d, 12, 40);
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
+  /* Two fields of view, because the camera does two jobs.
+
+     A table is a still life a metre across and it wants a long lens: 38
+     degrees frames a coin without the barrel distortion a wide angle puts on
+     everything near the edges. Walking wants the opposite. At 38 degrees a
+     corridor is a tunnel, a wall two metres away fills the screen, turning
+     feels twitchy because a small mouse movement sweeps a large part of what
+     you can see, and you cannot tell where you are in a room because you can
+     only see a sixth of it. Every first-person game is somewhere near 70.
+
+     Using the table's lens to walk with is the reason this played like being
+     led round the building with a toilet roll held to one eye. */
+    const FOV_WALK = 72;
+    const FOV_TABLE = 38;
+    const camera = new THREE.PerspectiveCamera(FOV_TABLE, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
     /* Yaw, then pitch, then roll.
 
@@ -154,15 +168,60 @@
        map costs more than the light is worth. */
     /* The lamp over the table the player is at. In the world each machine has
        its own shade hung from the ceiling, so this one is switched off while
-       walking and switched back on over whichever table is being played. */
-    const lamp = new THREE.SpotLight(0xffe0b4, 42, 11, 0.82, 0.62, 1.5);
+       walking and switched back on over whichever table is being played.
+
+       It hangs over that table, wherever it is. It used to hang over the world
+       origin, from back when a game was mounted at the origin and there was
+       only ever one; once the machines were laid out across a thirty-metre
+       hall the lamp stayed at nought-nought-nought lighting an empty patch of
+       carpet, and every table you sat down at was a black rectangle. */
+    const LAMP_ON = 42;
+    const lamp = new THREE.SpotLight(0xffe0b4, LAMP_ON, 11, 0.82, 0.62, 1.5);
     lamp.position.set(0.25, 4.3, 0.9);
     lamp.target.position.set(0, 0.1, 0);
     scene.add(lamp, lamp.target);
 
+    /* And one in front of it.
+
+       A shade hung above a table lights a table. Half the machines are not
+       tables: the slot cabinet, the drop board, the ladder and the climb are
+       upright, and a light directly overhead grazes their faces and leaves the
+       part you are looking at nearly black. Measured across all twelve, the
+       flat ones came out at forty percent mean luminance and the upright ones
+       at six. This sits where the camera sits and fills whatever face is
+       pointed at you, whichever way the machine stands. */
+    const FILL_ON = 16;
+    const fill = new THREE.PointLight(0xfff0dc, FILL_ON, 7, 1.6);
+    scene.add(fill);
+
+    /* Both are dimmed rather than hidden. Three compiles the light count into
+       every material, so hiding a light recompiles every shader in the scene --
+       a visible stall each time you sit down at a table or stand up from one.
+       An intensity of zero costs a few multiplications and no compile. */
+    function setTableLights(on) {
+      lamp.intensity = on ? LAMP_ON : 0;
+      fill.intensity = on ? FILL_ON : 0;
+    }
+
+    function setLampOver(point, from) {
+      if (!point) return;
+      lamp.position.set(point.x + 0.25, point.y + 4.2, point.z + 0.9);
+      lamp.target.position.set(point.x, point.y + 0.1, point.z);
+      lamp.target.updateMatrixWorld();
+      // A third of the way back towards the camera and a little above it, so it
+      // reads as the room's light rather than a torch strapped to your head.
+      const eye = from || point;
+      fill.position.set(
+        point.x + (eye.x - point.x) * 0.62,
+        point.y + (eye.y - point.y) * 0.62 + 0.5,
+        point.z + (eye.z - point.z) * 0.62
+      );
+    }
+
     const state = {
       running: false, last: 0, ticks: new Set(), env: null, envName: null,
       raf: 0, reduced: false, quality: 1, visible: true, manual: false,
+      fov: FOV_TABLE, fovWant: FOV_TABLE, fovKick: 0, checks: 0,
       // Rolling frame cost, and how far quality has already been backed off.
       frameCost: 16, tier: 0, sinceCheck: 0, auto: true,
     };
@@ -177,8 +236,8 @@
     const TIERS = [
       { dpr: 1.00, shadows: true, shadowSize: 1024 },
       { dpr: 0.85, shadows: true, shadowSize: 512 },
-      { dpr: 0.70, shadows: false, shadowSize: 512 },
-      { dpr: 0.55, shadows: false, shadowSize: 512 },
+      { dpr: 0.75, shadows: false, shadowSize: 512 },
+      { dpr: 0.68, shadows: false, shadowSize: 512 },
     ];
 
     function applyTier() {
@@ -200,10 +259,14 @@
       state.sinceCheck += dt;
       if (state.sinceCheck < 1.6) return;
       state.sinceCheck = 0;
+      state.checks++;
       if (state.frameCost > 34 && state.tier < TIERS.length - 1) {
         // Well past a playable frame time: skip a tier rather than crawl down
-        // one every second and a half while the player waits.
-        state.tier += state.frameCost > 70 ? 2 : 1;
+        // one every second and a half while the player waits. Not on the first
+        // check, though -- the first second and a half of a floor is spent
+        // building it, and reading that as a slow machine left every player
+        // permanently at the bottom tier because of one loading hitch.
+        state.tier += (state.frameCost > 70 && state.checks > 1) ? 2 : 1;
         state.tier = Math.min(state.tier, TIERS.length - 1);
         applyTier();
       } else if (state.frameCost < 15 && state.tier > 0) {
@@ -250,6 +313,9 @@
     }
 
     function snap() {
+      state.fov = state.fovWant + state.fovKick;
+      camera.fov = state.fov;
+      camera.updateProjectionMatrix();
       camera.position.copy(desired.pos);
       target.copy(desired.look);
       camera.lookAt(target);
@@ -279,6 +345,18 @@
         camera.position.lerp(desired.pos, k);
         target.lerp(desired.look, k);
         camera.lookAt(target);
+      }
+
+      /* Ease the lens rather than cutting it. Sitting down at a table is a
+         push in; standing up is a pull out; sprinting widens it a few degrees,
+         which is the oldest trick there is for making running feel fast and
+         costs nothing. Reduced motion gets the destination immediately. */
+      const wantFov = state.fovWant + state.fovKick;
+      if (state.reduced) state.fov = wantFov;
+      else state.fov += (wantFov - state.fov) * (1 - Math.exp(-9 * dt));
+      if (Math.abs(camera.fov - state.fov) > 0.01) {
+        camera.fov = state.fov;
+        camera.updateProjectionMatrix();
       }
 
       for (const fn of Array.from(state.ticks)) fn(dt, now / 1000);
@@ -347,7 +425,7 @@
         scene.fog.far = far;
       },
       get fogFar() { return scene.fog.far; },
-      setEnvironment, resize, frame, snap, start, stop, onTick, clear,
+      setEnvironment, resize, frame, snap, start, stop, onTick, clear, setLampOver,
       get envName() { return state.envName; },
       /* Pin the renderer where it is. Used by the mod menu's display page and
          by the screenshot harness, which wants a consistent frame rather than a
@@ -356,11 +434,14 @@
       /* Hand the camera to the first-person controller, or take it back. */
       setManualCamera(v) {
         state.manual = !!v;
+        state.fovWant = state.manual ? FOV_WALK : FOV_TABLE;
         // Walking: the floor's own lamps light the room. At a table: the
         // stage lamp adds the pool of light the game was lit for.
-        lamp.visible = !state.manual;
+        setTableLights(!state.manual);
       },
       get manualCamera() { return state.manual; },
+      /* Extra degrees on top of whatever the mode asks for. Sprinting uses it. */
+      setFovKick(deg) { state.fovKick = Math.max(-10, Math.min(14, deg || 0)); },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },

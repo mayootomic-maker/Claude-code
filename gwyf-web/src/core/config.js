@@ -23,7 +23,11 @@
 
   const FLOORS = [
     {
-      id: 'lobby', name: 'The Lobby', env: 'velvet', unlockBank: 0, unlockDay: 1,
+      /* Not "The Lobby". That is the room you start the day in, and having two
+         different rooms with the same name printed in the same corner of the
+         screen is how you get a player who cannot tell whether they have gone
+         anywhere. */
+      id: 'lobby', name: 'The Ground Floor', env: 'velvet', unlockBank: 0, unlockDay: 1,
       tag: 'Ground floor', accent: '#e0913f',
       blurb: 'Sticky carpet, free peanuts, and the only games in the building that '
            + 'will not take your whole night in one go.',

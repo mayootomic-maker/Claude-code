@@ -808,7 +808,7 @@
      first-person camera feel like it belongs to a body. */
   const YOU = { body: 0xd9a441 };
 
-  function buildHands(lib, colour) {
+  function buildHands(lib, colour, camera) {
     const group = new THREE.Group();
     const owned = [];
     let skin = null;
@@ -830,7 +830,6 @@
         }
         o.material = skin;
       });
-      hand.scale.setScalar(0.48);
       hand.rotation.y = side < 0 ? Math.PI : 0;
       group.add(hand);
       hands.push(hand);
@@ -841,21 +840,31 @@
       /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
          `fall` the vertical velocity so they drop when you do. */
       update(bob, speed, fall, crouch) {
+        // Half the visible frame at the distance the hands are held, from the
+        // camera's live field of view rather than a number written down once.
+        const Z = -0.52;
+        const halfH = Math.abs(Z) * Math.tan((camera.fov * Math.PI / 180) / 2);
+        const halfW = halfH * camera.aspect;
         const sway = Math.sin(bob) * Math.min(0.035, speed * 0.012);
         const lift = Math.abs(Math.cos(bob)) * Math.min(0.03, speed * 0.010);
         const drop = Math.max(-0.10, Math.min(0.10, -fall * 0.016));
         for (let i = 0; i < 2; i++) {
           const side = i === 0 ? -1 : 1;
-          /* Low in the frame but inside it.
+          /* Placed as a fraction of the frame, not in metres.
 
-             At a 38-degree vertical field of view the bottom edge at 0.52 m is
-             about 0.18 m below the axis, so a hand parked at -0.30 is off the
-             screen entirely -- which is where the first pass put them. */
+             Hard-coded offsets only ever suit one lens. These were measured
+             against a 38-degree field of view; the moment walking got its own
+             wide one they stopped hugging the lower corners and floated into
+             the middle of the screen like two loaves. Deriving them from the
+             camera's own frustum puts them in the same place at any field of
+             view, aspect ratio or window size, and keeps them the same
+             apparent size while it is being eased between the two. */
           hands[i].position.set(
-            side * (0.285 - crouch * 0.02) + sway * side,
-            -0.190 + lift - drop - crouch * 0.03,
-            -0.52 + Math.abs(sway) * 0.4
+            side * halfW * (0.66 - crouch * 0.03) + sway * side,
+            -halfH * (0.80 + crouch * 0.05) + lift - drop,
+            Z + Math.abs(sway) * 0.4
           );
+          hands[i].scale.setScalar(halfH * 1.06);
           hands[i].rotation.z = side * (0.35 + sway * 2.0);
           hands[i].rotation.x = -0.35 + lift * 2.0;
         }

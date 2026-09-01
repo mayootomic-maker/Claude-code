@@ -88,6 +88,9 @@ button:disabled { cursor: not-allowed; }
 
 .app {
   display: grid;
+  /* The world's floating overlays -- the ticker, the touch pad -- hang off
+     this, so it has to be the containing block. */
+  position: relative;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
   grid-template-rows: minmax(0, 1fr) auto;
   /* No row for the HUD: it lives inside the stage now and lies over the 3D. */
@@ -757,11 +760,34 @@ button:disabled { cursor: not-allowed; }
 
 /* In the world the canvas takes the whole width; the betting rail only exists
    once you are standing at a machine. */
+/* Walking, the world is the whole window.
+
+   It was not: the ticker held a 6.5rem grid row open underneath the stage, so
+   at 1440x900 the game was rendered into 1440x790 with an eighth of the screen
+   given over to a black box containing one line of text. In the world it
+   floats over the bottom-left corner instead, fading out, taking no layout and
+   no clicks. */
 .app.is-world {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'stage' 'ticker';
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'stage';
 }
 .app.is-world .rail { display: none; }
+.app.is-world .ticker {
+  position: absolute;
+  left: 0; bottom: 0; width: min(30rem, 46vw); height: auto; max-height: 8rem;
+  padding: 0.5rem 1rem 1.1rem;
+  background: linear-gradient(0deg, rgb(0 0 0 / 0.55), transparent);
+  border-top: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+}
+.app.is-world .ticker .line { opacity: 0.9; }
+/* Older lines fade out rather than piling up over the floor. */
+.app.is-world .ticker .line:nth-child(3) { opacity: 0.45; }
+.app.is-world .ticker .line:nth-child(n + 4) { display: none; }
 .app.is-world #scene { cursor: none; }
 .app.is-world.is-unlocked #scene { cursor: pointer; }
 
@@ -784,7 +810,8 @@ button:disabled { cursor: not-allowed; }
 .floortag {
   position: absolute; top: 0.85rem; left: 1rem;
   font-family: var(--font-display); font-size: 1.15rem; letter-spacing: 0.09em;
-  color: var(--text-faint); pointer-events: none;
+  color: var(--text-muted); text-shadow: 0 1px 4px rgb(0 0 0 / 0.9);
+  pointer-events: none;
   display: none;
 }
 .app.is-world .floortag { display: block; }
@@ -820,7 +847,9 @@ button:disabled { cursor: not-allowed; }
      to look at is a strange invitation. */
   position: absolute; inset: 0; z-index: 3;
   display: grid; align-content: end; justify-items: center; gap: 0.3rem;
-  padding-bottom: 2.6rem;
+  /* Low, so the guide above it has somewhere to sit. At 2.6rem the two were
+     printing through each other in the middle of the bottom edge. */
+  padding-bottom: 1.1rem;
   background: linear-gradient(to top, rgb(6 4 4 / 0.62) 0%, rgb(6 4 4 / 0) 26%);
   font-family: var(--font-display); font-size: 1.25rem; letter-spacing: 0.05em;
   color: var(--text);
@@ -1345,7 +1374,7 @@ button:disabled { cursor: not-allowed; }
   letter-spacing: 0.02em;
 }
 .money--quota { font-size: 0.98rem; font-weight: 700; color: #f13e54; }
-.money--debt { font-size: 0.7rem; color: var(--text-faint); letter-spacing: 0.06em; text-transform: uppercase; }
+.money--debt { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
 
 .hud__tools { display: flex; gap: 0.3rem; pointer-events: auto; margin-bottom: 0.2rem; }
 
@@ -1380,15 +1409,25 @@ button:disabled { cursor: not-allowed; }
 
 
 /* The corners came later than these two and landed on top of them. */
-.guide { top: auto; bottom: 5.4rem; }
-.is-touch .guide { bottom: 11rem; }
+/* Clear of the use prompt underneath it. At 5.4rem the two overlapped: the
+   prompt's pill is 2.4rem tall and the guide sat 1.2rem above its bottom. */
+.guide { top: auto; bottom: 7.8rem; }
+.is-touch .guide { bottom: 13rem; }
 
+/* Bottom right, because bottom left is the ticker's now and the two were
+   printing the room's name straight through the last thing anybody said. */
 .floortag {
   top: auto;
   bottom: 1.2rem;
-  left: 1rem;
-  right: auto;
+  left: auto;
+  right: 1.1rem;
 }
+.is-touch .floortag { bottom: 7.5rem; }
+
+/* Nothing to prompt about before the pointer is taken: E does nothing while
+   the game is asking you to click, and the two labels were printing over each
+   other in the middle of the screen. */
+.app.is-unlocked .useprompt { display: none !important; }
 
 
 /* --- heat -----------------------------------------------------------------

@@ -254,6 +254,13 @@
       state.height += (wantHeight - state.height) * Math.min(1, CROUCH_RATE * dt);
 
       const moved = Math.hypot(state.vel.x, state.vel.z);
+
+      /* Widen the lens as you get up to speed. It is proportional to how fast
+         you are actually going rather than to the shift key being down, so
+         setting off and stopping are the same gesture in both directions and
+         running into a wall does not leave the view stretched. */
+      const over = Math.max(0, moved - WALK) / Math.max(0.1, RUN - WALK);
+      stage.setFovKick(Math.min(1, over) * 7);
       // No head bob in mid-air: bobbing while your feet are off the ground is
       // the one place it stops reading as footsteps and starts reading as a
       // camera fault.

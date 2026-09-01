@@ -78,31 +78,82 @@ await page.evaluate(() => {
   s.mods.freezeClock = true;
   s.mods.quietFriends = true;
   s.bank = 500000;
-  // Screenshots want a consistent frame, not an adaptive one.
-  GWShell.stage.setQuality(1);
+  /* Screenshots want a consistent frame, not an adaptive one -- but pinning it
+     at full resolution in a container with a software rasteriser costs half a
+     second a frame and the screenshots themselves start timing out. Half is
+     still fixed, which is the property that matters. */
+  GWShell.stage.setQuality(0.5);
   GWShell.renderHud();
 });
 
 let index = 3;
+let failures = 0;
 for (const g of games) {
   if (only.length && !only.includes(g.id)) continue;
   const label = String(index++).padStart(2, '0') + '-' + g.id;
   const before = errors.length;
 
+  /* Go to the floor, walk to the machine, and use it.
+
+     This used to be `enterFloor(floor, id)` and nothing else. `enterFloor`
+     takes a floor and ignores everything after it, so for months this harness
+     reported twelve games played while standing in an empty corridor with the
+     previous game's panel still on screen -- and the screenshots it saved were
+     black. Nothing here may reach past what a player can press. */
   await page.evaluate((id) => {
     const floor = GWConfig.FLOORS.findIndex((f) => f.games.includes(id));
-    GWShell.enterFloor(floor, id);
+    GWShell.enterFloor(floor);
   }, g.id);
-  await sleep(900);
+  await page.waitForFunction(() => !GWLoading.isOpen() && GWShell.mode === 'world',
+    { timeout: 60000 }).catch(() => {});
+  await sleep(500);
+  const walked = await page.evaluate((id) => {
+    const st = GWShell.player.state;
+    const a = (GWShell.level.anchors || []).find((x) => x.gameId === id);
+    if (!a) return false;
+    st.pos.set(a.stand.x, st.pos.y, a.stand.z);
+    st.yaw = Math.atan2(-(a.position.x - st.pos.x), -(a.position.z - st.pos.z));
+    st.viewYaw = st.yaw; st.pitch = 0; st.viewPitch = 0;
+    return true;
+  }, g.id);
+  if (!walked) { console.error(g.id.padEnd(14) + 'FAIL never placed on its floor'); failures++; continue; }
+  /* Wait for a frame to notice, not for a fixed number of milliseconds. What
+     the player is standing in front of is worked out in the render loop, and
+     this harness pins the renderer at full quality, which in a container with
+     no GPU is one frame every half second. */
+  const sees = await page.waitForFunction((id) => {
+    const n = GWShell.player.nearest;
+    return !!(n && n.anchor && n.anchor.gameId === id);
+  }, g.id, { timeout: 25000 }).then(() => true).catch(() => false);
+  if (!sees) { console.error(g.id.padEnd(14) + 'FAIL standing at it and it is not in reach'); failures++; continue; }
+  await page.keyboard.press('e');
+  const atTable = await page.waitForFunction(
+    (id) => GWShell.mode === 'table' && GWShell.game && GWShell.game.id === id,
+    g.id, { timeout: 20000 }).then(() => true).catch(() => false);
+  if (!atTable) { console.error(g.id.padEnd(14) + 'FAIL pressing use never opened it'); failures++; continue; }
+  /* Wait for the camera to arrive rather than for a stopwatch. It eases toward
+     the table on a clamped delta, so at two frames a second the journey takes
+     a dozen real seconds and a screenshot taken after one is a photograph of
+     the walk. */
+  await page.waitForFunction(() => {
+    const rec = GWShell.anchor;
+    if (!rec) return false;
+    const want = rec.view.pos.clone().applyMatrix4(rec.holder.matrixWorld);
+    return GWShell.stage.camera.position.distanceTo(want) < 0.05;
+  }, null, { timeout: 40000 }).catch(() => {});
+  await sleep(500);
   await shot(label);
 
   // Play one hand, answering any mid-hand prompt by taking the first option.
   const played = await page.evaluate(async () => {
     const shell = window.GWShell;
+    const bank = shell.store.s.bank;
+    let staked = false;
     document.getElementById('btnPlay').click();
     const deadline = Date.now() + 95000;
     let answered = 0, picked = 0;
     while (shell.busy && Date.now() < deadline && answered + picked < 40) {
+      if (shell.store.s.bank !== bank) staked = true;
       // Prefer cashing out where a game offers it, so open-ended runs terminate.
       const cash = document.querySelector('#promptBox .promptbtn--cash');
       const first = document.querySelector('#promptBox .promptbtn');
@@ -126,15 +177,17 @@ for (const g of games) {
       }
       await new Promise((r) => setTimeout(r, 130));
     }
-    return { busy: shell.busy, answered, picked, status: (document.getElementById('gameStatus').textContent || '').slice(0, 60) };
+    return { busy: shell.busy, staked, answered, picked, status: (document.getElementById('gameStatus').textContent || '').slice(0, 60) };
   });
 
   await sleep(400);
   await shot(label + '-result');
   const fresh = errors.slice(before);
+  if (played.busy) failures++;
+  if (!played.staked) failures++;
   console.log(
     (g.id + ':').padEnd(14),
-    played.busy ? 'STILL BUSY' : 'ok',
+    played.busy ? 'STILL BUSY' : played.staked ? 'ok' : 'NEVER TOOK THE MONEY',
     'answers:' + played.answered,
     'picks:' + played.picked,
     fresh.length ? 'ERRORS ' + fresh.length : ''
@@ -159,6 +212,7 @@ console.log('\nshots in ' + SHOTS);
 if (errors.length) {
   console.error('\n' + errors.length + ' ERROR(S):');
   for (const e of [...new Set(errors)].slice(0, 25)) console.error('  ' + e);
-  process.exit(1);
 }
-console.log('no console or page errors');
+if (failures) console.error(failures + ' game(s) did not play');
+if (errors.length || failures) process.exit(1);
+console.log('no console or page errors, and every game took a bet');

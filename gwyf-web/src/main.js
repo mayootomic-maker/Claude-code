@@ -125,7 +125,7 @@
        The camera has to be in the scene for its children to be drawn -- a
        camera three.js is rendering from is not necessarily one it is walking,
        and hands hung off a camera outside the graph simply never appear. */
-    shell.hands = GWCrew.buildHands(shell.lib);
+    shell.hands = GWCrew.buildHands(shell.lib, undefined, shell.stage.camera);
     shell.stage.scene.add(shell.stage.camera);
     shell.stage.camera.add(shell.hands.group);
 
@@ -1015,6 +1015,36 @@
     renderHud();
   }
 
+  /* Pull the camera back inside the walls.
+
+     Each game declares where to watch it from, in its own space, from when a
+     machine stood alone at the origin. Placed against the wall of a real room,
+     a view four metres out in front of a machine standing a metre from the wall
+     puts the camera three metres into the brickwork -- and what you get when
+     you sit down is a close-up of the back of a wall with the machine hidden
+     behind it. Slid along its own line towards the table, the shot the game
+     asked for is kept and only its distance gives. */
+  function keepInsideRoom(pos, look) {
+    const size = shell.level && shell.level.size;
+    if (!size) return;
+    const limX = size.w / 2 - 0.75;
+    const limZ = size.d / 2 - 0.75;
+    let t = 1;
+    for (const [p, l, lim] of [[pos.x, look.x, limX], [pos.z, look.z, limZ]]) {
+      // How far along look -> pos we can travel before crossing the wall.
+      if (p > lim && p !== l) t = Math.min(t, (lim - l) / (p - l));
+      if (p < -lim && p !== l) t = Math.min(t, (-lim - l) / (p - l));
+    }
+    // Never closer than a fifth of the way out, or the camera ends up inside
+    // the machine, which is a different way of seeing nothing.
+    t = Math.max(0.2, Math.min(1, t));
+    if (t < 1) {
+      pos.set(look.x + (pos.x - look.x) * t,
+              look.y + (pos.y - look.y) * t,
+              look.z + (pos.z - look.z) * t);
+    }
+  }
+
   function useMachine(record) {
     if (!record.view) {
       // Every game declares one during build; if one ever does not, say so
@@ -1035,7 +1065,10 @@
     record.holder.updateMatrixWorld();
     const pos = record.view.pos.clone().applyMatrix4(record.holder.matrixWorld);
     const look = record.view.look.clone().applyMatrix4(record.holder.matrixWorld);
+    keepInsideRoom(pos, look);
     shell.stage.frame(pos.toArray(), look.toArray(), 2.6);
+    // Hang the table lamp over this table, not over the middle of the floor.
+    shell.stage.setLampOver(look, pos);
 
     el.gameIcon.textContent = record.def.icon;
     el.gameName.textContent = record.def.name;
