@@ -260,10 +260,20 @@ node gwyf-web/tools/measure-plinko.mjs 40000     # re-measure the plinko board
 node gwyf-web/tools/run-loop.mjs                 # play whole runs; check all three endings
 node gwyf-web/tools/walk.mjs                     # walk the tower with real keys, floor by floor
 node gwyf-web/tools/reach.mjs 12                 # every machine usable from its stand point, on 12 layouts
+node gwyf-web/tools/together.mjs                 # two windows playing together, driven through the interface
 node gwyf-web/tools/crew-shot.mjs out.png        # the four friends, assembled as the game builds them
 node gwyf-web/tools/pose-shot.mjs out.png        # every pose the animation holds, side by side
 node gwyf-web/tools/postcards.mjs                # one shot of every machine from where you stand at it
 ```
+
+`together.mjs` exists because of a bug it would have caught on day one. The
+first multiplayer tests called `GWShell.connect()` straight from the console and
+never touched a button; they passed cleanly while the screen those buttons live
+on rendered nothing at all — its builder returned `body` where every other
+screen returns `html`, so `sheet.innerHTML` was set to `undefined`. The transport
+was perfect and the feature did not exist. Nothing in that harness now reaches
+past the interface: it clicks Host, types a name, copies the peer code out of one
+window and pastes it into the other.
 
 `reach.mjs` is the one that guards the floors. `walk.mjs` asks the harder
 question — can a player actually get across the room to a table — with a

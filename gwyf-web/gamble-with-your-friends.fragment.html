@@ -11073,7 +11073,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           : '<li class="modrow__desc">Nobody else yet. Leave this open.</li>';
         return {
           title: net.isHost ? 'You are hosting' : 'You are at their table',
-          body: '<p class="sheet__lead">' + (net.isHost
+          html: '<p class="sheet__kicker">Play together</p>'
+            + '<h2 class="sheet__title">'
+            + (net.isHost ? 'You are hosting' : 'You are at their table') + '</h2>'
+            + '<p class="sheet__lead">' + (net.isHost
               ? 'Your account is the account. Anyone who joins can spend it, which is the point.'
               : 'You are spending the host\u2019s account. So is everyone else.')
             + '</p>'
@@ -11097,7 +11100,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       return {
         title: 'Play together',
-        body: '<p class="sheet__lead">One shared account, and other people who can reach it. '
+        html: '<p class="sheet__kicker">The table</p>'
+          + '<h2 class="sheet__title">Play together</h2>'
+          + '<p class="sheet__lead">One shared account, and other people who can reach it. '
           + 'That is the whole game, so it may as well be other real people.</p>'
           + '<label class="field"><span>Your name</span>'
           + '<input id="netName" maxlength="16" value="' + esc(named) + '" placeholder="Player"></label>'
