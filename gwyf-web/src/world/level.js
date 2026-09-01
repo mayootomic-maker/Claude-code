@@ -359,11 +359,14 @@
     /* --- a lamp over every table ------------------------------------------ */
 
     for (const anchor of anchors) {
-      sites.spots.push({
+      // Kept on the anchor so the game can recolour it: the lamp over a table
+      // is how heat is read from across the room.
+      anchor.lampSite = {
         at: new THREE.Vector3(anchor.position.x, WALL_H - 0.5, anchor.position.z),
         aim: new THREE.Vector3(anchor.position.x, 0.4, anchor.position.z),
         colour: 0xffe6c2, intensity: 46, distance: 10, angle: 0.66,
-      });
+      };
+      sites.spots.push(anchor.lampSite);
       // The shade, so the light has somewhere to come from.
       const shade = new THREE.Mesh(
         track(new THREE.ConeGeometry(0.55, 0.42, 16, 1, true)),

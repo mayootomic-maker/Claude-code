@@ -1382,6 +1382,101 @@ button:disabled { cursor: not-allowed; }
   right: auto;
 }
 
+
+/* --- heat -----------------------------------------------------------------
+   Under the clock, because it is the second number the day turns on. Colour
+   carries the state and the words say it as well: the bar alone would be one
+   more thing to learn. */
+
+.heat { display: grid; justify-items: center; gap: 0.18rem; margin-top: 0.3rem; }
+.heat__bar {
+  width: 9rem; height: 0.3rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  overflow: hidden;
+}
+.heat__bar i {
+  display: block; height: 100%;
+  background: var(--text-muted);
+  transition: width 220ms var(--ease), background 220ms var(--ease);
+}
+.heat__label {
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.heat[data-state='warm'] .heat__bar i { background: var(--warn); }
+.heat[data-state='warm'] .heat__label { color: var(--warn); }
+.heat[data-state='hot'] .heat__bar i { background: #ff7a2e; }
+.heat[data-state='hot'] .heat__label { color: #ff9f2e; }
+.heat[data-state='out'] .heat__bar i { background: var(--danger); }
+.heat[data-state='out'] .heat__label { color: var(--danger); }
+.heat[data-state='out'] { animation: heatPulse 1s ease-in-out infinite; }
+@keyframes heatPulse { 50% { opacity: 0.55; } }
+
+/* The use prompt borrows the same warning colours. */
+.useprompt[data-tone='warn'] { border-color: var(--warn); }
+.useprompt[data-tone='warn'] em { color: var(--warn); }
+.useprompt[data-tone='bad'] { border-color: var(--danger); }
+.useprompt[data-tone='bad'] em { color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .heat[data-state='out'] { animation: none; }
+}
+
+
+/* --- what the floor is doing ---------------------------------------------
+   One banner under the clock, with the time it has left on it. Events are the
+   only thing in the game that expire, so the countdown is the message. */
+
+.banner {
+  position: absolute;
+  top: 8.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.42rem 0.55rem 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgb(10 8 7 / 0.82);
+  pointer-events: none;
+  z-index: 5;
+  max-width: min(30rem, 88vw);
+  animation: bannerIn 220ms var(--ease);
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translate(-50%, -0.4rem); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.banner__text {
+  font-weight: 600;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.banner__clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-width: 2.1rem;
+  text-align: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+.banner[data-tone='good'] { border-color: var(--success); }
+.banner[data-tone='good'] .banner__text { color: var(--success); }
+.banner[data-tone='bad'] { border-color: var(--danger); }
+.banner[data-tone='bad'] .banner__text { color: var(--danger); }
+
+.app.is-table .banner { top: auto; bottom: 7.5rem; }
+
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
+
 </style>
 </head>
 <body>
@@ -1415,6 +1510,10 @@ button:disabled { cursor: not-allowed; }
     <div class="hud__corner hud__corner--tc">
       <p class="hud__label">Day ends in</p>
       <strong class="clock" id="statClock" data-live>5:00</strong>
+      <div class="heat" id="heatWrap" data-state="cold" hidden>
+        <div class="heat__bar"><i id="heatFill" style="width:0%"></i></div>
+        <span class="heat__label" id="heatLabel">Nobody is watching</span>
+      </div>
     </div>
 
     <div class="hud__corner hud__corner--tr">
@@ -1437,6 +1536,11 @@ button:disabled { cursor: not-allowed; }
     <div class="reticle" id="reticle" aria-hidden="true"><i></i></div>
 
     <div class="floortag" id="floorTag" aria-hidden="true"></div>
+
+    <div class="banner" id="banner" data-tone="good" hidden>
+      <span class="banner__text" id="bannerText"></span>
+      <span class="banner__clock" id="bannerClock"></span>
+    </div>
 
     <div class="guide" id="guide" hidden>
       <span class="guide__arrow" id="guideArrow" aria-hidden="true">↑</span>
@@ -2265,6 +2369,400 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   }
 
   global.GWAudio = { create };
+})(window);
+
+</script>
+<script>
+/* The house watching you.
+
+   The problem this fixes is the one underneath everything else: before it, a
+   floor was a menu you walked through. Every table paid the same whether you
+   had been sat at it for four minutes or four seconds, so there was no reason
+   to prefer one machine over another beyond the edge printed on it, no reason
+   to move, and minute four of a day played exactly like minute one.
+
+   Heat gives the room a memory. Playing a machine warms it and winning warms
+   it faster; walking away cools it. Warm enough and the house starts pushing
+   back -- first by watching, then by shortening the odds on that machine, then
+   by closing it. Let the whole floor get hot and you are walked out of it for
+   the night with everything you have won.
+
+   Three rules it is built on, and they are the same three the rest of the game
+   is built on:
+
+   - **Everything is published.** A shortened payout is shown on the table, in
+     the odds panel and on the use prompt before you bet, never after. The
+     published table is the zero-heat table; `tools/odds.mjs` audits that, and
+     the panel says so.
+   - **It is always escapable.** Heat only ever falls when you are away, and it
+     falls faster than it rises. There is no state you can be pushed into that
+     you cannot walk out of.
+   - **It costs the house nothing to be honest.** The pressure comes from
+     having to leave a table that is going well, not from being lied to. */
+
+(function (global) {
+  'use strict';
+
+  /* Per hand, before winnings. Twelve or so hands at one machine is enough to
+     get it watched, which is roughly a minute of play -- long enough to be a
+     decision, short enough to matter inside five minutes. */
+  const PER_HAND = 0.055;
+  /* And again for winning, in proportion to the floor's own ceiling. Taking the
+     table's maximum off it warms it about as much as four ordinary hands, so
+     three big wins gets you watched and six gets you closed -- which is the
+     whole design: a table that is going well is a table you have to leave. */
+  const PER_WIN = 0.22;
+  const MAX_PER_HAND = 0.17;   // no one result crosses more than a band
+  /* A second away. Twenty-two seconds sheds a full bar and nine sheds enough to
+     stop being watched, which is what the odds panel promises. */
+  const COOL = 0.045;
+  const COOL_CLOSED = 0.10;
+  /* And what you have taken off the floor as a whole, capped: winning three
+     times the quota should not be three times as damning as winning it once. */
+  const FLOOR_FROM_WIN = 0.45;
+
+  const WATCHED = 0.40;
+  const SHORT = 0.65;
+  const CLOSED = 0.90;
+  const SHORT_PAYS = 0.90;      // what a watched machine pays, as a fraction
+  const SHUT_FOR = 25;          // seconds a machine stays shut
+
+  const HOT_FLOOR = 0.75;       // the pit boss stops being polite
+  const BOSS_FROM = 0.30;       // when he comes out at all
+
+  function create(store) {
+    const state = {
+      machines: {},        // gameId -> { heat, shutFor }
+      floor: 0,            // 0..1
+      wonHere: 0,          // net taken off this floor today
+      walkedOut: {},       // floorIndex -> true
+      bossNear: null,      // gameId the boss is stood at, if any
+    };
+
+    const at = (id) => state.machines[id] || (state.machines[id] = { heat: 0, shutFor: 0 });
+
+    /* Reset for a new floor. Heat is per floor and per day: it does not follow
+       you up the tower, because being thrown off the second floor for what you
+       did on the first is a punishment you cannot see coming. */
+    function enterFloor() {
+      state.machines = {};
+      state.floor = 0;
+      state.wonHere = 0;
+      state.bossNear = null;
+    }
+
+    function newDay() {
+      enterFloor();
+      state.walkedOut = {};
+    }
+
+    /* --- what the house does about it -------------------------------------- */
+
+    function level(id) {
+      const m = at(id);
+      if (m.shutFor > 0) return 'shut';
+      if (m.heat >= SHORT) return 'short';
+      if (m.heat >= WATCHED) return 'watched';
+      return 'cold';
+    }
+
+    /* The factor a machine's payouts are multiplied by right now. Always 1 or
+       SHORT_PAYS, never anything in between: a payout that drifts continuously
+       with a hidden number is one nobody can plan around. */
+    function payFactor(id) {
+      return level(id) === 'short' ? SHORT_PAYS : 1;
+    }
+
+    function canPlay(id) {
+      return at(id).shutFor <= 0;
+    }
+
+    /* What to tell the player before they bet. */
+    function notice(id) {
+      const m = at(id);
+      if (m.shutFor > 0) {
+        return { tone: 'bad', text: 'Closed for ' + Math.ceil(m.shutFor) + 's — you have had too much off it' };
+      }
+      if (m.heat >= SHORT) {
+        return { tone: 'warn', text: 'Odds shortened: pays ' + Math.round(SHORT_PAYS * 100) + '% while they watch it' };
+      }
+      if (m.heat >= WATCHED) return { tone: 'warn', text: 'The pit boss has noticed this table' };
+      return null;
+    }
+
+    /* --- the numbers moving ------------------------------------------------- */
+
+    /* A hand settled. `net` is what it made, which is what the house actually
+       objects to. */
+    function played(id, stake, net) {
+      const m = at(id);
+      const limits = store.floorLimits();
+      const ceiling = Math.max(1, limits.maxBet);
+      /* Capped per hand, so no single result can vault a whole band.
+
+         Without it a big win took a table from cold straight to closed and the
+         shortened-odds band -- the one place there is an actual decision, keep
+         playing at ninety percent or walk -- was never seen at all. */
+      let gain = Math.min(MAX_PER_HAND, PER_HAND + Math.max(0, net) / ceiling * PER_WIN);
+      // Being stood over doubles it, which is the whole reason to walk away
+      // from the man in the black suit.
+      if (state.bossNear === id) gain *= 2;
+      if (state.floor >= HOT_FLOOR) gain *= 1.6;
+      m.heat = Math.min(1, m.heat + gain);
+      if (m.heat >= CLOSED && m.shutFor <= 0) {
+        m.shutFor = SHUT_FOR;
+        store.say('The ' + nameOf(id) + ' closes. "Maintenance." It is not maintenance.', 'bad');
+      }
+      if (net > 0) state.wonHere += net;
+      recompute();
+    }
+
+    function recompute() {
+      const ids = Object.keys(state.machines);
+      let sum = 0;
+      for (const id of ids) sum += state.machines[id].heat;
+      const perMachine = ids.length ? sum / ids.length : 0;
+      const quota = Math.max(1, store.s.quota);
+      const fromWin = Math.min(1, Math.max(0, state.wonHere) / quota) * FLOOR_FROM_WIN;
+      state.floor = Math.min(1, perMachine + fromWin);
+    }
+
+    /* `atMachine` is the machine the player is stood at, which is the only one
+       that does not cool. */
+    function tick(dt, atMachine) {
+      for (const id of Object.keys(state.machines)) {
+        const m = state.machines[id];
+        if (m.shutFor > 0) {
+          m.shutFor = Math.max(0, m.shutFor - dt);
+          m.heat = Math.max(0, m.heat - COOL_CLOSED * dt);
+          if (m.shutFor === 0) store.say('The ' + nameOf(id) + ' opens again.', 'flat');
+          continue;
+        }
+        if (id === atMachine) continue;
+        m.heat = Math.max(0, m.heat - COOL * dt);
+      }
+      // What you took off the floor is forgiven slowly, so a big win keeps the
+      // floor warm for a while even once you have left the table that paid it.
+      state.wonHere = Math.max(0, state.wonHere - store.s.quota * 0.03 * dt);
+      recompute();
+    }
+
+    const nameOf = (id) => {
+      const def = global.GWGames && GWGames.get(id);
+      return def ? def.name : id;
+    };
+
+    return {
+      state,
+      enterFloor, newDay, tick, played,
+      level, payFactor, canPlay, notice,
+      heatOf: (id) => at(id).heat,
+      get floorHeat() { return state.floor; },
+      /* The boss stands at a machine and doubles what it gains. Set by the
+         world, which is the only thing that knows where he is. */
+      setBossAt(id) { state.bossNear = id; },
+      /* Somebody talked him down. */
+      cool(amount) {
+        for (const id of Object.keys(state.machines)) {
+          state.machines[id].heat = Math.max(0, state.machines[id].heat - amount);
+        }
+        state.wonHere = Math.max(0, state.wonHere - store.s.quota * amount);
+        recompute();
+      },
+      /* Warm one table by hand -- the pit doing a round. */
+      warm(id, by) { at(id).heat = Math.min(1, at(id).heat + by); recompute(); },
+      walkedOut(index) { state.walkedOut[index] = true; },
+      isWalkedOut: (index) => !!state.walkedOut[index],
+      SHORT_PAYS, WATCHED, SHORT, CLOSED, BOSS_FROM, HOT_FLOOR,
+    };
+  }
+
+  global.GWHeat = { create };
+})(window);
+
+</script>
+<script>
+/* Things that happen to you, on a clock you do not control.
+
+   Before this, minute four of a day played exactly like minute one: the same
+   twelve machines paying the same twelve numbers until the bell. The tension
+   was entirely in the countdown, and a countdown on its own is a deadline, not
+   a game.
+
+   So the floor does things. Every forty to seventy seconds one of five things
+   happens, each of which asks you to change what you were about to do:
+
+   - a table starts paying over the odds, but only for a moment, and it is
+     probably across the room;
+   - the pit does a round and every table gets warmer at once;
+   - somebody sends drinks over and the next few hands go unnoticed;
+   - a friend is up and will split it with you if you can reach them;
+   - the shark's man arrives early and takes his cut whatever you are doing.
+
+   Two rules, the same two the rest of this is built on. Every one of them is
+   announced before it does anything, with the number it is going to use. And
+   none of them can be waited out for a better one: the good ones need you to
+   move, the bad ones happen regardless, so there is never a reason to stand
+   still and see what the floor offers next. */
+
+(function (global) {
+  'use strict';
+
+  const FIRST = 26;             // seconds into a day before anything happens
+  const GAP = [40, 70];         // and between one and the next
+
+  function create(store, hooks) {
+    const rng = store.rng;
+    const state = {
+      next: FIRST,
+      active: null,             // { id, label, note, left, tone }
+      hotTable: null,           // gameId paying over the odds
+      hotBonus: 1,
+      comped: 0,                // hands still going unnoticed
+      waiting: null,            // { mateId, left } -- a friend with an offer
+    };
+
+    /* Only the things that can actually happen here. A hot table needs a table
+       on this floor; a friend with an offer needs a friend still solvent. */
+    function candidates() {
+      const s = store.s;
+      const floor = s.floor;
+      const games = (global.GWConfig.FLOORS[floor] || {}).games || [];
+      const out = ['sweep', 'comps'];
+      if (games.length) out.push('hot', 'hot');       // twice as likely: it is the good one
+      if (s.friends.some((f) => f.won > 0)) out.push('friend');
+      if (s.debt > 0 && s.bank > 400) out.push('collection');
+      return out;
+    }
+
+    function fire() {
+      const s = store.s;
+      const pick = candidates()[Math.floor(rng.next() * candidates().length)];
+      const games = (global.GWConfig.FLOORS[s.floor] || {}).games || [];
+
+      if (pick === 'hot') {
+        const id = games[Math.floor(rng.next() * games.length)];
+        const def = global.GWGames.get(id);
+        const bonus = 1.3;
+        state.hotTable = id;
+        state.hotBonus = bonus;
+        set('hot', 'The ' + (def ? def.name : id) + ' is paying '
+          + Math.round((bonus - 1) * 100) + '% over', 26, 'good');
+        store.say('Word goes round: the ' + (def ? def.name : id) + ' is paying '
+          + Math.round((bonus - 1) * 100) + '% over the board. Twenty-six seconds.', 'good');
+        return;
+      }
+
+      if (pick === 'sweep') {
+        const by = 0.18;
+        if (hooks.onSweep) hooks.onSweep(by);
+        set('sweep', 'The pit did a round — every table is warmer', 8, 'bad');
+        store.say('The pit walks the floor. Every table on it is warmer by '
+          + Math.round(by * 100) + '%.', 'bad');
+        return;
+      }
+
+      if (pick === 'comps') {
+        state.comped = 3;
+        set('comps', 'Comped: the next 3 hands go unnoticed', 20, 'good');
+        store.say('Drinks arrive nobody ordered. The next three hands go unnoticed.', 'good');
+        return;
+      }
+
+      if (pick === 'friend') {
+        const up = s.friends.filter((f) => f.won > 0);
+        const mate = up[Math.floor(rng.next() * up.length)];
+        const share = Math.round(mate.won * 0.5);
+        state.waiting = { mateId: mate.id, left: 28, share };
+        set('friend', mate.name + ' will split ' + money(share) + ' — go and find them', 28, 'good');
+        store.say(mate.name + ' is up and waving you over. Half of ' + money(mate.won)
+          + ' if you get there in time.', 'good');
+        if (hooks.onFriendOffer) hooks.onFriendOffer(mate.id);
+        return;
+      }
+
+      // collection
+      const cut = Math.round(store.s.bank * 0.08);
+      store.s.bank = Math.max(0, store.s.bank - cut);
+      store.s.debt = Math.max(0, store.s.debt - cut);
+      set('collection', 'The shark took ' + money(cut) + ' off the debt', 8, 'bad');
+      store.say('A man you have not met takes ' + money(cut) + ' out of the account. '
+        + 'It comes off the debt, which is the only good thing about it.', 'bad');
+      if (hooks.onBank) hooks.onBank();
+    }
+
+    function set(id, label, seconds, tone) {
+      state.active = { id, label, left: seconds, tone };
+      if (hooks.onBanner) hooks.onBanner(state.active);
+    }
+
+    function tick(dt) {
+      const s = store.s;
+      if (s.phase !== 'floor') return;
+
+      if (state.active) {
+        state.active.left -= dt;
+        if (state.active.left <= 0) {
+          const done = state.active.id;
+          state.active = null;
+          if (done === 'hot') {
+            state.hotTable = null;
+            state.hotBonus = 1;
+            store.say('The table goes back to paying what it says on it.', 'flat');
+          }
+          if (done === 'friend' && state.waiting) {
+            const mate = s.friends.find((f) => f.id === state.waiting.mateId);
+            store.say((mate ? mate.name : 'They') + ' gets bored of waving and puts it back on.', 'bad');
+            state.waiting = null;
+            if (hooks.onFriendOffer) hooks.onFriendOffer(null);
+          }
+          if (hooks.onBanner) hooks.onBanner(null);
+        }
+      }
+
+      state.next -= dt;
+      // Nothing new lands on top of something still running, and nothing lands
+      // in the last few seconds of a day where it could not be acted on.
+      if (state.next <= 0 && !state.active && s.timeLeft > 20) {
+        state.next = GAP[0] + rng.next() * (GAP[1] - GAP[0]);
+        fire();
+      }
+    }
+
+    function newDay() {
+      state.next = FIRST;
+      state.active = null;
+      state.hotTable = null;
+      state.hotBonus = 1;
+      state.comped = 0;
+      state.waiting = null;
+      if (hooks.onBanner) hooks.onBanner(null);
+    }
+
+    const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+    return {
+      state, tick, newDay,
+      /* What a table is paying over the odds right now, and whether this hand
+         is going unnoticed. Both are read at the one place money moves. */
+      bonusFor: (id) => (state.hotTable === id ? state.hotBonus : 1),
+      comped: () => state.comped > 0,
+      spendComp() { if (state.comped > 0) state.comped--; },
+      /* The friend with an offer, if there is one and it is still open. */
+      offerFrom: () => (state.waiting ? state.waiting.mateId : null),
+      collectOffer() {
+        if (!state.waiting) return 0;
+        const share = state.waiting.share;
+        state.waiting = null;
+        state.active = null;
+        if (hooks.onBanner) hooks.onBanner(null);
+        if (hooks.onFriendOffer) hooks.onFriendOffer(null);
+        return share;
+      },
+    };
+  }
+
+  global.GWEvents = { create };
 })(window);
 
 </script>
@@ -7082,11 +7580,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     /* --- a lamp over every table ------------------------------------------ */
 
     for (const anchor of anchors) {
-      sites.spots.push({
+      // Kept on the anchor so the game can recolour it: the lamp over a table
+      // is how heat is read from across the room.
+      anchor.lampSite = {
         at: new THREE.Vector3(anchor.position.x, WALL_H - 0.5, anchor.position.z),
         aim: new THREE.Vector3(anchor.position.x, 0.4, anchor.position.z),
         colour: 0xffe6c2, intensity: 46, distance: 10, angle: 0.66,
-      });
+      };
+      sites.spots.push(anchor.lampSite);
       // The shade, so the light has somewhere to come from.
       const shade = new THREE.Mesh(
         track(new THREE.ConeGeometry(0.55, 0.42, 16, 1, true)),
@@ -8107,7 +8608,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         pos: new THREE.Vector3(), yaw: 0, wantYaw: 0,
         dest: null, at: null, state: 'idle',
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
-        mood: 0, moodLeft: 0, idleFor: 0, tilting: false, anchor: null,
+        mood: 0, moodLeft: 0, idleFor: 0, tilting: false, offering: false, anchor: null,
         lookAtPlayer: 0,
       };
       spawnAt(person);
@@ -8220,6 +8721,52 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       person.bubbleLeft = 3.2 + Math.min(2.4, text.length * 0.045);
     }
 
+    /* Somebody is up and waving you over.
+
+       Same mechanism as the tilt: an anchor goes in so they can be walked up
+       to. The difference is what pressing E does, which the shell decides --
+       this only makes them approachable and marks them so they read as wanting
+       something from across the room. */
+    function offer(mateId) {
+      for (const person of people) {
+        const wants = person.mate.id === mateId;
+        if (person.offering === wants) continue;
+        person.offering = wants;
+        if (wants) {
+          person.dest = null;
+          person.at = null;
+          person.state = 'idle';
+          mark(person, 'Take ' + person.mate.name + '\u2019s half');
+        } else if (!person.tilting) {
+          unmark(person);
+        }
+      }
+    }
+
+    /* Put an anchor on somebody so the interaction test can find them. The live
+       position vector goes in rather than a copy, so it follows them. */
+    function mark(person, label) {
+      if (person.anchor) {
+        person.anchor.label = label;
+        return;
+      }
+      person.anchor = {
+        kind: 'friend',
+        mateId: person.mate.id,
+        label,
+        position: person.pos,
+        half: { hw: 0.42, hd: 0.42 },
+      };
+      level.anchors.push(person.anchor);
+    }
+
+    function unmark(person) {
+      if (!person.anchor) return;
+      const i = level.anchors.indexOf(person.anchor);
+      if (i >= 0) level.anchors.splice(i, 1);
+      person.anchor = null;
+    }
+
     /* About to bet the account. They stop where they are, and an anchor goes in
        so the player can walk over and shout at them in person -- the same shout
        the Q key spends, aimed by standing in front of somebody. */
@@ -8238,22 +8785,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         person.at = null;
         person.state = 'idle';
         person.idleFor = 0;
-        if (!person.anchor) {
-          person.anchor = {
-            kind: 'friend',
-            mateId: person.mate.id,
-            label: 'Shout at ' + person.mate.name,
-            // The live vector, not a copy: the interaction test then follows
-            // them if anything moves them before you get there.
-            position: person.pos,
-            half: { hw: 0.42, hd: 0.42 },
-          };
-          level.anchors.push(person.anchor);
-        }
-      } else if (person.anchor) {
-        const i = level.anchors.indexOf(person.anchor);
-        if (i >= 0) level.anchors.splice(i, 1);
-        person.anchor = null;
+        mark(person, 'Shout at ' + person.mate.name);
+      } else if (person.anchor && !person.offering) {
+        unmark(person);
       }
     }
 
@@ -8617,7 +9151,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
 
     return {
-      people, update, go, settled, speak, tilt, dispose, group,
+      people, update, go, settled, speak, tilt, offer, dispose, group,
       /* What somebody is doing, for the crew rail. The rail used to read the
          game they had picked, which after a bet was announced but before they
          got there said "Roulette" about somebody standing by the lift. */
@@ -8698,7 +9232,109 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return makeTag(text, colour, { size: 0.155, font: 30 });
   }
 
-  global.GWCrew = { create, buildBody, buildHands, nameTag, LOOK, YOU };
+  /* The pit boss.
+
+     Heat, made into a person. A number in the corner going up is something you
+     read; a man in a black suit walking towards the table you are winning at is
+     something you feel, and it is the reason the room exists rather than a menu
+     of machines. He is slow enough to outwalk, which is the point: the answer
+     to him is always to go and play somewhere else.
+
+     Built from the same parts as everyone else, in black, with no hat. */
+  const BOSS_LOOK = { body: 0x2b2b31, hat: null, height: 1.12, width: 1.10 };
+  const BOSS_WALK = 1.35;
+
+  function createBoss(opts) {
+    const { level, lib } = opts;
+    let body = null;
+    let tag = null;
+    const pos = new THREE.Vector3();
+    const dest = new THREE.Vector3();
+    let yaw = 0, wantYaw = 0, cycle = 0, out = false, blocked = 0, detour = 0, detourSign = 1;
+
+    function appear(at) {
+      if (body) return;
+      try {
+        body = buildBody(lib, BOSS_LOOK);
+      } catch (err) {
+        console.warn('[gwyf] the pit boss could not be drawn', err);
+        return;
+      }
+      tag = nameTag('Pit boss', '#ff9f2e');
+      tag.position.y = body.joints.height * 0.98;
+      body.group.add(tag);
+      level.group.add(body.group);
+      pos.copy(at || new THREE.Vector3(level.lift.x, 0, level.lift.z));
+      body.group.position.copy(pos);
+      out = true;
+    }
+
+    function leave() {
+      if (!body) return;
+      if (body.group.parent) body.group.parent.remove(body.group);
+      if (tag && tag.userData.dispose) tag.userData.dispose();
+      body.dispose();
+      body = null; tag = null; out = false;
+    }
+
+    /* Head for wherever the player is. `target` is null when he has no reason
+       to be here, and he goes back to the lift and off the floor. */
+    function update(dt, target) {
+      if (!body) return null;
+      dest.copy(target || new THREE.Vector3(level.lift.x, 0, level.lift.z));
+      const dx = dest.x - pos.x, dz = dest.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      let moved = 0;
+      if (dist > 1.1) {
+        let ux = dx / dist, uz = dz / dist;
+        if (detour > 0) {
+          detour -= dt;
+          const px = -uz * detourSign * 1.5, pz = ux * detourSign * 1.5;
+          const len = Math.hypot(ux + px, uz + pz) || 1;
+          ux = (ux + px) / len; uz = (uz + pz) / len;
+        }
+        const step = { x: pos.x + ux * BOSS_WALK * dt, z: pos.z + uz * BOSS_WALK * dt };
+        level.solids.resolve(step, RADIUS);
+        level.solids.bound(step, RADIUS);
+        moved = Math.hypot(step.x - pos.x, step.z - pos.z);
+        pos.x = step.x; pos.z = step.z;
+        if (moved < BOSS_WALK * dt * 0.4) {
+          blocked += dt;
+          if (blocked > 0.35 && detour <= 0) { detour = 1.4; detourSign = rand() < 0.5 ? 1 : -1; }
+        } else blocked = Math.max(0, blocked - dt);
+        wantYaw = Math.atan2(-ux, -uz);
+      }
+      let d = wantYaw - yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      yaw += d * Math.min(1, TURN * dt);
+      body.group.position.set(pos.x, 0, pos.z);
+      body.group.rotation.y = yaw;
+
+      // He does not waddle. Hands behind the back, and a slow rock.
+      cycle += (moved > 0.01 ? moved * 2.0 : dt * 1.1);
+      const beat = Math.sin(cycle);
+      body.root.rotation.z = beat * 0.05;
+      body.root.position.y = Math.abs(Math.cos(cycle)) * (moved > 0.01 ? 0.025 : 0.004);
+      body.root.rotation.x = -0.05;
+      for (let i = 0; i < 2; i++) {
+        const side = i === 0 ? -1 : 1;
+        body.hands[i].position.set(side * 0.30, 0.50, 0.20);
+        body.hands[i].rotation.z = side * 0.2;
+      }
+      body.brow.rotation.x = 0.28;   // permanently unimpressed
+      return pos;
+    }
+
+    return {
+      appear, leave, update,
+      get position() { return pos; },
+      get here() { return out; },
+      dispose: leave,
+    };
+  }
+
+  global.GWCrew = { create, createBoss, buildBody, buildHands, nameTag, LOOK, YOU };
 })(window);
 
 </script>
@@ -11225,7 +11861,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const shell = {
     stage: null, lib: null, store: null, audio: null, friends: null,
     player: null, level: null, anchors: [], crew: null, touch: null, hands: null,
-    net: null,
+    net: null, heat: null, boss: null, events: null,
     mode: 'boot',
     game: null, handle: null, ctx: null, anchor: null,
     busy: false, stake: 25, pending: null, endAfterHand: false,
@@ -11249,7 +11885,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
       'touchUse', 'guide', 'guideArrow', 'guideText',
       'title', 'titleMenu', 'titleTickets', 'btnTitle',
-      'challengeCard', 'challengeName', 'challengeReward', 'challengeNote']) {
+      'challengeCard', 'challengeName', 'challengeReward', 'challengeNote',
+      'heatWrap', 'heatFill', 'heatLabel', 'banner', 'bannerText', 'bannerClock']) {
       el[id] = $(id);
     }
     el.stage = document.querySelector('.stage');
@@ -11275,6 +11912,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.stage.start();
 
     progress(0.75, 'Opening the doors…');
+    shell.heat = GWHeat.create(shell.store);
+    shell.events = GWEvents.create(shell.store, {
+      onSweep: (by) => { for (const r of shell.anchors) shell.heat.warm(r.def.id, by); },
+      onBank: () => { renderHud(); refreshPlayButton(); },
+      onBanner: renderBanner,
+      onFriendOffer: (id) => { if (shell.crew) shell.crew.offer(id); },
+    });
     shell.friends = GWFriends.create(shell.store, {
       onTilt(pending) {
         showShout();
@@ -11535,6 +12179,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
+      if (s.phase === 'floor' && !GWLoading.isOpen() && !s.mods.freezeClock) {
+        shell.heat.tick(dt, shell.mode === 'table' && shell.game ? shell.game.id : null);
+        shell.events.tick(dt);
+        renderBannerClock();
+        updateBoss(dt);
+        checkWalkOut();
+      }
       if (shell.net) shell.net.tick(dt, performance.now());
 
       // The crew keeps moving whatever you are doing. Freezing them while you
@@ -11670,6 +12321,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       s.pendingItems = [];
     }
     warned.clear();
+    shell.heat.newDay();
+    shell.events.newDay();
     s.timeLeft = C.DAY_SECONDS
       + (shell.store.has('stopwatch') ? 45 : 0)
       - (shell.store.sold('kidney') ? 30 : 0);
@@ -11712,12 +12365,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     GWLoading.step('Building the floor');
     await frame();
 
+    shell.heat.enterFloor();
     shell.anchors = [];
     for (const anchor of shell.level.anchors) {
       const built = buildMachine(anchor);
       if (built) shell.anchors.push(built);
     }
     shell.crew = makeCrew();
+    shell.boss = GWCrew.createBoss({ level: shell.level, lib: shell.lib });
     GWLoading.step('Wheeling in the machines');
     await frame();
 
@@ -11803,6 +12458,72 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.stage.setFog(shell.level.theme.ceiling, far * 0.34, far);
   }
 
+  /* The man in the black suit.
+
+     He comes out once the floor has noticed you and walks to whatever you are
+     playing. Standing over a table doubles what it gains, so the answer to him
+     is always to go and play somewhere else -- which is the behaviour the whole
+     heat layer is trying to produce, expressed as a person rather than as a
+     number. He is slower than you are, on purpose. */
+  const bossTarget = new THREE.Vector3();
+  function updateBoss(dt) {
+    if (!shell.boss || !shell.level) return;
+    const hot = shell.heat.floorHeat >= shell.heat.BOSS_FROM;
+    if (hot && !shell.boss.here) {
+      shell.boss.appear();
+      shell.store.say('A man in a black suit steps onto the floor.', 'warn');
+    }
+    if (!shell.boss.here) return;
+
+    // He heads for the machine you are at, or for you.
+    let target = null;
+    if (shell.mode === 'table' && shell.anchor) target = shell.anchor.anchor.stand;
+    else { bossTarget.copy(shell.player.state.pos); target = hot ? bossTarget : null; }
+    shell.boss.update(dt, target);
+
+    // Which table he is stood over, if any.
+    let over = null;
+    for (const record of shell.anchors) {
+      const p = record.anchor.position;
+      const half = record.anchor.half;
+      const near = Math.abs(shell.boss.position.x - p.x) < half.hw + 1.6
+        && Math.abs(shell.boss.position.z - p.z) < half.hd + 1.6;
+      if (near) { over = record.def.id; break; }
+    }
+    shell.heat.setBossAt(over);
+
+    if (!hot && shell.boss.here) {
+      // Nothing to see: he wanders back to the lift and goes.
+      const d = Math.hypot(shell.boss.position.x - shell.level.lift.x,
+                           shell.boss.position.z - shell.level.lift.z);
+      if (d < 2) { shell.boss.leave(); shell.store.say('The suit loses interest and leaves.', 'flat'); }
+    }
+  }
+
+  /* Walked off the floor.
+
+     The one thing a hot floor can do that a hot table cannot: end your night on
+     it. You keep every penny -- this is not a money punishment, it is a time
+     one, which is the currency a five-minute day is actually denominated in.
+     The lift still works, so a hot floor costs you the walk to another. */
+  function checkWalkOut() {
+    if (shell.heat.floorHeat < 1) return;
+    const s = shell.store.s;
+    if (shell.heat.isWalkedOut(s.floor)) return;
+    shell.heat.walkedOut(s.floor);
+    shell.store.say('Two of them take an elbow each. You are done on this floor tonight.', 'bad');
+    shell.audio.play('alarm');
+    if (shell.mode === 'table') leaveMachine();
+    const open = shell.store.unlockedFloors()
+      .filter((f) => f.open && !shell.heat.isWalkedOut(f.index));
+    if (!open.length) {
+      shell.store.say('And there is nowhere else open. That is the night.', 'bad');
+      endDay();
+      return;
+    }
+    GWScreens.show('tower');
+  }
+
   /* Drop the machines you cannot see anyway.
 
      A slot cabinet is forty-odd symbol meshes and a duck race is a row of
@@ -11819,6 +12540,19 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const p = record.anchor.position;
       const dx = p.x - eye.x, dz = p.z - eye.z;
       record.holder.visible = (dx * dx + dz * dz) < far * far;
+      // The lamp over a table says how hot it is: warm white when nobody
+      // cares, amber once they do, red when it is shut. It is the one signal
+      // you can read from across the room without reading anything.
+      const site = record.anchor.lampSite;
+      if (site) {
+        const lvl = shell.heat.level(record.def.id);
+        const hot = shell.events.bonusFor(record.def.id) > 1;
+        site.colour = hot ? 0x4fe07a
+          : lvl === 'shut' ? 0xff3b30
+          : lvl === 'short' ? 0xff9f2e
+          : lvl === 'watched' ? 0xffd27a : 0xffe6c2;
+        site.intensity = hot ? 62 : lvl === 'shut' ? 22 : 46;
+      }
     }
   }
 
@@ -11917,6 +12651,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (record.handle && record.handle.dispose) record.handle.dispose();
     }
     shell.anchors = [];
+    if (shell.boss) { shell.boss.dispose(); shell.boss = null; }
     if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
@@ -11964,7 +12699,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     } else if (near) {
       const def = near.anchor.record ? near.anchor.record.def : GWGames.get(near.anchor.gameId);
       el.useLabel.textContent = def ? def.name : 'Play';
-      el.useNote.textContent = def ? 'house takes ' + houseEdge(def) : '';
+      // What the table is doing right now beats what it does on average.
+      const heat = def ? shell.heat.notice(def.id) : null;
+      el.useNote.textContent = heat ? heat.text
+        : (def ? 'house takes ' + houseEdge(def) : '');
+      el.usePrompt.dataset.tone = heat ? heat.tone : '';
     } else {
       el.useLabel.textContent = 'Take the lift';
       el.useNote.textContent = 'Choose a floor';
@@ -12044,6 +12783,19 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   /* The shout, aimed. The Q key spends the same shout from anywhere on the
      floor; this is what happens when you walk over and use it on the person. */
   function shoutAt(mateId) {
+    /* Two reasons to walk up to somebody, and the offer wins: it expires and
+       the shout does not. */
+    if (shell.events && shell.events.offerFrom() === mateId) {
+      const share = shell.events.collectOffer();
+      if (share > 0) {
+        const mate = shell.store.s.friends.find((f) => f.id === mateId);
+        shell.store.credit(share, (mate ? mate.name : 'They') + ' hands over '
+          + money(share) + '. "Say nothing."');
+        shell.audio.play('cash');
+        renderHud();
+        return;
+      }
+    }
     const pending = shell.friends.state.pending;
     if (!pending || pending.mate.id !== mateId) {
       shell.audio.play('deny');
@@ -12267,6 +13019,18 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';
+    /* And the one thing that changes them. Stated in the same panel as the
+       odds themselves, because a payout table that is true on average and false
+       right now is worse than no table at all. */
+    const factor = shell.heat.payFactor(def.id);
+    if (factor < 1) {
+      html += ' <b>They are watching this table: it is paying '
+        + Math.round(factor * 100) + '% of the figures above until it cools. '
+        + 'Play elsewhere for twenty seconds and it goes back.</b>';
+    } else {
+      html += ' The figures are the cold-table ones; a table they are watching pays '
+        + Math.round(shell.heat.SHORT_PAYS * 100) + '% of them.';
+    }
     html += '</p>';
     el.oddsPanel.innerHTML = html;
   }
@@ -12337,6 +13101,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     el.quotaFill.parentElement.classList.toggle('is-met', met);
 
     el.shoutCount.textContent = s.shouts;
+    renderHeat();
     renderClock();
   }
 
@@ -12348,6 +13113,40 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     card.classList.remove('is-bumped');
     void card.offsetWidth;
     card.classList.add('is-bumped');
+  }
+
+  /* How much attention the floor is paying you, as a bar under the clock.
+
+     It is the one number the whole new layer turns on, so it is next to the
+     other number the day turns on rather than tucked somewhere clever. */
+  function renderHeat() {
+    const h = shell.heat ? shell.heat.floorHeat : 0;
+    const on = shell.store.s.phase === 'floor';
+    el.heatWrap.hidden = !on;
+    if (!on) return;
+    el.heatFill.style.width = (h * 100).toFixed(0) + '%';
+    const state = h >= 0.85 ? 'out' : h >= shell.heat.HOT_FLOOR ? 'hot'
+      : h >= shell.heat.WATCHED ? 'warm' : 'cold';
+    el.heatWrap.dataset.state = state;
+    el.heatLabel.textContent = state === 'out' ? 'They are coming over'
+      : state === 'hot' ? 'The floor is watching you'
+      : state === 'warm' ? 'Somebody has noticed' : 'Nobody is watching';
+  }
+
+  /* The banner, and its countdown. Split so the text is written once when the
+     event lands and only the clock is touched every frame. */
+  function renderBanner(active) {
+    el.banner.hidden = !active;
+    if (!active) return;
+    el.banner.dataset.tone = active.tone || 'good';
+    el.bannerText.textContent = active.label;
+    renderBannerClock();
+  }
+
+  function renderBannerClock() {
+    const active = shell.events.state.active;
+    if (!active) { el.banner.hidden = true; return; }
+    el.bannerClock.textContent = Math.max(0, Math.ceil(active.left)) + 's';
   }
 
   function renderClock() {
@@ -12402,6 +13201,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     if (shell.busy || !shell.game) return;
     const bet = currentBet();
     if (!shell.store.canBet(shell.stake)) { shell.audio.play('deny'); return; }
+    if (!shell.heat.canPlay(shell.game.id)) {
+      shell.audio.play('deny');
+      shell.setStatus('Closed while they cool off. Play something else.');
+      return;
+    }
 
     // Hold on to the table this hand belongs to. Reading shell.game or shell.ctx
     // again after the awaits below is a bug: the player can walk to another
@@ -12446,9 +13250,26 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       return;
     }
 
+    /* Heat is applied here, at the one place money moves, and only ever to
+       the win. A shortened table pays less; it never takes more than you
+       staked, because a house that could do that would be one you could not
+       plan against at all. */
+    const factor = shell.heat.payFactor(game.id) * shell.events.bonusFor(game.id);
+    const paid = result.multiplier > 1
+      ? 1 + (result.multiplier - 1) * factor
+      : result.multiplier;
+    if (factor !== 1 && result.multiplier > 1) {
+      shell.store.say(factor > 1
+        ? 'Paying over: they gave you ' + Math.round(factor * 100) + '% of the board.'
+        : 'Shortened odds: they paid ' + Math.round(factor * 100) + '% of the board on that one.',
+        factor > 1 ? 'good' : 'warn');
+    }
     const settled = shell.net
-      ? shell.net.resolve(game.id, ctx.totalStake, result.multiplier, game.name)
-      : shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
+      ? shell.net.resolve(game.id, ctx.totalStake, paid, game.name)
+      : shell.store.resolve(game.id, ctx.totalStake, paid, result.detail);
+    // Comped hands go unnoticed, which is the whole of what a comp is worth.
+    if (shell.events.comped()) shell.events.spendComp();
+    else shell.heat.played(game.id, ctx.totalStake, settled.net);
     showResult(result, settled);
     shell.store.save();
     finishHand();

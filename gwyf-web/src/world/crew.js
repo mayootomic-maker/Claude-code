@@ -247,7 +247,7 @@
         pos: new THREE.Vector3(), yaw: 0, wantYaw: 0,
         dest: null, at: null, state: 'idle',
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
-        mood: 0, moodLeft: 0, idleFor: 0, tilting: false, anchor: null,
+        mood: 0, moodLeft: 0, idleFor: 0, tilting: false, offering: false, anchor: null,
         lookAtPlayer: 0,
       };
       spawnAt(person);
@@ -360,6 +360,52 @@
       person.bubbleLeft = 3.2 + Math.min(2.4, text.length * 0.045);
     }
 
+    /* Somebody is up and waving you over.
+
+       Same mechanism as the tilt: an anchor goes in so they can be walked up
+       to. The difference is what pressing E does, which the shell decides --
+       this only makes them approachable and marks them so they read as wanting
+       something from across the room. */
+    function offer(mateId) {
+      for (const person of people) {
+        const wants = person.mate.id === mateId;
+        if (person.offering === wants) continue;
+        person.offering = wants;
+        if (wants) {
+          person.dest = null;
+          person.at = null;
+          person.state = 'idle';
+          mark(person, 'Take ' + person.mate.name + '\u2019s half');
+        } else if (!person.tilting) {
+          unmark(person);
+        }
+      }
+    }
+
+    /* Put an anchor on somebody so the interaction test can find them. The live
+       position vector goes in rather than a copy, so it follows them. */
+    function mark(person, label) {
+      if (person.anchor) {
+        person.anchor.label = label;
+        return;
+      }
+      person.anchor = {
+        kind: 'friend',
+        mateId: person.mate.id,
+        label,
+        position: person.pos,
+        half: { hw: 0.42, hd: 0.42 },
+      };
+      level.anchors.push(person.anchor);
+    }
+
+    function unmark(person) {
+      if (!person.anchor) return;
+      const i = level.anchors.indexOf(person.anchor);
+      if (i >= 0) level.anchors.splice(i, 1);
+      person.anchor = null;
+    }
+
     /* About to bet the account. They stop where they are, and an anchor goes in
        so the player can walk over and shout at them in person -- the same shout
        the Q key spends, aimed by standing in front of somebody. */
@@ -378,22 +424,9 @@
         person.at = null;
         person.state = 'idle';
         person.idleFor = 0;
-        if (!person.anchor) {
-          person.anchor = {
-            kind: 'friend',
-            mateId: person.mate.id,
-            label: 'Shout at ' + person.mate.name,
-            // The live vector, not a copy: the interaction test then follows
-            // them if anything moves them before you get there.
-            position: person.pos,
-            half: { hw: 0.42, hd: 0.42 },
-          };
-          level.anchors.push(person.anchor);
-        }
-      } else if (person.anchor) {
-        const i = level.anchors.indexOf(person.anchor);
-        if (i >= 0) level.anchors.splice(i, 1);
-        person.anchor = null;
+        mark(person, 'Shout at ' + person.mate.name);
+      } else if (person.anchor && !person.offering) {
+        unmark(person);
       }
     }
 
@@ -757,7 +790,7 @@
     }
 
     return {
-      people, update, go, settled, speak, tilt, dispose, group,
+      people, update, go, settled, speak, tilt, offer, dispose, group,
       /* What somebody is doing, for the crew rail. The rail used to read the
          game they had picked, which after a bet was announced but before they
          got there said "Roulette" about somebody standing by the lift. */
@@ -838,5 +871,107 @@
     return makeTag(text, colour, { size: 0.155, font: 30 });
   }
 
-  global.GWCrew = { create, buildBody, buildHands, nameTag, LOOK, YOU };
+  /* The pit boss.
+
+     Heat, made into a person. A number in the corner going up is something you
+     read; a man in a black suit walking towards the table you are winning at is
+     something you feel, and it is the reason the room exists rather than a menu
+     of machines. He is slow enough to outwalk, which is the point: the answer
+     to him is always to go and play somewhere else.
+
+     Built from the same parts as everyone else, in black, with no hat. */
+  const BOSS_LOOK = { body: 0x2b2b31, hat: null, height: 1.12, width: 1.10 };
+  const BOSS_WALK = 1.35;
+
+  function createBoss(opts) {
+    const { level, lib } = opts;
+    let body = null;
+    let tag = null;
+    const pos = new THREE.Vector3();
+    const dest = new THREE.Vector3();
+    let yaw = 0, wantYaw = 0, cycle = 0, out = false, blocked = 0, detour = 0, detourSign = 1;
+
+    function appear(at) {
+      if (body) return;
+      try {
+        body = buildBody(lib, BOSS_LOOK);
+      } catch (err) {
+        console.warn('[gwyf] the pit boss could not be drawn', err);
+        return;
+      }
+      tag = nameTag('Pit boss', '#ff9f2e');
+      tag.position.y = body.joints.height * 0.98;
+      body.group.add(tag);
+      level.group.add(body.group);
+      pos.copy(at || new THREE.Vector3(level.lift.x, 0, level.lift.z));
+      body.group.position.copy(pos);
+      out = true;
+    }
+
+    function leave() {
+      if (!body) return;
+      if (body.group.parent) body.group.parent.remove(body.group);
+      if (tag && tag.userData.dispose) tag.userData.dispose();
+      body.dispose();
+      body = null; tag = null; out = false;
+    }
+
+    /* Head for wherever the player is. `target` is null when he has no reason
+       to be here, and he goes back to the lift and off the floor. */
+    function update(dt, target) {
+      if (!body) return null;
+      dest.copy(target || new THREE.Vector3(level.lift.x, 0, level.lift.z));
+      const dx = dest.x - pos.x, dz = dest.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      let moved = 0;
+      if (dist > 1.1) {
+        let ux = dx / dist, uz = dz / dist;
+        if (detour > 0) {
+          detour -= dt;
+          const px = -uz * detourSign * 1.5, pz = ux * detourSign * 1.5;
+          const len = Math.hypot(ux + px, uz + pz) || 1;
+          ux = (ux + px) / len; uz = (uz + pz) / len;
+        }
+        const step = { x: pos.x + ux * BOSS_WALK * dt, z: pos.z + uz * BOSS_WALK * dt };
+        level.solids.resolve(step, RADIUS);
+        level.solids.bound(step, RADIUS);
+        moved = Math.hypot(step.x - pos.x, step.z - pos.z);
+        pos.x = step.x; pos.z = step.z;
+        if (moved < BOSS_WALK * dt * 0.4) {
+          blocked += dt;
+          if (blocked > 0.35 && detour <= 0) { detour = 1.4; detourSign = rand() < 0.5 ? 1 : -1; }
+        } else blocked = Math.max(0, blocked - dt);
+        wantYaw = Math.atan2(-ux, -uz);
+      }
+      let d = wantYaw - yaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      yaw += d * Math.min(1, TURN * dt);
+      body.group.position.set(pos.x, 0, pos.z);
+      body.group.rotation.y = yaw;
+
+      // He does not waddle. Hands behind the back, and a slow rock.
+      cycle += (moved > 0.01 ? moved * 2.0 : dt * 1.1);
+      const beat = Math.sin(cycle);
+      body.root.rotation.z = beat * 0.05;
+      body.root.position.y = Math.abs(Math.cos(cycle)) * (moved > 0.01 ? 0.025 : 0.004);
+      body.root.rotation.x = -0.05;
+      for (let i = 0; i < 2; i++) {
+        const side = i === 0 ? -1 : 1;
+        body.hands[i].position.set(side * 0.30, 0.50, 0.20);
+        body.hands[i].rotation.z = side * 0.2;
+      }
+      body.brow.rotation.x = 0.28;   // permanently unimpressed
+      return pos;
+    }
+
+    return {
+      appear, leave, update,
+      get position() { return pos; },
+      get here() { return out; },
+      dispose: leave,
+    };
+  }
+
+  global.GWCrew = { create, createBoss, buildBody, buildHands, nameTag, LOOK, YOU };
 })(window);

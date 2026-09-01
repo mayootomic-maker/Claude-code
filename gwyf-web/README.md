@@ -176,6 +176,49 @@ What could not be verified, and so was not copied: the floor names, the UI
 typeface, and any of the original's actual movement numbers -- none are
 published, and guessing them and calling it a match would be worse than this.
 
+## What makes it a game
+
+The tables are the same twelve tables. What changed is that where you play and
+how long you stay there now matters more than which bet you pick.
+
+**Heat.** A floor has a memory. Playing a machine warms it and winning warms it
+faster; walking away cools it. Warm enough and the house watches; warmer and it
+**shortens the odds on that machine to 90% of the board**; warmer still and it
+closes for twenty-five seconds. Let the whole floor get hot and two of them take
+an elbow each and you are done there for the night — you keep every penny, which
+is the point: it costs you time, and time is the currency a five-minute day is
+denominated in.
+
+Measured, at one table, on a believable run: watched by the fourth hand, odds
+shortened by the seventh, closed by the ninth. About forty-five seconds. So a
+day is a tour of five or six tables rather than a grind on one, and a table that
+is going well is a table you have to leave.
+
+Two rules it is built on, the same two as the odds themselves. **Everything is
+published** — a shortened payout is on the table, in the odds panel and on the
+prompt before you bet, and `tools/odds.mjs` audits the cold-table numbers the
+panel says it is quoting. And **it is always escapable**: heat only falls while
+you are away, and it falls faster than it rises.
+
+**The pit boss.** Heat, made into a person. A number going up in a corner is
+something you read; a man in a black suit walking towards the table you are
+winning at is something you feel. He doubles whatever he is stood over and he is
+slower than you are, on purpose — the answer to him is always to go and play
+somewhere else, which is the behaviour the whole layer is trying to produce.
+
+**The floor does things.** Every forty to seventy seconds: a table starts paying
+30% over for twenty-six seconds and it is probably across the room; the pit does
+a round and every table warms at once; drinks arrive and the next three hands go
+unnoticed; a friend is up and will split it if you reach them in time; or the
+shark's man arrives early and takes eight percent off the debt whatever you were
+doing. Each is announced with its number before it does anything, and none can
+be waited out for a better one — the good ones need you to move, the bad ones
+happen regardless.
+
+They compose, at the one place money moves. A table you have been grinding that
+goes hot pays 0.9 × 1.3 — still over the odds, but less over than the one you
+have not touched.
+
 ## The odds
 
 Every table prints its own house edge, including the number the house would
@@ -251,7 +294,7 @@ blender/     models.py builds every model; exporter.py packs them for the browse
 vendor/      three.js and cannon.js (see NOTICE)
 assets/      models.json — quantised geometry + materials, one file
 src/
-  core/      rng, config, run state, audio, the friends
+  core/      rng, config, run state, audio, the friends, heat, the floor's events
   gfx/       model decoder, HDR environment, stage, physics, cards
   games/     twelve games, one file each, all through one contract
   world/     collision, level generation, the player, the friends' bodies

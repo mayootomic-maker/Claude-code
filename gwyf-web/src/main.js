@@ -20,7 +20,7 @@
   const shell = {
     stage: null, lib: null, store: null, audio: null, friends: null,
     player: null, level: null, anchors: [], crew: null, touch: null, hands: null,
-    net: null,
+    net: null, heat: null, boss: null, events: null,
     mode: 'boot',
     game: null, handle: null, ctx: null, anchor: null,
     busy: false, stake: 25, pending: null, endAfterHand: false,
@@ -44,7 +44,8 @@
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
       'touchUse', 'guide', 'guideArrow', 'guideText',
       'title', 'titleMenu', 'titleTickets', 'btnTitle',
-      'challengeCard', 'challengeName', 'challengeReward', 'challengeNote']) {
+      'challengeCard', 'challengeName', 'challengeReward', 'challengeNote',
+      'heatWrap', 'heatFill', 'heatLabel', 'banner', 'bannerText', 'bannerClock']) {
       el[id] = $(id);
     }
     el.stage = document.querySelector('.stage');
@@ -70,6 +71,13 @@
     shell.stage.start();
 
     progress(0.75, 'Opening the doors…');
+    shell.heat = GWHeat.create(shell.store);
+    shell.events = GWEvents.create(shell.store, {
+      onSweep: (by) => { for (const r of shell.anchors) shell.heat.warm(r.def.id, by); },
+      onBank: () => { renderHud(); refreshPlayButton(); },
+      onBanner: renderBanner,
+      onFriendOffer: (id) => { if (shell.crew) shell.crew.offer(id); },
+    });
     shell.friends = GWFriends.create(shell.store, {
       onTilt(pending) {
         showShout();
@@ -330,6 +338,13 @@
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
+      if (s.phase === 'floor' && !GWLoading.isOpen() && !s.mods.freezeClock) {
+        shell.heat.tick(dt, shell.mode === 'table' && shell.game ? shell.game.id : null);
+        shell.events.tick(dt);
+        renderBannerClock();
+        updateBoss(dt);
+        checkWalkOut();
+      }
       if (shell.net) shell.net.tick(dt, performance.now());
 
       // The crew keeps moving whatever you are doing. Freezing them while you
@@ -465,6 +480,8 @@
       s.pendingItems = [];
     }
     warned.clear();
+    shell.heat.newDay();
+    shell.events.newDay();
     s.timeLeft = C.DAY_SECONDS
       + (shell.store.has('stopwatch') ? 45 : 0)
       - (shell.store.sold('kidney') ? 30 : 0);
@@ -507,12 +524,14 @@
     GWLoading.step('Building the floor');
     await frame();
 
+    shell.heat.enterFloor();
     shell.anchors = [];
     for (const anchor of shell.level.anchors) {
       const built = buildMachine(anchor);
       if (built) shell.anchors.push(built);
     }
     shell.crew = makeCrew();
+    shell.boss = GWCrew.createBoss({ level: shell.level, lib: shell.lib });
     GWLoading.step('Wheeling in the machines');
     await frame();
 
@@ -598,6 +617,72 @@
     shell.stage.setFog(shell.level.theme.ceiling, far * 0.34, far);
   }
 
+  /* The man in the black suit.
+
+     He comes out once the floor has noticed you and walks to whatever you are
+     playing. Standing over a table doubles what it gains, so the answer to him
+     is always to go and play somewhere else -- which is the behaviour the whole
+     heat layer is trying to produce, expressed as a person rather than as a
+     number. He is slower than you are, on purpose. */
+  const bossTarget = new THREE.Vector3();
+  function updateBoss(dt) {
+    if (!shell.boss || !shell.level) return;
+    const hot = shell.heat.floorHeat >= shell.heat.BOSS_FROM;
+    if (hot && !shell.boss.here) {
+      shell.boss.appear();
+      shell.store.say('A man in a black suit steps onto the floor.', 'warn');
+    }
+    if (!shell.boss.here) return;
+
+    // He heads for the machine you are at, or for you.
+    let target = null;
+    if (shell.mode === 'table' && shell.anchor) target = shell.anchor.anchor.stand;
+    else { bossTarget.copy(shell.player.state.pos); target = hot ? bossTarget : null; }
+    shell.boss.update(dt, target);
+
+    // Which table he is stood over, if any.
+    let over = null;
+    for (const record of shell.anchors) {
+      const p = record.anchor.position;
+      const half = record.anchor.half;
+      const near = Math.abs(shell.boss.position.x - p.x) < half.hw + 1.6
+        && Math.abs(shell.boss.position.z - p.z) < half.hd + 1.6;
+      if (near) { over = record.def.id; break; }
+    }
+    shell.heat.setBossAt(over);
+
+    if (!hot && shell.boss.here) {
+      // Nothing to see: he wanders back to the lift and goes.
+      const d = Math.hypot(shell.boss.position.x - shell.level.lift.x,
+                           shell.boss.position.z - shell.level.lift.z);
+      if (d < 2) { shell.boss.leave(); shell.store.say('The suit loses interest and leaves.', 'flat'); }
+    }
+  }
+
+  /* Walked off the floor.
+
+     The one thing a hot floor can do that a hot table cannot: end your night on
+     it. You keep every penny -- this is not a money punishment, it is a time
+     one, which is the currency a five-minute day is actually denominated in.
+     The lift still works, so a hot floor costs you the walk to another. */
+  function checkWalkOut() {
+    if (shell.heat.floorHeat < 1) return;
+    const s = shell.store.s;
+    if (shell.heat.isWalkedOut(s.floor)) return;
+    shell.heat.walkedOut(s.floor);
+    shell.store.say('Two of them take an elbow each. You are done on this floor tonight.', 'bad');
+    shell.audio.play('alarm');
+    if (shell.mode === 'table') leaveMachine();
+    const open = shell.store.unlockedFloors()
+      .filter((f) => f.open && !shell.heat.isWalkedOut(f.index));
+    if (!open.length) {
+      shell.store.say('And there is nowhere else open. That is the night.', 'bad');
+      endDay();
+      return;
+    }
+    GWScreens.show('tower');
+  }
+
   /* Drop the machines you cannot see anyway.
 
      A slot cabinet is forty-odd symbol meshes and a duck race is a row of
@@ -614,6 +699,19 @@
       const p = record.anchor.position;
       const dx = p.x - eye.x, dz = p.z - eye.z;
       record.holder.visible = (dx * dx + dz * dz) < far * far;
+      // The lamp over a table says how hot it is: warm white when nobody
+      // cares, amber once they do, red when it is shut. It is the one signal
+      // you can read from across the room without reading anything.
+      const site = record.anchor.lampSite;
+      if (site) {
+        const lvl = shell.heat.level(record.def.id);
+        const hot = shell.events.bonusFor(record.def.id) > 1;
+        site.colour = hot ? 0x4fe07a
+          : lvl === 'shut' ? 0xff3b30
+          : lvl === 'short' ? 0xff9f2e
+          : lvl === 'watched' ? 0xffd27a : 0xffe6c2;
+        site.intensity = hot ? 62 : lvl === 'shut' ? 22 : 46;
+      }
     }
   }
 
@@ -712,6 +810,7 @@
       if (record.handle && record.handle.dispose) record.handle.dispose();
     }
     shell.anchors = [];
+    if (shell.boss) { shell.boss.dispose(); shell.boss = null; }
     if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
@@ -759,7 +858,11 @@
     } else if (near) {
       const def = near.anchor.record ? near.anchor.record.def : GWGames.get(near.anchor.gameId);
       el.useLabel.textContent = def ? def.name : 'Play';
-      el.useNote.textContent = def ? 'house takes ' + houseEdge(def) : '';
+      // What the table is doing right now beats what it does on average.
+      const heat = def ? shell.heat.notice(def.id) : null;
+      el.useNote.textContent = heat ? heat.text
+        : (def ? 'house takes ' + houseEdge(def) : '');
+      el.usePrompt.dataset.tone = heat ? heat.tone : '';
     } else {
       el.useLabel.textContent = 'Take the lift';
       el.useNote.textContent = 'Choose a floor';
@@ -839,6 +942,19 @@
   /* The shout, aimed. The Q key spends the same shout from anywhere on the
      floor; this is what happens when you walk over and use it on the person. */
   function shoutAt(mateId) {
+    /* Two reasons to walk up to somebody, and the offer wins: it expires and
+       the shout does not. */
+    if (shell.events && shell.events.offerFrom() === mateId) {
+      const share = shell.events.collectOffer();
+      if (share > 0) {
+        const mate = shell.store.s.friends.find((f) => f.id === mateId);
+        shell.store.credit(share, (mate ? mate.name : 'They') + ' hands over '
+          + money(share) + '. "Say nothing."');
+        shell.audio.play('cash');
+        renderHud();
+        return;
+      }
+    }
     const pending = shell.friends.state.pending;
     if (!pending || pending.mate.id !== mateId) {
       shell.audio.play('deny');
@@ -1062,6 +1178,18 @@
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';
+    /* And the one thing that changes them. Stated in the same panel as the
+       odds themselves, because a payout table that is true on average and false
+       right now is worse than no table at all. */
+    const factor = shell.heat.payFactor(def.id);
+    if (factor < 1) {
+      html += ' <b>They are watching this table: it is paying '
+        + Math.round(factor * 100) + '% of the figures above until it cools. '
+        + 'Play elsewhere for twenty seconds and it goes back.</b>';
+    } else {
+      html += ' The figures are the cold-table ones; a table they are watching pays '
+        + Math.round(shell.heat.SHORT_PAYS * 100) + '% of them.';
+    }
     html += '</p>';
     el.oddsPanel.innerHTML = html;
   }
@@ -1132,6 +1260,7 @@
     el.quotaFill.parentElement.classList.toggle('is-met', met);
 
     el.shoutCount.textContent = s.shouts;
+    renderHeat();
     renderClock();
   }
 
@@ -1143,6 +1272,40 @@
     card.classList.remove('is-bumped');
     void card.offsetWidth;
     card.classList.add('is-bumped');
+  }
+
+  /* How much attention the floor is paying you, as a bar under the clock.
+
+     It is the one number the whole new layer turns on, so it is next to the
+     other number the day turns on rather than tucked somewhere clever. */
+  function renderHeat() {
+    const h = shell.heat ? shell.heat.floorHeat : 0;
+    const on = shell.store.s.phase === 'floor';
+    el.heatWrap.hidden = !on;
+    if (!on) return;
+    el.heatFill.style.width = (h * 100).toFixed(0) + '%';
+    const state = h >= 0.85 ? 'out' : h >= shell.heat.HOT_FLOOR ? 'hot'
+      : h >= shell.heat.WATCHED ? 'warm' : 'cold';
+    el.heatWrap.dataset.state = state;
+    el.heatLabel.textContent = state === 'out' ? 'They are coming over'
+      : state === 'hot' ? 'The floor is watching you'
+      : state === 'warm' ? 'Somebody has noticed' : 'Nobody is watching';
+  }
+
+  /* The banner, and its countdown. Split so the text is written once when the
+     event lands and only the clock is touched every frame. */
+  function renderBanner(active) {
+    el.banner.hidden = !active;
+    if (!active) return;
+    el.banner.dataset.tone = active.tone || 'good';
+    el.bannerText.textContent = active.label;
+    renderBannerClock();
+  }
+
+  function renderBannerClock() {
+    const active = shell.events.state.active;
+    if (!active) { el.banner.hidden = true; return; }
+    el.bannerClock.textContent = Math.max(0, Math.ceil(active.left)) + 's';
   }
 
   function renderClock() {
@@ -1197,6 +1360,11 @@
     if (shell.busy || !shell.game) return;
     const bet = currentBet();
     if (!shell.store.canBet(shell.stake)) { shell.audio.play('deny'); return; }
+    if (!shell.heat.canPlay(shell.game.id)) {
+      shell.audio.play('deny');
+      shell.setStatus('Closed while they cool off. Play something else.');
+      return;
+    }
 
     // Hold on to the table this hand belongs to. Reading shell.game or shell.ctx
     // again after the awaits below is a bug: the player can walk to another
@@ -1241,9 +1409,26 @@
       return;
     }
 
+    /* Heat is applied here, at the one place money moves, and only ever to
+       the win. A shortened table pays less; it never takes more than you
+       staked, because a house that could do that would be one you could not
+       plan against at all. */
+    const factor = shell.heat.payFactor(game.id) * shell.events.bonusFor(game.id);
+    const paid = result.multiplier > 1
+      ? 1 + (result.multiplier - 1) * factor
+      : result.multiplier;
+    if (factor !== 1 && result.multiplier > 1) {
+      shell.store.say(factor > 1
+        ? 'Paying over: they gave you ' + Math.round(factor * 100) + '% of the board.'
+        : 'Shortened odds: they paid ' + Math.round(factor * 100) + '% of the board on that one.',
+        factor > 1 ? 'good' : 'warn');
+    }
     const settled = shell.net
-      ? shell.net.resolve(game.id, ctx.totalStake, result.multiplier, game.name)
-      : shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
+      ? shell.net.resolve(game.id, ctx.totalStake, paid, game.name)
+      : shell.store.resolve(game.id, ctx.totalStake, paid, result.detail);
+    // Comped hands go unnoticed, which is the whole of what a comp is worth.
+    if (shell.events.comped()) shell.events.spendComp();
+    else shell.heat.played(game.id, ctx.totalStake, settled.net);
     showResult(result, settled);
     shell.store.save();
     finishHand();

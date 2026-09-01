@@ -42,6 +42,10 @@
     <div class="hud__corner hud__corner--tc">
       <p class="hud__label">Day ends in</p>
       <strong class="clock" id="statClock" data-live>5:00</strong>
+      <div class="heat" id="heatWrap" data-state="cold" hidden>
+        <div class="heat__bar"><i id="heatFill" style="width:0%"></i></div>
+        <span class="heat__label" id="heatLabel">Nobody is watching</span>
+      </div>
     </div>
 
     <div class="hud__corner hud__corner--tr">
@@ -64,6 +68,11 @@
     <div class="reticle" id="reticle" aria-hidden="true"><i></i></div>
 
     <div class="floortag" id="floorTag" aria-hidden="true"></div>
+
+    <div class="banner" id="banner" data-tone="good" hidden>
+      <span class="banner__text" id="bannerText"></span>
+      <span class="banner__clock" id="bannerClock"></span>
+    </div>
 
     <div class="guide" id="guide" hidden>
       <span class="guide__arrow" id="guideArrow" aria-hidden="true">↑</span>
@@ -194,6 +203,8 @@
 <script src="core/config.js"></script>
 <script src="core/state.js"></script>
 <script src="core/audio.js"></script>
+<script src="core/heat.js"></script>
+<script src="core/events.js"></script>
 <script src="gfx/models.js"></script>
 <script src="gfx/env.js"></script>
 <script src="gfx/stage.js"></script>

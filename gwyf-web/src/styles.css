@@ -1369,3 +1369,98 @@ button:disabled { cursor: not-allowed; }
   left: 1rem;
   right: auto;
 }
+
+
+/* --- heat -----------------------------------------------------------------
+   Under the clock, because it is the second number the day turns on. Colour
+   carries the state and the words say it as well: the bar alone would be one
+   more thing to learn. */
+
+.heat { display: grid; justify-items: center; gap: 0.18rem; margin-top: 0.3rem; }
+.heat__bar {
+  width: 9rem; height: 0.3rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  overflow: hidden;
+}
+.heat__bar i {
+  display: block; height: 100%;
+  background: var(--text-muted);
+  transition: width 220ms var(--ease), background 220ms var(--ease);
+}
+.heat__label {
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.heat[data-state='warm'] .heat__bar i { background: var(--warn); }
+.heat[data-state='warm'] .heat__label { color: var(--warn); }
+.heat[data-state='hot'] .heat__bar i { background: #ff7a2e; }
+.heat[data-state='hot'] .heat__label { color: #ff9f2e; }
+.heat[data-state='out'] .heat__bar i { background: var(--danger); }
+.heat[data-state='out'] .heat__label { color: var(--danger); }
+.heat[data-state='out'] { animation: heatPulse 1s ease-in-out infinite; }
+@keyframes heatPulse { 50% { opacity: 0.55; } }
+
+/* The use prompt borrows the same warning colours. */
+.useprompt[data-tone='warn'] { border-color: var(--warn); }
+.useprompt[data-tone='warn'] em { color: var(--warn); }
+.useprompt[data-tone='bad'] { border-color: var(--danger); }
+.useprompt[data-tone='bad'] em { color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .heat[data-state='out'] { animation: none; }
+}
+
+
+/* --- what the floor is doing ---------------------------------------------
+   One banner under the clock, with the time it has left on it. Events are the
+   only thing in the game that expire, so the countdown is the message. */
+
+.banner {
+  position: absolute;
+  top: 8.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.42rem 0.55rem 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgb(10 8 7 / 0.82);
+  pointer-events: none;
+  z-index: 5;
+  max-width: min(30rem, 88vw);
+  animation: bannerIn 220ms var(--ease);
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translate(-50%, -0.4rem); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.banner__text {
+  font-weight: 600;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.banner__clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-width: 2.1rem;
+  text-align: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+.banner[data-tone='good'] { border-color: var(--success); }
+.banner[data-tone='good'] .banner__text { color: var(--success); }
+.banner[data-tone='bad'] { border-color: var(--danger); }
+.banner[data-tone='bad'] .banner__text { color: var(--danger); }
+
+.app.is-table .banner { top: auto; bottom: 7.5rem; }
+
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
