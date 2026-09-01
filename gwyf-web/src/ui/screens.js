@@ -101,6 +101,36 @@
   const swatch = (c) => '#' + (typeof c === 'number'
     ? c.toString(16).padStart(6, '0') : String(c).replace('#', ''));
 
+  /* --- the public list -----------------------------------------------------
+
+     One browser for the whole module, not one per redraw. The lobby panel
+     redraws every time the list changes, which with four lobbies announcing
+     every three seconds is often; opening a fresh broker connection each time
+     would be a connection storm against somebody else's free broker. */
+  let lobbyWatch = null;
+
+  function watchLobbies(onList, onStatus, onError) {
+    if (lobbyWatch) {
+      lobbyWatch.sink = { onList, onStatus, onError };
+      onList(lobbyWatch.browser.list());
+      if (lobbyWatch.status) onStatus(lobbyWatch.status);
+      return;
+    }
+    const w = { sink: { onList, onStatus, onError }, status: '', browser: null };
+    lobbyWatch = w;
+    w.browser = GWLink.browseLobbies({
+      onList: (l) => w.sink.onList && w.sink.onList(l),
+      onStatus: (t) => { w.status = t; if (w.sink.onStatus) w.sink.onStatus(t); },
+      onError: (t) => { w.status = t; if (w.sink.onError) w.sink.onError(t); },
+    });
+  }
+
+  function stopWatching() {
+    if (!lobbyWatch) return;
+    lobbyWatch.browser.stop();
+    lobbyWatch = null;
+  }
+
 
 
   /* `sticky` means Escape and a click on the backdrop will not dismiss it --
@@ -110,6 +140,7 @@
   function close(force) {
     if (!current) return false;
     if (current.sticky && !force) return false;
+    if (current.teardown) current.teardown();
     root.innerHTML = '';
     current = null;
     return true;
@@ -124,11 +155,15 @@
   }
 
   function show(name, data) {
+    /* A screen that started something -- a network listener, a timer -- gets to
+       stop it. Without this the public-lobby browser stayed subscribed to a
+       broker for the rest of the session after you closed the screen. */
+    if (current && current.teardown && current.name !== name) current.teardown();
     root.innerHTML = '';
     const builder = SCREENS[name];
     if (!builder) return;
     const spec = builder(data || {});
-    current = { name, sticky: !!spec.sticky, data: data || {} };
+    current = { name, sticky: !!spec.sticky, data: data || {}, teardown: spec.teardown || null };
 
     const screen = document.createElement('div');
     screen.className = 'screen';
@@ -502,6 +537,7 @@
       const net = shell.net;
       const canPeer = GWLink.webrtcAvailable();
       const canLocal = GWLink.broadcastAvailable();
+      const canOpen = GWLink.openAvailable();
       const named = (shell.store.meta.playerName || '');
 
       if (net) {
@@ -522,7 +558,9 @@
             + '</p>'
             + '<p class="modrow__desc">' + esc(net.kind === 'local'
               ? 'Connected to other windows on this computer.'
-              : 'Connected peer to peer.') + '</p>'
+              : net.kind === 'open'
+                ? 'On the public list. Anyone running this game can see this lobby and join it.'
+                : 'Connected peer to peer.') + '</p>'
             + '<ul class="crew">' + rows + '</ul>'
             + '<div class="sheet__actions">'
             + '<button class="btn" data-leave>Leave the table</button>'
@@ -568,8 +606,26 @@
           + '>Host a game</button>'
           + '<button class="btn" data-peer="join"' + (canPeer ? '' : ' disabled')
           + '>Join a game</button></div></div>'
+          + '<div class="netway netway--wide"><h3>Anyone on the internet</h3>'
+          + '<p class="modrow__desc">' + (canOpen
+              ? 'No codes. Host one and it appears on the list below for everybody else '
+                + 'running this game; join one and you are in. The list is carried by a free '
+                + 'public message broker, which means it is open: anyone who finds it can read '
+                + 'what is on it and walk into your lobby. That is the point, and it is also '
+                + 'the whole of the security.'
+              : 'This browser has no WebSocket, so the public list cannot be reached.')
+          + '</p>'
+          + '<div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-open="host"' + (canOpen ? '' : ' disabled')
+          + '>Host a public lobby</button>'
+          + '<button class="btn" data-open="refresh"' + (canOpen ? '' : ' disabled')
+          + '>Look again</button>'
+          + '<span class="modrow__desc" id="netOpenStatus"></span></div>'
+          + '<ul class="lobbies" id="netOpenList"><li class="modrow__desc">'
+          + (canOpen ? 'Looking\u2026' : 'Not available here.') + '</li></ul></div>'
           + '</div>'
           + '<div id="netStage"></div>',
+        teardown: stopWatching,
         wire(sheet) {
           const nameOf = () => {
             const v = (sheet.querySelector('#netName').value || 'Player').trim().slice(0, 16);
@@ -588,6 +644,71 @@
               peerFlow(sheet.querySelector('#netStage'), b.dataset.peer === 'host', nameOf());
             });
           }
+          if (!canOpen) return;
+
+          const listEl = sheet.querySelector('#netOpenList');
+          const statusEl = sheet.querySelector('#netOpenStatus');
+          const stage = sheet.querySelector('#netStage');
+
+          const paint = (lobbies) => {
+            if (!lobbies.length) {
+              listEl.innerHTML = '<li class="modrow__desc">Nobody is hosting right now. '
+                + 'Host one yourself and somebody may walk in.</li>';
+              return;
+            }
+            listEl.innerHTML = lobbies.map((l) =>
+              '<li class="lobby"><span class="lobby__who">' + esc(l.host) + '</span>'
+              + '<span class="lobby__meta">' + l.players + (l.players === 1 ? ' player' : ' players')
+              + ' \u00b7 day ' + l.day + '</span>'
+              + '<button class="btn btn--small" data-join="' + esc(l.id) + '">Join</button></li>').join('');
+            for (const b of listEl.querySelectorAll('[data-join]')) {
+              b.addEventListener('click', () => join(b.dataset.join, b));
+            }
+          };
+
+          /* Joining takes a moment -- a second connection to the broker, then the
+             greeting. Say so on the button that was pressed rather than leaving
+             it looking ignored, which is what an unlabelled wait always looks
+             like. */
+          function join(lobbyId, button) {
+            button.disabled = true;
+            button.textContent = 'Joining\u2026';
+            stopWatching();
+            const link = shell.connect('open', {
+              host: false, name: nameOf(), lobbyId,
+              onStatus: (t) => { statusEl.textContent = t; },
+              onError: (t) => { statusEl.textContent = t; },
+            });
+            if (!link) { statusEl.textContent = 'Could not open a connection.'; return; }
+            waitForOpen(link, statusEl);
+          }
+
+          sheet.querySelector('[data-open="host"]').addEventListener('click', (e) => {
+            const b = e.currentTarget;
+            b.disabled = true;
+            b.textContent = 'Opening\u2026';
+            stopWatching();
+            const link = shell.connect('open', {
+              host: true, name: nameOf(),
+              onStatus: (t) => { statusEl.textContent = t; },
+              onError: (t) => { statusEl.textContent = t; },
+            });
+            if (!link) { statusEl.textContent = 'Could not open a connection.'; return; }
+            waitForOpen(link, statusEl);
+          });
+
+          sheet.querySelector('[data-open="refresh"]').addEventListener('click', () => {
+            stopWatching();
+            listEl.innerHTML = '<li class="modrow__desc">Looking\u2026</li>';
+            watchLobbies(paint, (t) => { statusEl.textContent = t; },
+              (t) => { statusEl.textContent = t; listEl.innerHTML = '<li class="modrow__desc">'
+                + esc(t) + '</li>'; });
+          });
+
+          watchLobbies(paint, (t) => { statusEl.textContent = t; },
+            (t) => { statusEl.textContent = t;
+              listEl.innerHTML = '<li class="modrow__desc">' + esc(t) + '</li>'; });
+          if (stage) stage.dataset.ready = '1';
         },
       };
     },

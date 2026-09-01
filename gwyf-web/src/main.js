@@ -560,6 +560,20 @@
     if (how === 'peer') {
       if (!GWLink.webrtcAvailable()) return null;
       link = GWLink.openPeer({ host: !!(opts && opts.host) });
+    } else if (how === 'open') {
+      if (!GWLink.openAvailable()) return null;
+      /* The two callbacks are read by the host every few seconds to keep its
+         entry on the public list honest -- a lobby that says one player when
+         four are in it is worse than no list at all. */
+      link = GWLink.openOpen({
+        host: !!(opts && opts.host),
+        lobbyId: opts && opts.lobbyId,
+        name,
+        onStatus: opts && opts.onStatus,
+        onError: opts && opts.onError,
+        countPeers: () => (shell.net ? shell.net.roster().length : 0),
+        day: () => shell.store.s.day || 1,
+      });
     } else {
       if (!GWLink.broadcastAvailable()) return null;
       link = GWLink.openBroadcast({});

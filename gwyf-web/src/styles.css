@@ -1055,6 +1055,26 @@ button:disabled { cursor: not-allowed; }
   margin-bottom: 0.3rem;
 }
 
+@media (min-width: 44rem) { .netway--wide { grid-column: 1 / -1; } }
+
+/* The public list. Rows are a fixed three-column grid rather than flex so the
+   Join buttons line up down the right edge whatever length the names are --
+   a ragged column of buttons reads as a list of unrelated things. */
+.lobbies { list-style: none; margin: 0.7rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
+.lobby {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunk);
+}
+.lobby__who { font-weight: 600; }
+.lobby__meta { color: var(--text-muted); font-size: 0.76rem; font-family: var(--font-mono); }
+.btn--small { padding: 0.25rem 0.7rem; font-size: 0.76rem; }
+
 .netflow { margin-top: 1rem; display: grid; gap: 0.6rem; }
 .netflow textarea,
 .field textarea,

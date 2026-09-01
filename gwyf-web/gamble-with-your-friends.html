@@ -1067,6 +1067,26 @@ button:disabled { cursor: not-allowed; }
   margin-bottom: 0.3rem;
 }
 
+@media (min-width: 44rem) { .netway--wide { grid-column: 1 / -1; } }
+
+/* The public list. Rows are a fixed three-column grid rather than flex so the
+   Join buttons line up down the right edge whatever length the names are --
+   a ragged column of buttons reads as a list of unrelated things. */
+.lobbies { list-style: none; margin: 0.7rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
+.lobby {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunk);
+}
+.lobby__who { font-weight: 600; }
+.lobby__meta { color: var(--text-muted); font-size: 0.76rem; font-family: var(--font-mono); }
+.btn--small { padding: 0.25rem 0.7rem; font-size: 0.76rem; }
+
 .netflow { margin-top: 1rem; display: grid; gap: 0.6rem; }
 .netflow textarea,
 .field textarea,
@@ -9339,6 +9359,196 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
 </script>
 <script>
+/* Just enough MQTT to find other people.
+
+   A lobby list is shared state that strangers have to discover, and strangers
+   cannot discover each other peer to peer -- something has to be in the middle.
+   There is no server here and there is nowhere to run one, so the middle is a
+   public MQTT broker: free, anonymous, spoken over a WebSocket, and run by
+   somebody else for anybody who wants it.
+
+   This is MQTT 3.1.1 with everything not needed thrown out. CONNECT, SUBSCRIBE,
+   PUBLISH at QoS 0, and a ping to keep the socket up -- about two hundred lines
+   against the ~100 KB the usual client library costs, in a project that ships
+   as one file and has hand-rolled everything else for the same reason.
+
+   What is deliberately not here: QoS 1 and 2, retained messages, wills, and
+   session persistence. Everything this sends is a position update or a lobby
+   announcement that is repeated a second later anyway, so a dropped packet
+   costs nothing and an acknowledgement round trip would cost more than the
+   packet is worth.
+
+   Be clear about what a public broker is: unauthenticated and unencrypted at
+   the application layer. Anybody who knows the topic can read what is on it or
+   write to it. That is fine for what this carries -- names, positions and the
+   contents of an imaginary bank account -- and it is said plainly in the
+   interface rather than left to be discovered. */
+
+(function (global) {
+  'use strict';
+
+  const CONNECT = 1, CONNACK = 2, PUBLISH = 3, SUBSCRIBE = 8, SUBACK = 9,
+        PINGREQ = 12, PINGRESP = 13, DISCONNECT = 14;
+  const KEEPALIVE = 45;
+
+  /* MQTT counts a length in a base-128 varint, seven bits at a time with the
+     top bit as a continuation flag. */
+  function varint(n) {
+    const out = [];
+    do {
+      let byte = n % 128;
+      n = Math.floor(n / 128);
+      if (n > 0) byte |= 0x80;
+      out.push(byte);
+    } while (n > 0);
+    return out;
+  }
+
+  function readVarint(bytes, at) {
+    let value = 0, shift = 1, i = at;
+    for (let k = 0; k < 4; k++) {
+      const byte = bytes[i++];
+      if (byte === undefined) return null;
+      value += (byte & 127) * shift;
+      if ((byte & 128) === 0) return { value, at: i };
+      shift *= 128;
+    }
+    return null;
+  }
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  function str(s) {
+    const b = encoder.encode(s);
+    return [b.length >> 8, b.length & 255, ...b];
+  }
+
+  function packet(type, flags, payload) {
+    return new Uint8Array([(type << 4) | flags, ...varint(payload.length), ...payload]);
+  }
+
+  /* Connect to a broker and hand back something that can publish, subscribe and
+     say when it has fallen over. `onUp` fires once the broker has accepted the
+     connection, not merely once the socket is open -- they are not the same
+     thing and acting on the second is how you publish into a void. */
+  function connect(opts) {
+    const url = opts.url;
+    const clientId = opts.clientId || ('gwyf' + Math.random().toString(36).slice(2, 12));
+    const handlers = new Set();
+    let ws = null;
+    let up = false;
+    let ping = null;
+    let nextId = 1;
+    let buffer = new Uint8Array(0);
+    let closed = false;
+
+    function fail(why) {
+      if (closed) return;
+      closed = true;
+      clearInterval(ping);
+      try { ws && ws.close(); } catch (e) { /* already gone */ }
+      if (opts.onDown) opts.onDown(why);
+    }
+
+    try {
+      // The subprotocol matters: brokers reject a plain WebSocket on the MQTT
+      // endpoint, and the failure looks exactly like the network being down.
+      ws = new WebSocket(url, 'mqtt');
+    } catch (err) {
+      fail(err.message);
+      return null;
+    }
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      const payload = [
+        ...str('MQTT'), 4,          // protocol name and level
+        0x02,                       // clean session, no will, no credentials
+        KEEPALIVE >> 8, KEEPALIVE & 255,
+        ...str(clientId),
+      ];
+      ws.send(packet(CONNECT, 0, payload));
+    };
+
+    ws.onerror = () => fail('the broker could not be reached');
+    ws.onclose = () => fail('the connection to the broker closed');
+
+    ws.onmessage = (e) => {
+      const chunk = new Uint8Array(e.data);
+      const merged = new Uint8Array(buffer.length + chunk.length);
+      merged.set(buffer);
+      merged.set(chunk, buffer.length);
+      buffer = merged;
+      // A WebSocket frame is not an MQTT packet: one frame can carry several
+      // packets and one packet can span frames, so it is drained as a stream.
+      for (;;) {
+        if (buffer.length < 2) return;
+        const header = readVarint(buffer, 1);
+        if (!header) return;
+        const total = header.at + header.value;
+        if (buffer.length < total) return;
+        handle(buffer[0] >> 4, buffer.subarray(header.at, total));
+        buffer = buffer.subarray(total);
+      }
+    };
+
+    function handle(type, body) {
+      if (type === CONNACK) {
+        // Byte 1 is the return code; anything but zero is a refusal, and the
+        // reason is worth passing on rather than reporting "it did not work".
+        if (body[1] !== 0) return fail('the broker refused the connection (code ' + body[1] + ')');
+        up = true;
+        ping = setInterval(() => {
+          if (ws.readyState === 1) ws.send(packet(PINGREQ, 0, []));
+        }, KEEPALIVE * 500);
+        if (opts.onUp) opts.onUp();
+        return;
+      }
+      if (type === PUBLISH) {
+        const len = (body[0] << 8) | body[1];
+        const topic = decoder.decode(body.subarray(2, 2 + len));
+        const text = decoder.decode(body.subarray(2 + len));
+        let data = null;
+        try { data = JSON.parse(text); } catch (err) { return; }
+        for (const fn of Array.from(handlers)) fn(topic, data);
+        return;
+      }
+      // SUBACK, PINGRESP and the rest need no action; the broker having
+      // answered at all is the only information in them we use.
+    }
+
+    return {
+      get ready() { return up && ws && ws.readyState === 1; },
+      publish(topic, value) {
+        if (!up || ws.readyState !== 1) return false;
+        const payload = [...str(topic), ...encoder.encode(JSON.stringify(value))];
+        ws.send(packet(PUBLISH, 0, payload));
+        return true;
+      },
+      subscribe(topic) {
+        if (!up || ws.readyState !== 1) return false;
+        const id = nextId++ & 0xffff;
+        ws.send(packet(SUBSCRIBE, 2, [id >> 8, id & 255, ...str(topic), 0]));
+        return true;
+      },
+      onMessage(fn) { handlers.add(fn); return () => handlers.delete(fn); },
+      close() {
+        if (up && ws && ws.readyState === 1) {
+          try { ws.send(packet(DISCONNECT, 0, [])); } catch (e) { /* going anyway */ }
+        }
+        closed = true;
+        clearInterval(ping);
+        try { ws && ws.close(); } catch (e) { /* already gone */ }
+      },
+    };
+  }
+
+  global.GWMqtt = { connect };
+})(window);
+
+</script>
+<script>
 /* Talking to another copy of the game.
 
    Two transports, because the two places this page runs have very different
@@ -9518,7 +9728,195 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     };
   }
 
-  global.GWLink = { openBroadcast, openPeer, webrtcAvailable, broadcastAvailable, newId };
+  /* --- anyone on the internet ----------------------------------------------
+
+     The third transport, and the only one that lets a stranger find you. Both
+     of the others need something arranged out of band -- the same computer, or
+     a code passed hand to hand -- because two browsers cannot discover each
+     other on their own. This uses a public MQTT broker as the meeting point:
+     free, anonymous, run by somebody else for anybody who wants it, and spoken
+     over an ordinary WebSocket.
+
+     Everything lives on two topics. Hosts announce themselves on a shared one
+     every few seconds and stop when they stop; everyone browsing subscribes to
+     it and forgets a lobby that has gone quiet. A room then has a topic of its
+     own that the whole game runs over -- the same messages the other transports
+     carry, which is why nothing above this layer knows the difference.
+
+     Where this cannot work, and why:
+
+       - Inside the claude.ai artifact viewer, where the page's connect-src
+         allows nothing but the font host. A WebSocket to a broker is refused
+         before it is opened. `available()` says so rather than hanging.
+       - On networks that block the broker's port, which some do.
+
+     And what it is: an unauthenticated public bus. Anybody who knows the topic
+     can read what is on it or join what is announced on it. That is stated in
+     the interface, not left to be found out. */
+
+  /* More than one, because a public broker is somebody else's goodwill and any
+     of them can be down, full or blocked. They are tried in order. */
+  const BROKERS = [
+    { url: 'wss://broker.emqx.io:8084/mqtt', name: 'EMQX' },
+    { url: 'wss://broker.hivemq.com:8884/mqtt', name: 'HiveMQ' },
+    { url: 'wss://test.mosquitto.org:8081/mqtt', name: 'Mosquitto' },
+  ];
+  const TOPIC = 'gwyf/v1/lobbies';
+  const ROOM = 'gwyf/v1/room/';
+  const ANNOUNCE = 3000;        // how often a host says it is still there
+  const FORGET = 11000;         // and how long a lobby lives without being said
+
+  function openAvailable() {
+    return typeof global.WebSocket === 'function';
+  }
+
+  /* Watch the lobby list without joining anything. `onList` gets the whole list
+     every time it changes. */
+  function browseLobbies(opts) {
+    const seen = new Map();
+    let client = null;
+    let index = 0;
+    let stopped = false;
+    let sweep = null;
+
+    function announce() {
+      const now = Date.now();
+      let changed = false;
+      for (const [id, lobby] of seen) {
+        if (now - lobby.at > FORGET) { seen.delete(id); changed = true; }
+      }
+      if (changed && opts.onList) opts.onList(list());
+    }
+
+    const list = () => Array.from(seen.values())
+      .sort((a, b) => b.at - a.at)
+      .map((l) => ({ id: l.id, host: l.host, players: l.players, day: l.day }));
+
+    function tryNext() {
+      if (stopped) return;
+      if (index >= BROKERS.length) {
+        if (opts.onError) {
+          opts.onError('No public broker would take the connection. The network here may '
+            + 'block them, or they may all be down.');
+        }
+        return;
+      }
+      const broker = BROKERS[index++];
+      if (opts.onStatus) opts.onStatus('Looking for lobbies via ' + broker.name + '…');
+      client = GWMqtt.connect({
+        url: broker.url,
+        onUp() {
+          if (stopped) { client.close(); return; }
+          client.subscribe(TOPIC);
+          if (opts.onStatus) opts.onStatus('Connected via ' + broker.name + '.');
+          if (opts.onReady) opts.onReady(client, broker);
+        },
+        onDown() {
+          if (stopped || !client) return;
+          // Only fall through to the next broker if this one never worked.
+          if (!seen.size) tryNext();
+          else if (opts.onError) opts.onError('Lost the connection to ' + broker.name + '.');
+        },
+      });
+      if (!client) { tryNext(); return; }
+      client.onMessage((topic, data) => {
+        if (topic !== TOPIC || !data || !data.id) return;
+        if (data.gone) {
+          if (seen.delete(data.id) && opts.onList) opts.onList(list());
+          return;
+        }
+        seen.set(data.id, {
+          id: String(data.id).slice(0, 24),
+          host: String(data.host || 'Somebody').slice(0, 16),
+          players: Math.max(1, Math.min(16, data.players | 0)),
+          day: Math.max(1, Math.min(99, data.day | 0)),
+          at: Date.now(),
+        });
+        if (opts.onList) opts.onList(list());
+      });
+      sweep = setInterval(announce, 1500);
+    }
+
+    tryNext();
+    return {
+      list,
+      stop() {
+        stopped = true;
+        clearInterval(sweep);
+        if (client) client.close();
+        client = null;
+      },
+      get client() { return client; },
+    };
+  }
+
+  /* Join or host a room over the broker. Satisfies the same shape as the other
+     two transports, so session.js cannot tell which one it has. */
+  function openOpen(opts) {
+    const bus = emitter();
+    const me = (opts && opts.id) || newId();
+    const lobbyId = opts.lobbyId || newId();
+    const isHost = !!opts.host;
+    const topic = ROOM + lobbyId;
+    let client = null;
+    let beat = null;
+    let ready = false;
+
+    const browser = browseLobbies({
+      onStatus: opts.onStatus,
+      onError: opts.onError,
+      onReady(c) {
+        client = c;
+        client.subscribe(topic);
+        ready = true;
+        client.onMessage((t, data) => {
+          if (t !== topic || !data || !data.t) return;
+          if (data.from === me) return;
+          if (data.to && data.to !== me) return;
+          bus.emit(data.t, data.d, data.from);
+        });
+        if (isHost) {
+          const say = () => client.publish(TOPIC, {
+            id: lobbyId,
+            host: opts.name || 'Somebody',
+            players: 1 + (opts.countPeers ? opts.countPeers() : 0),
+            day: opts.day ? opts.day() : 1,
+          });
+          say();
+          beat = setInterval(say, ANNOUNCE);
+        }
+        bus.emit('__open', null, me);
+        if (opts.onOpen) opts.onOpen();
+      },
+    });
+
+    return {
+      kind: 'open',
+      id: me,
+      lobbyId,
+      on: bus.on,
+      send(t, d, to) {
+        if (!client || !ready) return false;
+        return client.publish(topic, { t, d, from: me, to: to || null });
+      },
+      get ready() { return ready; },
+      describe: 'Anyone on the internet',
+      close() {
+        clearInterval(beat);
+        // Take the lobby off the list on the way out rather than leaving it to
+        // time out, so nobody spends ten seconds joining something that is gone.
+        if (isHost && client) client.publish(TOPIC, { id: lobbyId, gone: true });
+        browser.stop();
+        client = null;
+        ready = false;
+      },
+    };
+  }
+
+  global.GWLink = {
+    openBroadcast, openPeer, openOpen, browseLobbies,
+    webrtcAvailable, broadcastAvailable, openAvailable, newId, BROKERS,
+  };
 })(window);
 
 </script>
@@ -9789,6 +10187,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return {
       me, peers, isHost, tick, levelChanged,
       kind: link.kind,
+      /* Whether the wire underneath is actually up. A session exists the moment
+         you press the button; being connected happens later, and the two being
+         confused is why an earlier version showed you at a table before there
+         was one. */
+      get ready() { return !!link.ready; },
       roster() {
         return Array.from(peers.values()).map((p) => ({ id: p.id, name: p.name, colour: p.colour }));
       },
@@ -10667,6 +11070,36 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const swatch = (c) => '#' + (typeof c === 'number'
     ? c.toString(16).padStart(6, '0') : String(c).replace('#', ''));
 
+  /* --- the public list -----------------------------------------------------
+
+     One browser for the whole module, not one per redraw. The lobby panel
+     redraws every time the list changes, which with four lobbies announcing
+     every three seconds is often; opening a fresh broker connection each time
+     would be a connection storm against somebody else's free broker. */
+  let lobbyWatch = null;
+
+  function watchLobbies(onList, onStatus, onError) {
+    if (lobbyWatch) {
+      lobbyWatch.sink = { onList, onStatus, onError };
+      onList(lobbyWatch.browser.list());
+      if (lobbyWatch.status) onStatus(lobbyWatch.status);
+      return;
+    }
+    const w = { sink: { onList, onStatus, onError }, status: '', browser: null };
+    lobbyWatch = w;
+    w.browser = GWLink.browseLobbies({
+      onList: (l) => w.sink.onList && w.sink.onList(l),
+      onStatus: (t) => { w.status = t; if (w.sink.onStatus) w.sink.onStatus(t); },
+      onError: (t) => { w.status = t; if (w.sink.onError) w.sink.onError(t); },
+    });
+  }
+
+  function stopWatching() {
+    if (!lobbyWatch) return;
+    lobbyWatch.browser.stop();
+    lobbyWatch = null;
+  }
+
 
 
   /* `sticky` means Escape and a click on the backdrop will not dismiss it --
@@ -10676,6 +11109,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   function close(force) {
     if (!current) return false;
     if (current.sticky && !force) return false;
+    if (current.teardown) current.teardown();
     root.innerHTML = '';
     current = null;
     return true;
@@ -10690,11 +11124,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   }
 
   function show(name, data) {
+    /* A screen that started something -- a network listener, a timer -- gets to
+       stop it. Without this the public-lobby browser stayed subscribed to a
+       broker for the rest of the session after you closed the screen. */
+    if (current && current.teardown && current.name !== name) current.teardown();
     root.innerHTML = '';
     const builder = SCREENS[name];
     if (!builder) return;
     const spec = builder(data || {});
-    current = { name, sticky: !!spec.sticky, data: data || {} };
+    current = { name, sticky: !!spec.sticky, data: data || {}, teardown: spec.teardown || null };
 
     const screen = document.createElement('div');
     screen.className = 'screen';
@@ -11068,6 +11506,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const net = shell.net;
       const canPeer = GWLink.webrtcAvailable();
       const canLocal = GWLink.broadcastAvailable();
+      const canOpen = GWLink.openAvailable();
       const named = (shell.store.meta.playerName || '');
 
       if (net) {
@@ -11088,7 +11527,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
             + '</p>'
             + '<p class="modrow__desc">' + esc(net.kind === 'local'
               ? 'Connected to other windows on this computer.'
-              : 'Connected peer to peer.') + '</p>'
+              : net.kind === 'open'
+                ? 'On the public list. Anyone running this game can see this lobby and join it.'
+                : 'Connected peer to peer.') + '</p>'
             + '<ul class="crew">' + rows + '</ul>'
             + '<div class="sheet__actions">'
             + '<button class="btn" data-leave>Leave the table</button>'
@@ -11134,8 +11575,26 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           + '>Host a game</button>'
           + '<button class="btn" data-peer="join"' + (canPeer ? '' : ' disabled')
           + '>Join a game</button></div></div>'
+          + '<div class="netway netway--wide"><h3>Anyone on the internet</h3>'
+          + '<p class="modrow__desc">' + (canOpen
+              ? 'No codes. Host one and it appears on the list below for everybody else '
+                + 'running this game; join one and you are in. The list is carried by a free '
+                + 'public message broker, which means it is open: anyone who finds it can read '
+                + 'what is on it and walk into your lobby. That is the point, and it is also '
+                + 'the whole of the security.'
+              : 'This browser has no WebSocket, so the public list cannot be reached.')
+          + '</p>'
+          + '<div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-open="host"' + (canOpen ? '' : ' disabled')
+          + '>Host a public lobby</button>'
+          + '<button class="btn" data-open="refresh"' + (canOpen ? '' : ' disabled')
+          + '>Look again</button>'
+          + '<span class="modrow__desc" id="netOpenStatus"></span></div>'
+          + '<ul class="lobbies" id="netOpenList"><li class="modrow__desc">'
+          + (canOpen ? 'Looking\u2026' : 'Not available here.') + '</li></ul></div>'
           + '</div>'
           + '<div id="netStage"></div>',
+        teardown: stopWatching,
         wire(sheet) {
           const nameOf = () => {
             const v = (sheet.querySelector('#netName').value || 'Player').trim().slice(0, 16);
@@ -11154,6 +11613,71 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
               peerFlow(sheet.querySelector('#netStage'), b.dataset.peer === 'host', nameOf());
             });
           }
+          if (!canOpen) return;
+
+          const listEl = sheet.querySelector('#netOpenList');
+          const statusEl = sheet.querySelector('#netOpenStatus');
+          const stage = sheet.querySelector('#netStage');
+
+          const paint = (lobbies) => {
+            if (!lobbies.length) {
+              listEl.innerHTML = '<li class="modrow__desc">Nobody is hosting right now. '
+                + 'Host one yourself and somebody may walk in.</li>';
+              return;
+            }
+            listEl.innerHTML = lobbies.map((l) =>
+              '<li class="lobby"><span class="lobby__who">' + esc(l.host) + '</span>'
+              + '<span class="lobby__meta">' + l.players + (l.players === 1 ? ' player' : ' players')
+              + ' \u00b7 day ' + l.day + '</span>'
+              + '<button class="btn btn--small" data-join="' + esc(l.id) + '">Join</button></li>').join('');
+            for (const b of listEl.querySelectorAll('[data-join]')) {
+              b.addEventListener('click', () => join(b.dataset.join, b));
+            }
+          };
+
+          /* Joining takes a moment -- a second connection to the broker, then the
+             greeting. Say so on the button that was pressed rather than leaving
+             it looking ignored, which is what an unlabelled wait always looks
+             like. */
+          function join(lobbyId, button) {
+            button.disabled = true;
+            button.textContent = 'Joining\u2026';
+            stopWatching();
+            const link = shell.connect('open', {
+              host: false, name: nameOf(), lobbyId,
+              onStatus: (t) => { statusEl.textContent = t; },
+              onError: (t) => { statusEl.textContent = t; },
+            });
+            if (!link) { statusEl.textContent = 'Could not open a connection.'; return; }
+            waitForOpen(link, statusEl);
+          }
+
+          sheet.querySelector('[data-open="host"]').addEventListener('click', (e) => {
+            const b = e.currentTarget;
+            b.disabled = true;
+            b.textContent = 'Opening\u2026';
+            stopWatching();
+            const link = shell.connect('open', {
+              host: true, name: nameOf(),
+              onStatus: (t) => { statusEl.textContent = t; },
+              onError: (t) => { statusEl.textContent = t; },
+            });
+            if (!link) { statusEl.textContent = 'Could not open a connection.'; return; }
+            waitForOpen(link, statusEl);
+          });
+
+          sheet.querySelector('[data-open="refresh"]').addEventListener('click', () => {
+            stopWatching();
+            listEl.innerHTML = '<li class="modrow__desc">Looking\u2026</li>';
+            watchLobbies(paint, (t) => { statusEl.textContent = t; },
+              (t) => { statusEl.textContent = t; listEl.innerHTML = '<li class="modrow__desc">'
+                + esc(t) + '</li>'; });
+          });
+
+          watchLobbies(paint, (t) => { statusEl.textContent = t; },
+            (t) => { statusEl.textContent = t;
+              listEl.innerHTML = '<li class="modrow__desc">' + esc(t) + '</li>'; });
+          if (stage) stage.dataset.ready = '1';
         },
       };
     },
@@ -12406,6 +12930,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     if (how === 'peer') {
       if (!GWLink.webrtcAvailable()) return null;
       link = GWLink.openPeer({ host: !!(opts && opts.host) });
+    } else if (how === 'open') {
+      if (!GWLink.openAvailable()) return null;
+      /* The two callbacks are read by the host every few seconds to keep its
+         entry on the public list honest -- a lobby that says one player when
+         four are in it is worse than no list at all. */
+      link = GWLink.openOpen({
+        host: !!(opts && opts.host),
+        lobbyId: opts && opts.lobbyId,
+        name,
+        onStatus: opts && opts.onStatus,
+        onError: opts && opts.onError,
+        countPeers: () => (shell.net ? shell.net.roster().length : 0),
+        day: () => shell.store.s.day || 1,
+      });
     } else {
       if (!GWLink.broadcastAvailable()) return null;
       link = GWLink.openBroadcast({});

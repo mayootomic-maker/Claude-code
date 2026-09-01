@@ -264,6 +264,11 @@
     return {
       me, peers, isHost, tick, levelChanged,
       kind: link.kind,
+      /* Whether the wire underneath is actually up. A session exists the moment
+         you press the button; being connected happens later, and the two being
+         confused is why an earlier version showed you at a table before there
+         was one. */
+      get ready() { return !!link.ready; },
       roster() {
         return Array.from(peers.values()).map((p) => ({ id: p.id, name: p.name, colour: p.colour }));
       },

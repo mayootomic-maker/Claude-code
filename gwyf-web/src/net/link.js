@@ -177,5 +177,193 @@
     };
   }
 
-  global.GWLink = { openBroadcast, openPeer, webrtcAvailable, broadcastAvailable, newId };
+  /* --- anyone on the internet ----------------------------------------------
+
+     The third transport, and the only one that lets a stranger find you. Both
+     of the others need something arranged out of band -- the same computer, or
+     a code passed hand to hand -- because two browsers cannot discover each
+     other on their own. This uses a public MQTT broker as the meeting point:
+     free, anonymous, run by somebody else for anybody who wants it, and spoken
+     over an ordinary WebSocket.
+
+     Everything lives on two topics. Hosts announce themselves on a shared one
+     every few seconds and stop when they stop; everyone browsing subscribes to
+     it and forgets a lobby that has gone quiet. A room then has a topic of its
+     own that the whole game runs over -- the same messages the other transports
+     carry, which is why nothing above this layer knows the difference.
+
+     Where this cannot work, and why:
+
+       - Inside the claude.ai artifact viewer, where the page's connect-src
+         allows nothing but the font host. A WebSocket to a broker is refused
+         before it is opened. `available()` says so rather than hanging.
+       - On networks that block the broker's port, which some do.
+
+     And what it is: an unauthenticated public bus. Anybody who knows the topic
+     can read what is on it or join what is announced on it. That is stated in
+     the interface, not left to be found out. */
+
+  /* More than one, because a public broker is somebody else's goodwill and any
+     of them can be down, full or blocked. They are tried in order. */
+  const BROKERS = [
+    { url: 'wss://broker.emqx.io:8084/mqtt', name: 'EMQX' },
+    { url: 'wss://broker.hivemq.com:8884/mqtt', name: 'HiveMQ' },
+    { url: 'wss://test.mosquitto.org:8081/mqtt', name: 'Mosquitto' },
+  ];
+  const TOPIC = 'gwyf/v1/lobbies';
+  const ROOM = 'gwyf/v1/room/';
+  const ANNOUNCE = 3000;        // how often a host says it is still there
+  const FORGET = 11000;         // and how long a lobby lives without being said
+
+  function openAvailable() {
+    return typeof global.WebSocket === 'function';
+  }
+
+  /* Watch the lobby list without joining anything. `onList` gets the whole list
+     every time it changes. */
+  function browseLobbies(opts) {
+    const seen = new Map();
+    let client = null;
+    let index = 0;
+    let stopped = false;
+    let sweep = null;
+
+    function announce() {
+      const now = Date.now();
+      let changed = false;
+      for (const [id, lobby] of seen) {
+        if (now - lobby.at > FORGET) { seen.delete(id); changed = true; }
+      }
+      if (changed && opts.onList) opts.onList(list());
+    }
+
+    const list = () => Array.from(seen.values())
+      .sort((a, b) => b.at - a.at)
+      .map((l) => ({ id: l.id, host: l.host, players: l.players, day: l.day }));
+
+    function tryNext() {
+      if (stopped) return;
+      if (index >= BROKERS.length) {
+        if (opts.onError) {
+          opts.onError('No public broker would take the connection. The network here may '
+            + 'block them, or they may all be down.');
+        }
+        return;
+      }
+      const broker = BROKERS[index++];
+      if (opts.onStatus) opts.onStatus('Looking for lobbies via ' + broker.name + '…');
+      client = GWMqtt.connect({
+        url: broker.url,
+        onUp() {
+          if (stopped) { client.close(); return; }
+          client.subscribe(TOPIC);
+          if (opts.onStatus) opts.onStatus('Connected via ' + broker.name + '.');
+          if (opts.onReady) opts.onReady(client, broker);
+        },
+        onDown() {
+          if (stopped || !client) return;
+          // Only fall through to the next broker if this one never worked.
+          if (!seen.size) tryNext();
+          else if (opts.onError) opts.onError('Lost the connection to ' + broker.name + '.');
+        },
+      });
+      if (!client) { tryNext(); return; }
+      client.onMessage((topic, data) => {
+        if (topic !== TOPIC || !data || !data.id) return;
+        if (data.gone) {
+          if (seen.delete(data.id) && opts.onList) opts.onList(list());
+          return;
+        }
+        seen.set(data.id, {
+          id: String(data.id).slice(0, 24),
+          host: String(data.host || 'Somebody').slice(0, 16),
+          players: Math.max(1, Math.min(16, data.players | 0)),
+          day: Math.max(1, Math.min(99, data.day | 0)),
+          at: Date.now(),
+        });
+        if (opts.onList) opts.onList(list());
+      });
+      sweep = setInterval(announce, 1500);
+    }
+
+    tryNext();
+    return {
+      list,
+      stop() {
+        stopped = true;
+        clearInterval(sweep);
+        if (client) client.close();
+        client = null;
+      },
+      get client() { return client; },
+    };
+  }
+
+  /* Join or host a room over the broker. Satisfies the same shape as the other
+     two transports, so session.js cannot tell which one it has. */
+  function openOpen(opts) {
+    const bus = emitter();
+    const me = (opts && opts.id) || newId();
+    const lobbyId = opts.lobbyId || newId();
+    const isHost = !!opts.host;
+    const topic = ROOM + lobbyId;
+    let client = null;
+    let beat = null;
+    let ready = false;
+
+    const browser = browseLobbies({
+      onStatus: opts.onStatus,
+      onError: opts.onError,
+      onReady(c) {
+        client = c;
+        client.subscribe(topic);
+        ready = true;
+        client.onMessage((t, data) => {
+          if (t !== topic || !data || !data.t) return;
+          if (data.from === me) return;
+          if (data.to && data.to !== me) return;
+          bus.emit(data.t, data.d, data.from);
+        });
+        if (isHost) {
+          const say = () => client.publish(TOPIC, {
+            id: lobbyId,
+            host: opts.name || 'Somebody',
+            players: 1 + (opts.countPeers ? opts.countPeers() : 0),
+            day: opts.day ? opts.day() : 1,
+          });
+          say();
+          beat = setInterval(say, ANNOUNCE);
+        }
+        bus.emit('__open', null, me);
+        if (opts.onOpen) opts.onOpen();
+      },
+    });
+
+    return {
+      kind: 'open',
+      id: me,
+      lobbyId,
+      on: bus.on,
+      send(t, d, to) {
+        if (!client || !ready) return false;
+        return client.publish(topic, { t, d, from: me, to: to || null });
+      },
+      get ready() { return ready; },
+      describe: 'Anyone on the internet',
+      close() {
+        clearInterval(beat);
+        // Take the lobby off the list on the way out rather than leaving it to
+        // time out, so nobody spends ten seconds joining something that is gone.
+        if (isHost && client) client.publish(TOPIC, { id: lobbyId, gone: true });
+        browser.stop();
+        client = null;
+        ready = false;
+      },
+    };
+  }
+
+  global.GWLink = {
+    openBroadcast, openPeer, openOpen, browseLobbies,
+    webrtcAvailable, broadcastAvailable, openAvailable, newId, BROKERS,
+  };
 })(window);
