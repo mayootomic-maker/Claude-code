@@ -3141,6 +3141,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      led round the building with a toilet roll held to one eye. */
     let FOV_WALK = 72;
     const FOV_TABLE = 38;
+    let fovTable = FOV_TABLE;
     const camera = new THREE.PerspectiveCamera(FOV_TABLE, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
     /* Yaw, then pitch, then roll.
@@ -3287,7 +3288,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        at six. This sits where the camera sits and fills whatever face is
        pointed at you, whichever way the machine stands. */
     const FILL_ON = 16;
-    const fill = new THREE.PointLight(0xfff0dc, FILL_ON, 7, 1.6);
+    // Fourteen metres of range, because the duck race is a lane and not a
+    // table: at nine the far half of it fell outside the light entirely.
+    const fill = new THREE.PointLight(0xfff0dc, FILL_ON, 12, 1.6);
+    let fillWant = FILL_ON;
     scene.add(fill);
 
     /* Both are dimmed rather than hidden. Three compiles the light count into
@@ -3296,7 +3300,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        An intensity of zero costs a few multiplications and no compile. */
     function setTableLights(on) {
       lamp.intensity = on ? LAMP_ON : 0;
-      fill.intensity = on ? FILL_ON : 0;
+      fill.intensity = on ? fillWant : 0;
     }
 
     function setLampOver(point, from) {
@@ -3312,6 +3316,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         point.y + (eye.y - point.y) * 0.62 + 0.5,
         point.z + (eye.z - point.z) * 0.62
       );
+      /* Scaled with the square of how far it ended up, because the falloff is
+         the physical one: a fixed intensity that suits a table watched from
+         four metres blows the slot cabinet white when the wall behind it
+         forces the camera in to one and a half. */
+      const d = fill.position.distanceTo(point);
+      // Bounded both ways. Unbounded, the square term turned the drop board
+      // and the crash screen into white rectangles -- ninety percent mean
+      // luminance, which is as unreadable as the black ones were.
+      fillWant = FILL_ON * Math.max(0.45, Math.min(1.25, (d * d) / 9));
+      if (lamp.intensity > 0) fill.intensity = fillWant;
     }
 
     const state = {
@@ -3530,12 +3544,17 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       /* Hand the camera to the first-person controller, or take it back. */
       setManualCamera(v) {
         state.manual = !!v;
-        state.fovWant = state.manual ? FOV_WALK : FOV_TABLE;
+        state.fovWant = state.manual ? FOV_WALK : fovTable;
         // Walking: the floor's own lamps light the room. At a table: the
         // stage lamp adds the pool of light the game was lit for.
         setTableLights(!state.manual);
       },
       get manualCamera() { return state.manual; },
+      /* Where the camera is heading. Read by the harnesses, which have to wait
+         for it to arrive rather than for a stopwatch -- and which cannot work
+         it out for themselves, because the caller may have moved the shot to
+         keep it inside the room. */
+      get desired() { return { pos: desired.pos.clone(), look: desired.look.clone() }; },
       /* Extra degrees on top of whatever the mode asks for. Sprinting uses it. */
       setFovKick(deg) { state.fovKick = Math.max(-10, Math.min(14, deg || 0)); },
       /* How wide the walking lens is. A preference, because how wide is too
@@ -3547,6 +3566,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         if (state.manual) state.fovWant = FOV_WALK;
       },
       get walkFov() { return FOV_WALK; },
+      /* Widen the table's lens when the room would not let the camera get far
+         enough back. A machine against a wall in a crowded hall cannot always
+         be watched from where it was framed to be watched from; a wider lens
+         fits it in from where the camera can actually stand, which is what a
+         camera operator does about the same problem. */
+      setTableFov(deg) {
+        fovTable = Math.max(FOV_TABLE, Math.min(66, deg || FOV_TABLE));
+        if (!state.manual) state.fovWant = fovTable;
+      },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },
@@ -13560,7 +13588,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      you sit down is a close-up of the back of a wall with the machine hidden
      behind it. Slid along its own line towards the table, the shot the game
      asked for is kept and only its distance gives. */
-  function keepInsideRoom(pos, look) {
+  function keepInsideRoom(pos, look, record) {
     const size = shell.level && shell.level.size;
     if (!size) return;
     const limX = size.w / 2 - 0.75;
@@ -13571,14 +13599,56 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (p > lim && p !== l) t = Math.min(t, (lim - l) / (p - l));
       if (p < -lim && p !== l) t = Math.min(t, (-lim - l) / (p - l));
     }
-    // Never closer than a fifth of the way out, or the camera ends up inside
-    // the machine, which is a different way of seeing nothing.
-    t = Math.max(0.2, Math.min(1, t));
+    t = Math.max(0.15, Math.min(1, t));
     if (t < 1) {
       pos.set(look.x + (pos.x - look.x) * t,
               look.y + (pos.y - look.y) * t,
               look.z + (pos.z - look.z) * t);
     }
+
+    /* The wall is not the only thing you can end up inside.
+
+       Pulled back to the wall, a machine that is wide or tall swallows the
+       camera: The Climb stands eight rungs high and the shot ended up among
+       the rungs, and the duck race is nearly six metres of lane with only two
+       and a half metres of room behind it. Backing further is not available --
+       that is what the wall just said -- so the distance is made up in height
+       instead. Looking down at a long lane from above it is a shot; standing
+       in the middle of one is not.
+
+       An earlier attempt simply refused to come closer than the machine's own
+       size, which quietly cancelled the wall clamp and put the camera back in
+       the brickwork with the machine behind it. Every table has to satisfy
+       both, and height is the axis with room to give. */
+    const half = (record && record.anchor && record.anchor.half) || { hw: 0.8, hd: 0.8 };
+    const clear = Math.hypot(half.hw, half.hd) * 0.8 + 0.7;
+    const d = Math.hypot(pos.x - look.x, pos.y - look.y, pos.z - look.z);
+    if (d < clear) {
+      // A little height, capped, so the camera is not standing in the machine.
+      // Not all of it: at the ceiling, looking almost straight down at a five
+      // metre lane is as unreadable as being inside it.
+      const ceiling = (size.height || 5) - 0.8;
+      pos.y = Math.min(ceiling, pos.y + Math.min(1.2, Math.sqrt(clear * clear - d * d)));
+    }
+  }
+
+  /* Widen the lens until the machine fits from wherever the camera ended up.
+
+     The room decides how far back you can stand, and against a wall that is
+     often less than the shot each game was framed for. Rather than crop the
+     machine or shove the camera through the plaster, the field of view opens
+     until the machine's bounding sphere fits, which is what a camera operator
+     does about exactly this. */
+  function fitTableFov(record, pos) {
+    const box = new THREE.Box3().setFromObject(record.holder);
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = box.getSize(new THREE.Vector3()).length() / 2;
+    const dist = pos.distanceTo(centre);
+    if (!(dist > 0.01) || !(radius > 0.01)) { shell.stage.setTableFov(0); return; }
+    // A tenth of slack around the edges, and the vertical angle is the one the
+    // camera takes, so a wide machine in a wide window is already covered.
+    const need = 2 * Math.atan((radius * 0.8) / dist) * 180 / Math.PI;
+    shell.stage.setTableFov(need);
   }
 
   function useMachine(record) {
@@ -13601,7 +13671,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     record.holder.updateMatrixWorld();
     const pos = record.view.pos.clone().applyMatrix4(record.holder.matrixWorld);
     const look = record.view.look.clone().applyMatrix4(record.holder.matrixWorld);
-    keepInsideRoom(pos, look);
+    keepInsideRoom(pos, look, record);
+    fitTableFov(record, pos);
     shell.stage.frame(pos.toArray(), look.toArray(), 2.6);
     // Hang the table lamp over this table, not over the middle of the floor.
     shell.stage.setLampOver(look, pos);

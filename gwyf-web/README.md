@@ -108,10 +108,25 @@ the host makes a block of text, the guest pastes it and hands one back, and
 after that the two browsers talk directly with nothing in between. About 900
 characters each way, once.
 
-Inside the claude.ai artifact viewer the second one is **not available, and the
-page says so** rather than offering a button that cannot work: the viewer
-deletes `RTCPeerConnection` before the game loads. Download the HTML file and
-open it from your own machine and it works.
+**Anyone on the internet** needs no code at all. Type a name, press *Host a
+public lobby*, and the game appears on a list that every other copy of it is
+watching; anybody can read the list and press *Join*. The list rides on a free
+public MQTT broker — three of them, tried in turn, because a free broker is
+somebody else's goodwill — over a hand-rolled client of about 190 lines. A
+library would have cost more than the rest of the game.
+
+Be clear about what that is: an open, unauthenticated bus. Anyone who finds the
+topic can read what is on it or walk into your lobby. The interface says so
+rather than leaving it to be discovered. It is tested against a real
+third-party broker (aedes) on localhost, driven through the interface only —
+`tools/open-lobby.mjs`. It has never been exercised against the public brokers,
+because this container cannot open an outbound WebSocket at all.
+
+Inside the claude.ai artifact viewer the second and third are **not available,
+and the page says so** rather than offering a button that cannot work: the
+viewer deletes `RTCPeerConnection` before the game loads, and its CSP refuses
+the WebSocket the broker needs. Download the HTML file and open it from your own
+machine and both work.
 
 **What is shared, and what is not.** The host's bank is the bank — that is the
 whole game, so it is the one thing that has to be authoritative. Everyone else
@@ -338,6 +353,36 @@ The renderer watches its own frame time and gives up detail in order: pixel
 ratio first, then shadow resolution, then shadows. On a software rasteriser
 (which is what the test harness uses) that takes blackjack from 2.8 fps to about
 20; on any real GPU it never leaves the top tier.
+
+**The lens is not the renderer's business but it is the biggest thing on this
+list anyway.** One camera did two jobs for a long time and the table's lens won:
+38 degrees vertical, which frames a coin beautifully and makes walking a casino
+feel like being led round it with a toilet roll held to one eye. Walking has its
+own 72 now, eased into the table's 38 when you sit down and widened a few
+degrees as you get up to speed. Nothing else changed as much per line.
+
+Two rendering faults that no error ever reported, both found by measuring
+rather than reading:
+
+- **Every table was a black rectangle.** The lamp that lights a game hung over
+  the world origin, from when a game was mounted at the origin and there was
+  only ever one. Laid out across a thirty-metre hall, it lit carpet. It hangs
+  over the table you are at now, with a fill light where the camera is, because
+  overhead alone grazes the upright cabinets — measured, six percent mean
+  luminance against forty for the flat ones.
+- **Several tables were watched from inside a wall.** Each game says where to
+  watch it from, in its own space; four metres in front of a machine standing a
+  metre from the wall is three metres into the brickwork. The camera is slid
+  back along its own line until it is in the room.
+
+`tools/framing.mjs` is what these cost: it walks to every machine through the
+interface, waits for the camera to arrive, and measures how much of the frame
+the machine covers and how bright the result is. Both faults were invisible to
+every other test, and `tools/drive.mjs` — which is supposed to catch exactly
+this — was itself broken: it called `enterFloor(floor, id)`, `enterFloor` takes
+a floor, and for months it reported twelve games played while standing in a
+corridor, saving black screenshots nobody looked at. It walks up and presses use
+now, and fails if a game never takes the money.
 
 Three things cost most of the frame before they were fixed, and all three are
 worth knowing about:

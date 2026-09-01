@@ -47,7 +47,7 @@ page.on('console', (m) => {
   if (m.type() !== 'error') return;
   // The Google Fonts link cannot resolve in this sandbox. The page is designed
   // to fall back to the system stack, so this is expected and not a failure.
-  if (/fonts\.(googleapis|gstatic)|ERR_CONNECTION_RESET|ERR_NAME_NOT_RESOLVED/.test(m.text())) return;
+  if (/fonts\.(googleapis|gstatic)|ERR_CONNECTION_RESET|ERR_NAME_NOT_RESOLVED|ERR_CERT_AUTHORITY_INVALID/.test(m.text())) return;
   errors.push('console: ' + m.text());
 });
 
@@ -92,6 +92,8 @@ for (const g of games) {
   if (only.length && !only.includes(g.id)) continue;
   const label = String(index++).padStart(2, '0') + '-' + g.id;
   const before = errors.length;
+  const mark = (what) => { if (process.env.GW_TRACE) console.log('    ' + g.id + ' ' + what + ' +' + ((Date.now() - t0) / 1000).toFixed(1) + 's'); };
+  const t0 = Date.now();
 
   /* Go to the floor, walk to the machine, and use it.
 
@@ -116,6 +118,7 @@ for (const g of games) {
     st.viewYaw = st.yaw; st.pitch = 0; st.viewPitch = 0;
     return true;
   }, g.id);
+  mark('on the floor');
   if (!walked) { console.error(g.id.padEnd(14) + 'FAIL never placed on its floor'); failures++; continue; }
   /* Wait for a frame to notice, not for a fixed number of milliseconds. What
      the player is standing in front of is worked out in the render loop, and
@@ -125,24 +128,26 @@ for (const g of games) {
     const n = GWShell.player.nearest;
     return !!(n && n.anchor && n.anchor.gameId === id);
   }, g.id, { timeout: 25000 }).then(() => true).catch(() => false);
+  mark(sees ? 'in reach' : 'NOT in reach');
   if (!sees) { console.error(g.id.padEnd(14) + 'FAIL standing at it and it is not in reach'); failures++; continue; }
   await page.keyboard.press('e');
   const atTable = await page.waitForFunction(
     (id) => GWShell.mode === 'table' && GWShell.game && GWShell.game.id === id,
     g.id, { timeout: 20000 }).then(() => true).catch(() => false);
+  mark(atTable ? 'at the table' : 'NEVER opened');
   if (!atTable) { console.error(g.id.padEnd(14) + 'FAIL pressing use never opened it'); failures++; continue; }
   /* Wait for the camera to arrive rather than for a stopwatch. It eases toward
      the table on a clamped delta, so at two frames a second the journey takes
      a dozen real seconds and a screenshot taken after one is a photograph of
      the walk. */
   await page.waitForFunction(() => {
-    const rec = GWShell.anchor;
-    if (!rec) return false;
-    const want = rec.view.pos.clone().applyMatrix4(rec.holder.matrixWorld);
-    return GWShell.stage.camera.position.distanceTo(want) < 0.05;
+    if (!GWShell.anchor) return false;
+    return GWShell.stage.camera.position.distanceTo(GWShell.stage.desired.pos) < 0.05;
   }, null, { timeout: 40000 }).catch(() => {});
+  mark('camera arrived');
   await sleep(500);
   await shot(label);
+  mark('photographed');
 
   // Play one hand, answering any mid-hand prompt by taking the first option.
   const played = await page.evaluate(async () => {
@@ -180,6 +185,7 @@ for (const g of games) {
     return { busy: shell.busy, staked, answered, picked, status: (document.getElementById('gameStatus').textContent || '').slice(0, 60) };
   });
 
+  mark('hand played');
   await sleep(400);
   await shot(label + '-result');
   const fresh = errors.slice(before);

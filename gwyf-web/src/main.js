@@ -1025,7 +1025,7 @@
      you sit down is a close-up of the back of a wall with the machine hidden
      behind it. Slid along its own line towards the table, the shot the game
      asked for is kept and only its distance gives. */
-  function keepInsideRoom(pos, look) {
+  function keepInsideRoom(pos, look, record) {
     const size = shell.level && shell.level.size;
     if (!size) return;
     const limX = size.w / 2 - 0.75;
@@ -1036,14 +1036,56 @@
       if (p > lim && p !== l) t = Math.min(t, (lim - l) / (p - l));
       if (p < -lim && p !== l) t = Math.min(t, (-lim - l) / (p - l));
     }
-    // Never closer than a fifth of the way out, or the camera ends up inside
-    // the machine, which is a different way of seeing nothing.
-    t = Math.max(0.2, Math.min(1, t));
+    t = Math.max(0.15, Math.min(1, t));
     if (t < 1) {
       pos.set(look.x + (pos.x - look.x) * t,
               look.y + (pos.y - look.y) * t,
               look.z + (pos.z - look.z) * t);
     }
+
+    /* The wall is not the only thing you can end up inside.
+
+       Pulled back to the wall, a machine that is wide or tall swallows the
+       camera: The Climb stands eight rungs high and the shot ended up among
+       the rungs, and the duck race is nearly six metres of lane with only two
+       and a half metres of room behind it. Backing further is not available --
+       that is what the wall just said -- so the distance is made up in height
+       instead. Looking down at a long lane from above it is a shot; standing
+       in the middle of one is not.
+
+       An earlier attempt simply refused to come closer than the machine's own
+       size, which quietly cancelled the wall clamp and put the camera back in
+       the brickwork with the machine behind it. Every table has to satisfy
+       both, and height is the axis with room to give. */
+    const half = (record && record.anchor && record.anchor.half) || { hw: 0.8, hd: 0.8 };
+    const clear = Math.hypot(half.hw, half.hd) * 0.8 + 0.7;
+    const d = Math.hypot(pos.x - look.x, pos.y - look.y, pos.z - look.z);
+    if (d < clear) {
+      // A little height, capped, so the camera is not standing in the machine.
+      // Not all of it: at the ceiling, looking almost straight down at a five
+      // metre lane is as unreadable as being inside it.
+      const ceiling = (size.height || 5) - 0.8;
+      pos.y = Math.min(ceiling, pos.y + Math.min(1.2, Math.sqrt(clear * clear - d * d)));
+    }
+  }
+
+  /* Widen the lens until the machine fits from wherever the camera ended up.
+
+     The room decides how far back you can stand, and against a wall that is
+     often less than the shot each game was framed for. Rather than crop the
+     machine or shove the camera through the plaster, the field of view opens
+     until the machine's bounding sphere fits, which is what a camera operator
+     does about exactly this. */
+  function fitTableFov(record, pos) {
+    const box = new THREE.Box3().setFromObject(record.holder);
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = box.getSize(new THREE.Vector3()).length() / 2;
+    const dist = pos.distanceTo(centre);
+    if (!(dist > 0.01) || !(radius > 0.01)) { shell.stage.setTableFov(0); return; }
+    // A tenth of slack around the edges, and the vertical angle is the one the
+    // camera takes, so a wide machine in a wide window is already covered.
+    const need = 2 * Math.atan((radius * 0.8) / dist) * 180 / Math.PI;
+    shell.stage.setTableFov(need);
   }
 
   function useMachine(record) {
@@ -1066,7 +1108,8 @@
     record.holder.updateMatrixWorld();
     const pos = record.view.pos.clone().applyMatrix4(record.holder.matrixWorld);
     const look = record.view.look.clone().applyMatrix4(record.holder.matrixWorld);
-    keepInsideRoom(pos, look);
+    keepInsideRoom(pos, look, record);
+    fitTableFov(record, pos);
     shell.stage.frame(pos.toArray(), look.toArray(), 2.6);
     // Hang the table lamp over this table, not over the middle of the floor.
     shell.stage.setLampOver(look, pos);

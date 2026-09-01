@@ -72,7 +72,11 @@ async function play(label, setup) {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
-    if (/fonts\.(googleapis|gstatic)|ERR_CONNECTION_RESET|ERR_NAME_NOT_RESOLVED/.test(m.text())) return;
+    /* The web fonts are the one request this page makes, and in this container
+       it goes through a TLS-intercepting proxy the browser does not trust. The
+       page falls back to the system stack, which is what it is meant to do
+       offline; it is not the game failing. */
+    if (/fonts\.(googleapis|gstatic)|ERR_CONNECTION_RESET|ERR_NAME_NOT_RESOLVED|ERR_CERT_AUTHORITY_INVALID/.test(m.text())) return;
     errors.push(m.text());
   });
   await page.goto('file://' + FILE);

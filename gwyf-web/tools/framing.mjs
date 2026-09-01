@@ -58,10 +58,8 @@ for (const id of games) {
     .then(() => true).catch(() => false);
   if (!opened) { console.log(id.padEnd(14) + 'FAIL  use did not open it'); bad++; continue; }
   await page.waitForFunction(() => {
-    const rec = GWShell.anchor;
-    if (!rec) return false;
-    const want = rec.view.pos.clone().applyMatrix4(rec.holder.matrixWorld);
-    return GWShell.stage.camera.position.distanceTo(want) < 0.05;
+    if (!GWShell.anchor) return false;
+    return GWShell.stage.camera.position.distanceTo(GWShell.stage.desired.pos) < 0.05;
   }, null, { timeout: 45000 }).catch(() => {});
 
   const m = await page.evaluate(() => {

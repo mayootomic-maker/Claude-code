@@ -45,6 +45,7 @@
      led round the building with a toilet roll held to one eye. */
     let FOV_WALK = 72;
     const FOV_TABLE = 38;
+    let fovTable = FOV_TABLE;
     const camera = new THREE.PerspectiveCamera(FOV_TABLE, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
     /* Yaw, then pitch, then roll.
@@ -191,7 +192,10 @@
        at six. This sits where the camera sits and fills whatever face is
        pointed at you, whichever way the machine stands. */
     const FILL_ON = 16;
-    const fill = new THREE.PointLight(0xfff0dc, FILL_ON, 7, 1.6);
+    // Fourteen metres of range, because the duck race is a lane and not a
+    // table: at nine the far half of it fell outside the light entirely.
+    const fill = new THREE.PointLight(0xfff0dc, FILL_ON, 12, 1.6);
+    let fillWant = FILL_ON;
     scene.add(fill);
 
     /* Both are dimmed rather than hidden. Three compiles the light count into
@@ -200,7 +204,7 @@
        An intensity of zero costs a few multiplications and no compile. */
     function setTableLights(on) {
       lamp.intensity = on ? LAMP_ON : 0;
-      fill.intensity = on ? FILL_ON : 0;
+      fill.intensity = on ? fillWant : 0;
     }
 
     function setLampOver(point, from) {
@@ -216,6 +220,16 @@
         point.y + (eye.y - point.y) * 0.62 + 0.5,
         point.z + (eye.z - point.z) * 0.62
       );
+      /* Scaled with the square of how far it ended up, because the falloff is
+         the physical one: a fixed intensity that suits a table watched from
+         four metres blows the slot cabinet white when the wall behind it
+         forces the camera in to one and a half. */
+      const d = fill.position.distanceTo(point);
+      // Bounded both ways. Unbounded, the square term turned the drop board
+      // and the crash screen into white rectangles -- ninety percent mean
+      // luminance, which is as unreadable as the black ones were.
+      fillWant = FILL_ON * Math.max(0.45, Math.min(1.25, (d * d) / 9));
+      if (lamp.intensity > 0) fill.intensity = fillWant;
     }
 
     const state = {
@@ -434,12 +448,17 @@
       /* Hand the camera to the first-person controller, or take it back. */
       setManualCamera(v) {
         state.manual = !!v;
-        state.fovWant = state.manual ? FOV_WALK : FOV_TABLE;
+        state.fovWant = state.manual ? FOV_WALK : fovTable;
         // Walking: the floor's own lamps light the room. At a table: the
         // stage lamp adds the pool of light the game was lit for.
         setTableLights(!state.manual);
       },
       get manualCamera() { return state.manual; },
+      /* Where the camera is heading. Read by the harnesses, which have to wait
+         for it to arrive rather than for a stopwatch -- and which cannot work
+         it out for themselves, because the caller may have moved the shot to
+         keep it inside the room. */
+      get desired() { return { pos: desired.pos.clone(), look: desired.look.clone() }; },
       /* Extra degrees on top of whatever the mode asks for. Sprinting uses it. */
       setFovKick(deg) { state.fovKick = Math.max(-10, Math.min(14, deg || 0)); },
       /* How wide the walking lens is. A preference, because how wide is too
@@ -451,6 +470,15 @@
         if (state.manual) state.fovWant = FOV_WALK;
       },
       get walkFov() { return FOV_WALK; },
+      /* Widen the table's lens when the room would not let the camera get far
+         enough back. A machine against a wall in a crowded hall cannot always
+         be watched from where it was framed to be watched from; a wider lens
+         fits it in from where the camera can actually stand, which is what a
+         camera operator does about the same problem. */
+      setTableFov(deg) {
+        fovTable = Math.max(FOV_TABLE, Math.min(66, deg || FOV_TABLE));
+        if (!state.manual) state.fovWant = fovTable;
+      },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },
