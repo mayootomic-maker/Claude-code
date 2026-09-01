@@ -1035,3 +1035,56 @@ button:disabled { cursor: not-allowed; }
 }
 
 .is-table .guide { display: none; }
+
+
+/* --- the table with other people at it ----------------------------------- */
+
+.netways { display: grid; gap: 0.9rem; margin-top: 0.9rem; }
+@media (min-width: 44rem) { .netways { grid-template-columns: 1fr 1fr; } }
+
+.netway {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.85rem;
+}
+.netway h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+}
+
+.netflow { margin-top: 1rem; display: grid; gap: 0.6rem; }
+.netflow textarea,
+.field textarea,
+.field input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-sunk);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  resize: vertical;
+}
+.field { display: grid; gap: 0.25rem; margin-top: 0.6rem; }
+.field > span {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.field input { font-family: var(--font-body); font-size: 0.95rem; }
+
+
+/* One more icon in the top bar was enough to push the stat cards past the
+   edge and start cutting their labels off mid-word again. Between a phone and
+   a wide desktop the labels get a size that fits rather than a scrollbar. */
+@media (max-width: 78rem) {
+  .hud { gap: 0.7rem; }
+  .hud__stats { gap: 0.45rem; }
+  .stat { min-width: 0; padding: 0.28rem 0.5rem; }
+  .stat__label { font-size: 0.56rem; letter-spacing: 0.05em; }
+}

@@ -77,6 +77,38 @@ anywhere the bank has opened and a friend upstairs spends the same money — but
 a crew that scatters across four floors is one you only ever meet in the ticker,
 and the game is not called Read About Your Friends.
 
+## Playing with other people
+
+Real multiplayer, with no server anywhere, because there is nowhere to run one.
+Press the handshake in the top bar, or **M**.
+
+**Another window on this computer** needs nothing at all: open the page twice,
+host in one and join in the other. `BroadcastChannel` connects same-origin
+windows directly, and it works from a `file://` page as well as a hosted one.
+
+**Another computer** is a WebRTC data channel, peer to peer, signalled by hand —
+the host makes a block of text, the guest pastes it and hands one back, and
+after that the two browsers talk directly with nothing in between. About 900
+characters each way, once.
+
+Inside the claude.ai artifact viewer the second one is **not available, and the
+page says so** rather than offering a button that cannot work: the viewer
+deletes `RTCPeerConnection` before the game loads. Download the HTML file and
+open it from your own machine and it works.
+
+**What is shared, and what is not.** The host's bank is the bank — that is the
+whole game, so it is the one thing that has to be authoritative. Everyone else
+keeps their own copy of the world, walks it themselves and plays their own
+tables at full frame rate; what travels is money moving and where people are
+standing. Nobody has to send a room, because a floor's layout is derived from
+the run seed and the floor number, so two machines build the same hall from the
+seed alone.
+
+The trust model is deliberate, and it is the game's own: anyone at the table can
+empty the account. A guest who lied about a payout would be doing by hand
+exactly what the game invites its friends to do anyway. This connects people who
+passed a code to each other, not strangers.
+
 ## Matching the original
 
 The look here is not invented. It is drawn from the actual game -- Steam app
@@ -182,6 +214,7 @@ src/
   games/     twelve games, one file each, all through one contract
   world/     collision, level generation, the player, the friends' bodies
   ui/        screens, loading, touch controls, mod menu
+  net/       the link to another copy of the game, and what is shared over it
 tools/       drive, walk, reach, odds, shoot, postcards, crew-shot, measure-plinko
 build.mjs    inlines the lot into one HTML file
 ```

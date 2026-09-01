@@ -20,6 +20,7 @@
   const shell = {
     stage: null, lib: null, store: null, audio: null, friends: null,
     player: null, level: null, anchors: [], crew: null, touch: null, hands: null,
+    net: null,
     mode: 'boot',
     game: null, handle: null, ctx: null, anchor: null,
     busy: false, stake: 25, pending: null, endAfterHand: false,
@@ -38,7 +39,7 @@
       'stakeDown', 'stakeUp', 'chipRow', 'btnPlay', 'playText', 'playSub',
       'oddsToggle', 'oddsPanel', 'crewList', 'ticker', 'screens', 'resultCard',
       'resultHeadline', 'resultAmount', 'liveReadout', 'gameStatus', 'promptBox',
-      'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'shoutBar', 'btnShout',
+      'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'btnTable', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
       'touchUse', 'guide', 'guideArrow', 'guideText']) {
@@ -195,6 +196,7 @@
     el.btnTower.addEventListener('click', callLift);
     el.btnShop.addEventListener('click', () => GWScreens.show('shop'));
     el.btnMenu.addEventListener('click', () => GWModMenu.toggle());
+    el.btnTable.addEventListener('click', () => GWScreens.show('table'));
     el.btnSound.addEventListener('click', () => {
       const muted = !shell.audio.muted;
       shell.audio.setMuted(muted);
@@ -223,6 +225,7 @@
         return;
       }
       if (e.key === 'b' || e.key === 'B') { GWScreens.show('shop'); return; }
+      if (e.key === 'm' || e.key === 'M') { GWScreens.show('table'); return; }
       if (e.key === ' ' && shell.mode === 'table' && !shell.busy && !GWScreens.isOpen()) {
         e.preventDefault(); playHand(); return;
       }
@@ -281,6 +284,7 @@
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
+      if (shell.net) shell.net.tick(dt, performance.now());
 
       // The crew keeps moving whatever you are doing. Freezing them while you
       // are sat at a table is how you look up from the roulette and find three
@@ -384,7 +388,7 @@
     GWLoading.step('Unlocking the doors');
     await frame();
 
-    shell.level = GWLevel.buildLobby({ rng: shell.store.rng });
+    shell.level = GWLevel.buildLobby({ rng: layoutRng(-1) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     fogForRoom();
@@ -450,7 +454,7 @@
     GWLoading.step('Laying the carpet');
     await frame();
 
-    shell.level = GWLevel.build({ floor: index, rng: shell.store.rng });
+    shell.level = GWLevel.build({ floor: index, rng: layoutRng(index) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     fogForRoom();
@@ -476,6 +480,64 @@
     shell.store.say('Floor ' + index + '. ' + def.name + '.', 'house');
     shell.store.save();
     shell.floorBusy = false;
+  }
+
+  /* --- other people --------------------------------------------------------- */
+
+  /* Open a table. `how` is 'local' for other windows on this computer, or
+     'peer' for the hand-signalled connection to another machine; the peer link
+     is handed back so the screen can drive the offer-and-answer dance. */
+  function connect(how, opts) {
+    disconnect();
+    const name = (opts && opts.name) || 'Player';
+    const colour = (opts && opts.colour) !== undefined ? opts.colour : GWCrew.YOU.body;
+    let link;
+    if (how === 'peer') {
+      if (!GWLink.webrtcAvailable()) return null;
+      link = GWLink.openPeer({ host: !!(opts && opts.host) });
+    } else {
+      if (!GWLink.broadcastAvailable()) return null;
+      link = GWLink.openBroadcast({});
+    }
+    shell.net = GWSession.create(shell, link, {
+      host: !!(opts && opts.host), name, colour,
+      onRoster: () => { renderCrew(); GWScreens.refresh('table'); },
+      /* The host's seed arrived, so every room this run generates has to be
+         rebuilt from it -- otherwise the two of you are stood in floors that
+         only look like each other. */
+      onSeed: () => {
+        if (shell.mode === 'world' && shell.level) {
+          if (shell.level.isLobby) enterLobby();
+          else enterFloor(shell.store.s.floor);
+        }
+      },
+    });
+    shell.store.say(shell.net.isHost
+      ? 'You are hosting. Anyone who joins shares your account.'
+      : 'Joined. The account you are spending is theirs.', 'house');
+    renderCrew();
+    return link;
+  }
+
+  function disconnect() {
+    if (!shell.net) return;
+    shell.net.dispose();
+    shell.net = null;
+    renderCrew();
+    shell.store.say('You are on your own again.', 'flat');
+  }
+
+  /* A room's own stream, not the run's.
+
+     Two reasons, and the second one only turned up with other people in the
+     building. Drawing layout from the run's stream means generating a floor
+     consumes numbers that the games' outcomes come out of, so how many pillars
+     a room has shifts every spin after it. And a second player has to walk the
+     same room as the first: derived from the run seed and the floor index, both
+     machines build the same hall without exchanging a single byte about it. */
+  function layoutRng(index) {
+    const seed = (shell.store.s.seed ^ Math.imul(index + 7, 0x9e3779b1)) >>> 0;
+    return new GWRng.Rng(seed, 0);
   }
 
   /* Fog sized to the room it is in.
@@ -604,6 +666,7 @@
       if (record.handle && record.handle.dispose) record.handle.dispose();
     }
     shell.anchors = [];
+    if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
       shell.crew = null;
@@ -1087,7 +1150,11 @@
     shell.busy = true;
     hideResult();
     refreshPlayButton();
-    shell.store.stake(shell.stake);
+    // With other people at the table the account is the host's, so a stake is a
+    // request rather than a subtraction. Single player, this is the same call
+    // it has always been.
+    if (shell.net) shell.net.stake(shell.stake);
+    else shell.store.stake(shell.stake);
     shell.audio.play('chip');
 
     ctx.stake = shell.stake;
@@ -1113,7 +1180,9 @@
       return;
     }
 
-    const settled = shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
+    const settled = shell.net
+      ? shell.net.resolve(game.id, ctx.totalStake, result.multiplier, game.name)
+      : shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
     showResult(result, settled);
     shell.store.save();
     finishHand();
@@ -1259,6 +1328,7 @@
     prompt,
     setLive,
     interact,
+    connect, disconnect,
     announce(text, tone) { shell.store.say(text, tone || 'flat'); },
     setStatus(text) { el.gameStatus.textContent = text || ''; },
     highlight() {},

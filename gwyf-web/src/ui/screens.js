@@ -16,6 +16,93 @@
 
   const isOpen = () => !!current;
 
+  /* The introduction, done by hand.
+
+     A peer connection cannot start itself: something has to carry the first
+     description across. With no server, that something is the two of you. The
+     host makes a code, the guest pastes it and makes one back, the host pastes
+     that, and the browsers take it from there.
+
+     Every step says what it is waiting for. A silent box you are meant to paste
+     into is how this feature usually fails. */
+  function peerFlow(stage, asHost, name) {
+    const link = shell.connect('peer', { host: asHost, name });
+    if (!link) {
+      stage.innerHTML = '<p class="modrow__desc">WebRTC is not available here.</p>';
+      return;
+    }
+    const box = (label, id, ro) => '<label class="field"><span>' + label + '</span>'
+      + '<textarea id="' + id + '" rows="3"' + (ro ? ' readonly' : '') + '></textarea></label>';
+
+    if (asHost) {
+      stage.innerHTML = '<div class="netflow"><p class="modrow__desc">Making your code\u2026</p></div>';
+      link.createOffer().then((offer) => {
+        stage.innerHTML = '<div class="netflow">'
+          + '<p class="modrow__desc">1. Send this code to whoever is joining.</p>'
+          + box('Your code', 'netOffer', true)
+          + '<p class="modrow__desc">2. Paste the code they send back.</p>'
+          + box('Their reply', 'netAnswer', false)
+          + '<div class="sheet__actions"><button class="btn btn--primary" data-accept>Connect</button>'
+          + '<span class="modrow__desc" id="netStatus"></span></div></div>';
+        stage.querySelector('#netOffer').value = offer;
+        stage.querySelector('#netOffer').select();
+        stage.querySelector('[data-accept]').addEventListener('click', () => {
+          const status = stage.querySelector('#netStatus');
+          status.textContent = 'Connecting\u2026';
+          link.accept(stage.querySelector('#netAnswer').value)
+            .then(() => waitForOpen(link, status))
+            .catch((err) => { status.textContent = 'That code did not read: ' + err.message; });
+        });
+      });
+      return;
+    }
+
+    stage.innerHTML = '<div class="netflow">'
+      + '<p class="modrow__desc">1. Paste the code the host sent you.</p>'
+      + box('Their code', 'netOffer', false)
+      + '<div class="sheet__actions"><button class="btn btn--primary" data-answer>Make my reply</button>'
+      + '<span class="modrow__desc" id="netStatus"></span></div>'
+      + '<div id="netReply"></div></div>';
+    stage.querySelector('[data-answer]').addEventListener('click', () => {
+      const status = stage.querySelector('#netStatus');
+      status.textContent = 'Working\u2026';
+      link.answerOffer(stage.querySelector('#netOffer').value).then((answer) => {
+        status.textContent = '';
+        const reply = stage.querySelector('#netReply');
+        reply.innerHTML = '<p class="modrow__desc">2. Send this back to the host. '
+          + 'You are connected once they paste it.</p>'
+          + '<label class="field"><span>Your reply</span>'
+          + '<textarea id="netAnswer" rows="3" readonly></textarea></label>'
+          + '<p class="modrow__desc" id="netStatus2"></p>';
+        reply.querySelector('#netAnswer').value = answer;
+        reply.querySelector('#netAnswer').select();
+        waitForOpen(link, reply.querySelector('#netStatus2'));
+      }).catch((err) => { status.textContent = 'That code did not read: ' + err.message; });
+    });
+  }
+
+  /* Say when it actually connects, and say when it does not. A connection that
+     silently never opens is the single most common way this goes wrong. */
+  function waitForOpen(link, status) {
+    const started = Date.now();
+    const poll = setInterval(() => {
+      if (link.ready) {
+        clearInterval(poll);
+        status.textContent = 'Connected.';
+        show('table');
+      } else if (Date.now() - started > 25000) {
+        clearInterval(poll);
+        status.textContent = 'No connection after twenty-five seconds. A network that blocks '
+          + 'peer-to-peer traffic will do this; the same-computer option always works.';
+      }
+    }, 400);
+  }
+
+  const swatch = (c) => '#' + (typeof c === 'number'
+    ? c.toString(16).padStart(6, '0') : String(c).replace('#', ''));
+
+
+
   /* `sticky` means Escape and a click on the backdrop will not dismiss it --
      the briefing, the nightly report and the endings all demand an answer. It
      does not mean the screen's own buttons cannot close it, which is what the
@@ -28,12 +115,20 @@
     return true;
   }
 
+  /* Redraw a screen that is already open, if it is the one named. Used when
+     something outside it changes what it should say -- somebody joining the
+     table, for instance. Redrawing a screen that is not open would open it. */
+  function refresh(name, data) {
+    if (!current || current.name !== name) return;
+    show(name, data || current.data || {});
+  }
+
   function show(name, data) {
     root.innerHTML = '';
     const builder = SCREENS[name];
     if (!builder) return;
     const spec = builder(data || {});
-    current = { name, sticky: !!spec.sticky };
+    current = { name, sticky: !!spec.sticky, data: data || {} };
 
     const screen = document.createElement('div');
     screen.className = 'screen';
@@ -392,6 +487,106 @@
       };
     },
 
+    /* Playing with other people.
+
+       Two ways in, and they are honestly different. Another window on the same
+       computer needs nothing at all -- one button and you are both in. Another
+       computer needs the two of you to pass a block of text back and forth
+       once, because a peer connection has to be introduced by something and
+       there is no server here to do the introducing.
+
+       Where the page is running decides whether the second one is even offered.
+       Inside the artifact viewer WebRTC is not blocked, it is deleted, so the
+       option says that rather than presenting a button that does nothing. */
+    table() {
+      const net = shell.net;
+      const canPeer = GWLink.webrtcAvailable();
+      const canLocal = GWLink.broadcastAvailable();
+      const named = (shell.store.meta.playerName || '');
+
+      if (net) {
+        const others = net.roster();
+        const rows = others.length
+          ? others.map((p) => '<li class="mate"><span class="mate__dot" style="background:'
+              + swatch(p.colour) + '"></span><span class="mate__name">' + esc(p.name)
+              + '</span></li>').join('')
+          : '<li class="modrow__desc">Nobody else yet. Leave this open.</li>';
+        return {
+          title: net.isHost ? 'You are hosting' : 'You are at their table',
+          body: '<p class="sheet__lead">' + (net.isHost
+              ? 'Your account is the account. Anyone who joins can spend it, which is the point.'
+              : 'You are spending the host\u2019s account. So is everyone else.')
+            + '</p>'
+            + '<p class="modrow__desc">' + esc(net.kind === 'local'
+              ? 'Connected to other windows on this computer.'
+              : 'Connected peer to peer.') + '</p>'
+            + '<ul class="crew">' + rows + '</ul>'
+            + '<div class="sheet__actions">'
+            + '<button class="btn" data-leave>Leave the table</button>'
+            + '<button class="btn btn--primary" data-close>Back to the floor</button>'
+            + '</div>',
+          wire(sheet) {
+            sheet.querySelector('[data-leave]').addEventListener('click', () => {
+              shell.disconnect();
+              show('table');
+            });
+            sheet.querySelector('[data-close]').addEventListener('click', () => close(true));
+          },
+        };
+      }
+
+      return {
+        title: 'Play together',
+        body: '<p class="sheet__lead">One shared account, and other people who can reach it. '
+          + 'That is the whole game, so it may as well be other real people.</p>'
+          + '<label class="field"><span>Your name</span>'
+          + '<input id="netName" maxlength="16" value="' + esc(named) + '" placeholder="Player"></label>'
+          + '<div class="netways">'
+          + '<div class="netway"><h3>Another window here</h3>'
+          + '<p class="modrow__desc">' + (canLocal
+              ? 'Open this page again in a second window and press this in both. No setup, no server.'
+              : 'This browser does not do BroadcastChannel, so windows here cannot find each other.')
+          + '</p><div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-local="host"' + (canLocal ? '' : ' disabled')
+          + '>Host here</button>'
+          + '<button class="btn" data-local="join"' + (canLocal ? '' : ' disabled')
+          + '>Join here</button></div></div>'
+          + '<div class="netway"><h3>Another computer</h3>'
+          + '<p class="modrow__desc">' + (canPeer
+              ? 'Peer to peer, with no server anywhere. You pass one block of text to each '
+                + 'other to introduce the two browsers, and after that they talk directly.'
+              : 'Not possible where this page is running: the viewer removes WebRTC before the '
+                + 'game loads. Download the HTML file and open it from your own machine and '
+                + 'this works.')
+          + '</p><div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-peer="host"' + (canPeer ? '' : ' disabled')
+          + '>Host a game</button>'
+          + '<button class="btn" data-peer="join"' + (canPeer ? '' : ' disabled')
+          + '>Join a game</button></div></div>'
+          + '</div>'
+          + '<div id="netStage"></div>',
+        wire(sheet) {
+          const nameOf = () => {
+            const v = (sheet.querySelector('#netName').value || 'Player').trim().slice(0, 16);
+            shell.store.meta.playerName = v;
+            shell.store.saveMeta();
+            return v;
+          };
+          for (const b of sheet.querySelectorAll('[data-local]')) {
+            b.addEventListener('click', () => {
+              shell.connect('local', { host: b.dataset.local === 'host', name: nameOf() });
+              show('table');
+            });
+          }
+          for (const b of sheet.querySelectorAll('[data-peer]')) {
+            b.addEventListener('click', () => {
+              peerFlow(sheet.querySelector('#netStage'), b.dataset.peer === 'host', nameOf());
+            });
+          }
+        },
+      };
+    },
+
     ending(data) {
       const s = shell.store.s;
       const meta = shell.store.meta;
@@ -678,5 +873,5 @@
     shell.renderHud();
   }
 
-  global.GWScreens = { init, show, close, isOpen, settle };
+  global.GWScreens = { init, show, close, refresh, isOpen, settle };
 })(window);

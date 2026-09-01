@@ -707,5 +707,12 @@
     };
   }
 
-  global.GWCrew = { create, buildBody, buildHands, LOOK, YOU };
+  /* A floating name, for anyone who is not one of the four friends -- the
+     other people at the table, who arrive with names this file has never heard
+     of. Same maker as the crew's own tags so they read as one thing. */
+  function nameTag(text, colour) {
+    return makeTag(text, colour, { size: 0.155, font: 30 });
+  }
+
+  global.GWCrew = { create, buildBody, buildHands, nameTag, LOOK, YOU };
 })(window);

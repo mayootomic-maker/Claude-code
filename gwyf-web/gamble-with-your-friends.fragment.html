@@ -1045,6 +1045,59 @@ button:disabled { cursor: not-allowed; }
 
 .is-table .guide { display: none; }
 
+
+/* --- the table with other people at it ----------------------------------- */
+
+.netways { display: grid; gap: 0.9rem; margin-top: 0.9rem; }
+@media (min-width: 44rem) { .netways { grid-template-columns: 1fr 1fr; } }
+
+.netway {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.85rem;
+}
+.netway h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+}
+
+.netflow { margin-top: 1rem; display: grid; gap: 0.6rem; }
+.netflow textarea,
+.field textarea,
+.field input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-sunk);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  resize: vertical;
+}
+.field { display: grid; gap: 0.25rem; margin-top: 0.6rem; }
+.field > span {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.field input { font-family: var(--font-body); font-size: 0.95rem; }
+
+
+/* One more icon in the top bar was enough to push the stat cards past the
+   edge and start cutting their labels off mid-word again. Between a phone and
+   a wide desktop the labels get a size that fits rather than a scrollbar. */
+@media (max-width: 78rem) {
+  .hud { gap: 0.7rem; }
+  .hud__stats { gap: 0.45rem; }
+  .stat { min-width: 0; padding: 0.28rem 0.5rem; }
+  .stat__label { font-size: 0.56rem; letter-spacing: 0.05em; }
+}
+
 </style>
 <div id="app" class="app" hidden>
 
@@ -1083,6 +1136,7 @@ button:disabled { cursor: not-allowed; }
       <button class="icobtn" id="btnTower" title="Back to the lift (Esc)" aria-label="Back to the lift">🛗</button>
       <button class="icobtn" id="btnShop" title="The back office (B)" aria-label="Open the back office">🧳</button>
       <button class="icobtn" id="btnSound" title="Sound" aria-pressed="true" aria-label="Toggle sound">🔊</button>
+      <button class="icobtn" id="btnTable" title="Play together" aria-label="Play together">🤝</button>
       <button class="icobtn" id="btnMenu" title="Mod menu (F1)" aria-label="Open the mod menu">⚙</button>
     </div>
   </header>
@@ -8209,7 +8263,506 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     };
   }
 
-  global.GWCrew = { create, buildBody, buildHands, LOOK, YOU };
+  /* A floating name, for anyone who is not one of the four friends -- the
+     other people at the table, who arrive with names this file has never heard
+     of. Same maker as the crew's own tags so they read as one thing. */
+  function nameTag(text, colour) {
+    return makeTag(text, colour, { size: 0.155, font: 30 });
+  }
+
+  global.GWCrew = { create, buildBody, buildHands, nameTag, LOOK, YOU };
+})(window);
+
+</script>
+<script>
+/* Talking to another copy of the game.
+
+   Two transports, because the two places this page runs have very different
+   rules about the network.
+
+   **Same computer.** `BroadcastChannel` connects tabs and windows of the same
+   origin with no setup and no server at all. Open the page twice and you are
+   playing together. This works everywhere the page works.
+
+   **Different computers.** A WebRTC data channel, peer to peer, with the
+   signalling done by hand: the host produces a block of text, the guest pastes
+   it in and hands back a block of its own, and after that the two browsers talk
+   directly with nothing in between. It needs no server, which is the only
+   reason it is possible here at all -- there is nowhere to run one.
+
+   What this deliberately does not do is pretend. Inside the artifact viewer
+   WebRTC is not merely blocked, it is removed: the host page defines
+   RTCPeerConnection as undefined before any of this loads. So `webrtcAvailable`
+   is checked up front and the interface says so, rather than offering a button
+   that cannot work.
+
+   Messages are plain objects with a `t` (type) field. Nothing here knows what
+   any of them mean; that is session.js. */
+
+(function (global) {
+  'use strict';
+
+  const CHANNEL = 'gwyf-table';
+  /* Public STUN is the one piece of outside help a peer connection needs, and
+     only to discover its own address. Two machines on the same network connect
+     without it. If it is unreachable the offer still forms -- it just carries
+     fewer candidates, so it will work on a LAN and may not across the internet,
+     which the interface says rather than leaving you to find out. */
+  const ICE = [{ urls: 'stun:stun.l.google.com:19302' },
+               { urls: 'stun:global.stun.twilio.com:3478' }];
+
+  function webrtcAvailable() {
+    return typeof global.RTCPeerConnection === 'function';
+  }
+
+  function broadcastAvailable() {
+    return typeof global.BroadcastChannel === 'function';
+  }
+
+  function newId() {
+    if (global.crypto && global.crypto.randomUUID) return global.crypto.randomUUID().slice(0, 8);
+    return Math.random().toString(36).slice(2, 10);
+  }
+
+  function emitter() {
+    const handlers = new Map();
+    return {
+      on(type, fn) {
+        if (!handlers.has(type)) handlers.set(type, new Set());
+        handlers.get(type).add(fn);
+        return () => handlers.get(type).delete(fn);
+      },
+      emit(type, payload, from) {
+        const set = handlers.get(type);
+        if (set) for (const fn of Array.from(set)) fn(payload, from);
+        const all = handlers.get('*');
+        if (all) for (const fn of Array.from(all)) fn({ t: type, d: payload }, from);
+      },
+    };
+  }
+
+  /* --- same computer, many windows ----------------------------------------- */
+
+  function openBroadcast(opts) {
+    const bus = emitter();
+    const me = (opts && opts.id) || newId();
+    const channel = new global.BroadcastChannel(CHANNEL);
+
+    channel.onmessage = (e) => {
+      const msg = e.data;
+      if (!msg || msg.from === me) return;
+      // Addressed messages are ignored by everyone else. A channel is a room,
+      // not a wire, so this is all that separates a whisper from a shout.
+      if (msg.to && msg.to !== me) return;
+      bus.emit(msg.t, msg.d, msg.from);
+    };
+
+    return {
+      kind: 'local',
+      id: me,
+      on: bus.on,
+      send(t, d, to) { channel.postMessage({ t, d, from: me, to: to || null }); },
+      close() { try { channel.close(); } catch (e) { /* already gone */ } },
+      get ready() { return true; },
+      describe: 'Other windows on this computer',
+    };
+  }
+
+  /* --- different computers -------------------------------------------------- */
+
+  /* One peer connection, signalled by copy and paste.
+
+     `createOffer` gives the host a blob to send however they like; `accept`
+     takes the guest's answer back. The guest does the mirror image with
+     `answerOffer`. Both wait for ICE gathering before handing over a blob,
+     because a half-gathered offer connects only sometimes, and "sometimes" is
+     the worst possible thing to debug through a chat window. */
+  function openPeer(opts) {
+    const bus = emitter();
+    const me = (opts && opts.id) || newId();
+    const pc = new global.RTCPeerConnection({ iceServers: ICE });
+    let channel = null;
+    let open = false;
+
+    function wire(dc) {
+      channel = dc;
+      dc.onopen = () => { open = true; bus.emit('__open', null, me); };
+      dc.onclose = () => { open = false; bus.emit('__close', null, me); };
+      dc.onmessage = (e) => {
+        let msg = null;
+        try { msg = JSON.parse(e.data); } catch (err) { return; }
+        if (msg && msg.t) bus.emit(msg.t, msg.d, msg.from || 'peer');
+      };
+    }
+
+    if (opts && opts.host) wire(pc.createDataChannel('gwyf', { ordered: false, maxRetransmits: 1 }));
+    else pc.ondatachannel = (e) => wire(e.channel);
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        open = false;
+        bus.emit('__close', null, me);
+      }
+    };
+
+    /* Wait for the candidates. Chrome fires an empty candidate to say it is
+       done; the timeout is there because some networks never finish gathering,
+       and a blob with the candidates it has beats no blob at all. */
+    function gathered() {
+      if (pc.iceGatheringState === 'complete') return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(done, 2500);
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === 'complete') done();
+        };
+      });
+    }
+
+    const pack = (sdp) => btoa(JSON.stringify({ id: me, sdp }));
+    const unpack = (blob) => JSON.parse(atob(String(blob).replace(/\s+/g, '')));
+
+    return {
+      kind: 'peer',
+      id: me,
+      on: bus.on,
+      send(t, d) {
+        if (!open || !channel) return false;
+        try { channel.send(JSON.stringify({ t, d, from: me })); return true; }
+        catch (err) { return false; }
+      },
+      get ready() { return open; },
+      describe: 'Another computer, peer to peer',
+
+      async createOffer() {
+        await pc.setLocalDescription(await pc.createOffer());
+        await gathered();
+        return pack(pc.localDescription);
+      },
+      async answerOffer(blob) {
+        const { sdp } = unpack(blob);
+        await pc.setRemoteDescription(sdp);
+        await pc.setLocalDescription(await pc.createAnswer());
+        await gathered();
+        return pack(pc.localDescription);
+      },
+      async accept(blob) {
+        const { sdp } = unpack(blob);
+        await pc.setRemoteDescription(sdp);
+      },
+      close() { try { pc.close(); } catch (e) { /* already gone */ } },
+    };
+  }
+
+  global.GWLink = { openBroadcast, openPeer, webrtcAvailable, broadcastAvailable, newId };
+})(window);
+
+</script>
+<script>
+/* Playing the same run as somebody else.
+
+   The shape of it follows the game rather than the other way round. Gamble With
+   Your Friends is about one shared bank account that other people can reach, so
+   the account is the thing that has to be authoritative and everything else can
+   be local. One player hosts; the host's bank is the bank. Guests keep their own
+   copy of the world, walk it themselves, and play their own tables at full frame
+   rate -- what they send upstream is money moving, and what they get back is the
+   balance as the host sees it.
+
+   That trust model is deliberate and it is the game's own: anyone at the table
+   can empty the account. A guest that lied about a payout would be doing by hand
+   exactly what the game invites its friends to do anyway, and this connects
+   people who passed a code to each other, not strangers. It is not a ranked
+   ladder and there is nothing to defend.
+
+   Both machines build the same rooms without exchanging any of it, because the
+   layout of a floor comes from the run seed and the floor number (see
+   `layoutRng` in main.js). All that has to travel is the seed.
+
+   Positions go out about twelve times a second and are interpolated at the far
+   end; nothing here is rolled back or predicted, because at casino walking pace
+   over a link between friends there is nothing worth predicting. */
+
+(function (global) {
+  'use strict';
+
+  const TICK = 1000 / 12;         // how often a position goes out
+  const GONE = 6000;              // silence after which somebody has left
+
+  function create(shell, link, opts) {
+    const store = shell.store;
+    const isHost = !!opts.host;
+    const me = {
+      id: link.id,
+      name: (opts.name || 'Player').slice(0, 16),
+      colour: opts.colour || 0xd9a441,
+    };
+    const peers = new Map();
+    let lastSent = 0;
+    const pendingGreet = new Set();
+    let disposed = false;
+    const off = [];
+
+    const send = (t, d, to) => link.send(t, d, to);
+    const listen = (t, fn) => off.push(link.on(t, fn));
+
+    /* --- who is here --------------------------------------------------------- */
+
+    function seePeer(id, info) {
+      let p = peers.get(id);
+      if (!p) {
+        // Turned up without introducing themselves -- their hello was lost, or
+        // they were here before we were. Ask, by introducing ourselves to them.
+        pendingGreet.add(id);
+        p = {
+          id, name: 'Player', colour: 0x9aa0a6,
+          pos: new THREE.Vector3(), to: new THREE.Vector3(),
+          yaw: 0, toYaw: 0, floor: null, seen: 0, body: null, tag: null,
+        };
+        peers.set(id, p);
+      }
+      if (info) {
+        if (info.name) p.name = String(info.name).slice(0, 16);
+        if (info.colour !== undefined) p.colour = info.colour;
+      }
+      p.seen = performance.now();
+      return p;
+    }
+
+    listen('hello', (d, from) => {
+      const known = peers.has(from);
+      const p = seePeer(from, d);
+      pendingGreet.delete(from);
+      // Answer somebody new so a late arrival learns about everyone already
+      // here, not just about the host. Answering one we already knew about
+      // would bounce hellos back and forth for the rest of the night.
+      if (!known) greet(from);
+      if (isHost) {
+        send('run', runSnapshot(), from);
+        store.say(p.name + ' sat down at the table.', 'house');
+      }
+      if (opts.onRoster) opts.onRoster();
+    });
+
+    listen('bye', (d, from) => {
+      const p = peers.get(from);
+      if (p) {
+        store.say(p.name + ' left the table.', 'flat');
+        dropPeer(from);
+      }
+    });
+
+    listen('at', (d, from) => {
+      const p = seePeer(from, null);
+      p.to.set(d.x, d.y || 0, d.z);
+      p.toYaw = d.r;
+      p.floor = d.f;
+      p.moving = !!d.m;
+      if (!p.body) p.pos.copy(p.to);
+    });
+
+    /* --- the account --------------------------------------------------------- */
+
+    /* Guests ask, the host does. `stake` and `resolve` are the only two ways
+       money moves in the whole game -- everything else goes through them -- so
+       forwarding these two forwards all of it. */
+    listen('money', (d, from) => {
+      if (!isHost) return;
+      const p = peers.get(from);
+      const who = p ? p.name : 'Somebody';
+      if (d.kind === 'stake') {
+        if (!store.stake(d.amount)) {
+          send('money-denied', { amount: d.amount }, from);
+          store.say(who + ' reaches for ' + money(d.amount) + ' and finds it gone.', 'bad');
+        }
+      } else if (d.kind === 'resolve') {
+        const result = store.resolve(d.game, d.amount, d.multiplier, { by: 'net:' + from });
+        const label = result.net >= 0
+          ? who + ' takes ' + money(result.net) + ' off the ' + d.name + '.'
+          : who + ' drops ' + money(-result.net) + ' on the ' + d.name + '.';
+        store.say(label, result.net >= 0 ? 'good' : 'bad');
+        broadcast('run', runSnapshot());
+      }
+      shell.renderHud();
+    });
+
+    listen('money-denied', () => {
+      store.say('The account would not cover that. The host says no.', 'bad');
+      shell.renderHud();
+    });
+
+    /* The host's word on the run. Guests take the numbers and do not argue. */
+    function runSnapshot() {
+      const s = store.s;
+      return {
+        seed: s.seed, day: s.day, bank: s.bank, debt: s.debt, quota: s.quota,
+        timeLeft: s.timeLeft, phase: s.phase, floor: s.floor,
+      };
+    }
+
+    listen('run', (d) => {
+      if (isHost || !d) return;
+      const s = store.s;
+      const wasSeed = s.seed;
+      s.seed = d.seed; s.day = d.day; s.bank = d.bank; s.debt = d.debt;
+      s.quota = d.quota; s.timeLeft = d.timeLeft;
+      if (wasSeed !== d.seed && opts.onSeed) opts.onSeed();
+      shell.renderHud();
+    });
+
+    listen('say', (d) => { if (d && d.text) store.say(d.text, d.tone || 'flat'); });
+
+    function broadcast(t, d) { send(t, d); }
+
+    /* --- the frame ----------------------------------------------------------- */
+
+    function tick(dt, now) {
+      if (disposed) return;
+      if (now - lastSent > TICK) {
+        lastSent = now;
+        const st = shell.player.state;
+        send('at', {
+          x: +st.pos.x.toFixed(2), z: +st.pos.z.toFixed(2), y: +st.y.toFixed(2),
+          r: +st.viewYaw.toFixed(2), f: store.s.phase === 'lobby' ? -1 : store.s.floor,
+          m: Math.hypot(st.vel.x, st.vel.z) > 0.4 ? 1 : 0,
+        });
+      }
+      if (pendingGreet.size) {
+        for (const id of pendingGreet) greet(id);
+        pendingGreet.clear();
+      }
+      if (isHost && now - (tick.pushed || 0) > 1000) {
+        tick.pushed = now;
+        broadcast('run', runSnapshot());
+      }
+
+      const here = store.s.phase === 'lobby' ? -1 : store.s.floor;
+      for (const p of Array.from(peers.values())) {
+        if (now - p.seen > GONE) { dropPeer(p.id); continue; }
+        // Only people in the same room get a body.
+        const near = p.floor === here;
+        if (near && !p.body) makeBody(p);
+        if (!near && p.body) hideBody(p);
+        if (!p.body) continue;
+        // Interpolate towards the last report rather than snapping to it.
+        const k = Math.min(1, dt * 9);
+        p.pos.lerp(p.to, k);
+        let d = p.toYaw - p.yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        p.yaw += d * k;
+        p.body.group.position.set(p.pos.x, p.pos.y, p.pos.z);
+        p.body.group.rotation.y = p.yaw;
+        p.cycle = (p.cycle || 0) + dt * (p.moving ? 7 : 1.2);
+        const s = Math.sin(p.cycle);
+        p.body.root.rotation.z = p.moving ? s * 0.12 : s * 0.02;
+        p.body.root.position.y = p.moving ? Math.abs(Math.cos(p.cycle)) * 0.035 : 0;
+        for (let i = 0; i < 2; i++) {
+          const side = i === 0 ? -1 : 1;
+          p.body.hands[i].position.z = 0.06 + (i === 0 ? s : -s) * (p.moving ? 0.16 : 0.02);
+          p.body.hands[i].rotation.z = side * 0.1;
+        }
+      }
+    }
+
+    /* --- bodies -------------------------------------------------------------- */
+
+    function makeBody(p) {
+      if (!shell.level) return;
+      try {
+        p.body = GWCrew.buildBody(shell.lib, {
+          body: p.colour, hat: null, height: 1.0, width: 1.0,
+        });
+      } catch (err) {
+        console.warn('[gwyf] could not draw ' + p.name, err);
+        return;
+      }
+      p.tag = GWCrew.nameTag(p.name, '#' + new THREE.Color(p.colour).getHexString());
+      if (p.tag) {
+        p.tag.position.y = p.body.joints.height * 0.98;
+        p.body.group.add(p.tag);
+      }
+      shell.level.group.add(p.body.group);
+    }
+
+    function hideBody(p) {
+      if (!p.body) return;
+      if (p.body.group.parent) p.body.group.parent.remove(p.body.group);
+      if (p.tag && p.tag.userData.dispose) p.tag.userData.dispose();
+      p.body.dispose();
+      p.body = null;
+      p.tag = null;
+    }
+
+    function dropPeer(id) {
+      const p = peers.get(id);
+      if (!p) return;
+      hideBody(p);
+      peers.delete(id);
+      if (opts.onRoster) opts.onRoster();
+    }
+
+    /* Bodies live in the level's group, so a floor change takes them with it.
+       They are rebuilt on the next tick from the position already being sent. */
+    function levelChanged() {
+      for (const p of peers.values()) { p.body = null; p.tag = null; }
+    }
+
+    const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+    const greet = (to) => send('hello', { name: me.name, colour: me.colour }, to);
+
+    /* Say hello, and keep saying it until somebody says it back.
+
+       A data channel is not open the instant it is created, so the first hello
+       goes into a closed pipe and is simply dropped -- which left both ends
+       showing each other as "Player" in a grey coat, because the only thing
+       that had arrived was a position. The link says when it opens; peers that
+       turn up through a position report get asked directly. */
+    listen('__open', () => greet());
+    greet();
+
+    return {
+      me, peers, isHost, tick, levelChanged,
+      kind: link.kind,
+      roster() {
+        return Array.from(peers.values()).map((p) => ({ id: p.id, name: p.name, colour: p.colour }));
+      },
+      /* The two calls that move money. A guest routes them through the host; a
+         host does them locally and tells everyone the new balance. */
+      stake(amount) {
+        if (isHost) return store.stake(amount);
+        send('money', { kind: 'stake', amount });
+        // Shown immediately and corrected by the host's next word on it, which
+        // is a second away at most. Waiting for a round trip before the chips
+        // move makes every bet feel broken.
+        store.s.bank = Math.max(0, store.s.bank - amount);
+        return true;
+      },
+      resolve(game, amount, multiplier, name) {
+        if (isHost) {
+          const result = store.resolve(game, amount, multiplier);
+          broadcast('run', runSnapshot());
+          return result;
+        }
+        send('money', { kind: 'resolve', game, amount, multiplier, name });
+        const gross = amount * multiplier;
+        store.s.bank += gross;
+        return { game, stake: amount, multiplier, net: gross - amount, gross, detail: null };
+      },
+      announce(text, tone) { send('say', { text, tone }); },
+      dispose() {
+        disposed = true;
+        send('bye', null);
+        for (const p of Array.from(peers.values())) hideBody(p);
+        peers.clear();
+        for (const fn of off) fn();
+        link.close();
+      },
+    };
+  }
+
+  global.GWSession = { create };
 })(window);
 
 </script>
@@ -8812,6 +9365,93 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   const isOpen = () => !!current;
 
+  /* The introduction, done by hand.
+
+     A peer connection cannot start itself: something has to carry the first
+     description across. With no server, that something is the two of you. The
+     host makes a code, the guest pastes it and makes one back, the host pastes
+     that, and the browsers take it from there.
+
+     Every step says what it is waiting for. A silent box you are meant to paste
+     into is how this feature usually fails. */
+  function peerFlow(stage, asHost, name) {
+    const link = shell.connect('peer', { host: asHost, name });
+    if (!link) {
+      stage.innerHTML = '<p class="modrow__desc">WebRTC is not available here.</p>';
+      return;
+    }
+    const box = (label, id, ro) => '<label class="field"><span>' + label + '</span>'
+      + '<textarea id="' + id + '" rows="3"' + (ro ? ' readonly' : '') + '></textarea></label>';
+
+    if (asHost) {
+      stage.innerHTML = '<div class="netflow"><p class="modrow__desc">Making your code\u2026</p></div>';
+      link.createOffer().then((offer) => {
+        stage.innerHTML = '<div class="netflow">'
+          + '<p class="modrow__desc">1. Send this code to whoever is joining.</p>'
+          + box('Your code', 'netOffer', true)
+          + '<p class="modrow__desc">2. Paste the code they send back.</p>'
+          + box('Their reply', 'netAnswer', false)
+          + '<div class="sheet__actions"><button class="btn btn--primary" data-accept>Connect</button>'
+          + '<span class="modrow__desc" id="netStatus"></span></div></div>';
+        stage.querySelector('#netOffer').value = offer;
+        stage.querySelector('#netOffer').select();
+        stage.querySelector('[data-accept]').addEventListener('click', () => {
+          const status = stage.querySelector('#netStatus');
+          status.textContent = 'Connecting\u2026';
+          link.accept(stage.querySelector('#netAnswer').value)
+            .then(() => waitForOpen(link, status))
+            .catch((err) => { status.textContent = 'That code did not read: ' + err.message; });
+        });
+      });
+      return;
+    }
+
+    stage.innerHTML = '<div class="netflow">'
+      + '<p class="modrow__desc">1. Paste the code the host sent you.</p>'
+      + box('Their code', 'netOffer', false)
+      + '<div class="sheet__actions"><button class="btn btn--primary" data-answer>Make my reply</button>'
+      + '<span class="modrow__desc" id="netStatus"></span></div>'
+      + '<div id="netReply"></div></div>';
+    stage.querySelector('[data-answer]').addEventListener('click', () => {
+      const status = stage.querySelector('#netStatus');
+      status.textContent = 'Working\u2026';
+      link.answerOffer(stage.querySelector('#netOffer').value).then((answer) => {
+        status.textContent = '';
+        const reply = stage.querySelector('#netReply');
+        reply.innerHTML = '<p class="modrow__desc">2. Send this back to the host. '
+          + 'You are connected once they paste it.</p>'
+          + '<label class="field"><span>Your reply</span>'
+          + '<textarea id="netAnswer" rows="3" readonly></textarea></label>'
+          + '<p class="modrow__desc" id="netStatus2"></p>';
+        reply.querySelector('#netAnswer').value = answer;
+        reply.querySelector('#netAnswer').select();
+        waitForOpen(link, reply.querySelector('#netStatus2'));
+      }).catch((err) => { status.textContent = 'That code did not read: ' + err.message; });
+    });
+  }
+
+  /* Say when it actually connects, and say when it does not. A connection that
+     silently never opens is the single most common way this goes wrong. */
+  function waitForOpen(link, status) {
+    const started = Date.now();
+    const poll = setInterval(() => {
+      if (link.ready) {
+        clearInterval(poll);
+        status.textContent = 'Connected.';
+        show('table');
+      } else if (Date.now() - started > 25000) {
+        clearInterval(poll);
+        status.textContent = 'No connection after twenty-five seconds. A network that blocks '
+          + 'peer-to-peer traffic will do this; the same-computer option always works.';
+      }
+    }, 400);
+  }
+
+  const swatch = (c) => '#' + (typeof c === 'number'
+    ? c.toString(16).padStart(6, '0') : String(c).replace('#', ''));
+
+
+
   /* `sticky` means Escape and a click on the backdrop will not dismiss it --
      the briefing, the nightly report and the endings all demand an answer. It
      does not mean the screen's own buttons cannot close it, which is what the
@@ -8824,12 +9464,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return true;
   }
 
+  /* Redraw a screen that is already open, if it is the one named. Used when
+     something outside it changes what it should say -- somebody joining the
+     table, for instance. Redrawing a screen that is not open would open it. */
+  function refresh(name, data) {
+    if (!current || current.name !== name) return;
+    show(name, data || current.data || {});
+  }
+
   function show(name, data) {
     root.innerHTML = '';
     const builder = SCREENS[name];
     if (!builder) return;
     const spec = builder(data || {});
-    current = { name, sticky: !!spec.sticky };
+    current = { name, sticky: !!spec.sticky, data: data || {} };
 
     const screen = document.createElement('div');
     screen.className = 'screen';
@@ -9188,6 +9836,106 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       };
     },
 
+    /* Playing with other people.
+
+       Two ways in, and they are honestly different. Another window on the same
+       computer needs nothing at all -- one button and you are both in. Another
+       computer needs the two of you to pass a block of text back and forth
+       once, because a peer connection has to be introduced by something and
+       there is no server here to do the introducing.
+
+       Where the page is running decides whether the second one is even offered.
+       Inside the artifact viewer WebRTC is not blocked, it is deleted, so the
+       option says that rather than presenting a button that does nothing. */
+    table() {
+      const net = shell.net;
+      const canPeer = GWLink.webrtcAvailable();
+      const canLocal = GWLink.broadcastAvailable();
+      const named = (shell.store.meta.playerName || '');
+
+      if (net) {
+        const others = net.roster();
+        const rows = others.length
+          ? others.map((p) => '<li class="mate"><span class="mate__dot" style="background:'
+              + swatch(p.colour) + '"></span><span class="mate__name">' + esc(p.name)
+              + '</span></li>').join('')
+          : '<li class="modrow__desc">Nobody else yet. Leave this open.</li>';
+        return {
+          title: net.isHost ? 'You are hosting' : 'You are at their table',
+          body: '<p class="sheet__lead">' + (net.isHost
+              ? 'Your account is the account. Anyone who joins can spend it, which is the point.'
+              : 'You are spending the host\u2019s account. So is everyone else.')
+            + '</p>'
+            + '<p class="modrow__desc">' + esc(net.kind === 'local'
+              ? 'Connected to other windows on this computer.'
+              : 'Connected peer to peer.') + '</p>'
+            + '<ul class="crew">' + rows + '</ul>'
+            + '<div class="sheet__actions">'
+            + '<button class="btn" data-leave>Leave the table</button>'
+            + '<button class="btn btn--primary" data-close>Back to the floor</button>'
+            + '</div>',
+          wire(sheet) {
+            sheet.querySelector('[data-leave]').addEventListener('click', () => {
+              shell.disconnect();
+              show('table');
+            });
+            sheet.querySelector('[data-close]').addEventListener('click', () => close(true));
+          },
+        };
+      }
+
+      return {
+        title: 'Play together',
+        body: '<p class="sheet__lead">One shared account, and other people who can reach it. '
+          + 'That is the whole game, so it may as well be other real people.</p>'
+          + '<label class="field"><span>Your name</span>'
+          + '<input id="netName" maxlength="16" value="' + esc(named) + '" placeholder="Player"></label>'
+          + '<div class="netways">'
+          + '<div class="netway"><h3>Another window here</h3>'
+          + '<p class="modrow__desc">' + (canLocal
+              ? 'Open this page again in a second window and press this in both. No setup, no server.'
+              : 'This browser does not do BroadcastChannel, so windows here cannot find each other.')
+          + '</p><div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-local="host"' + (canLocal ? '' : ' disabled')
+          + '>Host here</button>'
+          + '<button class="btn" data-local="join"' + (canLocal ? '' : ' disabled')
+          + '>Join here</button></div></div>'
+          + '<div class="netway"><h3>Another computer</h3>'
+          + '<p class="modrow__desc">' + (canPeer
+              ? 'Peer to peer, with no server anywhere. You pass one block of text to each '
+                + 'other to introduce the two browsers, and after that they talk directly.'
+              : 'Not possible where this page is running: the viewer removes WebRTC before the '
+                + 'game loads. Download the HTML file and open it from your own machine and '
+                + 'this works.')
+          + '</p><div class="sheet__actions">'
+          + '<button class="btn btn--primary" data-peer="host"' + (canPeer ? '' : ' disabled')
+          + '>Host a game</button>'
+          + '<button class="btn" data-peer="join"' + (canPeer ? '' : ' disabled')
+          + '>Join a game</button></div></div>'
+          + '</div>'
+          + '<div id="netStage"></div>',
+        wire(sheet) {
+          const nameOf = () => {
+            const v = (sheet.querySelector('#netName').value || 'Player').trim().slice(0, 16);
+            shell.store.meta.playerName = v;
+            shell.store.saveMeta();
+            return v;
+          };
+          for (const b of sheet.querySelectorAll('[data-local]')) {
+            b.addEventListener('click', () => {
+              shell.connect('local', { host: b.dataset.local === 'host', name: nameOf() });
+              show('table');
+            });
+          }
+          for (const b of sheet.querySelectorAll('[data-peer]')) {
+            b.addEventListener('click', () => {
+              peerFlow(sheet.querySelector('#netStage'), b.dataset.peer === 'host', nameOf());
+            });
+          }
+        },
+      };
+    },
+
     ending(data) {
       const s = shell.store.s;
       const meta = shell.store.meta;
@@ -9474,7 +10222,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.renderHud();
   }
 
-  global.GWScreens = { init, show, close, isOpen, settle };
+  global.GWScreens = { init, show, close, refresh, isOpen, settle };
 })(window);
 
 </script>
@@ -9889,6 +10637,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const shell = {
     stage: null, lib: null, store: null, audio: null, friends: null,
     player: null, level: null, anchors: [], crew: null, touch: null, hands: null,
+    net: null,
     mode: 'boot',
     game: null, handle: null, ctx: null, anchor: null,
     busy: false, stake: 25, pending: null, endAfterHand: false,
@@ -9907,7 +10656,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       'stakeDown', 'stakeUp', 'chipRow', 'btnPlay', 'playText', 'playSub',
       'oddsToggle', 'oddsPanel', 'crewList', 'ticker', 'screens', 'resultCard',
       'resultHeadline', 'resultAmount', 'liveReadout', 'gameStatus', 'promptBox',
-      'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'shoutBar', 'btnShout',
+      'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'btnTable', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
       'touchUse', 'guide', 'guideArrow', 'guideText']) {
@@ -10064,6 +10813,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     el.btnTower.addEventListener('click', callLift);
     el.btnShop.addEventListener('click', () => GWScreens.show('shop'));
     el.btnMenu.addEventListener('click', () => GWModMenu.toggle());
+    el.btnTable.addEventListener('click', () => GWScreens.show('table'));
     el.btnSound.addEventListener('click', () => {
       const muted = !shell.audio.muted;
       shell.audio.setMuted(muted);
@@ -10092,6 +10842,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         return;
       }
       if (e.key === 'b' || e.key === 'B') { GWScreens.show('shop'); return; }
+      if (e.key === 'm' || e.key === 'M') { GWScreens.show('table'); return; }
       if (e.key === ' ' && shell.mode === 'table' && !shell.busy && !GWScreens.isOpen()) {
         e.preventDefault(); playHand(); return;
       }
@@ -10150,6 +10901,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
+      if (shell.net) shell.net.tick(dt, performance.now());
 
       // The crew keeps moving whatever you are doing. Freezing them while you
       // are sat at a table is how you look up from the roulette and find three
@@ -10253,7 +11005,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     GWLoading.step('Unlocking the doors');
     await frame();
 
-    shell.level = GWLevel.buildLobby({ rng: shell.store.rng });
+    shell.level = GWLevel.buildLobby({ rng: layoutRng(-1) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     fogForRoom();
@@ -10319,7 +11071,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     GWLoading.step('Laying the carpet');
     await frame();
 
-    shell.level = GWLevel.build({ floor: index, rng: shell.store.rng });
+    shell.level = GWLevel.build({ floor: index, rng: layoutRng(index) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     fogForRoom();
@@ -10345,6 +11097,64 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.store.say('Floor ' + index + '. ' + def.name + '.', 'house');
     shell.store.save();
     shell.floorBusy = false;
+  }
+
+  /* --- other people --------------------------------------------------------- */
+
+  /* Open a table. `how` is 'local' for other windows on this computer, or
+     'peer' for the hand-signalled connection to another machine; the peer link
+     is handed back so the screen can drive the offer-and-answer dance. */
+  function connect(how, opts) {
+    disconnect();
+    const name = (opts && opts.name) || 'Player';
+    const colour = (opts && opts.colour) !== undefined ? opts.colour : GWCrew.YOU.body;
+    let link;
+    if (how === 'peer') {
+      if (!GWLink.webrtcAvailable()) return null;
+      link = GWLink.openPeer({ host: !!(opts && opts.host) });
+    } else {
+      if (!GWLink.broadcastAvailable()) return null;
+      link = GWLink.openBroadcast({});
+    }
+    shell.net = GWSession.create(shell, link, {
+      host: !!(opts && opts.host), name, colour,
+      onRoster: () => { renderCrew(); GWScreens.refresh('table'); },
+      /* The host's seed arrived, so every room this run generates has to be
+         rebuilt from it -- otherwise the two of you are stood in floors that
+         only look like each other. */
+      onSeed: () => {
+        if (shell.mode === 'world' && shell.level) {
+          if (shell.level.isLobby) enterLobby();
+          else enterFloor(shell.store.s.floor);
+        }
+      },
+    });
+    shell.store.say(shell.net.isHost
+      ? 'You are hosting. Anyone who joins shares your account.'
+      : 'Joined. The account you are spending is theirs.', 'house');
+    renderCrew();
+    return link;
+  }
+
+  function disconnect() {
+    if (!shell.net) return;
+    shell.net.dispose();
+    shell.net = null;
+    renderCrew();
+    shell.store.say('You are on your own again.', 'flat');
+  }
+
+  /* A room's own stream, not the run's.
+
+     Two reasons, and the second one only turned up with other people in the
+     building. Drawing layout from the run's stream means generating a floor
+     consumes numbers that the games' outcomes come out of, so how many pillars
+     a room has shifts every spin after it. And a second player has to walk the
+     same room as the first: derived from the run seed and the floor index, both
+     machines build the same hall without exchanging a single byte about it. */
+  function layoutRng(index) {
+    const seed = (shell.store.s.seed ^ Math.imul(index + 7, 0x9e3779b1)) >>> 0;
+    return new GWRng.Rng(seed, 0);
   }
 
   /* Fog sized to the room it is in.
@@ -10473,6 +11283,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (record.handle && record.handle.dispose) record.handle.dispose();
     }
     shell.anchors = [];
+    if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
       shell.crew = null;
@@ -10956,7 +11767,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.busy = true;
     hideResult();
     refreshPlayButton();
-    shell.store.stake(shell.stake);
+    // With other people at the table the account is the host's, so a stake is a
+    // request rather than a subtraction. Single player, this is the same call
+    // it has always been.
+    if (shell.net) shell.net.stake(shell.stake);
+    else shell.store.stake(shell.stake);
     shell.audio.play('chip');
 
     ctx.stake = shell.stake;
@@ -10982,7 +11797,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       return;
     }
 
-    const settled = shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
+    const settled = shell.net
+      ? shell.net.resolve(game.id, ctx.totalStake, result.multiplier, game.name)
+      : shell.store.resolve(game.id, ctx.totalStake, result.multiplier, result.detail);
     showResult(result, settled);
     shell.store.save();
     finishHand();
@@ -11128,6 +11945,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     prompt,
     setLive,
     interact,
+    connect, disconnect,
     announce(text, tone) { shell.store.say(text, tone || 'flat'); },
     setStatus(text) { el.gameStatus.textContent = text || ''; },
     highlight() {},
