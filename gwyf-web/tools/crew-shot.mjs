@@ -68,14 +68,20 @@ const report = await page.evaluate(() => {
       scene.add(holder);
 
       if (row === 1) {
-        // Mid-waddle: rolled onto one side with the hands swung across. There
-        // are no legs to put mid-stride -- that is the point of the design.
-        body.root.rotation.z = 0.10;
-        body.root.rotation.x = 0.09;
-        body.root.position.y = 0.035;
-        body.hands[0].position.z += 0.20;
-        body.hands[1].position.z -= 0.20;
-        body.head.rotation.y = -0.3;
+        // Mid-waddle, posed the way the walk cycle poses it: rolled onto one
+        // side, stretched at the top of the step, hands swung across. There are
+        // no legs to put mid-stride -- that is the point of the design.
+        body.root.rotation.z = 0.12;
+        body.root.rotation.x = 0.16;
+        body.root.position.y = 0.045;
+        body.trunk.scale.set(0.96, 1.05, 0.96);
+        body.head.position.y = body.joints.neck * 1.05;
+        body.head.rotation.y = -0.28;
+        body.brow.rotation.x = -0.2;
+        body.hands[0].position.z += 0.26;
+        body.hands[1].position.z -= 0.26;
+        body.hands[0].rotation.x = -0.16;
+        body.hands[1].rotation.x = 0.16;
       }
       if (!tris[id]) {
         let n = 0;

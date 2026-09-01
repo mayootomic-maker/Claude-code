@@ -649,6 +649,7 @@ PIN = {
     "hand": 0.560,       # resting height of the floating hands
     "handX": 0.410,      # how far out to the side they hover
     "brow": 1.265,       # the brow bar, for anything that wants to aim at a face
+    "browAt": [0.0, 0.350, -0.182],   # where it sits on the head, in head space
 }
 
 
@@ -725,11 +726,6 @@ def pin_head():
         parts.append(apply(pupil, m["dark"]))
 
     # One thick brow bar across both eyes, which is the whole eyebrow.
-    brow = cube(size=1, location=(0, 0.182, 0.350),
-                rotation=(math.radians(-10), 0, 0), scale=(0.395, 0.058, 0.054))
-    bevel(brow, width=0.018, segments=3)
-    parts.append(apply(brow, m["dark"]))
-
     mouth = sphere(1.0, (0, 0.236, 0.132), 14, 9)
     mouth.scale = (0.052, 0.030, 0.036)
     parts.append(apply(mouth, m["mouth"]))
@@ -738,6 +734,28 @@ def pin_head():
         smooth(o)
     rig_yup(parts, (0, 0, 0))
     PACK.add("pin_head", parts)
+
+
+@model
+def pin_brow():
+    """The eyebrow, on its own.
+
+    Split out of the head because it is half the expression. This face is two
+    enormous eyes and one heavy bar above them; with the bar welded to the skull
+    the only thing a character can do is turn round. Loose, it drops for a blink,
+    tilts down for a scowl and lifts for a win, and all three read from the far
+    side of a room. Authored about its own centre so a tilt is a rotation and
+    not a translation with a rotation smuggled into it."""
+    reset()
+    m = _pin_mats()
+    brow = cube(size=1, location=(0, 0, 0), rotation=(math.radians(-10), 0, 0),
+                scale=(0.395, 0.058, 0.054))
+    bevel(brow, width=0.018, segments=3)
+    parts = [apply(brow, m["dark"])]
+    for o in parts:
+        smooth(o)
+    rig_yup(parts, (0, 0, 0))
+    PACK.add("pin_brow", parts)
 
 
 @model

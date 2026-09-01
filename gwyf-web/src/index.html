@@ -15,47 +15,50 @@
 
 <div id="app" class="app" hidden>
 
-  <header class="hud" id="hud">
-    <div class="hud__brand">
-      <span class="hud__mark" aria-hidden="true">♠</span>
-      <span class="hud__title">Gamble<em>With</em>Your Friends</span>
-    </div>
 
-    <div class="hud__stats" role="group" aria-label="Run status">
-      <div class="stat stat--bank">
-        <span class="stat__label">Shared account</span>
-        <strong class="stat__value" id="statBank" data-live>$0</strong>
+
+  <main class="stage">
+  <!-- The overlay, laid out in corners over the 3D rather than as a bar above
+       it. That is how the game this follows arranges it, and it is also what
+       gives the room the whole frame: everything here is information about a
+       run, and none of it needs a strip of its own. -->
+  <header class="hud" id="hud">
+    <div class="hud__corner hud__corner--tl">
+      <div class="hud__row">
+        <button class="hud__mark" id="btnTitle" title="Back to the menu" aria-label="Back to the menu">♠</button>
+        <span class="tickets"><span class="tickets__icon" aria-hidden="true">🎟</span><b id="statTickets">0</b></span>
       </div>
-      <div class="stat stat--debt">
-        <span class="stat__label">Debt</span>
-        <strong class="stat__value" id="statDebt">$0</strong>
-      </div>
-      <div class="stat stat--quota">
-        <span class="stat__label">Tonight's quota</span>
-        <strong class="stat__value" id="statQuota">$0</strong>
+      <p class="hud__label">Challenge</p>
+      <div class="card card--challenge" id="challengeCard">
+        <div class="card__head">
+          <span class="card__title" id="challengeName">Tonight’s quota</span>
+          <span class="card__reward" id="challengeReward"></span>
+        </div>
+        <p class="card__note" id="challengeNote">Reach the quota before the doors close.</p>
         <div class="quotabar"><i id="quotaFill" style="width:0%"></i></div>
       </div>
-      <div class="stat stat--tickets">
-        <span class="stat__label">Tickets</span>
-        <strong class="stat__value" id="statTickets">0</strong>
-      </div>
     </div>
 
-    <div class="hud__clock">
-      <span class="stat__label">Day <b id="statDay">1</b> closes in</span>
+    <div class="hud__corner hud__corner--tc">
+      <p class="hud__label">Day ends in</p>
       <strong class="clock" id="statClock" data-live>5:00</strong>
     </div>
 
-    <div class="hud__tools">
-      <button class="icobtn" id="btnTower" title="Back to the lift (Esc)" aria-label="Back to the lift">🛗</button>
-      <button class="icobtn" id="btnShop" title="The back office (B)" aria-label="Open the back office">🧳</button>
-      <button class="icobtn" id="btnSound" title="Sound" aria-pressed="true" aria-label="Toggle sound">🔊</button>
-      <button class="icobtn" id="btnTable" title="Play together" aria-label="Play together">🤝</button>
-      <button class="icobtn" id="btnMenu" title="Mod menu (F1)" aria-label="Open the mod menu">⚙</button>
+    <div class="hud__corner hud__corner--tr">
+      <div class="hud__tools">
+        <button class="icobtn" id="btnTower" title="Back to the lift" aria-label="Back to the lift">🛗</button>
+        <button class="icobtn" id="btnShop" title="The back office (B)" aria-label="Open the back office">🧳</button>
+        <button class="icobtn" id="btnSound" title="Sound" aria-pressed="true" aria-label="Toggle sound">🔊</button>
+        <button class="icobtn" id="btnTable" title="Play together (M)" aria-label="Play together">🤝</button>
+        <button class="icobtn" id="btnMenu" title="Settings and mods (F1)" aria-label="Settings and mods">⚙</button>
+      </div>
+      <p class="hud__label hud__label--right">Day <b id="statDay">1</b></p>
+      <strong class="money money--bank" id="statBank" data-live>$0</strong>
+      <span class="money money--quota">/ <span id="statQuota">$0</span></span>
+      <span class="money money--debt">owed <span id="statDebt">$0</span></span>
+      <ul class="ledger" id="crewList" aria-label="Everyone at the table"></ul>
     </div>
   </header>
-
-  <main class="stage">
     <canvas id="scene" aria-label="The table"></canvas>
 
     <div class="reticle" id="reticle" aria-hidden="true"><i></i></div>
@@ -146,15 +149,29 @@
     </div>
 
     <div class="rail__section rail__section--crew">
-      <h3 class="rail__label">The crew</h3>
-      <ul class="crew" id="crewList"></ul>
+
     </div>
   </aside>
 
   <footer class="ticker" id="ticker" aria-live="polite" aria-label="What everyone is saying"></footer>
 </div>
 
-<div class="screens" id="screens"></div>
+<div class="title" id="title" hidden>
+    <div class="title__grain" aria-hidden="true"></div>
+    <div class="title__inner">
+      <p class="title__eyebrow">One account · four people · five minutes a day</p>
+      <h1 class="title__name"><em>Gamble</em> With Your Friends</h1>
+      <p class="title__blurb">A tower of casinos, a quota every night, and three friends
+        who can spend the account without asking.</p>
+      <div class="title__menu" id="titleMenu"></div>
+      <p class="title__foot">
+        <span id="titleTickets">0 tickets</span> ·
+        <span>WASD to walk · mouse to look · E to use</span>
+      </p>
+    </div>
+  </div>
+
+  <div class="screens" id="screens"></div>
 
 <div class="boot" id="boot">
   <div class="boot__inner">
@@ -204,6 +221,7 @@
 <script src="core/friends.js"></script>
 <script src="ui/loading.js"></script>
 <script src="ui/touch.js"></script>
+<script src="ui/title.js"></script>
 <script src="ui/screens.js"></script>
 <script src="ui/modmenu.js"></script>
 <script src="main.js"></script>

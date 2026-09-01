@@ -89,9 +89,9 @@ button:disabled { cursor: not-allowed; }
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  /* No row for the HUD: it lives inside the stage now and lies over the 3D. */
   grid-template-areas:
-    'hud    hud'
     'stage  rail'
     'ticker rail';
   height: 100dvh;
@@ -612,8 +612,8 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 60rem) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 42vh auto minmax(0, 1fr);
-    grid-template-areas: 'hud' 'stage' 'ticker' 'rail';
+    grid-template-rows: 42vh auto minmax(0, 1fr);
+    grid-template-areas: 'stage' 'ticker' 'rail';
   }
   .rail { border-left: 0; border-top: 1px solid var(--line); }
   .ticker { height: 4rem; }
@@ -759,7 +759,7 @@ button:disabled { cursor: not-allowed; }
    once you are standing at a machine. */
 .app.is-world {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'hud' 'stage' 'ticker';
+  grid-template-areas: 'stage' 'ticker';
 }
 .app.is-world .rail { display: none; }
 .app.is-world #scene { cursor: none; }
@@ -843,7 +843,7 @@ button:disabled { cursor: not-allowed; }
 .leave:hover { background: var(--surface-hi); border-color: var(--accent); }
 
 @media (max-width: 60rem) {
-  .app.is-world { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .app.is-world { grid-template-rows: minmax(0, 1fr) auto; }
 }
 
 
@@ -1087,4 +1087,285 @@ button:disabled { cursor: not-allowed; }
   .hud__stats { gap: 0.45rem; }
   .stat { min-width: 0; padding: 0.28rem 0.5rem; }
   .stat__label { font-size: 0.56rem; letter-spacing: 0.05em; }
+}
+
+
+/* --- the title screen -----------------------------------------------------
+   Over the top of a live room: the stage keeps rendering behind this, with the
+   camera on a slow arc, so the first thing you see is the place you are about
+   to walk around rather than a picture of it.
+
+   The palette is the original's menus rather than the game's own -- near black,
+   a faint lattice, grey cards with lighter strokes, one crimson button. */
+
+.title {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  /* Dark enough to read white text over, light enough that the room behind is
+     obviously a room. The first pass was almost opaque and the live backdrop
+     might as well have been a black rectangle. */
+  background:
+    radial-gradient(ellipse 78% 64% at 50% 45%, rgb(6 4 4 / 0.30), rgb(2 2 2 / 0.82) 88%),
+    linear-gradient(180deg, rgb(2 2 2 / 0.55), rgb(2 2 2 / 0.2) 30%, rgb(2 2 2 / 0.72));
+  animation: titleIn 420ms var(--ease);
+}
+
+@keyframes titleIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* The lattice. A repeating diamond, faint enough to read as paper rather than
+   as pattern -- it is the one texture the original's menus carry. */
+.title__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.022) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.022) 0 1px, transparent 1px 14px);
+}
+
+.title__inner {
+  position: relative;
+  width: min(34rem, 100%);
+  text-align: center;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.title__eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.title__name {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 9vw, 4.6rem);
+  line-height: 0.92;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-shadow: 0 0.4rem 1.6rem rgb(0 0 0 / 0.95), 0 0 3rem rgb(0 0 0 / 0.8);
+}
+.title__name em { color: var(--accent); font-style: normal; }
+
+.title__blurb {
+  color: var(--text);
+  text-shadow: 0 0.2rem 1rem rgb(0 0 0 / 0.9);
+  font-size: 0.95rem;
+  max-width: 26rem;
+  margin: 0 auto;
+  text-wrap: balance;
+}
+
+.title__menu { display: grid; gap: 0.5rem; margin-top: 0.5rem; }
+
+.titlebtn {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.72rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid #4a4c4a;
+  background: #2a2a2a;
+  color: var(--text);
+  text-align: left;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease), transform 120ms var(--ease);
+}
+.titlebtn:hover, .titlebtn:focus-visible { background: #343434; border-color: #6f7370; }
+.titlebtn:active { transform: translateY(1px); }
+
+.titlebtn__label {
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.titlebtn__note { display: block; font-size: 0.74rem; color: var(--text-muted); margin-top: 0.16rem; }
+.titlebtn__key {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.titlebtn--primary { background: #82182c; border-color: #b8304a; }
+.titlebtn--primary:hover, .titlebtn--primary:focus-visible { background: #99203a; border-color: #d94a66; }
+.titlebtn--primary .titlebtn__note { color: rgb(255 255 255 / 0.72); }
+
+.title__foot {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 34rem) {
+  .title__blurb { font-size: 0.86rem; }
+  .titlebtn__label { font-size: 1.1rem; }
+  .title__foot span + span { display: block; }
+}
+
+
+/* The mark is a way back to the menu now, so it has to look pressable. */
+.hud__mark { cursor: pointer; border: 0; transition: transform 120ms var(--ease); }
+.hud__mark:hover, .hud__mark:focus-visible { transform: scale(1.06); }
+
+/* Nothing of the game's own interface belongs over the title screen. */
+.is-title .hud,
+.is-title .rail,
+.is-title .ticker,
+.is-title .useprompt,
+.is-title .guide,
+.is-title .resume,
+.is-title .touch { display: none !important; }
+
+
+/* --- the overlay HUD ------------------------------------------------------
+   Corners over the 3D rather than a bar above it, which is how the game this
+   follows arranges it and what gives the room the whole frame. Everything here
+   is a fact about the run; none of it needs a strip of its own.
+
+   The old `.hud` rules above still style the boot screen and the table rail, so
+   these are additive and deliberately specific rather than a rewrite. */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud__corner {
+  position: absolute;
+  display: grid;
+  gap: 0.28rem;
+  pointer-events: none;
+  /* A soft ground under every corner so white text survives a bright carpet. */
+  text-shadow: 0 0.1rem 0.7rem rgb(0 0 0 / 0.95), 0 0 1.6rem rgb(0 0 0 / 0.7);
+}
+.hud__corner--tl { top: 0.85rem; left: 0.9rem; width: min(19rem, 42vw); }
+.hud__corner--tc { top: 0.85rem; left: 50%; transform: translateX(-50%); justify-items: center; }
+.hud__corner--tr { top: 0.85rem; right: 0.9rem; justify-items: end; text-align: right; }
+
+.hud__row { display: flex; align-items: center; gap: 0.5rem; pointer-events: auto; }
+
+.hud__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.hud__label--right { margin-top: 0.35rem; }
+.hud__label b { color: var(--text); font-weight: 700; }
+
+.tickets {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #fed138;
+  background: rgb(10 8 6 / 0.6);
+  color: #fed138;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tickets__icon { font-size: 0.85em; }
+
+.card--challenge {
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: var(--radius);
+  background: rgb(8 7 7 / 0.62);
+  padding: 0.45rem 0.6rem 0.5rem;
+  display: grid;
+  gap: 0.22rem;
+  text-shadow: none;
+}
+.card--challenge.is-met { border-color: #45de46; background: rgb(10 34 14 / 0.72); }
+.card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.card__title { font-weight: 700; font-size: 0.86rem; }
+.card__reward { color: #fed138; font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.card__note {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.card--challenge .quotabar { margin-top: 0.15rem; }
+
+.hud__corner--tc .clock {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 4.4vw, 3.1rem);
+  line-height: 0.9;
+  letter-spacing: 0.03em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.hud__corner--tc .clock.is-low { color: var(--danger); }
+
+.money { font-variant-numeric: tabular-nums; line-height: 1.05; }
+.money--bank {
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  color: #43e345;
+  letter-spacing: 0.02em;
+}
+.money--quota { font-size: 0.98rem; font-weight: 700; color: #f13e54; }
+.money--debt { font-size: 0.7rem; color: var(--text-faint); letter-spacing: 0.06em; text-transform: uppercase; }
+
+.hud__tools { display: flex; gap: 0.3rem; pointer-events: auto; margin-bottom: 0.2rem; }
+
+/* Everyone at the table, and what they are up or down. */
+.ledger {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0.35rem 0.5rem;
+  display: grid;
+  gap: 0.18rem;
+  min-width: 9.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(8 7 7 / 0.5);
+  text-shadow: none;
+}
+.ledger__row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.ledger__net { font-weight: 700; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.ledger__name { font-size: 0.78rem; color: var(--text-muted); }
+.ledger__row.is-hot .ledger__name { color: var(--warn); font-weight: 700; }
+
+/* At a table the corners get out of the way of the game. */
+.app.is-table .hud__corner--tl,
+.app.is-table .ledger { opacity: 0.35; }
+
+@media (max-width: 44rem) {
+  .hud__corner--tl { width: min(13rem, 46vw); }
+  .card__note { display: none; }
+  .money--debt { display: none; }
+  .ledger { display: none; }
+}
+
+
+/* The corners came later than these two and landed on top of them. */
+.guide { top: auto; bottom: 5.4rem; }
+.is-touch .guide { bottom: 11rem; }
+
+.floortag {
+  top: auto;
+  bottom: 1.2rem;
+  left: 1rem;
+  right: auto;
 }

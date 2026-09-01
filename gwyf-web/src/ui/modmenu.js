@@ -71,7 +71,14 @@
 
   function init(s) { shell = s; }
 
-  function toggle() { if (node) closeMenu(); else open(); }
+  /* `toggle('display')` opens straight onto a page, which is how the title
+     screen's Settings gets you to the controls rather than to whichever tab was
+     last looked at. */
+  function toggle(startPage) {
+    if (node) { closeMenu(); return; }
+    if (startPage && MODS[startPage]) page = startPage;
+    open();
+  }
 
   function open() {
     node = document.createElement('div');

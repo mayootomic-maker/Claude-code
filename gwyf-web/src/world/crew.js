@@ -87,6 +87,17 @@
     root.add(head);
     head.add(part('pin_head'));
 
+    /* The brow, on its own node.
+
+       Half the expression lives here. This face is two enormous eyes and one
+       heavy bar above them, so with the bar welded to the skull the only thing
+       a character can do is turn round. Loose, it blinks, scowls and raises,
+       and all three read from the far side of a room. */
+    const brow = part('pin_brow');
+    const at = J.browAt || [0, 0.35, -0.182];
+    brow.position.set(at[0], at[1], at[2]);
+    head.add(brow);
+
     if (look.hat) {
       const hat = part(look.hat);
       // A monocle hangs on the face; a hat sits on the crown.
@@ -122,7 +133,8 @@
     group.scale.setScalar(look.height);
 
     return {
-      group, root, trunk, head, hands, joints: J,
+      group, root, trunk, head, brow, hands, joints: J,
+      browHome: brow.position.clone(),
       dispose() { for (const m of owned) m.dispose(); },
     };
   }
@@ -460,7 +472,6 @@
             person.blocked = Math.max(0, person.blocked - dt);
           }
           person.wantYaw = Math.atan2(-dirX, -dirZ);
-          person.cycle += moved * 2.0;
         }
       } else if (person.state === 'play' && person.at) {
         // Stand at the table facing it.
@@ -530,94 +541,207 @@
       pose(person, dt, speed);
     }
 
-    /* The waddle, and everything that is not one.
+    /* --- animation ---------------------------------------------------------
 
-       There are no legs to swing, so the walk is a rock: the body leans into
-       its direction of travel and rolls side to side, the hands swing against
-       that roll, and the whole thing rises and falls on each step. Driven by
-       distance covered rather than by time, so somebody squeezing past a pillar
-       at half speed takes half-length steps instead of moon walking. */
+       Rebuilt, because the first version was a sine wave written straight onto
+       the body every frame and it showed: nothing had weight, nothing lagged
+       anything else, and changing state was a snap between two poses with
+       nothing in between.
+
+       What is here instead:
+
+       - **Blend weights.** Every state -- idle, walking, playing, won, lost,
+         tilting -- has a weight that eases to nought or one. The pose is the
+         sum of all six, so a friend who wins while walking raises their hands
+         without stopping dead first.
+       - **Springs, not lerps.** Lean, hand height, head turn and squash are
+         driven towards a target by a spring with real damping, so they
+         overshoot slightly and settle. That overshoot is the whole difference
+         between a puppet and a body.
+       - **Squash and stretch.** The one thing a legless pin has instead of a
+         skeleton. It stretches at the top of a step and squashes on the
+         contact, and the volume is kept -- widening as it shortens -- so it
+         reads as a body rather than as a scaling bug.
+       - **Follow-through.** The hands chase the body rather than being placed
+         on it, so they trail on a turn and swing past on a stop.
+       - **Blinking.** The face is two enormous eyes; not blinking is the most
+         obviously wrong thing a face like that can do. The brow drops over
+         them, at human intervals, twice in quick succession now and then. */
+
+    const STATE_BLEND = 7.0;      // how fast a state's weight comes and goes
+
+    function spring(s_, target, stiffness, damping, dt) {
+      const a = (target - s_.v) * stiffness - s_.d * damping;
+      s_.d += a * dt;
+      s_.v += s_.d * dt;
+      return s_.v;
+    }
+
+    function newRig() {
+      const s_ = () => ({ v: 0, d: 0 });
+      return {
+        lean: s_(), roll: s_(), rise: s_(), squash: s_(),
+        headTurn: s_(), headTilt: s_(), browTilt: s_(), browDrop: s_(),
+        handLift: s_(), handOut: s_(), handSwing: s_(),
+        weights: { idle: 1, walk: 0, play: 0, won: 0, lost: 0, tilt: 0 },
+        step: 0, blink: 2 + rand() * 3, blinking: 0, doubleBlink: false,
+        glance: 3 + rand() * 5, glanceTo: 0,
+      };
+    }
+
     function pose(person, dt, speed) {
       const body = person.body;
       const J = body.joints;
+      const rig = person.rig || (person.rig = newRig());
       const moving = speed > 0.05;
-      const swing = moving ? Math.min(1.0, speed * 0.42) : 0;
-      const s = Math.sin(person.cycle);
-      const c = Math.cos(person.cycle);
 
-      let lean = 0, rise = 0, headTilt = 0, headTurn = 0;
-      let roll = 0;
-      let handSwing = 0, handLift = 0, handOut = 0;
+      /* --- which state, and how much of it ---------------------------------- */
+      const want = {
+        idle: !moving && person.state !== 'play' ? 1 : 0,
+        walk: moving ? Math.min(1, speed / 1.7) : 0,
+        play: person.state === 'play' && !moving ? 1 : 0,
+        won: person.mood > 0 && person.moodLeft > 0 ? 1 : 0,
+        lost: person.mood < 0 && person.moodLeft > 0 ? 1 : 0,
+        tilt: person.tilting ? 1 : 0,
+      };
+      const w = rig.weights;
+      const k = Math.min(1, STATE_BLEND * dt);
+      for (const key in want) w[key] += (want[key] - w[key]) * k;
 
-      if (moving) {
-        roll = s * 0.10 * (swing / 1.0 + 0.4);
-        rise = Math.abs(c) * 0.035;
-        lean = 0.09 * swing;
-        handSwing = -s * 0.22 * swing;
-        handLift = Math.abs(c) * 0.03;
-      } else {
-        // Breathing, and a slow shift of weight.
-        person.cycle += dt * 1.2;
-        rise = Math.sin(person.cycle) * 0.008;
-        roll = Math.sin(person.cycle * 0.5) * 0.02;
-        handLift = Math.sin(person.cycle + 0.7) * 0.012;
-      }
+      /* --- the step ---------------------------------------------------------
+         Driven by distance covered, so somebody squeezing past a pillar at half
+         speed takes half-length steps instead of moon walking. Two beats per
+         cycle: a pin has no legs, so the "step" is the body dropping onto one
+         side and pushing off again. */
+      rig.step += (moving ? speed * 2.1 : 1.3) * dt;
+      const beat = Math.sin(rig.step);
+      const bounce = Math.abs(Math.cos(rig.step));
+      // Impact rises towards 1 at the bottom of each beat: the contact.
+      const impact = Math.pow(Math.max(0, -Math.cos(rig.step * 2)), 2);
 
-      if (person.state === 'play' && !moving) {
-        // Leaning in over the table with both hands out on it.
-        lean = 0.16;
-        handOut = 0.20;
-        handLift = -0.10 + Math.sin(person.cycle * 0.7) * 0.02;
-      }
+      /* --- targets, summed across the states -------------------------------- */
+      let lean = 0, roll = 0, rise = 0, squash = 0;
+      let headTurn = 0, headTilt = 0, browTilt = 0, browDrop = 0;
+      let handLift = 0, handOut = 0, handSwing = 0;
 
-      if (person.moodLeft > 0) {
-        const k = Math.min(1, person.moodLeft / 2.4);
-        if (person.mood > 0) {
-          // Hands up, and a hop. Nobody wins quietly.
-          handLift = 0.62 * k + Math.sin(person.cycle * 7) * 0.05 * k;
-          handOut = 0.16 * k;
-          rise += Math.abs(Math.sin(person.cycle * 5)) * 0.09 * k;
-          headTilt = -0.16 * k;
-          lean = -0.06 * k;
-          person.cycle += dt * 3.0;
-        } else if (person.mood < 0) {
-          lean += 0.26 * k;
-          headTilt = 0.30 * k;
-          handLift = -0.10 * k;
-          handOut = -0.05 * k;
-        }
-      }
+      // Walking: lean into it, roll onto each side, rise and fall, squash on
+      // the contact, hands swinging against the roll.
+      lean += w.walk * 0.20;
+      roll += w.walk * beat * 0.13;
+      rise += w.walk * bounce * 0.045;
+      squash -= w.walk * impact * 0.09;
+      handSwing += w.walk * -beat * 0.26;
+      handLift += w.walk * bounce * 0.03;
 
-      if (person.tilting) {
-        // Wound up: leaning in, hands shaking, and a shake nobody can miss
-        // across a room -- a few seconds is all you get to notice it.
-        person.cycle += dt * 2.4;
-        lean += 0.12;
-        roll += Math.sin(person.cycle * 11) * 0.05;
-        handLift = 0.16 + Math.sin(person.cycle * 13) * 0.05;
-        handOut = 0.12;
-        headTilt = -0.06;
-      }
+      // Idle: breathing, a slow shift of weight, and looking about.
+      squash += w.idle * Math.sin(rig.step * 0.62) * 0.022;
+      roll += w.idle * Math.sin(rig.step * 0.31) * 0.03;
+      headTurn += w.idle * rig.glanceTo;
 
-      // Look at whoever is nearby while standing about.
+      // At a table: leaning in with both hands on the felt.
+      lean += w.play * 0.22;
+      handOut += w.play * 0.16;
+      handLift += w.play * -0.13;
+      headTilt += w.play * 0.10;
+
+      // Won: hands up, brows up, and a hop. Nobody wins quietly.
+      handLift += w.won * (0.52 + Math.abs(Math.sin(rig.step * 3.1)) * 0.12);
+      handOut += w.won * 0.10;
+      rise += w.won * Math.abs(Math.sin(rig.step * 3.1)) * 0.13;
+      squash += w.won * Math.abs(Math.sin(rig.step * 3.1)) * 0.07;
+      headTilt -= w.won * 0.22;
+      browTilt -= w.won * 0.5;
+      lean -= w.won * 0.10;
+
+      // Lost: everything drops.
+      lean += w.lost * 0.24;
+      headTilt += w.lost * 0.28;
+      handLift -= w.lost * 0.13;
+      squash -= w.lost * 0.06;
+      browTilt += w.lost * 0.6;
+
+      // Tilting: wound up, shaking, brows down. A few seconds is all you get to
+      // notice it, so it is the loudest thing in the set.
+      lean += w.tilt * 0.16;
+      roll += w.tilt * Math.sin(rig.step * 9) * 0.06;
+      handLift += w.tilt * (0.18 + Math.sin(rig.step * 11) * 0.05);
+      handOut += w.tilt * 0.14;
+      browTilt += w.tilt * 0.85;
+
+      // Looking at whoever walked up beats looking around the room.
       if (person.lookAtPlayer) headTurn = person.lookAtPlayer;
 
-      body.root.position.y = rise;
-      body.root.rotation.z = roll;
-      body.root.rotation.x = lean;
-      body.head.rotation.x = headTilt;
-      body.head.rotation.y = headTurn;
+      /* --- blinking ---------------------------------------------------------- */
+      rig.blink -= dt;
+      if (rig.blink <= 0) {
+        rig.blinking = 0.13;
+        // People blink twice in quick succession often enough that always
+        // blinking singly is its own kind of uncanny.
+        rig.blink = rig.doubleBlink ? 2.4 + rand() * 4 : (rand() < 0.3 ? 0.22 : 2.4 + rand() * 4);
+        rig.doubleBlink = rig.blink < 0.5;
+      }
+      if (rig.blinking > 0) { rig.blinking -= dt; browDrop = 1; }
+
+      // Idle glancing: a new place to look every few seconds.
+      rig.glance -= dt;
+      if (rig.glance <= 0) {
+        rig.glance = 2.5 + rand() * 5;
+        rig.glanceTo = (rand() - 0.5) * 1.1;
+      }
+
+      /* --- springs ----------------------------------------------------------- */
+      const leanV = spring(rig.lean, lean, 180, 22, dt);
+      const rollV = spring(rig.roll, roll, 210, 24, dt);
+      const riseV = spring(rig.rise, rise, 260, 26, dt);
+      const squashV = spring(rig.squash, squash, 240, 24, dt);
+      const headTurnV = spring(rig.headTurn, headTurn, 90, 17, dt);
+      const headTiltV = spring(rig.headTilt, headTilt, 110, 18, dt);
+      const browTiltV = spring(rig.browTilt, browTilt, 150, 20, dt);
+      const browDropV = spring(rig.browDrop, browDrop, 900, 46, dt);
+      // The hands are deliberately floppier than everything else: a lower
+      // stiffness is what makes them trail the body instead of riding it.
+      const handLiftV = spring(rig.handLift, handLift, 95, 15, dt);
+      const handOutV = spring(rig.handOut, handOut, 95, 15, dt);
+      const handSwingV = spring(rig.handSwing, handSwing, 130, 16, dt);
+
+      /* --- write it out ------------------------------------------------------ */
+      body.root.position.y = riseV;
+      body.root.rotation.z = rollV;
+      /* Negated on the way out, so that everything above can read as "lean
+         forward by this much".
+
+         The models face -Z, so a positive rotation about X tips the top of the
+         body towards +Z -- backwards. Written straight through, every lean in
+         the set was pointing the wrong way: the walk leaned away from the
+         direction of travel and the slump after a loss was a proud recline. */
+      body.root.rotation.x = -leanV;
+      // Volume is kept: shorter is wider. Scaling one axis alone reads as a
+      // bug rather than as weight.
+      const sy = 1 + squashV;
+      const sxz = 1 - squashV * 0.55;
+      body.trunk.scale.set(person.look.width * sxz, sy, person.look.width * sxz);
+      // The head rides the top of the body, so it has to move with the squash
+      // or it detaches at the neck.
+      body.head.position.y = J.neck * sy;
+      body.head.rotation.y = headTurnV;
+      body.head.rotation.x = -headTiltV;   // same convention: positive is a nod
+
+      // Positive browTilt is a scowl, so the inner ends come down.
+      body.brow.rotation.x = -browTiltV * 0.42;
+      body.brow.position.y = body.browHome.y - browDropV * 0.085;
+      body.brow.position.z = body.browHome.z - browDropV * 0.012;
 
       for (let i = 0; i < 2; i++) {
         const side = i === 0 ? -1 : 1;
-        const hand = body.hands[i];
-        hand.position.set(
-          side * (J.handX * person.look.width + handOut),
-          J.hand + handLift + (i === 0 ? handSwing : -handSwing) * 0.35,
-          0.06 + (i === 0 ? handSwing : -handSwing)
+        const swing = i === 0 ? handSwingV : -handSwingV;
+        body.hands[i].position.set(
+          side * (J.handX * person.look.width + handOutV),
+          (J.hand + handLiftV) * sy + swing * 0.14,
+          0.06 + swing
         );
-        hand.rotation.z = side * (0.10 + handLift * 0.6);
-        hand.rotation.y = side < 0 ? Math.PI : 0;
+        body.hands[i].rotation.z = side * (0.10 + handLiftV * 0.5);
+        body.hands[i].rotation.x = -swing * 0.6;
+        body.hands[i].rotation.y = side < 0 ? Math.PI : 0;
       }
     }
 

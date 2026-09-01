@@ -10,6 +10,26 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/* Through the front door.
+
+   The game opens on a title screen now, so every harness that used to click
+   the briefing's button straight after boot has to press Play first. Kept as
+   one function rather than five copies of the same two clicks. */
+async function startGame(page) {
+  await page.waitForSelector('#title:not([hidden]), [data-go]', { timeout: 60000 });
+  const title = await page.$('#title:not([hidden])');
+  if (title) {
+    await page.click('.titlebtn--primary');
+    await page.waitForTimeout(500);
+  }
+  const go = await page.$('[data-go]');
+  if (go) {
+    await go.click();
+    await page.waitForTimeout(400);
+  }
+}
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const FILE = resolve(here, '..', 'gamble-with-your-friends.html');
 if (!existsSync(FILE)) { console.error('build it first'); process.exit(1); }
@@ -60,7 +80,7 @@ async function play(label, setup) {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
-  await page.click('[data-go]');
+  await startGame(page);
   await page.waitForTimeout(300);
   await installBoarding(page);
 
@@ -127,7 +147,7 @@ for (const [label, setup] of [['paid', 'pay'], ['house', 'fail'], ['mixed', 'mix
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
-  await page.click('[data-go]');
+  await startGame(page);
   await installBoarding(page);
   const paid = await page.evaluate(async () => {
     const shell = window.GWShell;
@@ -173,7 +193,7 @@ await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
 await page.evaluate(() => localStorage.clear());
 await page.reload();
 await page.waitForSelector('#app:not([hidden])', { timeout: 60000 });
-await page.click('[data-go]');
+await startGame(page);
 await installBoarding(page);
 const runner = await page.evaluate(async () => {
   const shell = window.GWShell;

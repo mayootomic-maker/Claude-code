@@ -42,7 +42,9 @@
       'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'btnTable', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
-      'touchUse', 'guide', 'guideArrow', 'guideText']) {
+      'touchUse', 'guide', 'guideArrow', 'guideText',
+      'title', 'titleMenu', 'titleTickets', 'btnTitle',
+      'challengeCard', 'challengeName', 'challengeReward', 'challengeNote']) {
       el[id] = $(id);
     }
     el.stage = document.querySelector('.stage');
@@ -125,6 +127,7 @@
 
     GWScreens.init(shell);
     GWModMenu.init(shell);
+    GWTitle.init(shell);
 
     progress(1, 'Ready.');
     el.boot.hidden = true;
@@ -134,10 +137,47 @@
     startDayLoop();
     renderHud();
     renderCrew();
-    const phase = shell.store.s.phase;
-    if (phase === 'floor') await enterFloor(shell.store.s.floor);
-    else if (phase === 'lobby') await enterLobby();
+    /* Straight to the title, over a room that is really there.
+
+       Building the lobby first costs the same as building it later and buys
+       the title screen a live backdrop -- and by the time anyone presses Play
+       the models, the environment map and the first frames are all paid for,
+       so the game starts instead of stalling. */
+    await showcase();
+    GWTitle.show();
+  }
+
+  /* The lobby as scenery. Deliberately does not touch the run: no phase
+     change, no player, no crew. Pressing Play builds it again properly. */
+  async function showcase() {
+    unloadFloor();
+    document.documentElement.setAttribute('data-floor', 'lobby');
+    shell.stage.setEnvironment('velvet');
+    shell.level = GWLevel.buildLobby({ rng: layoutRng(-1) });
+    shell.stage.group.add(shell.level.group);
+    shell.stage.setLightSites(shell.level.sites);
+    fogForRoom();
+    shell.hands.group.visible = false;
+    setMode('idle');
+    await frame();
+  }
+
+  /* Pick the run up wherever it was left. */
+  async function resume() {
+    const s = shell.store.s;
+    if (s.ending) { GWScreens.show('ending', { kind: s.ending }); return; }
+    if (s.phase === 'floor') await enterFloor(s.floor);
+    else if (s.phase === 'lobby') await enterLobby();
+    else if (s.phase === 'report') GWScreens.show('report');
     else GWScreens.show('briefing');
+  }
+
+  /* Throw the run away and start again. A reload rather than a reset in place:
+     there is one code path that builds a new run correctly -- the one that runs
+     when there is no save -- and using it is worth a second of black. */
+  function newRun() {
+    shell.store.discard();
+    window.location.reload();
   }
 
   function hasWebGL() {
@@ -197,6 +237,12 @@
     el.btnShop.addEventListener('click', () => GWScreens.show('shop'));
     el.btnMenu.addEventListener('click', () => GWModMenu.toggle());
     el.btnTable.addEventListener('click', () => GWScreens.show('table'));
+    el.btnTitle.addEventListener('click', () => {
+      // Saved on the way out, because the menu is where people close the tab.
+      shell.store.save();
+      GWScreens.close(true);
+      shell.title();
+    });
     el.btnSound.addEventListener('click', () => {
       const muted = !shell.audio.muted;
       shell.audio.setMuted(muted);
@@ -1025,29 +1071,31 @@
     const pending = shell.friends.state.pending;
     el.crewList.innerHTML = '';
     for (const mate of s.friends) {
+      const hot = pending && pending.mate.id === mate.id;
       const li = document.createElement('li');
-      li.className = 'mate' + (pending && pending.mate.id === mate.id ? ' is-hot' : '');
-      const game = mate.at ? GWGames.get(mate.at) : null;
-      const doing = shell.crew ? shell.crew.stateOf(mate.id) : null;
-      let at = game ? game.name : 'wandering';
-      if (doing === 'walk') at = 'heading for the ' + (game ? game.name : 'floor');
-      else if (doing === 'leaving') at = 'taking the lift';
-      else if (doing === 'away') at = 'on another floor';
-      else if (doing === 'idle') at = 'wandering';
-      li.innerHTML = '<span class="mate__dot"></span>'
-        + '<span><span class="mate__name"></span><span class="mate__where"></span></span>'
-        + '<span class="mate__net"></span>';
-      const dot = li.querySelector('.mate__dot');
-      dot.style.background = mate.colour;
-      dot.style.color = mate.colour;
-      li.querySelector('.mate__name').textContent = mate.name;
-      li.querySelector('.mate__where').textContent =
-        pending && pending.mate.id === mate.id ? 'about to do something' : at;
-      const net = li.querySelector('.mate__net');
-      net.textContent = (mate.won >= 0 ? '+' : '−') + short(Math.abs(mate.won));
+      li.className = 'ledger__row' + (hot ? ' is-hot' : '');
+      li.innerHTML = '<span class="ledger__net"></span><span class="ledger__name"></span>';
+      const net = li.querySelector('.ledger__net');
+      net.textContent = (mate.won >= 0 ? '+' : '\u2212') + short(Math.abs(mate.won));
       net.style.color = mate.won >= 0 ? 'var(--success)' : 'var(--danger)';
+      const name = li.querySelector('.ledger__name');
+      name.textContent = hot ? mate.name + ' \u2014 about to' : mate.name;
+      name.style.color = hot ? '' : mate.colour;
+      li.title = whatTheyAreDoing(mate);
       el.crewList.appendChild(li);
     }
+  }
+
+  /* The long version, for the row's tooltip and the ticker. The ledger itself
+     shows a name and a number, because that is what you glance at. */
+  function whatTheyAreDoing(mate) {
+    const game = mate.at ? GWGames.get(mate.at) : null;
+    const doing = shell.crew ? shell.crew.stateOf(mate.id) : null;
+    if (doing === 'walk') return 'Heading for the ' + (game ? game.name : 'floor');
+    if (doing === 'leaving') return 'Taking the lift';
+    if (doing === 'away') return 'On another floor';
+    if (doing === 'idle') return 'Wandering';
+    return game ? 'At the ' + game.name : 'Wandering';
   }
 
   function renderTicker(line) {
@@ -1066,10 +1114,23 @@
     el.statTickets.textContent = shell.store.meta.tickets;
     el.statDay.textContent = s.day;
     el.statBank.setAttribute('aria-label', money(s.bank) + ' in the shared account');
-    el.statQuota.setAttribute('aria-label', 'tonight’s quota is ' + money(s.quota));
-    const pctDone = s.quota > 0 ? Math.min(1, s.bank / s.quota) : 1;
-    el.quotaFill.style.width = (pctDone * 100).toFixed(1) + '%';
-    el.quotaFill.parentElement.classList.toggle('is-met', pctDone >= 1);
+    el.statQuota.setAttribute('aria-label', 'tonight\u2019s quota is ' + money(s.quota));
+
+    /* The challenge card. It carries the quota when there is no challenge
+       going, because the quota is the thing you are always working towards and
+       an empty card in the corner is a worse answer than a useful one. */
+    const met = s.quota > 0 ? s.bank >= s.quota : true;
+    const pct = s.quota > 0 ? Math.min(1, s.bank / s.quota) : 1;
+    const ch = s.challenge;
+    el.challengeName.textContent = ch ? ch.text : 'Tonight\u2019s quota';
+    el.challengeReward.textContent = ch ? '+' + ch.tickets + ' \uD83C\uDF9F' : money(s.quota);
+    el.challengeNote.textContent = met
+      ? (ch ? 'Quota met. The challenge is still open.' : 'Met. Anything more is yours to keep.')
+      : money(s.quota - s.bank) + ' to go before the doors close.';
+    el.challengeCard.classList.toggle('is-met', met);
+    el.quotaFill.style.width = (pct * 100).toFixed(1) + '%';
+    el.quotaFill.parentElement.classList.toggle('is-met', met);
+
     el.shoutCount.textContent = s.shouts;
     renderClock();
   }
@@ -1329,6 +1390,8 @@
     setLive,
     interact,
     connect, disconnect,
+    resume, newRun, showcase,
+    title() { showcase().then(() => GWTitle.show()); },
     announce(text, tone) { shell.store.say(text, tone || 'flat'); },
     setStatus(text) { el.gameStatus.textContent = text || ''; },
     highlight() {},

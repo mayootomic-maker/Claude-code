@@ -44,6 +44,17 @@ sequence, because that order is what stops any sector of the wheel favouring an
 outside bet. The rotor turns one way, the ball orbits the other, decays off the
 track, crosses the deflectors and drops.
 
+## The way in
+
+It opens on a title screen, over the lobby — the real one, with the camera on a
+slow arc through it, so the first thing you see is the place you are about to
+walk around rather than a picture of it. By the time you press Play the models,
+the environment map and the first frames are already paid for.
+
+Play, Continue, Play together, How this works, Settings. The spade in the corner
+brings it back at any point, and saves on the way out, because the menu is where
+people close the tab.
+
 ## The tower
 
 It is a building, not a menu. You start in a lobby with a loan shark at his
@@ -58,6 +69,12 @@ lift and everything already placed, *and* with the spot you have to stand in to
 play it clear as well. That last check is not an optimisation. Without it four
 of the twelve landed with their only approach buried in a pillar — placed,
 drawn, lit, and unusable, with the prompt that never appeared as the only clue.
+
+**The interface is in the corners**, not in a bar above the game: tickets and
+the challenge card top-left, DAY ENDS IN over the clock top-centre, the day, the
+shared account in green and the quota in red top-right with everyone's running
+total under it. That is how the original arranges it, and it hands the room the
+whole frame.
 
 **The friends are in the room.** Mo, Petra, Kez and Den are bowling pins about
 two heads tall -- a wide oval head on a tapered footless body with no legs, two
@@ -108,6 +125,30 @@ The trust model is deliberate, and it is the game's own: anyone at the table can
 empty the account. A guest who lied about a payout would be doing by hand
 exactly what the game invites its friends to do anyway. This connects people who
 passed a code to each other, not strangers.
+
+## How they move
+
+There are no legs, so everything a body says has to be said with a lean, a roll
+and a squash. The animation is built out of six weighted states — idle, walking,
+at a table, won, lost, about to do something stupid — which are summed rather
+than switched, so a friend who wins while walking raises their hands without
+stopping dead first.
+
+Under that: springs rather than lerps, so lean and hand height overshoot and
+settle instead of sliding into place; squash and stretch that keeps volume, so a
+shorter body is a wider one; hands that chase the body rather than being placed
+on it, so they trail on a turn; and blinking, at human intervals and sometimes
+twice in a row, because a face that is mostly eyes and never blinks is the most
+obviously wrong thing that face can do.
+
+The eyebrow is its own model for the same reason. Welded to the skull, the only
+thing a character could do was turn round; loose, it drops for a blink, comes
+down for a scowl and lifts for a win, and all three read across a room.
+
+`tools/pose-shot.mjs` renders all six states side by side through the real rig.
+It is how the walk was caught leaning backwards: the models face -Z, so a
+positive rotation about X tips the body the wrong way, and every lean in the set
+was pointing behind itself.
 
 ## Matching the original
 
@@ -177,6 +218,7 @@ node gwyf-web/tools/run-loop.mjs                 # play whole runs; check all th
 node gwyf-web/tools/walk.mjs                     # walk the tower with real keys, floor by floor
 node gwyf-web/tools/reach.mjs 12                 # every machine usable from its stand point, on 12 layouts
 node gwyf-web/tools/crew-shot.mjs out.png        # the four friends, assembled as the game builds them
+node gwyf-web/tools/pose-shot.mjs out.png        # every pose the animation holds, side by side
 node gwyf-web/tools/postcards.mjs                # one shot of every machine from where you stand at it
 ```
 
