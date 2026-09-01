@@ -1426,8 +1426,12 @@ button:disabled { cursor: not-allowed; }
 
 /* Nothing to prompt about before the pointer is taken: E does nothing while
    the game is asking you to click, and the two labels were printing over each
-   other in the middle of the screen. */
-.app.is-unlocked .useprompt { display: none !important; }
+   other in the middle of the screen.
+
+   Not on a phone. A touch device never takes the pointer, so it is unlocked
+   for the whole game and this would hide the use prompt permanently -- the one
+   label that says what the button under your thumb is about to do. */
+html:not(.is-touch) .app.is-unlocked .useprompt { display: none !important; }
 
 
 /* --- heat -----------------------------------------------------------------

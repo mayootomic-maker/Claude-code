@@ -54,6 +54,8 @@
     display: [
       { pref: 'look', name: 'Look sensitivity', desc: 'How far the view turns for the same hand movement.',
         min: 0.25, max: 3, step: 0.05 },
+      { pref: 'fov', name: 'Field of view', desc: 'How much of the room you can see at once while walking. '
+        + 'The table keeps its own lens.', min: 55, max: 100, step: 1, unit: '\u00b0' },
       { pref: 'invertY', name: 'Invert look', desc: 'Push the mouse forward to look down.' },
       { pref: 'smoothing', name: 'Camera smoothing', desc: 'How much the view lags the mouse. Zero, the default, is exact.',
         min: 0, max: 1, step: 0.05 },
@@ -134,7 +136,11 @@
         b.addEventListener('input', () => {
           setPref(b.dataset.pref, Number(b.value));
           const out = b.parentElement.querySelector('output');
-          if (out) out.textContent = Number(b.value).toFixed(2) + '\u00d7';
+          if (out) {
+            out.textContent = (b.dataset.whole
+              ? String(Math.round(Number(b.value)))
+              : Number(b.value).toFixed(2)) + (b.dataset.unit || '\u00d7');
+          }
         });
       } else {
         b.addEventListener('click', () => {
@@ -160,10 +166,16 @@
       return '<button class="switch" role="switch" aria-checked="' + !!value + '" data-pref="' + mod.pref
         + '" aria-label="' + esc(mod.name) + '"><i></i></button>';
     }
+    // Degrees read as degrees and multipliers read as multipliers; a field of
+    // view labelled "72.00x" is a number nobody can act on.
+    const unit = mod.unit || '\u00d7';
+    const shown = mod.unit ? String(Math.round(value)) : (+value).toFixed(2);
     return '<span class="modrow__slider"><input type="range" data-pref="' + mod.pref
       + '" min="' + mod.min + '" max="' + mod.max + '" step="' + mod.step
-      + '" value="' + value + '" aria-label="' + esc(mod.name) + '">'
-      + '<output>' + (+value).toFixed(2) + '×</output></span>';
+      + '" value="' + value + '" data-unit="' + unit + '"'
+      + (mod.unit ? ' data-whole="1"' : '')
+      + ' aria-label="' + esc(mod.name) + '">'
+      + '<output>' + shown + unit + '</output></span>';
   }
 
   function setPref(name, value) {

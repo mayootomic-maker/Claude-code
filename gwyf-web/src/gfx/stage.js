@@ -43,7 +43,7 @@
 
      Using the table's lens to walk with is the reason this played like being
      led round the building with a toilet roll held to one eye. */
-    const FOV_WALK = 72;
+    let FOV_WALK = 72;
     const FOV_TABLE = 38;
     const camera = new THREE.PerspectiveCamera(FOV_TABLE, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
@@ -442,6 +442,15 @@
       get manualCamera() { return state.manual; },
       /* Extra degrees on top of whatever the mode asks for. Sprinting uses it. */
       setFovKick(deg) { state.fovKick = Math.max(-10, Math.min(14, deg || 0)); },
+      /* How wide the walking lens is. A preference, because how wide is too
+         wide depends on how far the person is sitting from the screen, and
+         because a few people get motion sick at the wide end. The table's lens
+         is not up for negotiation -- it is the shot the game was built around. */
+      setWalkFov(deg) {
+        FOV_WALK = Math.max(55, Math.min(100, deg || 72));
+        if (state.manual) state.fovWant = FOV_WALK;
+      },
+      get walkFov() { return FOV_WALK; },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },

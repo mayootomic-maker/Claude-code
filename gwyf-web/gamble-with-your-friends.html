@@ -1438,8 +1438,12 @@ button:disabled { cursor: not-allowed; }
 
 /* Nothing to prompt about before the pointer is taken: E does nothing while
    the game is asking you to click, and the two labels were printing over each
-   other in the middle of the screen. */
-.app.is-unlocked .useprompt { display: none !important; }
+   other in the middle of the screen.
+
+   Not on a phone. A touch device never takes the pointer, so it is unlocked
+   for the whole game and this would hide the use prompt permanently -- the one
+   label that says what the button under your thumb is about to do. */
+html:not(.is-touch) .app.is-unlocked .useprompt { display: none !important; }
 
 
 /* --- heat -----------------------------------------------------------------
@@ -2061,7 +2065,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       // Controls, not mods. These live with the tickets because they are a
       // property of the person playing rather than of the run, and switching
       // one must never mark a run as modded.
-      look: 1.0, invertY: false, smoothing: 0, headBob: true,
+      look: 1.0, invertY: false, smoothing: 0, headBob: true, fov: 72,
     }, meta || {});
   }
 
@@ -3135,7 +3139,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
      Using the table's lens to walk with is the reason this played like being
      led round the building with a toilet roll held to one eye. */
-    const FOV_WALK = 72;
+    let FOV_WALK = 72;
     const FOV_TABLE = 38;
     const camera = new THREE.PerspectiveCamera(FOV_TABLE, 1, 0.05, 200);
     camera.position.set(0, 3.2, 5.2);
@@ -3534,6 +3538,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       get manualCamera() { return state.manual; },
       /* Extra degrees on top of whatever the mode asks for. Sprinting uses it. */
       setFovKick(deg) { state.fovKick = Math.max(-10, Math.min(14, deg || 0)); },
+      /* How wide the walking lens is. A preference, because how wide is too
+         wide depends on how far the person is sitting from the screen, and
+         because a few people get motion sick at the wide end. The table's lens
+         is not up for negotiation -- it is the shot the game was built around. */
+      setWalkFov(deg) {
+        FOV_WALK = Math.max(55, Math.min(100, deg || 72));
+        if (state.manual) state.fovWant = FOV_WALK;
+      },
+      get walkFov() { return FOV_WALK; },
       get tier() { return state.tier; },
       get frameCost() { return state.frameCost; },
       setReducedMotion(v) { state.reduced = !!v; },
@@ -12169,6 +12182,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     display: [
       { pref: 'look', name: 'Look sensitivity', desc: 'How far the view turns for the same hand movement.',
         min: 0.25, max: 3, step: 0.05 },
+      { pref: 'fov', name: 'Field of view', desc: 'How much of the room you can see at once while walking. '
+        + 'The table keeps its own lens.', min: 55, max: 100, step: 1, unit: '\u00b0' },
       { pref: 'invertY', name: 'Invert look', desc: 'Push the mouse forward to look down.' },
       { pref: 'smoothing', name: 'Camera smoothing', desc: 'How much the view lags the mouse. Zero, the default, is exact.',
         min: 0, max: 1, step: 0.05 },
@@ -12249,7 +12264,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         b.addEventListener('input', () => {
           setPref(b.dataset.pref, Number(b.value));
           const out = b.parentElement.querySelector('output');
-          if (out) out.textContent = Number(b.value).toFixed(2) + '\u00d7';
+          if (out) {
+            out.textContent = (b.dataset.whole
+              ? String(Math.round(Number(b.value)))
+              : Number(b.value).toFixed(2)) + (b.dataset.unit || '\u00d7');
+          }
         });
       } else {
         b.addEventListener('click', () => {
@@ -12275,10 +12294,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       return '<button class="switch" role="switch" aria-checked="' + !!value + '" data-pref="' + mod.pref
         + '" aria-label="' + esc(mod.name) + '"><i></i></button>';
     }
+    // Degrees read as degrees and multipliers read as multipliers; a field of
+    // view labelled "72.00x" is a number nobody can act on.
+    const unit = mod.unit || '\u00d7';
+    const shown = mod.unit ? String(Math.round(value)) : (+value).toFixed(2);
     return '<span class="modrow__slider"><input type="range" data-pref="' + mod.pref
       + '" min="' + mod.min + '" max="' + mod.max + '" step="' + mod.step
-      + '" value="' + value + '" aria-label="' + esc(mod.name) + '">'
-      + '<output>' + (+value).toFixed(2) + '×</output></span>';
+      + '" value="' + value + '" data-unit="' + unit + '"'
+      + (mod.unit ? ' data-whole="1"' : '')
+      + ' aria-label="' + esc(mod.name) + '">'
+      + '<output>' + shown + unit + '</output></span>';
   }
 
   function setPref(name, value) {
@@ -12820,6 +12845,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         smoothing: typeof meta.smoothing === 'number' ? meta.smoothing : 0,
         headBob: meta.headBob !== false,
       });
+      shell.stage.setWalkFov(Number(meta.fov) || 72);
     };
     shell.applyLook = applyLook;
     applyLook();

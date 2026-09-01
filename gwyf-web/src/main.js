@@ -310,6 +310,7 @@
         smoothing: typeof meta.smoothing === 'number' ? meta.smoothing : 0,
         headBob: meta.headBob !== false,
       });
+      shell.stage.setWalkFov(Number(meta.fov) || 72);
     };
     shell.applyLook = applyLook;
     applyLook();
