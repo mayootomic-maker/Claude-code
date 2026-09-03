@@ -25,6 +25,7 @@
   'use strict';
 
   const FIRST = 26;             // seconds into a day before anything happens
+  const WARNING = 6;            // how long before one the burner phone rings
   const GAP = [40, 70];         // and between one and the next
 
   function create(store, hooks) {
@@ -137,16 +138,30 @@
       }
 
       state.next -= dt;
+
+      /* The Burner Phone. A few seconds' warning of what the floor is about to
+         do, which is worth having because most of these want you somewhere
+         else when they land: a sweep to be away from, a hot table to be at.
+         Announced once per event rather than every frame. */
+      if (state.next <= WARNING && !state.active && !state.warned
+          && store.has('burnerphone') && s.timeLeft > 20) {
+        state.warned = true;
+        store.say('Your phone buzzes. Something is about to happen on this floor.', 'warn');
+        if (hooks.onWarning) hooks.onWarning();
+      }
+
       // Nothing new lands on top of something still running, and nothing lands
       // in the last few seconds of a day where it could not be acted on.
       if (state.next <= 0 && !state.active && s.timeLeft > 20) {
         state.next = GAP[0] + rng.next() * (GAP[1] - GAP[0]);
+        state.warned = false;
         fire();
       }
     }
 
     function newDay() {
       state.next = FIRST;
+      state.warned = false;
       state.active = null;
       state.hotTable = null;
       state.hotBonus = 1;

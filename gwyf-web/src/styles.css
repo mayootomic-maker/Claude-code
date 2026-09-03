@@ -1374,6 +1374,51 @@ button:disabled { cursor: not-allowed; }
   background: var(--success); color: #06210f; font-weight: 700;
 }
 
+/* --- the shop's shelves --------------------------------------------------
+   Twenty-four items in one grid is a list; three labelled shelves with a line
+   saying what each is for is a shop. */
+.shelf__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem; letter-spacing: 0.05em;
+  margin: 1.3rem 0 0.15rem;
+}
+.shelf__title:first-of-type { margin-top: 0.9rem; }
+.shelf__note { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.55rem; }
+
+/* What an item does to the odds, pulled out of its prose so it can be read
+   without reading. */
+.ware__effect {
+  /* Its own line: inline, it ran straight into the first word of the
+     description and read as part of the sentence. */
+  display: block;
+  margin: 0.2rem 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--success);
+}
+
+/* Kit whose machine is standing on the floor the lift is going to tonight.
+   With twelve pieces of kit and five machines dealt, this is the difference
+   between a shop and a shelf of guesses. */
+.ware__tonight {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 0.25rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-body); font-weight: 700;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* How far along a repeatable ticket perk is. */
+.ware__track { display: flex; gap: 0.22rem; align-items: center; margin: 0.2rem 0 0.15rem; }
+.pip {
+  width: 0.5rem; height: 0.5rem; border-radius: 99px;
+  border: 1px solid var(--line-strong); background: transparent;
+}
+.pip--on { background: var(--accent); border-color: var(--accent); }
+.pipnum { font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent); }
+
 .money { font-variant-numeric: tabular-nums; line-height: 1.05; }
 .money--bank {
   font-family: var(--font-display);

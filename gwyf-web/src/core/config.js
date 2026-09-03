@@ -99,46 +99,103 @@
      So the decision the game is actually about: spend the bank on kit and be
      poorer tonight but ahead of the house tomorrow, or keep it and stay level
      with a machine that is quietly beating you. */
+  /* Three shelves, so the shop is readable at a glance.
+
+     `kit` moves the odds on a named machine and is the engine of a run.
+     `angle` changes a rule -- time, information, what the debt costs, what the
+     pit notices. `risk` is the one shelf where the item is a bad idea and says
+     so. A single undifferentiated grid of twenty-four things is a list, not a
+     decision. */
   const ITEMS = [
-    { id: 'rabbitsfoot', name: "Rabbit's Foot", price: 220, icon: '🐇',
+    { id: 'rabbitsfoot', tier: 'kit', name: "Rabbit's Foot", price: 220, icon: '🐇',
       edge: { all: 0.02 },
       desc: 'Every payout in the building pays 2% more. Small, permanent, boring, good.' },
-    { id: 'luckycoin', name: 'Two-Headed Coin', price: 260, icon: '🪙',
+    { id: 'luckycoin', tier: 'kit', name: 'Two-Headed Coin', price: 260, icon: '🪙',
       edge: { coinflip: 0.06 },
       desc: 'The coin toss comes up your way 55% of the time, and pays 6% more when it does.' },
-    { id: 'loadeddice', name: 'Loaded Dice', price: 280, icon: '🎲',
+    { id: 'loadeddice', tier: 'kit', name: 'Loaded Dice', price: 280, icon: '🎲',
       edge: { dice: 0.07 },
       desc: 'One losing dice roll per day is quietly rolled again — worth about 7% on the dice.' },
-    { id: 'markeddeck', name: 'Marked Deck', price: 380, icon: '🃏',
+    { id: 'markeddeck', tier: 'kit', name: 'Marked Deck', price: 380, icon: '🃏',
       edge: { highlow: 0.08, blackjack: 0.05 },
       desc: "Card games show you the next card's colour: 8% on High-Low, 5% on blackjack." },
-    { id: 'magnet', name: 'Pocket Magnet', price: 320, icon: '🧲',
+    { id: 'magnet', tier: 'kit', name: 'Pocket Magnet', price: 320, icon: '🧲',
       edge: { plinko: 0.07 },
       desc: 'Plinko balls drift one peg outward, where the money is. Worth 7% on the board.' },
-    { id: 'stopwatch', name: 'Fixed Stopwatch', price: 550, icon: '⏱️',
+    { id: 'stopwatch', tier: 'angle', name: 'Fixed Stopwatch', price: 550, icon: '⏱️',
       desc: 'Adds 45 seconds to every day. The shark has not noticed yet.' },
-    { id: 'staticcling', name: 'Static Cling', price: 420, icon: '⚡',
+    { id: 'staticcling', tier: 'kit', name: 'Static Cling', price: 420, icon: '⚡',
       edge: { roulette: 0.07 },
       desc: 'A roulette bet that misses by one pocket is paid as if it hit. Worth 7% at the wheel.' },
-    { id: 'insurance', name: 'Insurance Policy', price: 700, icon: '📄',
+    { id: 'insurance', tier: 'angle', name: 'Insurance Policy', price: 700, icon: '📄',
       desc: 'Refunds half of your single largest loss each day. Read the small print.' },
-    { id: 'coldread', name: 'Cold Read', price: 750, icon: '👁️',
+    { id: 'coldread', tier: 'angle', name: 'Cold Read', price: 750, icon: '👁️',
       desc: 'You see what a friend is about to bet before they bet it.' },
-    { id: 'skimmer', name: 'Chip Skimmer', price: 800, icon: '🪝',
+    { id: 'skimmer', tier: 'angle', name: 'Chip Skimmer', price: 800, icon: '🪝',
       desc: 'Skims $25 into the bank every time a friend plays anything.' },
-    { id: 'secondwind', name: 'Second Wind', price: 560, icon: '🔁',
+    { id: 'secondwind', tier: 'kit', name: 'Second Wind', price: 560, icon: '🔁',
       edge: { slots: 0.09, crash: 0.05 },
       desc: 'A losing spin gets spun again, free: 9% on the drums, 5% on the climb.' },
-    { id: 'crowbar', name: 'Crowbar', price: 1200, icon: '🔧',
+    { id: 'crowbar', tier: 'angle', name: 'Crowbar', price: 1200, icon: '🔧',
       desc: 'Opens the next floor up for the rest of today, whatever the bank says.' },
-    { id: 'repellent', name: 'Shark Repellent', price: 1500, icon: '🦈',
+    { id: 'repellent', tier: 'angle', name: 'Shark Repellent', price: 1500, icon: '🦈',
       desc: 'Daily interest on the debt drops from 8% to 5%. Permanently.' },
-    { id: 'earplugs', name: 'Wax Earplugs', price: 300, icon: '🕯️',
+    { id: 'earplugs', tier: 'angle', name: 'Wax Earplugs', price: 300, icon: '🕯️',
       desc: 'Your friends can no longer talk you into a bet you did not choose.' },
-    { id: 'ducttape', name: 'Duct Tape', price: 250, icon: '🩹',
+    { id: 'ducttape', tier: 'angle', name: 'Duct Tape', price: 250, icon: '🩹',
       desc: 'The next time the shark takes something, it takes this instead.' },
-    { id: 'cursedchip', name: 'Cursed Chip', price: 100, icon: '💀',
+    { id: 'cursedchip', tier: 'risk', name: 'Cursed Chip', price: 100, icon: '💀',
       desc: 'Every win doubles. Every loss doubles. There is no way to put it down.' },
+
+    /* Kit for the machines the first pass left out, so that a floor's whole
+       hand can be got at rather than two of it. Same rule as the rest: an item
+       names a machine and a percentage, and `edgeFor` is the only thing that
+       applies it. */
+    { id: 'weightedduck', tier: 'kit', name: 'Weighted Duck', price: 300, icon: '🦆',
+      edge: { duckrace: 0.08 },
+      desc: 'One duck sits a little lower in the water. Worth 8% at the race.' },
+    { id: 'wheelpeg', tier: 'kit', name: 'Bent Peg', price: 340, icon: '🎡',
+      edge: { wheel: 0.06 },
+      desc: 'One peg on the big wheel is not quite straight. Worth 6% on it.' },
+    { id: 'steadyhand', tier: 'kit', name: 'Steady Hand', price: 300, icon: '🫱',
+      edge: { cups: 0.09 },
+      desc: 'You can follow the ball, mostly. Worth 9% at the cups.' },
+    { id: 'foilcoat', tier: 'kit', name: 'Foil Coating', price: 260, icon: '✨',
+      edge: { scratcher: 0.06 },
+      desc: 'You can read a panel before you scratch it. Worth 6% a card.' },
+    { id: 'markedbacks', tier: 'kit', name: 'Marked Backs', price: 280, icon: '🂠',
+      edge: { war: 0.05 },
+      desc: 'You know roughly what the dealer is holding. Worth 5% at War.' },
+
+    /* Kit for the top of the building.
+
+       The upper floors had none, so a careful player who got that far had
+       nothing up there worth playing -- simulated, days ten to twelve were
+       spent standing on the Penthouse carpet betting nothing at all, because
+       every machine on it was still taking a cut. Kit now covers all sixteen
+       machines, which is also a cleaner thing to say about the shop than
+       "twelve of them". */
+    { id: 'detector', tier: 'kit', name: 'Coat-Sleeve Detector', price: 640, icon: '🧭',
+      edge: { mines: 0.07 },
+      desc: 'It clicks, very quietly, near the ones you should not dig. Worth 7% at the field.' },
+    { id: 'chalk', tier: 'kit', name: 'Climber’s Chalk', price: 580, icon: '🧗',
+      edge: { ladder: 0.06 },
+      desc: 'The rungs hold a little better than they are meant to. Worth 6% on the climb.' },
+    { id: 'spentround', tier: 'kit', name: 'A Spent Round', price: 820, icon: '🔩',
+      edge: { chamber: 0.06 },
+      desc: 'One of the chambers has already been used. Nobody checks. Worth 6% at the wheel.' },
+
+    /* And three that change a rule rather than a payout, because a shop of
+       nothing but percentages is a shop with one decision in it. */
+    { id: 'compcard', tier: 'angle', name: 'Comp Card', price: 620, icon: '💳',
+      desc: 'The house comps you double: 4% of every stake back instead of 2%, '
+          + 'win or lose, on every machine in the building.' },
+    { id: 'managersear', tier: 'angle', name: 'The Manager’s Ear', price: 780, icon: '👂',
+      desc: 'The pit takes a third longer to notice you. Tables you are winning '
+          + 'at stay open, which is most of what stops a good night ending early.' },
+    { id: 'burnerphone', tier: 'angle', name: 'Burner Phone', price: 540, icon: '📱',
+      desc: 'Somebody texts you what the floor is about to do, a few seconds '
+          + 'before it does it.' },
   ];
 
   /* Tickets are the slow currency: they persist across a wipe, so a run that
@@ -146,6 +203,14 @@
   const TICKET_SHOP = [
     { id: 'seedmoney', name: 'Seed Money', cost: 3, repeat: true,
       desc: 'Start every run with another $500 in the account.' },
+    { id: 'deeperpockets', name: 'Deeper Pockets', cost: 4, repeat: true, max: 3,
+      desc: 'Every table in the building will take a bet half again as large.' },
+    { id: 'friendlyshark', name: 'A Word With Him', cost: 5, repeat: true, max: 3,
+      desc: 'A point off the daily interest. Permanently, and he does not mention it.' },
+    { id: 'luckystart', name: 'Something In Your Pocket', cost: 4, repeat: false,
+      desc: 'Every run starts with one piece of kit already in your coat.' },
+    { id: 'earlybird', name: 'Known Face', cost: 6, repeat: false,
+      desc: 'The lift takes you one floor higher from day one. They know you now.' },
     { id: 'extrashout', name: 'Louder Voice', cost: 2, repeat: true, max: 3,
       desc: 'One more shout per day to talk a friend off a cliff.' },
     { id: 'prosthetic', name: 'Prosthetic', cost: 4, repeat: true,
@@ -204,6 +269,13 @@
      slowly and being able to hold your ground while you save for the next
      item. */
   const COMPS = 0.02;
+
+  /* What the house actually comps this player. The card doubles it, and this is
+     the one function that decides, so the odds panel and the settlement cannot
+     disagree about it. */
+  function compsFor(has) {
+    return has('compcard') ? COMPS * 2 : COMPS;
+  }
 
   /* What the shark fronts you when you are cleaned out.
 
@@ -289,7 +361,7 @@
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);

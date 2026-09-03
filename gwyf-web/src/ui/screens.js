@@ -382,33 +382,106 @@
       let body = '';
 
       if (tab === 'items') {
-        body = '<div class="wares">' + C.ITEMS.map((item) => {
-          const waiting = (s.pendingItems || []).indexOf(item.id) >= 0;
-          const owned = shell.store.has(item.id) || waiting;
-          const can = !owned && s.bank >= item.price;
-          return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
-            + (can ? '' : ' disabled') + ' data-item="' + item.id + '">'
-            + '<span class="ware__icon">' + item.icon + '</span>'
-            + '<span><span class="ware__name">' + esc(item.name)
-            + '<span class="ware__price">'
-            + (waiting ? 'on the shelf' : owned ? 'owned' : money(item.price)) + '</span></span>'
-            + '<span class="ware__desc">' + esc(item.desc) + '</span></span></button>';
-        }).join('') + '</div>';
+        /* Grouped by shelf, cheapest first, with what a thing does to the odds
+           printed as a number rather than left in the prose. A shopper wants
+           to know two things -- can I afford it and what does it change -- and
+           the flat grid answered neither without reading twenty-four
+           paragraphs. */
+        const SHELVES = [
+          { id: 'kit', title: 'Kit',
+            note: 'Moves the odds on one machine. This is what a run is built on: '
+                + 'every table here takes a cut, and kit is the only thing that '
+                + 'takes it back.' },
+          { id: 'angle', title: 'Angles',
+            note: 'Changes a rule rather than a payout — the clock, the debt, what '
+                + 'the pit notices, what you get told.' },
+          { id: 'risk', title: 'Bad Ideas',
+            note: 'It says on the label.' },
+        ];
+        const owned = C.ITEMS.filter((i) => shell.store.has(i.id)
+          || (s.pendingItems || []).indexOf(i.id) >= 0).length;
+
+        /* Which machines are actually out tonight.
+
+           Floors deal a hand from a pool, so kit for a machine that is not
+           standing tonight buys nothing tonight -- and with twelve pieces of
+           kit and five machines dealt, buying cheapest-first is now a way to
+           spend a bank on tables you will not see. The shop has to say which
+           is which, or it is asking for a decision it withheld the
+           information for. */
+        const open = shell.store.unlockedFloors().filter((f) => f.open);
+        const goingTo = open.length ? open[open.length - 1].index : 0;
+        const tonight = new Set(C.gamesOn(goingTo, s.seed));
+        const floorName = (C.FLOORS[goingTo] || {}).name || '';
+
+        body = '<p class="sheet__lead">You are carrying ' + owned + ' of '
+          + C.ITEMS.length + '. Anything bought goes on the shelf by the door — '
+          + 'you have to pick it up before you get in the limo.</p>'
+          + '<p class="shelf__note">Tonight the lift goes to <b>' + esc(floorName)
+          + '</b>, and what is standing on it is '
+          + Array.from(tonight).map((g) => esc((GWGames.get(g) || { name: g }).name))
+              .join(', ') + '. Kit for anything else will keep.</p>';
+
+        for (const shelf of SHELVES) {
+          const rows = C.ITEMS.filter((i) => (i.tier || 'angle') === shelf.id)
+            .sort((a, b) => a.price - b.price)
+            .map((item) => {
+              const waiting = (s.pendingItems || []).indexOf(item.id) >= 0;
+              const have = shell.store.has(item.id) || waiting;
+              const can = !have && s.bank >= item.price;
+              // What it does to the odds, from the same table the machines read.
+              const effect = item.edge ? Object.keys(item.edge).map((g) => {
+                const name = g === 'all' ? 'everything' : (GWGames.get(g) || { name: g }).name;
+                return '+' + Math.round(item.edge[g] * 100) + '% ' + name;
+              }).join(' · ') : '';
+              // Whether any machine it names is out tonight.
+              const useTonight = !!item.edge && Object.keys(item.edge)
+                .some((g) => g === 'all' || tonight.has(g));
+              return '<button class="ware' + (have ? ' is-owned' : '') + '"'
+                + (can ? '' : ' disabled') + ' data-item="' + item.id + '">'
+                + '<span class="ware__icon">' + item.icon + '</span>'
+                + '<span><span class="ware__name">' + esc(item.name)
+                + '<span class="ware__price">'
+                + (waiting ? 'on the shelf' : have ? 'carrying' : money(item.price))
+                + '</span></span>'
+                + (effect ? '<span class="ware__effect">' + esc(effect)
+                    + (useTonight ? '<b class="ware__tonight">on the floor tonight</b>' : '')
+                    + '</span>' : '')
+                + '<span class="ware__desc">' + esc(item.desc) + '</span></span></button>';
+            }).join('');
+          body += '<h3 class="shelf__title">' + shelf.title + '</h3>'
+                + '<p class="shelf__note">' + esc(shelf.note) + '</p>'
+                + '<div class="wares">' + rows + '</div>';
+        }
       } else if (tab === 'tickets') {
-        body = '<div class="wares">' + C.TICKET_SHOP.map((perk) => {
-          const owned = meta.perks[perk.id] || 0;
-          const maxed = (!perk.repeat && owned) || (perk.max && owned >= perk.max);
-          const can = !maxed && meta.tickets >= perk.cost;
-          return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
-            + (can ? '' : ' disabled') + ' data-perk="' + perk.id + '">'
-            + '<span class="ware__icon">🎟️</span>'
-            + '<span><span class="ware__name">' + esc(perk.name)
-            + '<span class="ware__price">' + (maxed ? 'maxed' : perk.cost + ' tickets') + '</span></span>'
-            + '<span class="ware__desc">' + esc(perk.desc)
-            + (owned ? ' <b>(owned ×' + owned + ')</b>' : '') + '</span></span></button>';
-        }).join('') + '</div>'
-        + '<p class="odds__foot" style="margin-top:0.8rem">Tickets survive a wipe. They are the only '
-        + 'thing here that does.</p>';
+        const spent = C.TICKET_SHOP.reduce((n, p) =>
+          n + (meta.perks[p.id] || 0) * p.cost, 0);
+        body = '<p class="sheet__lead">You have <b>' + meta.tickets + '</b> '
+          + (meta.tickets === 1 ? 'ticket' : 'tickets')
+          + ' and have spent ' + spent + '. Where the money goes when a run ends, '
+          + 'these do not — they are the only thing in the building that survives it.</p>'
+          + '<div class="wares">' + C.TICKET_SHOP.map((perk) => {
+            const owned = meta.perks[perk.id] || 0;
+            const maxed = (!perk.repeat && owned) || (perk.max && owned >= perk.max);
+            const can = !maxed && meta.tickets >= perk.cost;
+            // Where you are on a repeatable one, rather than a bare count.
+            const track = perk.max
+              ? Array.from({ length: perk.max }, (_, i) =>
+                  '<i class="pip' + (i < owned ? ' pip--on' : '') + '"></i>').join('')
+              : perk.repeat ? (owned ? '<span class="pipnum">×' + owned + '</span>' : '')
+              : '<i class="pip' + (owned ? ' pip--on' : '') + '"></i>';
+            return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
+              + (can ? '' : ' disabled') + ' data-perk="' + perk.id + '">'
+              + '<span class="ware__icon">\u{1F39F}\u{FE0F}</span>'
+              + '<span><span class="ware__name">' + esc(perk.name)
+              + '<span class="ware__price">'
+              + (maxed ? 'as far as it goes' : perk.cost + (perk.cost === 1 ? ' ticket' : ' tickets'))
+              + '</span></span>'
+              + (track ? '<span class="ware__track">' + track + '</span>' : '')
+              + '<span class="ware__desc">' + esc(perk.desc) + '</span></span></button>';
+          }).join('') + '</div>'
+          + '<p class="odds__foot" style="margin-top:0.8rem">Tickets come off the quota, '
+          + 'off the shark’s challenges, and off the top of the crates in the yard.</p>';
       } else {
         body = '<div class="wares">' + C.BODY_PARTS.map((part) => {
           const gone = shell.store.sold(part.id);
@@ -865,7 +938,12 @@
     }
     s.challenge = null;
 
-    const rate = shell.store.has('repellent') ? 0.05 : C.INTEREST;
+    /* What the shark charges tonight. The repellent takes it down, and every
+       word you have had with him takes a point off permanently -- both applied
+       here, which is the only place interest is worked out. */
+    const words = (meta.perks.friendlyshark || 0) * 0.01;
+    const rate = Math.max(0.01,
+      (shell.store.has('repellent') ? C.INTEREST * 0.6 : C.INTEREST) - words);
     const interest = Math.round(s.debt * rate);
     s.debt += interest;
 

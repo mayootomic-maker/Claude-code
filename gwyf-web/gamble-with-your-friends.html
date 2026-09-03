@@ -1386,6 +1386,51 @@ button:disabled { cursor: not-allowed; }
   background: var(--success); color: #06210f; font-weight: 700;
 }
 
+/* --- the shop's shelves --------------------------------------------------
+   Twenty-four items in one grid is a list; three labelled shelves with a line
+   saying what each is for is a shop. */
+.shelf__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem; letter-spacing: 0.05em;
+  margin: 1.3rem 0 0.15rem;
+}
+.shelf__title:first-of-type { margin-top: 0.9rem; }
+.shelf__note { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.55rem; }
+
+/* What an item does to the odds, pulled out of its prose so it can be read
+   without reading. */
+.ware__effect {
+  /* Its own line: inline, it ran straight into the first word of the
+     description and read as part of the sentence. */
+  display: block;
+  margin: 0.2rem 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--success);
+}
+
+/* Kit whose machine is standing on the floor the lift is going to tonight.
+   With twelve pieces of kit and five machines dealt, this is the difference
+   between a shop and a shelf of guesses. */
+.ware__tonight {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 0.25rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-body); font-weight: 700;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* How far along a repeatable ticket perk is. */
+.ware__track { display: flex; gap: 0.22rem; align-items: center; margin: 0.2rem 0 0.15rem; }
+.pip {
+  width: 0.5rem; height: 0.5rem; border-radius: 99px;
+  border: 1px solid var(--line-strong); background: transparent;
+}
+.pip--on { background: var(--accent); border-color: var(--accent); }
+.pipnum { font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent); }
+
 .money { font-variant-numeric: tabular-nums; line-height: 1.05; }
 .money--bank {
   font-family: var(--font-display);
@@ -1952,46 +1997,103 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      So the decision the game is actually about: spend the bank on kit and be
      poorer tonight but ahead of the house tomorrow, or keep it and stay level
      with a machine that is quietly beating you. */
+  /* Three shelves, so the shop is readable at a glance.
+
+     `kit` moves the odds on a named machine and is the engine of a run.
+     `angle` changes a rule -- time, information, what the debt costs, what the
+     pit notices. `risk` is the one shelf where the item is a bad idea and says
+     so. A single undifferentiated grid of twenty-four things is a list, not a
+     decision. */
   const ITEMS = [
-    { id: 'rabbitsfoot', name: "Rabbit's Foot", price: 220, icon: '🐇',
+    { id: 'rabbitsfoot', tier: 'kit', name: "Rabbit's Foot", price: 220, icon: '🐇',
       edge: { all: 0.02 },
       desc: 'Every payout in the building pays 2% more. Small, permanent, boring, good.' },
-    { id: 'luckycoin', name: 'Two-Headed Coin', price: 260, icon: '🪙',
+    { id: 'luckycoin', tier: 'kit', name: 'Two-Headed Coin', price: 260, icon: '🪙',
       edge: { coinflip: 0.06 },
       desc: 'The coin toss comes up your way 55% of the time, and pays 6% more when it does.' },
-    { id: 'loadeddice', name: 'Loaded Dice', price: 280, icon: '🎲',
+    { id: 'loadeddice', tier: 'kit', name: 'Loaded Dice', price: 280, icon: '🎲',
       edge: { dice: 0.07 },
       desc: 'One losing dice roll per day is quietly rolled again — worth about 7% on the dice.' },
-    { id: 'markeddeck', name: 'Marked Deck', price: 380, icon: '🃏',
+    { id: 'markeddeck', tier: 'kit', name: 'Marked Deck', price: 380, icon: '🃏',
       edge: { highlow: 0.08, blackjack: 0.05 },
       desc: "Card games show you the next card's colour: 8% on High-Low, 5% on blackjack." },
-    { id: 'magnet', name: 'Pocket Magnet', price: 320, icon: '🧲',
+    { id: 'magnet', tier: 'kit', name: 'Pocket Magnet', price: 320, icon: '🧲',
       edge: { plinko: 0.07 },
       desc: 'Plinko balls drift one peg outward, where the money is. Worth 7% on the board.' },
-    { id: 'stopwatch', name: 'Fixed Stopwatch', price: 550, icon: '⏱️',
+    { id: 'stopwatch', tier: 'angle', name: 'Fixed Stopwatch', price: 550, icon: '⏱️',
       desc: 'Adds 45 seconds to every day. The shark has not noticed yet.' },
-    { id: 'staticcling', name: 'Static Cling', price: 420, icon: '⚡',
+    { id: 'staticcling', tier: 'kit', name: 'Static Cling', price: 420, icon: '⚡',
       edge: { roulette: 0.07 },
       desc: 'A roulette bet that misses by one pocket is paid as if it hit. Worth 7% at the wheel.' },
-    { id: 'insurance', name: 'Insurance Policy', price: 700, icon: '📄',
+    { id: 'insurance', tier: 'angle', name: 'Insurance Policy', price: 700, icon: '📄',
       desc: 'Refunds half of your single largest loss each day. Read the small print.' },
-    { id: 'coldread', name: 'Cold Read', price: 750, icon: '👁️',
+    { id: 'coldread', tier: 'angle', name: 'Cold Read', price: 750, icon: '👁️',
       desc: 'You see what a friend is about to bet before they bet it.' },
-    { id: 'skimmer', name: 'Chip Skimmer', price: 800, icon: '🪝',
+    { id: 'skimmer', tier: 'angle', name: 'Chip Skimmer', price: 800, icon: '🪝',
       desc: 'Skims $25 into the bank every time a friend plays anything.' },
-    { id: 'secondwind', name: 'Second Wind', price: 560, icon: '🔁',
+    { id: 'secondwind', tier: 'kit', name: 'Second Wind', price: 560, icon: '🔁',
       edge: { slots: 0.09, crash: 0.05 },
       desc: 'A losing spin gets spun again, free: 9% on the drums, 5% on the climb.' },
-    { id: 'crowbar', name: 'Crowbar', price: 1200, icon: '🔧',
+    { id: 'crowbar', tier: 'angle', name: 'Crowbar', price: 1200, icon: '🔧',
       desc: 'Opens the next floor up for the rest of today, whatever the bank says.' },
-    { id: 'repellent', name: 'Shark Repellent', price: 1500, icon: '🦈',
+    { id: 'repellent', tier: 'angle', name: 'Shark Repellent', price: 1500, icon: '🦈',
       desc: 'Daily interest on the debt drops from 8% to 5%. Permanently.' },
-    { id: 'earplugs', name: 'Wax Earplugs', price: 300, icon: '🕯️',
+    { id: 'earplugs', tier: 'angle', name: 'Wax Earplugs', price: 300, icon: '🕯️',
       desc: 'Your friends can no longer talk you into a bet you did not choose.' },
-    { id: 'ducttape', name: 'Duct Tape', price: 250, icon: '🩹',
+    { id: 'ducttape', tier: 'angle', name: 'Duct Tape', price: 250, icon: '🩹',
       desc: 'The next time the shark takes something, it takes this instead.' },
-    { id: 'cursedchip', name: 'Cursed Chip', price: 100, icon: '💀',
+    { id: 'cursedchip', tier: 'risk', name: 'Cursed Chip', price: 100, icon: '💀',
       desc: 'Every win doubles. Every loss doubles. There is no way to put it down.' },
+
+    /* Kit for the machines the first pass left out, so that a floor's whole
+       hand can be got at rather than two of it. Same rule as the rest: an item
+       names a machine and a percentage, and `edgeFor` is the only thing that
+       applies it. */
+    { id: 'weightedduck', tier: 'kit', name: 'Weighted Duck', price: 300, icon: '🦆',
+      edge: { duckrace: 0.08 },
+      desc: 'One duck sits a little lower in the water. Worth 8% at the race.' },
+    { id: 'wheelpeg', tier: 'kit', name: 'Bent Peg', price: 340, icon: '🎡',
+      edge: { wheel: 0.06 },
+      desc: 'One peg on the big wheel is not quite straight. Worth 6% on it.' },
+    { id: 'steadyhand', tier: 'kit', name: 'Steady Hand', price: 300, icon: '🫱',
+      edge: { cups: 0.09 },
+      desc: 'You can follow the ball, mostly. Worth 9% at the cups.' },
+    { id: 'foilcoat', tier: 'kit', name: 'Foil Coating', price: 260, icon: '✨',
+      edge: { scratcher: 0.06 },
+      desc: 'You can read a panel before you scratch it. Worth 6% a card.' },
+    { id: 'markedbacks', tier: 'kit', name: 'Marked Backs', price: 280, icon: '🂠',
+      edge: { war: 0.05 },
+      desc: 'You know roughly what the dealer is holding. Worth 5% at War.' },
+
+    /* Kit for the top of the building.
+
+       The upper floors had none, so a careful player who got that far had
+       nothing up there worth playing -- simulated, days ten to twelve were
+       spent standing on the Penthouse carpet betting nothing at all, because
+       every machine on it was still taking a cut. Kit now covers all sixteen
+       machines, which is also a cleaner thing to say about the shop than
+       "twelve of them". */
+    { id: 'detector', tier: 'kit', name: 'Coat-Sleeve Detector', price: 640, icon: '🧭',
+      edge: { mines: 0.07 },
+      desc: 'It clicks, very quietly, near the ones you should not dig. Worth 7% at the field.' },
+    { id: 'chalk', tier: 'kit', name: 'Climber’s Chalk', price: 580, icon: '🧗',
+      edge: { ladder: 0.06 },
+      desc: 'The rungs hold a little better than they are meant to. Worth 6% on the climb.' },
+    { id: 'spentround', tier: 'kit', name: 'A Spent Round', price: 820, icon: '🔩',
+      edge: { chamber: 0.06 },
+      desc: 'One of the chambers has already been used. Nobody checks. Worth 6% at the wheel.' },
+
+    /* And three that change a rule rather than a payout, because a shop of
+       nothing but percentages is a shop with one decision in it. */
+    { id: 'compcard', tier: 'angle', name: 'Comp Card', price: 620, icon: '💳',
+      desc: 'The house comps you double: 4% of every stake back instead of 2%, '
+          + 'win or lose, on every machine in the building.' },
+    { id: 'managersear', tier: 'angle', name: 'The Manager’s Ear', price: 780, icon: '👂',
+      desc: 'The pit takes a third longer to notice you. Tables you are winning '
+          + 'at stay open, which is most of what stops a good night ending early.' },
+    { id: 'burnerphone', tier: 'angle', name: 'Burner Phone', price: 540, icon: '📱',
+      desc: 'Somebody texts you what the floor is about to do, a few seconds '
+          + 'before it does it.' },
   ];
 
   /* Tickets are the slow currency: they persist across a wipe, so a run that
@@ -1999,6 +2101,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const TICKET_SHOP = [
     { id: 'seedmoney', name: 'Seed Money', cost: 3, repeat: true,
       desc: 'Start every run with another $500 in the account.' },
+    { id: 'deeperpockets', name: 'Deeper Pockets', cost: 4, repeat: true, max: 3,
+      desc: 'Every table in the building will take a bet half again as large.' },
+    { id: 'friendlyshark', name: 'A Word With Him', cost: 5, repeat: true, max: 3,
+      desc: 'A point off the daily interest. Permanently, and he does not mention it.' },
+    { id: 'luckystart', name: 'Something In Your Pocket', cost: 4, repeat: false,
+      desc: 'Every run starts with one piece of kit already in your coat.' },
+    { id: 'earlybird', name: 'Known Face', cost: 6, repeat: false,
+      desc: 'The lift takes you one floor higher from day one. They know you now.' },
     { id: 'extrashout', name: 'Louder Voice', cost: 2, repeat: true, max: 3,
       desc: 'One more shout per day to talk a friend off a cliff.' },
     { id: 'prosthetic', name: 'Prosthetic', cost: 4, repeat: true,
@@ -2057,6 +2167,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      slowly and being able to hold your ground while you save for the next
      item. */
   const COMPS = 0.02;
+
+  /* What the house actually comps this player. The card doubles it, and this is
+     the one function that decides, so the odds panel and the settlement cannot
+     disagree about it. */
+  function compsFor(has) {
+    return has('compcard') ? COMPS * 2 : COMPS;
+  }
 
   /* What the shark fronts you when you are cleaned out.
 
@@ -2142,7 +2259,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);
@@ -2219,11 +2336,23 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       paidToday: 0,
       strikes: 0,
       timeLeft: C.DAY_SECONDS,
-      floor: 0,
-      highestFloor: 0,
+      /* Known Face starts you one floor up, and the lift keeps stopping there
+         because `highestFloor` is what it remembers. */
+      floor: perks.earlybird ? 1 : 0,
+      highestFloor: perks.earlybird ? 1 : 0,
       crowbarFloor: -1,
       game: null,
-      items: {},
+      /* Something In Your Pocket: one piece of kit already owned on day one.
+         Drawn from the run's seed rather than Math.random, so a run that starts
+         with the two-headed coin starts with it again after a reload. Only kit
+         -- an item that names a machine -- because opening with the crowbar or
+         the shark repellent would be a different perk. */
+      items: (() => {
+        if (!perks.luckystart) return {};
+        const kit = C.ITEMS.filter((i) => i.edge && !i.edge.all);
+        const pick = kit[(seed >>> 3) % kit.length];
+        return pick ? { [pick.id]: 1 } : {};
+      })(),
       sold: {},
       shouts: C.SHOUTS_PER_DAY + (perks.extrashout || 0),
       dailyUsed: {},
@@ -2269,8 +2398,19 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return true;
   };
 
+  /* What this floor will take, for this player.
+
+     Deeper Pockets raises the ceiling by half each time it is bought, which is
+     the only ticket perk that changes what a table will accept. The floor's own
+     numbers are never mutated -- they are read straight out of the config by
+     the odds panel and the simulator -- so this returns a copy. */
   Store.prototype.floorLimits = function () {
-    return C.FLOORS[this.s.floor];
+    const def = C.FLOORS[this.s.floor];
+    const deeper = this.meta.perks.deeperpockets || 0;
+    if (!deeper) return def;
+    return Object.assign({}, def, {
+      maxBet: Math.round(def.maxBet * (1 + deeper * 0.5) / 25) * 25,
+    });
   };
 
   /* The lift's stop list.
@@ -2331,8 +2471,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     if (gross > stake) gross *= 1 + C.edgeFor(game, (id) => this.has(id));
     if (s.mods.neverLose && gross < stake) gross = stake * 2;
 
-    /* Comps, win or lose. Stated on every odds panel; see GWConfig.COMPS. */
-    const comps = stake * C.COMPS;
+    /* Comps, win or lose. Stated on every odds panel; the rate is whatever
+       GWConfig says this player is comped, which the Comp Card doubles. */
+    const comps = stake * C.compsFor((id) => this.has(id));
 
     let net = gross - stake;
     // The cursed chip is not a bonus. It doubles the result in whichever
@@ -2726,6 +2867,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       // from the man in the black suit.
       if (state.bossNear === id) gain *= 2;
       if (state.floor >= HOT_FLOOR) gain *= 1.6;
+      /* The Manager's Ear. A third longer before the pit notices, which is
+         mostly a way of buying more hands at a table your kit has made
+         profitable -- and it is the only item that touches this system, so
+         this is the only place it applies. */
+      if (store.has('managersear')) gain *= 0.65;
       m.heat = Math.min(1, m.heat + gain);
       if (m.heat >= CLOSED && m.shutFor <= 0) {
         m.shutFor = SHUT_FOR;
@@ -2827,6 +2973,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   'use strict';
 
   const FIRST = 26;             // seconds into a day before anything happens
+  const WARNING = 6;            // how long before one the burner phone rings
   const GAP = [40, 70];         // and between one and the next
 
   function create(store, hooks) {
@@ -2939,16 +3086,30 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
 
       state.next -= dt;
+
+      /* The Burner Phone. A few seconds' warning of what the floor is about to
+         do, which is worth having because most of these want you somewhere
+         else when they land: a sweep to be away from, a hot table to be at.
+         Announced once per event rather than every frame. */
+      if (state.next <= WARNING && !state.active && !state.warned
+          && store.has('burnerphone') && s.timeLeft > 20) {
+        state.warned = true;
+        store.say('Your phone buzzes. Something is about to happen on this floor.', 'warn');
+        if (hooks.onWarning) hooks.onWarning();
+      }
+
       // Nothing new lands on top of something still running, and nothing lands
       // in the last few seconds of a day where it could not be acted on.
       if (state.next <= 0 && !state.active && s.timeLeft > 20) {
         state.next = GAP[0] + rng.next() * (GAP[1] - GAP[0]);
+        state.warned = false;
         fire();
       }
     }
 
     function newDay() {
       state.next = FIRST;
+      state.warned = false;
       state.active = null;
       state.hotTable = null;
       state.hotBonus = 1;
@@ -12723,33 +12884,106 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       let body = '';
 
       if (tab === 'items') {
-        body = '<div class="wares">' + C.ITEMS.map((item) => {
-          const waiting = (s.pendingItems || []).indexOf(item.id) >= 0;
-          const owned = shell.store.has(item.id) || waiting;
-          const can = !owned && s.bank >= item.price;
-          return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
-            + (can ? '' : ' disabled') + ' data-item="' + item.id + '">'
-            + '<span class="ware__icon">' + item.icon + '</span>'
-            + '<span><span class="ware__name">' + esc(item.name)
-            + '<span class="ware__price">'
-            + (waiting ? 'on the shelf' : owned ? 'owned' : money(item.price)) + '</span></span>'
-            + '<span class="ware__desc">' + esc(item.desc) + '</span></span></button>';
-        }).join('') + '</div>';
+        /* Grouped by shelf, cheapest first, with what a thing does to the odds
+           printed as a number rather than left in the prose. A shopper wants
+           to know two things -- can I afford it and what does it change -- and
+           the flat grid answered neither without reading twenty-four
+           paragraphs. */
+        const SHELVES = [
+          { id: 'kit', title: 'Kit',
+            note: 'Moves the odds on one machine. This is what a run is built on: '
+                + 'every table here takes a cut, and kit is the only thing that '
+                + 'takes it back.' },
+          { id: 'angle', title: 'Angles',
+            note: 'Changes a rule rather than a payout — the clock, the debt, what '
+                + 'the pit notices, what you get told.' },
+          { id: 'risk', title: 'Bad Ideas',
+            note: 'It says on the label.' },
+        ];
+        const owned = C.ITEMS.filter((i) => shell.store.has(i.id)
+          || (s.pendingItems || []).indexOf(i.id) >= 0).length;
+
+        /* Which machines are actually out tonight.
+
+           Floors deal a hand from a pool, so kit for a machine that is not
+           standing tonight buys nothing tonight -- and with twelve pieces of
+           kit and five machines dealt, buying cheapest-first is now a way to
+           spend a bank on tables you will not see. The shop has to say which
+           is which, or it is asking for a decision it withheld the
+           information for. */
+        const open = shell.store.unlockedFloors().filter((f) => f.open);
+        const goingTo = open.length ? open[open.length - 1].index : 0;
+        const tonight = new Set(C.gamesOn(goingTo, s.seed));
+        const floorName = (C.FLOORS[goingTo] || {}).name || '';
+
+        body = '<p class="sheet__lead">You are carrying ' + owned + ' of '
+          + C.ITEMS.length + '. Anything bought goes on the shelf by the door — '
+          + 'you have to pick it up before you get in the limo.</p>'
+          + '<p class="shelf__note">Tonight the lift goes to <b>' + esc(floorName)
+          + '</b>, and what is standing on it is '
+          + Array.from(tonight).map((g) => esc((GWGames.get(g) || { name: g }).name))
+              .join(', ') + '. Kit for anything else will keep.</p>';
+
+        for (const shelf of SHELVES) {
+          const rows = C.ITEMS.filter((i) => (i.tier || 'angle') === shelf.id)
+            .sort((a, b) => a.price - b.price)
+            .map((item) => {
+              const waiting = (s.pendingItems || []).indexOf(item.id) >= 0;
+              const have = shell.store.has(item.id) || waiting;
+              const can = !have && s.bank >= item.price;
+              // What it does to the odds, from the same table the machines read.
+              const effect = item.edge ? Object.keys(item.edge).map((g) => {
+                const name = g === 'all' ? 'everything' : (GWGames.get(g) || { name: g }).name;
+                return '+' + Math.round(item.edge[g] * 100) + '% ' + name;
+              }).join(' · ') : '';
+              // Whether any machine it names is out tonight.
+              const useTonight = !!item.edge && Object.keys(item.edge)
+                .some((g) => g === 'all' || tonight.has(g));
+              return '<button class="ware' + (have ? ' is-owned' : '') + '"'
+                + (can ? '' : ' disabled') + ' data-item="' + item.id + '">'
+                + '<span class="ware__icon">' + item.icon + '</span>'
+                + '<span><span class="ware__name">' + esc(item.name)
+                + '<span class="ware__price">'
+                + (waiting ? 'on the shelf' : have ? 'carrying' : money(item.price))
+                + '</span></span>'
+                + (effect ? '<span class="ware__effect">' + esc(effect)
+                    + (useTonight ? '<b class="ware__tonight">on the floor tonight</b>' : '')
+                    + '</span>' : '')
+                + '<span class="ware__desc">' + esc(item.desc) + '</span></span></button>';
+            }).join('');
+          body += '<h3 class="shelf__title">' + shelf.title + '</h3>'
+                + '<p class="shelf__note">' + esc(shelf.note) + '</p>'
+                + '<div class="wares">' + rows + '</div>';
+        }
       } else if (tab === 'tickets') {
-        body = '<div class="wares">' + C.TICKET_SHOP.map((perk) => {
-          const owned = meta.perks[perk.id] || 0;
-          const maxed = (!perk.repeat && owned) || (perk.max && owned >= perk.max);
-          const can = !maxed && meta.tickets >= perk.cost;
-          return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
-            + (can ? '' : ' disabled') + ' data-perk="' + perk.id + '">'
-            + '<span class="ware__icon">🎟️</span>'
-            + '<span><span class="ware__name">' + esc(perk.name)
-            + '<span class="ware__price">' + (maxed ? 'maxed' : perk.cost + ' tickets') + '</span></span>'
-            + '<span class="ware__desc">' + esc(perk.desc)
-            + (owned ? ' <b>(owned ×' + owned + ')</b>' : '') + '</span></span></button>';
-        }).join('') + '</div>'
-        + '<p class="odds__foot" style="margin-top:0.8rem">Tickets survive a wipe. They are the only '
-        + 'thing here that does.</p>';
+        const spent = C.TICKET_SHOP.reduce((n, p) =>
+          n + (meta.perks[p.id] || 0) * p.cost, 0);
+        body = '<p class="sheet__lead">You have <b>' + meta.tickets + '</b> '
+          + (meta.tickets === 1 ? 'ticket' : 'tickets')
+          + ' and have spent ' + spent + '. Where the money goes when a run ends, '
+          + 'these do not — they are the only thing in the building that survives it.</p>'
+          + '<div class="wares">' + C.TICKET_SHOP.map((perk) => {
+            const owned = meta.perks[perk.id] || 0;
+            const maxed = (!perk.repeat && owned) || (perk.max && owned >= perk.max);
+            const can = !maxed && meta.tickets >= perk.cost;
+            // Where you are on a repeatable one, rather than a bare count.
+            const track = perk.max
+              ? Array.from({ length: perk.max }, (_, i) =>
+                  '<i class="pip' + (i < owned ? ' pip--on' : '') + '"></i>').join('')
+              : perk.repeat ? (owned ? '<span class="pipnum">×' + owned + '</span>' : '')
+              : '<i class="pip' + (owned ? ' pip--on' : '') + '"></i>';
+            return '<button class="ware' + (owned ? ' is-owned' : '') + '"'
+              + (can ? '' : ' disabled') + ' data-perk="' + perk.id + '">'
+              + '<span class="ware__icon">\u{1F39F}\u{FE0F}</span>'
+              + '<span><span class="ware__name">' + esc(perk.name)
+              + '<span class="ware__price">'
+              + (maxed ? 'as far as it goes' : perk.cost + (perk.cost === 1 ? ' ticket' : ' tickets'))
+              + '</span></span>'
+              + (track ? '<span class="ware__track">' + track + '</span>' : '')
+              + '<span class="ware__desc">' + esc(perk.desc) + '</span></span></button>';
+          }).join('') + '</div>'
+          + '<p class="odds__foot" style="margin-top:0.8rem">Tickets come off the quota, '
+          + 'off the shark’s challenges, and off the top of the crates in the yard.</p>';
       } else {
         body = '<div class="wares">' + C.BODY_PARTS.map((part) => {
           const gone = shell.store.sold(part.id);
@@ -13206,7 +13440,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
     s.challenge = null;
 
-    const rate = shell.store.has('repellent') ? 0.05 : C.INTEREST;
+    /* What the shark charges tonight. The repellent takes it down, and every
+       word you have had with him takes a point off permanently -- both applied
+       here, which is the only place interest is worked out. */
+    const words = (meta.perks.friendlyshark || 0) * 0.01;
+    const rate = Math.max(0.01,
+      (shell.store.has('repellent') ? C.INTEREST * 0.6 : C.INTEREST) - words);
     const interest = Math.round(s.debt * rate);
     s.debt += interest;
 
@@ -15256,6 +15495,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       label: b.label, pays: b.pays, prob: b.prob,
     }));
     const kit = C.edgeFor(def.id, (id) => shell.store.has(id));
+    const comps = C.compsFor((id) => shell.store.has(id));
     let html = '<div class="odds__scroll"><table><thead><tr><th>Bet</th><th>Pays</th>'
              + '<th>Chance</th><th>House</th></tr></thead><tbody>';
     for (const row of rows) {
@@ -15268,7 +15508,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
          that is true of the building but false of the person reading it is
          worse than no table at all. */
       const pays = row.pays * (1 + kit);
-      const edge = 1 - (row.prob * pays + C.COMPS);
+      const edge = 1 - (row.prob * pays + comps);
       html += '<tr><td>' + esc(row.label) + '</td><td>×' + trim(pays)
             + (kit ? ' <span class="odds__kit">kit</span>' : '') + '</td><td>'
             + chance(row.prob) + '</td><td class="odds__edge'
@@ -15280,7 +15520,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';
-    html += ' The house pays back ' + (C.COMPS * 100).toFixed(1)
+    html += ' The house pays back ' + (comps * 100).toFixed(1)
           + '% of every stake in comps whether you win or lose, and that is in the column.';
     if (kit) {
       html += ' <b>Your kit adds ' + (kit * 100).toFixed(0) + '% to what this table pays you.</b>';

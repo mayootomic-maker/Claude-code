@@ -68,11 +68,23 @@
       paidToday: 0,
       strikes: 0,
       timeLeft: C.DAY_SECONDS,
-      floor: 0,
-      highestFloor: 0,
+      /* Known Face starts you one floor up, and the lift keeps stopping there
+         because `highestFloor` is what it remembers. */
+      floor: perks.earlybird ? 1 : 0,
+      highestFloor: perks.earlybird ? 1 : 0,
       crowbarFloor: -1,
       game: null,
-      items: {},
+      /* Something In Your Pocket: one piece of kit already owned on day one.
+         Drawn from the run's seed rather than Math.random, so a run that starts
+         with the two-headed coin starts with it again after a reload. Only kit
+         -- an item that names a machine -- because opening with the crowbar or
+         the shark repellent would be a different perk. */
+      items: (() => {
+        if (!perks.luckystart) return {};
+        const kit = C.ITEMS.filter((i) => i.edge && !i.edge.all);
+        const pick = kit[(seed >>> 3) % kit.length];
+        return pick ? { [pick.id]: 1 } : {};
+      })(),
       sold: {},
       shouts: C.SHOUTS_PER_DAY + (perks.extrashout || 0),
       dailyUsed: {},
@@ -118,8 +130,19 @@
     return true;
   };
 
+  /* What this floor will take, for this player.
+
+     Deeper Pockets raises the ceiling by half each time it is bought, which is
+     the only ticket perk that changes what a table will accept. The floor's own
+     numbers are never mutated -- they are read straight out of the config by
+     the odds panel and the simulator -- so this returns a copy. */
   Store.prototype.floorLimits = function () {
-    return C.FLOORS[this.s.floor];
+    const def = C.FLOORS[this.s.floor];
+    const deeper = this.meta.perks.deeperpockets || 0;
+    if (!deeper) return def;
+    return Object.assign({}, def, {
+      maxBet: Math.round(def.maxBet * (1 + deeper * 0.5) / 25) * 25,
+    });
   };
 
   /* The lift's stop list.
@@ -180,8 +203,9 @@
     if (gross > stake) gross *= 1 + C.edgeFor(game, (id) => this.has(id));
     if (s.mods.neverLose && gross < stake) gross = stake * 2;
 
-    /* Comps, win or lose. Stated on every odds panel; see GWConfig.COMPS. */
-    const comps = stake * C.COMPS;
+    /* Comps, win or lose. Stated on every odds panel; the rate is whatever
+       GWConfig says this player is comped, which the Comp Card doubles. */
+    const comps = stake * C.compsFor((id) => this.has(id));
 
     let net = gross - stake;
     // The cursed chip is not a bonus. It doubles the result in whichever

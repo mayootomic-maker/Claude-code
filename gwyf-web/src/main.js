@@ -1498,6 +1498,7 @@
       label: b.label, pays: b.pays, prob: b.prob,
     }));
     const kit = C.edgeFor(def.id, (id) => shell.store.has(id));
+    const comps = C.compsFor((id) => shell.store.has(id));
     let html = '<div class="odds__scroll"><table><thead><tr><th>Bet</th><th>Pays</th>'
              + '<th>Chance</th><th>House</th></tr></thead><tbody>';
     for (const row of rows) {
@@ -1510,7 +1511,7 @@
          that is true of the building but false of the person reading it is
          worse than no table at all. */
       const pays = row.pays * (1 + kit);
-      const edge = 1 - (row.prob * pays + C.COMPS);
+      const edge = 1 - (row.prob * pays + comps);
       html += '<tr><td>' + esc(row.label) + '</td><td>×' + trim(pays)
             + (kit ? ' <span class="odds__kit">kit</span>' : '') + '</td><td>'
             + chance(row.prob) + '</td><td class="odds__edge'
@@ -1522,7 +1523,7 @@
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';
-    html += ' The house pays back ' + (C.COMPS * 100).toFixed(1)
+    html += ' The house pays back ' + (comps * 100).toFixed(1)
           + '% of every stake in comps whether you win or lose, and that is in the column.';
     if (kit) {
       html += ' <b>Your kit adds ' + (kit * 100).toFixed(0) + '% to what this table pays you.</b>';

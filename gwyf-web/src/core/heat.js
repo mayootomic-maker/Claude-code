@@ -140,6 +140,11 @@
       // from the man in the black suit.
       if (state.bossNear === id) gain *= 2;
       if (state.floor >= HOT_FLOOR) gain *= 1.6;
+      /* The Manager's Ear. A third longer before the pit notices, which is
+         mostly a way of buying more hands at a table your kit has made
+         profitable -- and it is the only item that touches this system, so
+         this is the only place it applies. */
+      if (store.has('managersear')) gain *= 0.65;
       m.heat = Math.min(1, m.heat + gain);
       if (m.heat >= CLOSED && m.shutFor <= 0) {
         m.shutFor = SHUT_FOR;

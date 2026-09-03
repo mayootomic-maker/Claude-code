@@ -121,15 +121,46 @@ function simulate(seed, policy, tune) {
 
     // Buy what you can afford before the doors open, cheapest edge first --
     // which is what a player who has read the shop does.
-    for (const item of [...C.ITEMS].sort((a, b) => a.price - b.price)) {
+    /* Buy kit for the machines that are actually out.
+
+       There are twelve pieces of kit and a floor deals five machines, so
+       cheapest-first spends the bank on tables you will not see tonight -- it
+       took the careful player from paying the debt off in a quarter of runs to
+       one in seventy, which was the policy being dim rather than the game
+       getting harder. A player reads which machines are standing and buys for
+       those, which is what the shop now tells them. */
+    const standing = new Set(C.gamesOn(floor, seed));
+    const useful = (item) => !item.edge || Object.keys(item.edge)
+      .some((g) => g === 'all' || standing.has(g));
+    /* Best value first, not cheapest first.
+
+       Cheapest-first buys four weak pieces before the strong one, and with
+       twelve pieces of kit in the shop that is the difference between a
+       careful player paying the debt off in a quarter of runs and in one in
+       thirty. Value is the edge an item adds on the machines that are actually
+       standing, per dollar -- which is the sum a player does by eye when the
+       shop prints the percentage and says which tables are out. */
+    const worth = (item) => {
+      if (!item.edge) return 0.00004;          // the utilities, worth having eventually
+      let e = 0;
+      for (const g of Object.keys(item.edge)) {
+        if (g === 'all' || standing.has(g)) e += item.edge[g];
+      }
+      // The two-headed coin also moves the probability, not just the payout.
+      if (item.id === 'luckycoin' && standing.has('coinflip')) e += 0.10;
+      return e / item.price;
+    };
+    for (const item of [...C.ITEMS].filter(useful).sort((a, b) => worth(b) - worth(a))) {
       if (items[item.id]) continue;
       // Anything that pays for itself: the kit, plus the two that buy time
       // and cheaper debt. A player reads the shop and buys the edges first.
       if (!item.edge && !['skimmer', 'stopwatch', 'repellent'].includes(item.id)) continue;
-      // Keep tonight's quota and something to play with. The first version
-      // reserved a fraction of the quota, so it spent itself down to nothing
-      // and then reported the game as unwinnable.
-      if (bank - item.price < quota + 600) continue;
+      /* Keep tonight's quota and something to play with -- but not so much
+         that the kit is only ever bought on day one. At `quota + 600` a player
+         holding $1,755 against a $975 quota would refuse a $300 item, so it
+         locked in whatever five things it could afford on the first morning
+         and played the remaining eleven days with them. */
+      if (bank - item.price < quota + 250) continue;
       bank -= item.price;
       items[item.id] = true;
     }
@@ -179,22 +210,6 @@ function simulate(seed, policy, tune) {
     let stake = Math.max(limits.minBet, Math.min(limits.maxBet, Math.round(bank * 0.08 / 25) * 25));
 
     while (hands-- > 0 && bank >= limits.minBet) {
-      /* Protect the quota, but keep playing.
-
-         The first version of this policy stopped the moment the night was
-         safe, which meant it only ever gambled while it was behind -- so it
-         took every loss the floor had to offer and none of the wins, and it
-         reported the game as unwinnable. A player who owns a machine the kit
-         has turned positive plays it all night. What a careful player actually
-         does is protect tonight's quota: never stake money the shark is owed. */
-      /* Protecting the quota only makes sense while you still have it. Below
-         it there is nothing to protect and standing still guarantees the
-         strike, so a careful player plays on -- the first version stopped dead
-         the moment it fell short and then took the strike every time. */
-      if (policy === 'careful' && bank > quota && bank - stake < quota) {
-        stake = Math.max(limits.minBet, Math.round((bank - quota) / 25) * 25);
-        if (bank - stake < quota) break;
-      }
       // The swinger stakes a small slice on a long shot and keeps doing it.
       if (policy === 'swinger') {
         stake = Math.max(limits.minBet,
@@ -203,6 +218,7 @@ function simulate(seed, policy, tune) {
       // Best bet on a machine that is still open, after what the pit has
       // already shortened.
       let best = null;
+      let longShot = null;
       for (const c of choices) {
         if (heat[c.game] >= HEAT.closed) continue;
         const ev = c.ev * (heat[c.game] >= HEAT.short ? HEAT.shortPays : 1);
@@ -221,6 +237,11 @@ function simulate(seed, policy, tune) {
            this policy went broke on it in ninety-five runs out of a hundred. */
         const key = policy === 'swinger' ? (c.prob !== null && c.prob < 0.08 ? -1 : (c.pays || 0)) : ev;
         if (!best || key > best.key) best = { ...c, ev, key };
+        // The biggest payout on the floor that is not a lottery ticket, kept
+        // aside for the smart policy's swing.
+        if (c.prob !== null && c.prob >= 0.03 && (!longShot || c.pays > longShot.pays)) {
+          longShot = { ...c, ev };
+        }
       }
       /* A careful player does not play a machine that is losing money.
 
@@ -232,6 +253,34 @@ function simulate(seed, policy, tune) {
       if (policy === 'careful' && best && best.ev + comps < 1.0) best = null;
       if (!best) { for (const g in heat) heat[g] = Math.max(0, heat[g] - HEAT.cool * 3); continue; }
 
+      /* The strategy the game is actually asking for.
+
+         Grinding cannot clear the debt: with a five percent edge and a quota
+         taking a fifth of the bank every night, half-Kelly betting survives
+         all twelve days and pays off nothing -- which is a coherent design and
+         also not the whole of it. A good player grinds the kit to build a
+         bank, and once tonight's number is safe puts the surplus on something
+         paying thirty to one. `smart` does that: careful with the quota,
+         reckless with whatever is spare. */
+      let swinging = false;
+      if (policy === 'smart' && longShot) {
+        const spare = bank - quota * 1.25;
+        if (spare > limits.minBet * 2) {
+          best = longShot;
+          swinging = true;
+          stake = Math.max(limits.minBet,
+            Math.min(limits.maxBet, Math.round(spare * 0.28 / 25) * 25));
+        }
+      }
+
+      /* Protect the quota -- but only while you still have it. Below it there
+         is nothing to protect and standing still guarantees the strike. */
+      if ((policy === 'careful' || policy === 'smart')
+          && bank > quota && bank - stake < quota) {
+        stake = Math.max(limits.minBet, Math.round((bank - quota) / 25) * 25);
+        if (bank - stake < quota) break;
+      }
+
       /* Size the bet to the gap and the clock.
 
          Flat-betting six percent cannot close a forty percent gap in the hands
@@ -239,6 +288,22 @@ function simulate(seed, policy, tune) {
          bigger -- which is the whole shape of the game and has to be in the
          model or the model says the game is unwinnable when it is only the
          simulated player who cannot play it. */
+      /* A careful player sizes the bet to the edge, not to the bank.
+
+         Flat-betting eight percent of the bank on a one-in-three shot paying
+         2.85 is not careful, whatever the edge is -- the variance eats the
+         bankroll long before the edge pays it back, and that alone was the
+         difference between this policy paying the debt off in a quarter of
+         runs and in one in eighty. Half-Kelly on the bet actually in front of
+         it is what the word means. */
+      if ((policy === 'careful' || (policy === 'smart' && !swinging))
+          && best.prob !== null && best.pays > 1) {
+        const netOdds = best.pays - 1;
+        const kelly = (best.prob * best.pays - 1) / netOdds;
+        const frac = Math.max(0.005, Math.min(0.08, kelly * 0.5));
+        stake = Math.max(limits.minBet,
+          Math.min(limits.maxBet, Math.round(bank * frac / 25) * 25));
+      }
       const bet = Math.min(stake, bank, limits.maxBet);
       if (bet < limits.minBet) break;
       bank -= bet;
@@ -391,7 +456,7 @@ const TUNE = process.env.GW_TUNE
   : null;
 if (TUNE) console.log('tuned: base ' + TUNE.base + ' growth ' + TUNE.growth + ' bank $' + TUNE.bank);
 
-for (const policy of ['careful', 'swinger', 'chaser']) {
+for (const policy of ['careful', 'smart', 'swinger', 'chaser']) {
   const { tally, median: med } = measure(policy, TUNE);
   const diedOn = med === null ? [] : [med];
   const pct = (n) => ((n / RUNS) * 100).toFixed(1) + '%';
