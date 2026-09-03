@@ -175,7 +175,7 @@
     const s = shell.store.s;
     if (s.ending) { GWScreens.show('ending', { kind: s.ending }); return; }
     if (s.phase === 'floor') await enterFloor(s.floor);
-    else if (s.phase === 'lobby') await enterLobby();
+    else if (s.phase === 'lobby' || s.phase === 'closing') await enterLobby();
     else if (s.phase === 'report') GWScreens.show('report');
     else GWScreens.show('briefing');
   }
@@ -385,20 +385,25 @@
     });
   }
 
-  function endDay() {
+  /* The doors close, and you are walked out to the car.
+
+     The night used to stop dead where you stood and put a spreadsheet over the
+     top of it. It ends where it started now: the floor closes, you come back
+     out to the yard, and the reckoning happens when you get in the limo --
+     which is both what the game this follows does and the only version where
+     the last thing you do with a night is walk away from it. Nothing is
+     settled here; `boardLimo` does that, so the number in the report is the
+     number you had when you got in. */
+  async function endDay() {
     const s = shell.store.s;
     if (s.phase !== 'floor') return;
-    s.phase = 'report';
+    s.phase = 'closing';
     warned.clear();
     shell.friends.reset();
     hideShout();
     shell.audio.play('alarm');
-    setMode('idle');
-    unloadFloor();
-    // Settle first, render second. The two used to be the same call, so the
-    // report charged the quota again every time it was re-shown.
-    GWScreens.settle();
-    GWScreens.show('report');
+    shell.store.say('The doors close. Everyone out to the car.', 'warn');
+    await enterLobby();
     renderHud();
     shell.store.save();
   }
@@ -431,15 +436,23 @@
     if (shell.floorBusy) return;
     shell.floorBusy = true;
     const s = shell.store.s;
-    s.phase = 'lobby';
+    // Coming back off a floor with the night behind you is still the yard, but
+    // it is not the same moment: `closing` means the shark has not been paid
+    // yet and the limo is the thing that does it. Overwriting it here sent you
+    // back to the yard with the day already banked and no way to end it.
+    const closing = s.phase === 'closing';
+    if (!closing) s.phase = 'lobby';
 
     GWScreens.close(true);
     setMode('idle');
     GWLoading.show({
-      eyebrow: 'Before the doors open',
-      floor: '', title: 'The Lobby',
-      blurb: 'The loan shark is at his terminal, the shop is open, and the limo '
-           + 'leaves when you get in it.',
+      eyebrow: closing ? 'Doors closed' : 'Before the doors open',
+      floor: '', title: closing ? 'The Yard' : 'The Yard',
+      blurb: closing
+        ? 'The car is running and everyone is already in it. Get in and the '
+          + 'shark will want counting up.'
+        : 'The loan shark is at his terminal, the shop is open, and the limo '
+          + 'leaves when you get in it.',
       accent: '#d9a441', steps: 3,
     });
     await frame();
@@ -461,7 +474,7 @@
 
     shell.player.enter(shell.level);
     setMode('world');
-    el.floorTag.textContent = 'The Lobby';
+    el.floorTag.textContent = 'The Yard';
     GWLoading.step('Ready');
     await GWLoading.hide();
     el.resumeBtn.hidden = !!shell.touch || shell.player.locked;
@@ -471,8 +484,26 @@
   }
 
   /* Getting in the limo starts the five minutes. */
+  /* Getting in the car.
+
+     Two different things depending on where the night is: at the start of a
+     day it takes you to the tower, and at the end of one it settles up. The
+     same door, because it is the same car. */
   function boardLimo() {
     const s = shell.store.s;
+    if (s.phase === 'closing') {
+      s.phase = 'report';
+      shell.audio.play('door');
+      setMode('idle');
+      unloadFloor();
+      // Settle first, render second. The two used to be the same call, so the
+      // report charged the quota again every time it was re-shown.
+      GWScreens.settle();
+      GWScreens.show('report');
+      renderHud();
+      shell.store.save();
+      return;
+    }
     if (s.pendingItems && s.pendingItems.length) {
       const names = s.pendingItems
         .map((id) => (C.ITEMS.find((i) => i.id === id) || {}).name)
@@ -951,9 +982,17 @@
     const s = shell.store.s;
     if (!shell.level) return null;
     if (shell.level.isLobby) {
+      // The night is over and the car is waiting: nothing else in the yard
+      // matters until the shark has been counted up.
+      if (s.phase === 'closing') {
+        return { action: 'limo', text: 'Get in the limo — the shark wants counting up' };
+      }
       if (!s.challenge) return { action: 'shark', text: 'Loan shark — take tonight\u2019s quota' };
       if (s.pendingItems && s.pendingItems.length) {
         return { action: 'collect', text: 'Pick your shopping up off the shelf' };
+      }
+      if (s.prizeTakenOn !== s.day) {
+        return { action: 'prize', text: 'There is a ticket on top of the crates' };
       }
       return { action: 'limo', text: 'Get in the limo to start the day' };
     }
@@ -1046,7 +1085,35 @@
     if (action === 'shark') { GWScreens.show('shark'); return; }
     if (action === 'shop') { GWScreens.show('shop'); return; }
     if (action === 'collect') { collectItems(); return; }
-    if (action === 'limo') { boardLimo(); }
+    if (action === 'limo') { boardLimo(); return; }
+    if (action === 'prize') { takePrize(); }
+  }
+
+  /* The ticket on top of the crates.
+
+     The one thing in the building you get for moving well rather than for
+     betting. Once a day, because a climb you can do six times is a slot
+     machine with extra steps. */
+  function takePrize() {
+    const s = shell.store.s;
+    const anchor = (shell.level.anchors || []).find((a) => a.action === 'prize');
+    if (anchor && anchor.needsY !== undefined && shell.player.state.y < anchor.needsY) {
+      shell.store.say('It is on top of the crates. You will have to get up there.', 'flat');
+      shell.audio.play('deny');
+      return;
+    }
+    if (s.prizeTakenOn === s.day) {
+      shell.store.say('You already had that one.', 'flat');
+      shell.audio.play('deny');
+      return;
+    }
+    s.prizeTakenOn = s.day;
+    shell.store.meta.tickets += 1;
+    shell.store.saveMeta();
+    shell.audio.play('cash');
+    shell.store.say('A ticket, on top of the crates. Nobody saw you take it.', 'good');
+    renderHud();
+    shell.store.save();
   }
 
   /* Pick your purchases up off the shelf. An item you bought and left there

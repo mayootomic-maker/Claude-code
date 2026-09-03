@@ -47,6 +47,23 @@ const browser = await chromium.launch({
    on the page so all three scenarios call the same one. */
 async function installBoarding(page) {
   await page.evaluate(() => {
+    /* Ending a day is two moves now, not one.
+
+       The doors close and you are put back out in the yard; the night is
+       settled when you get in the limo. The harness used to call endDay and
+       read the report straight off, which after that change reported that the
+       run never ends and the debt cannot be paid -- the flow was fine and the
+       test was describing the old one. */
+    window.__endTheDay = async () => {
+      const shell = window.GWShell;
+      await shell.endDay();
+      for (let i = 0; i < 400 && (GWLoading.isOpen() || shell.floorBusy); i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (shell.store.s.phase === 'closing') shell.boardLimo();
+      await new Promise((r) => setTimeout(r, 120));
+    };
+
     window.__onTheFloor = async () => {
       const shell = window.GWShell;
       // Wait for whatever room is already loading before asking for another.
@@ -102,8 +119,7 @@ async function play(label, setup) {
       if (setupName === 'pay' && s.day >= 3) s.debt = 0;
 
       await window.__onTheFloor();
-      shell.endDay();
-      await new Promise((r) => setTimeout(r, 120));
+      await window.__endTheDay();
       log.push('day ' + s.day + ': strikes ' + s.strikes + ', debt ' + Math.round(s.debt)
         + ', bank ' + Math.round(s.bank));
 
@@ -161,8 +177,7 @@ for (const [label, setup] of [['paid', 'pay'], ['house', 'fail'], ['mixed', 'mix
       const s = shell.store.s;
       s.bank = s.quota + s.debt + 500;      // a very good night
       await window.__onTheFloor();
-      shell.endDay();
-      await new Promise((r) => setTimeout(r, 150));
+      await window.__endTheDay();
       const pay = document.querySelectorAll('[data-pay]');
       if (pay.length) {
         pay[pay.length - 1].click();        // "everything you can"
@@ -206,8 +221,7 @@ const runner = await page.evaluate(async () => {
   shell.store.s.quota = GWConfig.quotaFor(5);
   shell.store.s.bank = shell.store.s.quota + 4000;
   await window.__onTheFloor();
-  shell.endDay();
-  await new Promise((r) => setTimeout(r, 200));
+  await window.__endTheDay();
   const run = document.querySelector('[data-run]');
   if (!run) return { offered: false };
   run.click();

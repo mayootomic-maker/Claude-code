@@ -794,11 +794,24 @@
     const crateMat = track(new THREE.MeshStandardMaterial({
       color: 0x6b4a2a, roughness: 0.92,
     }));
+    /* Three sides and a fallen one.
+
+       A crate with four walls is a box you cannot get out of: the controller
+       has no step-up, so shin-high and impassable are the same thing, and the
+       first version of this held the player in a two-metre square for the rest
+       of the run. The side facing the yard has dropped flat, which is both the
+       way out and the reason the lid is off. */
     for (const [dx, dz, ww, dd] of [
       [-crate.w / 2, 0, 0.12, crate.d], [crate.w / 2, 0, 0.12, crate.d],
-      [0, -crate.d / 2, crate.w, 0.12], [0, crate.d / 2, crate.w, 0.12]]) {
+      [0, -crate.d / 2, crate.w, 0.12]]) {
       slab(crate.x + dx, crate.z + dz, ww, dd, crate.h, 0, crateMat, 'crate');
     }
+    const fallen = new THREE.Mesh(
+      track(new THREE.BoxGeometry(crate.w, 0.11, crate.d * 0.85)), crateMat
+    );
+    fallen.position.set(crate.x, 0.055, crate.z + crate.d / 2 + crate.d * 0.42);
+    fallen.receiveShadow = true;
+    group.add(fallen);
     // The lid, thrown back against the side.
     const lid = new THREE.Mesh(
       track(new THREE.BoxGeometry(crate.w, 0.09, crate.d)), crateMat
@@ -837,7 +850,10 @@
       position: new THREE.Vector3(top.x, top.h, top.z),
       rotationY: 0,
       half: { hw: top.w / 2, hd: top.d / 2 },
-      stand: new THREE.Vector3(top.x, 0, top.z),
+      // Standing at the foot of the last box reaches it horizontally, which
+      // would make the climb decorative. `needsY` is what makes it a climb.
+      needsY: top.h - 0.25,
+      stand: new THREE.Vector3(top.x, top.h, top.z - top.d / 2 - 0.5),
       focus: new THREE.Vector3(top.x, top.h + 0.4, top.z),
     });
     const prize = new THREE.Mesh(
@@ -878,7 +894,7 @@
       crate,
       jumps,
       size: { w: W, d: D, height: WALL_H },
-      name: 'The Lobby',
+      name: 'The Yard',
       isLobby: true,
       dispose() { for (const t of disposables) if (t.dispose) t.dispose(); },
     };
