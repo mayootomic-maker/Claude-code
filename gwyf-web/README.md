@@ -55,12 +55,38 @@ Play, Continue, Play together, How this works, Settings. The spade in the corner
 brings it back at any point, and saves on the way out, because the menu is where
 people close the tab.
 
+## The day
+
+You come round inside a packing crate in the yard, lid thrown back against the
+side, with the loan shark at his terminal, the shop, the shelf your purchases
+sit on, a run of crates to climb and the limo already running. Getting in the
+limo starts the five minutes. When the doors close you are walked back out to
+the same yard, and **nothing is settled until you get in the car again** — the
+report is the last thing that happens rather than the thing that interrupts.
+
+The crate has three walls and a fallen one. Four sides is a box you cannot get
+out of: the controller has no step-up, so shin-high and impassable are the same
+thing, and the first version of this held the player in a two-metre square for
+the rest of the run.
+
+The crates in the yard climb to two and a half metres with a ticket on the last
+one — once a day, and only reachable from up there. It exists because the
+movement grew a jump, a landing and air control that barely steers, and the
+only thing in the building to use them on was a flat carpet; and it is the one
+thing in the game you get for moving well rather than for betting.
+
 ## The tower
 
-It is a building, not a menu. You start in a lobby with a loan shark at his
-terminal, a shop, a shelf your purchases sit on and a pair of doors; getting in
-the limo is what starts the five minutes. Each casino floor is a hall you walk
-around, with the machines standing in it and a lift at the north end.
+It is a building, not a menu. Each casino floor is a hall you walk around, with
+the machines standing in it and a lift you can call from anywhere.
+
+**Each floor deals a hand of machines from a pool.** Sixteen games across the
+tower, and a floor names five or six it *could* stand rather than the four it
+always did — drawn from the run seed and the floor number, so it is the same
+floor for everyone at the table and the same floor if you reload, and a
+different one next run. Pools overlap on purpose: the same wheel stands
+downstairs and in Velvet Hall at ten times the limits, which is what a real
+casino does with a game people like.
 
 **The floors are laid out fresh every time you take the lift to one.** Machines
 are placed from candidate slots by the run's own seeded RNG, and a slot is only
