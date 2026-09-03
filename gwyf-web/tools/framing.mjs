@@ -170,6 +170,21 @@ async function everyMachineOnThisFloor(label) {
     await page.evaluate(() => GWShell.stage.snap());
     await page.waitForTimeout(120);
     const m = await page.evaluate(measureShot);
+    /* Sample the rays again over a moment, and keep the best.
+
+       Neighbouring machines idle: a wheel turns, a coin drifts, ducks bob.
+       Those parts belong to other holders, so they count as blockers, and one
+       of them drifting through the line for a frame is not the fault being
+       looked for -- "you press use and see nothing" is a table hidden behind a
+       pillar, not one a duck passed in front of. Measured at a single instant
+       this reported about one machine in seventy, and every one of them came
+       back 5/5 clear when opened on its own. Three samples over a third of a
+       second tells the two apart. */
+    for (let s = 0; s < 2 && m.clear < 4; s++) {
+      await page.waitForTimeout(160);
+      const again = await page.evaluate(measureShot);
+      if (again.clear > m.clear) m.clear = again.clear;
+    }
     /* Step away first, report second.
 
        Reporting a pass with a `continue` skipped the leave, so the game stayed
