@@ -112,7 +112,13 @@ const before = await A.evaluate(() => GWShell.store.s.bank);
 await B.evaluate(() => { GWShell.net.stake(100); GWShell.net.resolve('coinflip', 100, 0, 'Coin Toss'); });
 await A.waitForTimeout(1200);
 const after = await A.evaluate(() => GWShell.store.s.bank);
-check('a guest losing moves the host’s bank', after === before - 100, before + ' -> ' + after);
+/* A lost hand does not cost the whole stake any more: the house pays comps on
+   every stake whatever happens. Read off GWConfig rather than written down, so
+   changing the rate does not quietly turn this into a test of a number nobody
+   maintains. */
+const comps = await A.evaluate(() => GWConfig.COMPS);
+check('a guest losing moves the host’s bank', after === before - 100 + 100 * comps,
+  before + ' -> ' + after + ' (100 staked, ' + (comps * 100).toFixed(0) + '% comped)');
 
 // --- and the other player has a body in the world
 const seen = await B.evaluate(() => {
@@ -183,7 +189,9 @@ await B.close();
   await G.evaluate(() => { GWShell.net.stake(250); GWShell.net.resolve('dice', 250, 0, 'Over / Under'); });
   await H.waitForTimeout(1500);
   const now = await H.evaluate(() => GWShell.store.s.bank);
-  check('money crosses the connection', now === was - 250, was + ' -> ' + now);
+  const rate = await H.evaluate(() => GWConfig.COMPS);
+  check('money crosses the connection', now === was - 250 + 250 * rate,
+    was + ' -> ' + now);
   await H.close();
   await G.close();
 }
