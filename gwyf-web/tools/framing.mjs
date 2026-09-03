@@ -101,7 +101,11 @@ const measureShot = () => {
      of anything anyway. */
   const blockers = [];
   s.group.traverse((o) => {
-    if (o.isMesh && o.visible && o.geometry && !mine.has(o)) blockers.push(o);
+    if (!o.isMesh || !o.visible || !o.geometry || mine.has(o)) return;
+    // The crew wander, so counting them made the same seed report different
+    // tables blocked from one run to the next. This is about the building.
+    if (o.userData.person) return;
+    blockers.push(o);
   });
   for (const t of targets) {
     dir.copy(t).sub(cam.position);
@@ -140,27 +144,52 @@ async function everyMachineOnThisFloor(label) {
       const nr = GWShell.player.nearest;
       return !!(nr && nr.anchor === a);
     }, i, { timeout: 25000 }).then(() => true).catch(() => false);
-    if (!ok) { console.log((label + ' #' + i + ' ' + walked).padEnd(30) + 'FAIL  not in reach from its own stand point'); bad++; continue; }
+    if (!ok) {
+      const why = await page.evaluate((idx) => {
+        const a = (GWShell.level.anchors || []).filter((x) => x.kind === 'machine')[idx];
+        const st = GWShell.player.state;
+        const nr = GWShell.player.nearest;
+        return { mode: GWShell.mode, active: GWShell.player.active,
+          pos: [+st.pos.x.toFixed(2), +st.pos.z.toFixed(2)],
+          stand: [+a.stand.x.toFixed(2), +a.stand.z.toFixed(2)],
+          nearest: nr ? (nr.anchor.gameId || nr.anchor.kind) + '@' + nr.distance.toFixed(1) : null };
+      }, i);
+      console.log((label + ' #' + i + ' ' + walked).padEnd(30) + 'FAIL  not in reach   ' + JSON.stringify(why));
+      bad++; continue;
+    }
     await page.keyboard.press('e');
     const opened = await page.waitForFunction(() => GWShell.mode === 'table' && !!GWShell.anchor,
       null, { timeout: 25000 }).then(() => true).catch(() => false);
     if (!opened) { console.log((label + ' #' + i + ' ' + walked).padEnd(30) + 'FAIL  use did not open it'); bad++; continue; }
-    await page.waitForFunction(() => GWShell.anchor
-      && GWShell.stage.camera.position.distanceTo(GWShell.stage.desired.pos) < 0.05,
-      null, { timeout: 45000 }).catch(() => {});
+    /* Put the camera where it is going rather than waiting for it to ease
+       there. The ease runs on the frame clock, and in a container rendering at
+       two frames a second a four-metre approach takes a dozen real seconds --
+       thirty-five machines times five seeds of that is an hour of watching a
+       lerp. `snap` is the stage's own call for exactly this and lands on the
+       same position the ease was heading for. */
+    await page.evaluate(() => GWShell.stage.snap());
+    await page.waitForTimeout(120);
     const m = await page.evaluate(measureShot);
+    /* Step away first, report second.
+
+       Reporting a pass with a `continue` skipped the leave, so the game stayed
+       at the table and every machine after the first failed to come into reach
+       -- forty consecutive failures that were all this line. Whatever the
+       verdict, the walk to the next machine starts from the floor. */
+    await page.evaluate(() => GWShell.leaveMachine());
+    await page.waitForFunction(() => GWShell.mode === 'world', null, { timeout: 25000 })
+      .catch(() => {});
+
     const framed = m.coverage > 0.02;
     const lit = m.lum > 0.04;
     // Most of the machine has to be actually visible, not merely in front.
     const seen = m.clear >= 3;
-    if (!framed || !lit || !seen) bad++;
     if (framed && lit && seen) { pass++; continue; }
+    bad++;
     console.log((label + ' #' + i + ' ' + walked).padEnd(30)
       + ((m.coverage * 100).toFixed(1) + '%').padEnd(8) + (framed ? 'ok  ' : 'FAIL')
       + '   ' + (m.lum * 100).toFixed(1).padStart(5) + '%  ' + (lit ? 'ok  ' : 'FAIL')
       + '   ' + m.clear + '/' + m.of + ' ' + (seen ? 'ok' : 'BLOCKED'));
-    await page.evaluate(() => GWShell.leaveMachine());
-    await page.waitForFunction(() => GWShell.mode === 'world', null, { timeout: 25000 }).catch(() => {});
   }
 }
 

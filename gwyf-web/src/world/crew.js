@@ -223,6 +223,14 @@
     const rand = Math.random;
     const people = [];
     const group = new THREE.Group();
+    /* Marked as people, not architecture.
+
+       The camera's search for a clear view of a table treats anything solid as
+       a permanent obstruction and moves the shot to avoid it. A friend walking
+       past is neither permanent nor worth reframing for -- and because they
+       move, counting them made the same seed report different tables blocked
+       from one run to the next. */
+    group.traverse((o) => { o.userData.person = true; });
     level.group.add(group);
 
     for (const mate of store.s.friends) {
@@ -953,6 +961,7 @@
       tag = nameTag('Pit boss', '#ff9f2e');
       tag.position.y = body.joints.height * 0.98;
       body.group.add(tag);
+      body.group.traverse((o) => { o.userData.person = true; });
       level.group.add(body.group);
       pos.copy(at || new THREE.Vector3(level.lift.x, 0, level.lift.z));
       body.group.position.copy(pos);

@@ -9032,6 +9032,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const rand = Math.random;
     const people = [];
     const group = new THREE.Group();
+    /* Marked as people, not architecture.
+
+       The camera's search for a clear view of a table treats anything solid as
+       a permanent obstruction and moves the shot to avoid it. A friend walking
+       past is neither permanent nor worth reframing for -- and because they
+       move, counting them made the same seed report different tables blocked
+       from one run to the next. */
+    group.traverse((o) => { o.userData.person = true; });
     level.group.add(group);
 
     for (const mate of store.s.friends) {
@@ -9762,6 +9770,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       tag = nameTag('Pit boss', '#ff9f2e');
       tag.position.y = body.joints.height * 0.98;
       body.group.add(tag);
+      body.group.traverse((o) => { o.userData.person = true; });
       level.group.add(body.group);
       pos.copy(at || new THREE.Vector3(level.lift.x, 0, level.lift.z));
       body.group.position.copy(pos);
@@ -13988,6 +13997,121 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
   }
 
+  /* Find a shot of the machine that something is not standing in front of.
+
+     The room clamp keeps the camera inside the walls and says nothing about
+     the pillar, or the next table in the bank, that happens to sit on the line
+     between the camera and the machine. Framed, lit, and completely hidden --
+     and each of those measures separately reports success, which is how
+     "sometimes you click on a machine and see nothing" survived two rounds of
+     fixes. Across six run seeds it was about one machine in fifty.
+
+     Sliding the camera along its own line is not enough on its own: what is in
+     the way is often in the way for the whole length of it. So the authored
+     shot is tried first and, failing that, the camera is pulled in, lifted,
+     and swung around the table until five test rays reach it. Same five rays
+     the harness judges by, so the fix and the test cannot disagree about what
+     counts as visible. Once per open, not per frame. */
+  const camRay = new THREE.Raycaster();
+  const camDir = new THREE.Vector3();
+  const camTmp = new THREE.Vector3();
+  const camInside = new THREE.Vector3();
+
+  function clearRays(from, targets, blockers) {
+    let clear = 0;
+    for (const t of targets) {
+      camDir.copy(t).sub(from);
+      const dist = camDir.length();
+      if (dist < 0.05) { clear++; continue; }
+      camRay.set(from, camDir.normalize());
+      camRay.far = dist - 0.05;
+      if (!camRay.intersectObjects(blockers, false).length) clear++;
+    }
+    return clear;
+  }
+
+  function findClearShot(pos, look, record) {
+    if (!shell.level) return;
+    const mine = new Set();
+    record.holder.traverse((o) => { if (o.isMesh) mine.add(o); });
+    const blockers = [];
+    shell.level.group.traverse((o) => {
+      if (!o.isMesh || !o.visible || !o.geometry || mine.has(o)) return;
+      if (o.userData.person) return;      // people move; the building does not
+      blockers.push(o);
+    });
+    if (!blockers.length) return;
+
+    const box = new THREE.Box3().setFromObject(record.holder);
+    const centre = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const targets = [centre,
+      centre.clone().add(new THREE.Vector3(size.x * 0.3, 0, size.z * 0.3)),
+      centre.clone().add(new THREE.Vector3(-size.x * 0.3, 0, -size.z * 0.3)),
+      centre.clone().add(new THREE.Vector3(size.x * 0.3, 0, -size.z * 0.3)),
+      centre.clone().add(new THREE.Vector3(-size.x * 0.3, 0, size.z * 0.3))];
+
+    const GOOD = 4;                       // of five rays
+    const solid = (p) => {
+      camInside.set(p.x, 0, p.z);
+      shell.level.solids.resolve(camInside, 0.25);
+      return Math.hypot(camInside.x - p.x, camInside.z - p.z) > 0.02;
+    };
+    if (!solid(pos) && clearRays(pos, targets, blockers) >= GOOD) return;
+
+    // Every candidate keeps the same height-above-table relationship and the
+    // same distance band; only where it stands around the table changes.
+    const flat = new THREE.Vector3(pos.x - look.x, 0, pos.z - look.z);
+    const reach = flat.length() || 1;
+    const rise = pos.y - look.y;
+    const base = Math.atan2(flat.x, flat.z);
+    let best = null;
+    /* Ordered by how far each candidate strays from the shot the game asked
+       for: small swings before large ones, the authored distance before a
+       closer or wider one, the authored height before looking down over the
+       obstruction. The first clear one wins, so a table is only ever framed
+       unusually when the usual way is genuinely blocked. */
+    for (const swing of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.25, -1.25,
+                         1.6, -1.6, 2.0, -2.0, 2.5, -2.5, Math.PI]) {
+      for (const near of [1, 0.78, 1.25, 0.55]) {
+        for (const lift of [1, 1.45, 2.0, 0.7]) {
+          const a = base + swing;
+          camTmp.set(look.x + Math.sin(a) * reach * near,
+                     look.y + rise * lift,
+                     look.z + Math.cos(a) * reach * near);
+          keepInsideRoom(camTmp, look, record);
+          /* Reject anywhere the camera would be standing inside something.
+
+             A position inside a neighbouring cabinet blocks all five rays and
+             fills the screen with the inside of a lit box -- ninety-four
+             percent mean luminance, measured, which is as unreadable as the
+             black rectangles were. The level's own collision world already
+             knows where the solid things are; if resolving the point moves it,
+             the point was inside one. */
+          if (solid(camTmp)) continue;
+          // And never below the felt, where the rays to the table clip the
+          // carpet on the way and the shot is of a table leg.
+          if (camTmp.y < look.y + 0.35) continue;
+          const score = clearRays(camTmp, targets, blockers);
+          if (!best || score > best.score) best = { score, at: camTmp.clone() };
+          if (score >= GOOD) { pos.copy(camTmp); return; }
+        }
+      }
+    }
+    /* Last resort: over the top of it.
+
+       A table in a room has a ceiling above it and nothing else, so a shot
+       looking down from above the machine is clear whenever any shot is. It is
+       not the framing the game asked for and it is only ever reached when
+       every ordinary angle is genuinely obstructed -- but an unusual view of a
+       machine is worth having, and a blank screen is not. */
+    camTmp.set(look.x, look.y + reach * 1.05, look.z + reach * 0.32);
+    keepInsideRoom(camTmp, look, record);
+    const above = clearRays(camTmp, targets, blockers);
+    if (!best || above > best.score) best = { score: above, at: camTmp.clone() };
+    if (best) pos.copy(best.at);
+  }
+
   /* Widen the lens until the machine fits from wherever the camera ended up.
 
      The room decides how far back you can stand, and against a wall that is
@@ -14028,6 +14152,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const pos = record.view.pos.clone().applyMatrix4(record.holder.matrixWorld);
     const look = record.view.look.clone().applyMatrix4(record.holder.matrixWorld);
     keepInsideRoom(pos, look, record);
+    findClearShot(pos, look, record);
     fitTableFov(record, pos);
     shell.stage.frame(pos.toArray(), look.toArray(), 2.6);
     // Hang the table lamp over this table, not over the middle of the floor.
