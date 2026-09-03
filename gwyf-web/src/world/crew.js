@@ -616,9 +616,11 @@
         lean: s_(), roll: s_(), rise: s_(), squash: s_(),
         headTurn: s_(), headTilt: s_(), browTilt: s_(), browDrop: s_(),
         handLift: s_(), handOut: s_(), handSwing: s_(),
-        weights: { idle: 1, walk: 0, play: 0, won: 0, lost: 0, tilt: 0 },
+        bank: s_(),
+        weights: { idle: 1, walk: 0, run: 0, play: 0, won: 0, lost: 0, tilt: 0 },
         step: 0, blink: 2 + rand() * 3, blinking: 0, doubleBlink: false,
         glance: 3 + rand() * 5, glanceTo: 0,
+        lastYaw: null, turn: 0,
       };
     }
 
@@ -629,9 +631,19 @@
       const moving = speed > 0.05;
 
       /* --- which state, and how much of it ---------------------------------- */
+      /* Walking and running are different gaits, not one gait at two speeds.
+
+         `walk` used to saturate at 1.7 m/s, so a body crossing the floor at
+         five looked exactly like one ambling at two -- the single clearest
+         reason the crew read as sliding rather than moving. Above walking pace
+         the run weight takes over: further forward, longer in the stride,
+         more air in it. */
+      const RUNS_AT = 3.4;
+      const runAmount = Math.min(1, Math.max(0, (speed - 2.1) / (RUNS_AT - 2.1)));
       const want = {
         idle: !moving && person.state !== 'play' ? 1 : 0,
-        walk: moving ? Math.min(1, speed / 1.7) : 0,
+        walk: moving ? Math.min(1, speed / 1.7) * (1 - runAmount) : 0,
+        run: moving ? runAmount : 0,
         play: person.state === 'play' && !moving ? 1 : 0,
         won: person.mood > 0 && person.moodLeft > 0 ? 1 : 0,
         lost: person.mood < 0 && person.moodLeft > 0 ? 1 : 0,
@@ -647,13 +659,27 @@
          cycle: a pin has no legs, so the "step" is the body dropping onto one
          side and pushing off again. */
       rig.step += (moving ? speed * 2.1 : 1.3) * dt;
+
+      /* How hard they are turning, for the bank.
+
+         A body that changes direction leans into it. Without this a friend
+         rounding a pillar pivots like a chess piece, which is the other half
+         of why they read as sliding. The rate is smoothed because a heading
+         taken from a steering solver is noisy frame to frame. */
+      if (rig.lastYaw === null) rig.lastYaw = person.yaw;
+      let dYaw = person.yaw - rig.lastYaw;
+      while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+      while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+      rig.lastYaw = person.yaw;
+      const rate = dt > 0.0001 ? dYaw / dt : 0;
+      rig.turn += (Math.max(-3, Math.min(3, rate)) - rig.turn) * Math.min(1, 8 * dt);
       const beat = Math.sin(rig.step);
       const bounce = Math.abs(Math.cos(rig.step));
       // Impact rises towards 1 at the bottom of each beat: the contact.
       const impact = Math.pow(Math.max(0, -Math.cos(rig.step * 2)), 2);
 
       /* --- targets, summed across the states -------------------------------- */
-      let lean = 0, roll = 0, rise = 0, squash = 0;
+      let lean = 0, roll = 0, rise = 0, squash = 0, bank = 0;
       let headTurn = 0, headTilt = 0, browTilt = 0, browDrop = 0;
       let handLift = 0, handOut = 0, handSwing = 0;
 
@@ -665,6 +691,22 @@
       squash -= w.walk * impact * 0.09;
       handSwing += w.walk * -beat * 0.26;
       handLift += w.walk * bounce * 0.03;
+
+      // Running: further over the front foot, more air, arms driving rather
+      // than swinging, and the whole body squashing harder on each contact.
+      lean += w.run * 0.46;
+      roll += w.run * beat * 0.17;
+      rise += w.run * bounce * 0.105;
+      squash -= w.run * impact * 0.16;
+      handSwing += w.run * -beat * 0.52;
+      handLift += w.run * (0.10 + bounce * 0.07);
+      handOut += w.run * 0.05;
+      headTilt -= w.run * 0.06;      // chin up, looking where they are going
+
+      // Banking into a turn, for anyone actually moving. Leaning the wrong way
+      // out of a corner looks worse than not leaning at all, so it is signed
+      // off the turn rate and scaled by how fast they are going.
+      bank -= rig.turn * 0.16 * Math.min(1, speed / 2.2) * (w.walk + w.run);
 
       // Idle: breathing, a slow shift of weight, and looking about.
       squash += w.idle * Math.sin(rig.step * 0.62) * 0.022;
@@ -724,7 +766,7 @@
 
       /* --- springs ----------------------------------------------------------- */
       const leanV = spring(rig.lean, lean, 180, 22, dt);
-      const rollV = spring(rig.roll, roll, 210, 24, dt);
+      const rollV = spring(rig.roll, roll, 210, 24, dt) + spring(rig.bank, bank, 70, 14, dt);
       const riseV = spring(rig.rise, rise, 260, 26, dt);
       const squashV = spring(rig.squash, squash, 240, 24, dt);
       const headTurnV = spring(rig.headTurn, headTurn, 90, 17, dt);

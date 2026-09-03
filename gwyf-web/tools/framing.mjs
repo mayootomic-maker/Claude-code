@@ -30,6 +30,167 @@ await page.evaluate(() => {
 const games = await page.evaluate(() => GWGames.all().map((g) => g.id));
 
 let bad = 0;
+let pass = 0;
+
+/* Measured in the page, on a frame drawn on purpose.
+
+   Coverage is the screen area the machine's own bounding box projects onto;
+   brightness is the mean luminance of the pixels actually drawn, read back
+   straight after a render so the buffer has not been swapped away. Two
+   different faults produce the same black rectangle -- a camera pointed
+   somewhere the machine is not, and a machine in frame with no light on it --
+   and neither raises an error, so both have to be measured rather than
+   watched for. */
+const measureShot = () => {
+  const s = GWShell.stage, cam = s.camera, rec = GWShell.anchor;
+  cam.updateMatrixWorld();
+  const box = new THREE.Box3().setFromObject(rec.holder);
+  let minx = 9, maxx = -9, miny = 9, maxy = -9, anyFront = false;
+  for (let i = 0; i < 8; i++) {
+    const v = new THREE.Vector3(
+      i & 1 ? box.max.x : box.min.x,
+      i & 2 ? box.max.y : box.min.y,
+      i & 4 ? box.max.z : box.min.z).project(cam);
+    if (v.z < 1) anyFront = true;
+    minx = Math.min(minx, v.x); maxx = Math.max(maxx, v.x);
+    miny = Math.min(miny, v.y); maxy = Math.max(maxy, v.y);
+  }
+  const cw = Math.max(0, Math.min(1, maxx) - Math.max(-1, minx));
+  const ch = Math.max(0, Math.min(1, maxy) - Math.max(-1, miny));
+  const coverage = anyFront ? (cw * ch) / 4 : 0;
+
+  const r = s.renderer, gl = r.getContext();
+  r.render(s.scene, cam);
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  const step = Math.max(1, Math.floor(w / 120));
+  const rw = Math.floor(w / step), rh = Math.floor(h / step);
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let sum = 0, n = 0;
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const i = ((y * step) * w + x * step) * 4;
+      sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+      n++;
+    }
+  }
+  /* And whether anything is standing in the way.
+
+     Coverage and brightness both pass happily when a pillar or the next table
+     in the bank is between the camera and the machine: the box still projects
+     onto most of the frame and the room behind it is still lit. With floors
+     laid out in banks of three that is now the likeliest way to press use and
+     see nothing, and it is invisible to every other measure here. Rays are
+     cast at the machine's centre and at four points around it, so clipping one
+     corner on a pillar does not count as blocked. */
+  const centre = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const targets = [centre,
+    centre.clone().add(new THREE.Vector3(size.x * 0.3, 0, size.z * 0.3)),
+    centre.clone().add(new THREE.Vector3(-size.x * 0.3, 0, -size.z * 0.3)),
+    centre.clone().add(new THREE.Vector3(size.x * 0.3, 0, -size.z * 0.3)),
+    centre.clone().add(new THREE.Vector3(-size.x * 0.3, 0, size.z * 0.3))];
+  const ray = new THREE.Raycaster();
+  const dir = new THREE.Vector3();
+  let clear = 0;
+  const mine = new Set();
+  rec.holder.traverse((o) => { if (o.isMesh) mine.add(o); });
+  /* Solid meshes only, gathered by hand. Raycasting the group wholesale walks
+     into the crew's name tags, which are sprites with no geometry of their own
+     and throw rather than miss -- and a floating name would not block the view
+     of anything anyway. */
+  const blockers = [];
+  s.group.traverse((o) => {
+    if (o.isMesh && o.visible && o.geometry && !mine.has(o)) blockers.push(o);
+  });
+  for (const t of targets) {
+    dir.copy(t).sub(cam.position);
+    const dist = dir.length();
+    ray.set(cam.position, dir.normalize());
+    ray.far = dist - 0.05;
+    if (!ray.intersectObjects(blockers, false).length) clear++;
+  }
+  return { coverage, lum: sum / n / 255, clear, of: targets.length };
+};
+
+/* Every machine on the floor, not one per game.
+
+   A floor puts out banks of three now, and the copy that fails is not the
+   copy a per-game walk happens to pick: what breaks a shot is where a machine
+   ended up -- against a wall, behind a pillar, nose to nose with the next
+   table -- so the same game is fine in one bay and blank in another. Checking
+   one of each is how "sometimes you click on a machine and see nothing"
+   survived two rounds of fixes. */
+async function everyMachineOnThisFloor(label) {
+  const n = await page.evaluate(() =>
+    (GWShell.level.anchors || []).filter((a) => a.kind === 'machine').length);
+  for (let i = 0; i < n; i++) {
+    const walked = await page.evaluate((idx) => {
+      const st = GWShell.player.state;
+      const a = (GWShell.level.anchors || []).filter((x) => x.kind === 'machine')[idx];
+      if (!a) return null;
+      st.pos.set(a.stand.x, st.pos.y, a.stand.z);
+      st.yaw = Math.atan2(-(a.position.x - st.pos.x), -(a.position.z - st.pos.z));
+      st.viewYaw = st.yaw; st.pitch = 0; st.viewPitch = 0;
+      return a.gameId;
+    }, i);
+    if (!walked) continue;
+    const ok = await page.waitForFunction((idx) => {
+      const a = (GWShell.level.anchors || []).filter((x) => x.kind === 'machine')[idx];
+      const nr = GWShell.player.nearest;
+      return !!(nr && nr.anchor === a);
+    }, i, { timeout: 25000 }).then(() => true).catch(() => false);
+    if (!ok) { console.log((label + ' #' + i + ' ' + walked).padEnd(30) + 'FAIL  not in reach from its own stand point'); bad++; continue; }
+    await page.keyboard.press('e');
+    const opened = await page.waitForFunction(() => GWShell.mode === 'table' && !!GWShell.anchor,
+      null, { timeout: 25000 }).then(() => true).catch(() => false);
+    if (!opened) { console.log((label + ' #' + i + ' ' + walked).padEnd(30) + 'FAIL  use did not open it'); bad++; continue; }
+    await page.waitForFunction(() => GWShell.anchor
+      && GWShell.stage.camera.position.distanceTo(GWShell.stage.desired.pos) < 0.05,
+      null, { timeout: 45000 }).catch(() => {});
+    const m = await page.evaluate(measureShot);
+    const framed = m.coverage > 0.02;
+    const lit = m.lum > 0.04;
+    // Most of the machine has to be actually visible, not merely in front.
+    const seen = m.clear >= 3;
+    if (!framed || !lit || !seen) bad++;
+    if (framed && lit && seen) { pass++; continue; }
+    console.log((label + ' #' + i + ' ' + walked).padEnd(30)
+      + ((m.coverage * 100).toFixed(1) + '%').padEnd(8) + (framed ? 'ok  ' : 'FAIL')
+      + '   ' + (m.lum * 100).toFixed(1).padStart(5) + '%  ' + (lit ? 'ok  ' : 'FAIL')
+      + '   ' + m.clear + '/' + m.of + ' ' + (seen ? 'ok' : 'BLOCKED'));
+    await page.evaluate(() => GWShell.leaveMachine());
+    await page.waitForFunction(() => GWShell.mode === 'world', null, { timeout: 25000 }).catch(() => {});
+  }
+}
+
+if (process.argv.includes('--all')) {
+  /* Across several run seeds, because the layout is drawn from them.
+
+     A floor is generated from the run seed and the floor number, so one run
+     exercises one arrangement of one bank of machines. "Sometimes you click on
+     a machine and see nothing" is a statement about the seeds you have not
+     tried, and checking a single layout is how it survived two rounds of
+     fixes. */
+  const SEEDS = Number(process.argv[process.argv.indexOf('--all') + 1]) || 4;
+  console.log('machine                       on screen     lit      unblocked');
+  for (let seed = 0; seed < SEEDS; seed++) {
+   await page.evaluate((n) => { GWShell.store.s.seed = (n * 2654435761 + 12345) >>> 0; }, seed);
+   for (let f = 0; f < 4; f++) {
+    await page.evaluate((n) => GWShell.enterFloor(n), f);
+    await page.waitForFunction(() => !GWLoading.isOpen() && GWShell.mode === 'world',
+      { timeout: 90000 }).catch(() => {});
+    await everyMachineOnThisFloor('s' + seed + ' f' + f);
+   }
+  }
+  for (const e of errors) console.log('  ' + e);
+  await browser.close();
+  console.log(bad
+    ? '\n' + bad + ' machine(s) you cannot see, out of ' + (bad + pass)
+    : '\nall ' + pass + ' machines across every floor and seed are on screen, lit and unblocked');
+  process.exit(bad || errors.length ? 1 : 0);
+}
+
 console.log('game          on screen   lit');
 for (const id of games) {
   await page.evaluate((gid) => {
@@ -62,44 +223,7 @@ for (const id of games) {
     return GWShell.stage.camera.position.distanceTo(GWShell.stage.desired.pos) < 0.05;
   }, null, { timeout: 45000 }).catch(() => {});
 
-  const m = await page.evaluate(() => {
-    const s = GWShell.stage, cam = s.camera, rec = GWShell.anchor;
-    cam.updateMatrixWorld();
-    const box = new THREE.Box3().setFromObject(rec.holder);
-    // Project the eight corners; the screen area they span is how much of the
-    // frame the machine takes up.
-    let minx = 9, maxx = -9, miny = 9, maxy = -9, anyFront = false;
-    for (let i = 0; i < 8; i++) {
-      const v = new THREE.Vector3(
-        i & 1 ? box.max.x : box.min.x,
-        i & 2 ? box.max.y : box.min.y,
-        i & 4 ? box.max.z : box.min.z).project(cam);
-      if (v.z < 1) anyFront = true;
-      minx = Math.min(minx, v.x); maxx = Math.max(maxx, v.x);
-      miny = Math.min(miny, v.y); maxy = Math.max(maxy, v.y);
-    }
-    const cw = Math.max(0, Math.min(1, maxx) - Math.max(-1, minx));
-    const ch = Math.max(0, Math.min(1, maxy) - Math.max(-1, miny));
-    const coverage = anyFront ? (cw * ch) / 4 : 0;
-
-    // Draw one frame and read it back before the buffer is swapped away.
-    const r = s.renderer, gl = r.getContext();
-    r.render(s.scene, cam);
-    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
-    const step = Math.max(1, Math.floor(w / 120));
-    const rw = Math.floor(w / step), rh = Math.floor(h / step);
-    const px = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    let sum = 0, n = 0;
-    for (let y = 0; y < rh; y++) {
-      for (let x = 0; x < rw; x++) {
-        const i = ((y * step) * w + x * step) * 4;
-        sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
-        n++;
-      }
-    }
-    return { coverage, lum: sum / n / 255 };
-  });
+  const m = await page.evaluate(measureShot);
   // A table that fills less than a fiftieth of the frame is not being shown,
   // and one drawn at less than four percent grey is not being lit.
   const framed = m.coverage > 0.02;

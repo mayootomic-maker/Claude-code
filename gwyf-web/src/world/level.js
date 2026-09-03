@@ -54,9 +54,9 @@
      carpet and a floor came out as one smear with the machines lost in it. */
   const THEME = {
     // Floor 0 -- the classic floor. Paisley red-and-gold carpet, maroon walls.
-    lobby: { carpet: '#8f2f45', wall: 0x2a0f18, trim: 0xc79a3e, neon: 0xffbf6b, ceiling: 0x160810 },
+    lobby: { carpet: '#b03a52', wall: 0x35131f, trim: 0xe0ad46, neon: 0xffbf6b, ceiling: 0x160810 },
     // Floor 1 -- the black-light room. Magenta and cyan over purple concrete.
-    velvet: { carpet: '#4a2560', wall: 0x220b33, trim: 0x22d3ee, neon: 0xff3fd0, ceiling: 0x120520 },
+    velvet: { carpet: '#5d2e79', wall: 0x2b0e42, trim: 0x2ee6ff, neon: 0xff3fd0, ceiling: 0x120520 },
     // Floor 2 -- the marble atrium. Pale stone, glass, teal shadow, gold trim.
     vault: { carpet: '#9fb6b2', wall: 0x16283c, trim: 0xdfcb94, neon: 0x8fe6ff, ceiling: 0x0c1524 },
     // Floor 3 -- the gold rotunda. Red-and-gold mosaic under a gilt ceiling.
@@ -168,6 +168,19 @@
     /* --- ceiling lights --------------------------------------------------- */
 
     const glowMat = track(new THREE.MeshBasicMaterial({ color: theme.neon }));
+    /* One texture for every halo on the floor; the material is cloned per lamp
+       so a table can tint its own. Clones share a shader configuration, so
+       forty of them still compile once -- what costs is forty *different*
+       configurations, not forty materials. */
+    const haloMat = track(new THREE.SpriteMaterial({
+      map: track(glowTexture()),
+      color: theme.neon,
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: true,
+    }));
     const cols = Math.max(2, Math.round(W / 6));
     const rows = Math.max(2, Math.round(D / 6));
     for (let i = 0; i < cols; i++) {
@@ -405,6 +418,21 @@
       const bulb = new THREE.Mesh(track(new THREE.SphereGeometry(0.1, 10, 8)), glowMat);
       bulb.position.set(anchor.position.x, WALL_H - 0.52, anchor.position.z);
       group.add(bulb);
+
+      /* A halo under each shade.
+
+         There is no bloom here -- a post pass costs more than everything else
+         on this floor put together -- so the glow is drawn rather than
+         computed: one additive billboard that always faces the camera, fading
+         out at its edge. It is what makes a hanging lamp read as a light
+         source rather than a cone with a white ball in it, and it is the thing
+         a casino has most of. */
+      const halo = new THREE.Sprite(track(haloMat.clone()));
+      halo.position.set(anchor.position.x, WALL_H - 0.56, anchor.position.z);
+      halo.scale.setScalar(2.1);
+      // Kept with the lamp so heat can tint the halo along with the bulb.
+      anchor.halo = halo;
+      group.add(halo);
     }
 
     /* --- spawn ------------------------------------------------------------ */
@@ -762,6 +790,26 @@
       isLobby: true,
       dispose() { for (const t of disposables) if (t.dispose) t.dispose(); },
     };
+  }
+
+  /* A soft round gradient, drawn once and shared. Squared falloff rather than
+     linear, because a linear ramp reads as a disc with a hard edge. */
+  let glowCanvas = null;
+  function glowTexture() {
+    if (!glowCanvas) {
+      glowCanvas = document.createElement('canvas');
+      glowCanvas.width = glowCanvas.height = 128;
+      const g = glowCanvas.getContext('2d');
+      const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.35, 'rgba(255,255,255,0.42)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 128, 128);
+    }
+    const tex = new THREE.CanvasTexture(glowCanvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
   }
 
   global.GWLevel = { build, buildLobby, sign, mergeStatic, FOOTPRINT, THEME, SIZE, WALL_H };

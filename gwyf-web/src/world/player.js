@@ -15,7 +15,18 @@
   const WALK = 3.1;
   const RUN = 5.0;
   const CROUCH_WALK = 1.5;
-  const ACCEL = 14;
+  /* Getting going, stopping, and steering in mid-air.
+
+     One acceleration for all three made walking feel like driving on ice in
+     both directions: you slid away from a standstill and slid past where you
+     meant to stop. Stopping is now sharper than starting, which is what makes
+     a step read as a footfall rather than a drift, and air control is a
+     fraction of either -- being able to turn on a sixpence with your feet off
+     the ground is the single clearest tell that a first-person camera has no
+     body under it. */
+  const ACCEL = 16;
+  const FRICTION = 24;
+  const AIR_ACCEL = 1.3;
   /* Jumping.
 
      Real gravity at 9.81 m/s² gives a hang time that feels like the moon in a
@@ -24,6 +35,17 @@
      the shape every shooter has converged on. */
   const GRAVITY = 22;
   const JUMP = 5.2;
+  /* Press jump slightly before you land and it still fires. Every jump that
+     "did not register" is this: the key went down two frames before the feet
+     touched, and without a buffer those two frames eat the input. */
+  const JUMP_BUFFER = 0.14;    // seconds
+  /* Metres of camera dip per metre-per-second of impact. A normal jump lands
+     at about five metres a second, so this is roughly nine centimetres of
+     knee -- enough to feel, small enough not to read as the floor giving way.
+     The first pass was three times this and looked like a stumble. */
+  const LAND_DIP = 0.018;
+  const DIP_SPRING = 120;      // how hard the knees push back
+  const DIP_DAMP = 15;
   const CROUCH_RATE = 9;       // how fast you drop and stand back up
   const REACH = 1.9;   // from the edge of a machine, not its centre
   const FOV_DOT = 0.32;        // roughly 70 degrees either side of straight ahead
@@ -63,6 +85,7 @@
       // camera smoothing is on. The real game eases this and lets you turn it
       // off; both are here for the same reason.
       viewYaw: 0, viewPitch: 0, smoothing: 0, headBob: true,
+      dip: 0, dipV: 0, jumpAt: 0, sway: 0, lastStep: 0,
       active: false,
       locked: false,
       level: null,
@@ -93,7 +116,10 @@
         // Held space must not machine-gun the jump; the ground check does that
         // on its own, but the browser also scrolls on space by default.
         e.preventDefault();
-        if (state.active) jump();
+        // Remembered for a moment, so a press that lands a frame or two before
+        // the feet do still counts. Without this the jump you queued while
+        // falling is simply thrown away, which reads as the key not working.
+        if (state.active) { state.jumpAt = JUMP_BUFFER; jump(); }
       }
       if (e.code === 'KeyE' || e.code === 'Enter') {
         if (state.active && opts.onInteract) opts.onInteract(state.nearest);
@@ -110,6 +136,10 @@
       if (!state.grounded) return;
       state.vy = JUMP;
       state.grounded = false;
+      state.jumpAt = 0;         // spent; do not fire again on landing
+      // A small crouch on the way up, so the launch has a wind-up rather than
+      // teleporting the camera off the floor.
+      state.dip -= 0.035;
       audio.play('step');
     }
 
@@ -175,11 +205,20 @@
       state.nearest = null;
     }
 
+    /* Where the head is.
+
+       Height plus the walk in it plus the knees. The sway is applied across the
+       direction of travel rather than in world space, so leaning is always to
+       your left and right whichever way you are facing. */
     function eye(out) {
-      return (out || new THREE.Vector3()).set(
-        state.pos.x,
-        state.y + state.height + (state.headBob ? Math.sin(state.bob) * 0.045 : 0),
-        state.pos.z
+      const v = out || new THREE.Vector3();
+      const bob = state.headBob ? Math.sin(state.bob) * 0.045 : 0;
+      const sway = state.headBob ? state.sway : 0;
+      const cos = Math.cos(state.viewYaw), sin = Math.sin(state.viewYaw);
+      return v.set(
+        state.pos.x + cos * sway,
+        state.y + state.height + bob + state.dip,
+        state.pos.z - sin * sway
       );
     }
 
@@ -228,7 +267,12 @@
       const wantX = (-sin * iz + cos * ix) * speed;
       const wantZ = (-cos * iz - sin * ix) * speed;
 
-      const k = 1 - Math.exp(-ACCEL * dt);
+      /* Three rates, picked by what the body is doing. Slowing down beats
+         speeding up so you plant when you let go; in the air you barely steer
+         at all. */
+      const wanted = mag > 0.001;
+      const rate = !state.grounded ? AIR_ACCEL : wanted ? ACCEL : FRICTION;
+      const k = 1 - Math.exp(-rate * dt);
       state.vel.x += (wantX - state.vel.x) * k;
       state.vel.z += (wantZ - state.vel.z) * k;
 
@@ -244,11 +288,28 @@
       state.vy -= GRAVITY * dt;
       state.y += state.vy * dt;
       if (state.y <= 0) {
-        if (!state.grounded && state.vy < -3) audio.play('step');
+        if (!state.grounded) {
+          const impact = -state.vy;
+          if (impact > 3) audio.play('step');
+          // Knees. The camera drops with the impact and springs back, which is
+          // most of what tells you the jump had a landing rather than a stop.
+          state.dip -= Math.min(0.10, impact * LAND_DIP);
+        }
         state.y = 0;
         state.vy = 0;
         state.grounded = true;
       }
+
+      // A buffered jump fires the moment the feet are down.
+      state.jumpAt -= dt;
+      if (state.jumpAt > 0 && state.grounded) { state.jumpAt = 0; jump(); }
+
+      /* The dip is a critically damped spring rather than a fade, so it comes
+         back up through the resting height and settles instead of sagging to
+         it. Landing hard is a bounce; landing gently is barely there. */
+      const dipA = -state.dip * DIP_SPRING - state.dipV * DIP_DAMP;
+      state.dipV += dipA * dt;
+      state.dip += state.dipV * dt;
 
       const wantHeight = state.crouching ? CROUCH_EYE : EYE;
       state.height += (wantHeight - state.height) * Math.min(1, CROUCH_RATE * dt);
@@ -264,14 +325,24 @@
       // No head bob in mid-air: bobbing while your feet are off the ground is
       // the one place it stops reading as footsteps and starts reading as a
       // camera fault.
+      /* Footsteps on the footfall.
+
+         The step sound used to fire off a distance counter, so it drifted out
+         of phase with the camera's own bob and you heard a foot land while the
+         head was on its way up. The bob is the gait; a step is the bottom of
+         it. Two per cycle, because you have two feet. */
       if (moved > 0.4 && state.grounded) {
         state.bob += dt * moved * 2.1;
-        state.stepped += moved * dt;
-        if (state.stepped > 1.5) { state.stepped = 0; audio.play('step'); }
+        const phase = Math.floor(state.bob / Math.PI);
+        if (phase !== state.lastStep) { state.lastStep = phase; audio.play('step'); }
       } else {
+        // Idle breathing, slow enough not to read as walking on the spot.
         state.bob += dt * 0.6;
-        state.stepped = 1.2;
+        state.lastStep = Math.floor(state.bob / Math.PI);
       }
+      // Side to side at half the up-and-down rate: one sway per full stride,
+      // two dips. Anything faster reads as a limp.
+      state.sway = Math.sin(state.bob * 0.5) * Math.min(0.028, moved * 0.009);
 
       /* Camera smoothing.
 
@@ -296,8 +367,9 @@
       forward(tmpFwd);
       stage.camera.position.copy(tmpEye);
       stage.camera.lookAt(tmpEye.x + tmpFwd.x, tmpEye.y + tmpFwd.y, tmpEye.z + tmpFwd.z);
-      // A slight roll while strafing, which reads as weight without a wobble.
-      stage.camera.rotation.z = -ix * 0.014;
+      // A slight roll while strafing, plus a little from the gait itself, which
+      // reads as weight without a wobble.
+      stage.camera.rotation.z = -ix * 0.014 + (state.headBob ? state.sway * 0.35 : 0);
 
       // The shadow camera covers a small area, so it follows the player instead
       // of sitting over the middle of a room they may be nowhere near.

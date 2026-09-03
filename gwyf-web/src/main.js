@@ -453,6 +453,7 @@
     shell.level = GWLevel.buildLobby({ rng: layoutRng(-1) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
+    shell.stage.setAccent(shell.level.theme.neon);
     fogForRoom();
     shell.crew = makeCrew();
     GWLoading.step('Opening the shop');
@@ -543,6 +544,7 @@
     shell.level = GWLevel.build({ floor: index, rng: layoutRng(index) });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
+    shell.stage.setAccent(shell.level.theme.neon);
     fogForRoom();
     GWLoading.step('Building the floor');
     await frame();
@@ -662,7 +664,18 @@
   function fogForRoom() {
     const size = shell.level.size;
     const far = Math.min(FOG_CAP, Math.max(size.w, size.d) * 1.08);
-    shell.stage.setFog(shell.level.theme.ceiling, far * 0.34, far);
+    /* Haze the colour of the room's own signs, not the colour of its ceiling.
+
+       Fogging to the ceiling -- a near-black maroon on the ground floor --
+       meant everything past ten metres converged on the same brown, so a
+       building with four deliberately different palettes came out as one
+       muddy room four times. A casino at distance is the colour of what is lit
+       in it, which is the neon. A quarter of the way there is enough to carry
+       the floor's colour down the hall without washing the near field out. */
+    const haze = new THREE.Color(shell.level.theme.ceiling)
+      .lerp(new THREE.Color(shell.level.theme.neon), 0.26)
+      .multiplyScalar(0.85);
+    shell.stage.setFog(haze.getHex(), far * 0.34, far);
   }
 
   /* The man in the black suit.
@@ -759,6 +772,12 @@
           : lvl === 'short' ? 0xff9f2e
           : lvl === 'watched' ? 0xffd27a : 0xffe6c2;
         site.intensity = hot ? 62 : lvl === 'shut' ? 22 : 46;
+        // The halo carries the same signal, so the colour reads from further
+        // away than the pool of light on the table does.
+        if (record.anchor.halo) {
+          record.anchor.halo.material.color.setHex(site.colour);
+          record.anchor.halo.visible = record.holder.visible;
+        }
       }
     }
   }

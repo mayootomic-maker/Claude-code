@@ -18,7 +18,11 @@
     renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, CAP_DPR));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.14;
+    /* A third of a stop up. ACES rolls the top off hard, so the room was
+       sitting in the toe of the curve where four deliberately different
+       palettes all resolve to brown; the highlights it costs are the lamps,
+       which are meant to clip. */
+    renderer.toneMappingExposure = 1.32;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -151,12 +155,12 @@
        and cutting this to zero to save a light left rooms that were black
        beyond the nearest few lamps. A room has to be visible first and cheap
        second. */
-    const ambient = new THREE.AmbientLight(0xffffff, 0.16);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.20);
 
     // Sky-and-ground fill. A single ambient term flattens everything to the
     // same value; a hemisphere keeps the tops of things lighter than their
     // undersides, which is most of what makes a room read as lit at all.
-    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.62);
+    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.76);
     scene.add(sky);
 
     /* The lamp over the table.
@@ -291,6 +295,18 @@
 
     const target = new THREE.Vector3(0, 0, 0);
     const desired = { pos: camera.position.clone(), look: target.clone(), ease: 3.2 };
+
+    /* Colour separation, per floor.
+
+       A back light in the room's accent colour, aimed across the player rather
+       than from the camera. It does almost nothing to the brightness and a
+       great deal to whether a table reads as an object in a room or a shape
+       cut out of the wall behind it -- and it is what carries a floor's own
+       colour on to everything standing in it. */
+    function setAccent(hex) {
+      rim.color.setHex(hex);
+      rim.intensity = 1.35;
+    }
 
     function setEnvironment(name) {
       if (state.envName === name) return;
@@ -439,7 +455,7 @@
         scene.fog.far = far;
       },
       get fogFar() { return scene.fog.far; },
-      setEnvironment, resize, frame, snap, start, stop, onTick, clear, setLampOver,
+      setEnvironment, resize, frame, snap, start, stop, onTick, clear, setLampOver, setAccent,
       get envName() { return state.envName; },
       /* Pin the renderer where it is. Used by the mod menu's display page and
          by the screenshot harness, which wants a consistent frame rather than a

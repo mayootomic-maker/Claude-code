@@ -191,6 +191,35 @@ What could not be verified, and so was not copied: the floor names, the UI
 typeface, and any of the original's actual movement numbers -- none are
 published, and guessing them and calling it a match would be worse than this.
 
+## Whether you can win
+
+You could not. The complaint was "you lose way too easily and never win", and
+`tools/economy.mjs` turned it into a number: reading the real config and the
+real bet tables, playing four thousand complete runs under three policies, the
+old build scored **0% paid off and 100% thrown out, in the median on day
+three** — nine days of a twelve-day arrangement that nobody had ever seen.
+
+Four things were wrong, and only one of them was the difficulty curve.
+
+- **The quota was impossible.** 700 growing 62% a day reaches $141,175 by day
+  twelve, from a $500 bank, on machines that all take a cut. It is 350 growing
+  12% now, topping out at $1,225.
+- **Being broke was an absorbing state.** Under the table minimum you cannot
+  bet, so you cannot make a quota, so you cannot clear a strike. That is not a
+  difficulty curve, it is a dead end, and it ended 99% of runs. The shark
+  stakes you now and adds it to the book at a quarter over.
+- **Winning was against the rules.** Heat charged four times more for winning a
+  hand than for playing one, so any machine an item made profitable shut after
+  about four good hands.
+- **The items were flavour text.** They are the engine of the run now: each
+  names a machine and a percentage it adds to its payouts, applied in one place
+  in `resolve`, printed in the shop and again in the odds panel with the
+  boosted figure. Plus 2% comps on every stake, stated in the same panel.
+
+Measured after: nobody is thrown out playing carefully, and taking real risks
+pays the debt off in 28% of runs. Survive by playing well, win by taking a
+swing, and the swing can cost you the run.
+
 ## What makes it a game
 
 The tables are the same twelve tables. What changed is that where you play and
