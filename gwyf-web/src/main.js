@@ -480,6 +480,25 @@
         + '. It stays on the shelf.', 'bad');
       s.pendingItems = [];
     }
+    /* The shark stakes you if you are cleaned out.
+
+       Nobody starts a night unable to place a bet. Below the table minimum you
+       cannot make a quota, cannot clear a strike and cannot come back, so one
+       bad night used to end the run with most of the arrangement unplayed --
+       measured at 99% of simulated runs. He tops you up to something you can
+       actually play with and puts it on the book at a quarter over, which is
+       both the escape hatch the game needs and exactly what a loan shark is
+       for. */
+    const floorTo = Math.max(C.STAKE_FLOOR, Math.round(s.quota * C.STAKE_FLOOR_QUOTA));
+    if (s.bank < floorTo) {
+      const front = floorTo - s.bank;
+      const owed = Math.round(front * C.FRONT_MARKUP);
+      s.bank += front;
+      s.debt += owed;
+      shell.store.say('The shark counts out ' + money(front) + ' and writes down '
+        + money(owed) + '. "Go on then."', 'warn');
+    }
+
     warned.clear();
     shell.heat.newDay();
     shell.events.newDay();
@@ -1252,6 +1271,7 @@
     const rows = def.oddsRows ? def.oddsRows() : def.bets.map((b) => ({
       label: b.label, pays: b.pays, prob: b.prob,
     }));
+    const kit = C.edgeFor(def.id, (id) => shell.store.has(id));
     let html = '<div class="odds__scroll"><table><thead><tr><th>Bet</th><th>Pays</th>'
              + '<th>Chance</th><th>House</th></tr></thead><tbody>';
     for (const row of rows) {
@@ -1259,16 +1279,28 @@
         html += '<tr><td>' + esc(row.label) + '</td><td colspan="3">' + esc(row.text) + '</td></tr>';
         continue;
       }
-      const edge = 1 - row.prob * row.pays;
-      html += '<tr><td>' + esc(row.label) + '</td><td>×' + trim(row.pays) + '</td><td>'
+      /* Print what you will actually be paid, not what the machine pays a
+         stranger. The kit and the comps both move this, and a payout table
+         that is true of the building but false of the person reading it is
+         worse than no table at all. */
+      const pays = row.pays * (1 + kit);
+      const edge = 1 - (row.prob * pays + C.COMPS);
+      html += '<tr><td>' + esc(row.label) + '</td><td>×' + trim(pays)
+            + (kit ? ' <span class="odds__kit">kit</span>' : '') + '</td><td>'
             + chance(row.prob) + '</td><td class="odds__edge'
             + (edge <= 0.0001 ? ' odds__edge--good' : '') + '">'
-            + (edge * 100).toFixed(1) + '%</td></tr>';
+            + (edge > 0 ? (edge * 100).toFixed(1) + '%' : 'yours ' + (-edge * 100).toFixed(1) + '%')
+            + '</td></tr>';
     }
     html += '</tbody></table></div><p class="odds__foot">';
     html += def.skillBased
       ? 'This one depends on how you play it. The figures assume you play it well.'
       : 'Every figure here is the one the game actually uses. Nothing is rounded in the house’s favour.';
+    html += ' The house pays back ' + (C.COMPS * 100).toFixed(1)
+          + '% of every stake in comps whether you win or lose, and that is in the column.';
+    if (kit) {
+      html += ' <b>Your kit adds ' + (kit * 100).toFixed(0) + '% to what this table pays you.</b>';
+    }
     /* And the one thing that changes them. Stated in the same panel as the
        odds themselves, because a payout table that is true on average and false
        right now is worse than no table at all. */

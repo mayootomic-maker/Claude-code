@@ -1366,6 +1366,14 @@ button:disabled { cursor: not-allowed; }
 }
 .hud__corner--tc .clock.is-low { color: var(--danger); }
 
+/* Marks a payout the kit has raised, so the boosted number is visibly not the
+   one printed on the machine. */
+.odds__kit {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0.05rem 0.3rem; border-radius: 0.25rem;
+  background: var(--success); color: #06210f; font-weight: 700;
+}
+
 .money { font-variant-numeric: tabular-nums; line-height: 1.05; }
 .money--bank {
   font-family: var(--font-display);

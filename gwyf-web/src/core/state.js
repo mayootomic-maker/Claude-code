@@ -162,15 +162,23 @@
     }
     let gross = stake * multiplier;
 
-    if (gross > stake && this.has('rabbitsfoot')) gross *= 1.015;
+    /* The kit. Every item that names this game adds its stated percentage to
+       what a win pays, in this one place, and the odds panel prints the same
+       number by calling the same function. Before this the items were mostly
+       flavour text and the building beat you on every machine no matter what
+       you had bought, which is why a run could not be won. */
+    if (gross > stake) gross *= 1 + C.edgeFor(game, (id) => this.has(id));
     if (s.mods.neverLose && gross < stake) gross = stake * 2;
+
+    /* Comps, win or lose. Stated on every odds panel; see GWConfig.COMPS. */
+    const comps = stake * C.COMPS;
 
     let net = gross - stake;
     // The cursed chip is not a bonus. It doubles the result in whichever
     // direction the result went, which is exactly as bad an idea as it sounds.
     if (this.has('cursedchip')) net *= 2;
 
-    if (!s.mods.infiniteMoney) s.bank += stake + net;
+    if (!s.mods.infiniteMoney) s.bank += stake + net + comps;
     if (s.bank < 0) s.bank = 0;
 
     s.stats.hands++;

@@ -36,11 +36,18 @@
      table's maximum off it warms it about as much as four ordinary hands, so
      three big wins gets you watched and six gets you closed -- which is the
      whole design: a table that is going well is a table you have to leave. */
-  const PER_WIN = 0.22;
+  /* A win draws attention -- but not four times as much as simply playing.
+
+     At 0.22 against 0.055 for a hand, winning was the thing the pit noticed,
+     so a machine an item had turned profitable shut after about four good
+     hands and the rest of the night went into machines that were still taking
+     a cut. The mechanic that was supposed to stop you camping one table was
+     really a rule that said winning is not allowed. */
+  const PER_WIN = 0.08;
   const MAX_PER_HAND = 0.17;   // no one result crosses more than a band
   /* A second away. Twenty-two seconds sheds a full bar and nine sheds enough to
      stop being watched, which is what the odds panel promises. */
-  const COOL = 0.045;
+  const COOL = 0.075;
   const COOL_CLOSED = 0.10;
   /* And what you have taken off the floor as a whole, capped: winning three
      times the quota should not be three times as damning as winning it once. */
