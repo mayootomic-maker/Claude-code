@@ -541,7 +541,10 @@
     GWLoading.step('Laying the carpet');
     await frame();
 
-    shell.level = GWLevel.build({ floor: index, rng: layoutRng(index) });
+    shell.level = GWLevel.build({
+      floor: index, rng: layoutRng(index),
+      games: C.gamesOn(index, shell.store.s.seed),
+    });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     shell.stage.setAccent(shell.level.theme.neon);

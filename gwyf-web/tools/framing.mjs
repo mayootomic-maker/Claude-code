@@ -222,8 +222,17 @@ if (process.argv.includes('--all')) {
 
 console.log('game          on screen   lit');
 for (const id of games) {
+  /* A floor deals a hand from a pool now, so asking for the floor a game
+     lives on is not enough -- the seed has to be one that actually puts it
+     out. Walk seeds until it does. */
   await page.evaluate((gid) => {
-    const floor = GWConfig.FLOORS.findIndex((f) => f.games.includes(gid));
+    const floor = GWConfig.FLOORS.findIndex((f) => (f.pool || f.games || []).includes(gid));
+    for (let seed = 1; seed < 400; seed++) {
+      if (GWConfig.gamesOn(floor, seed).includes(gid)) {
+        GWShell.store.s.seed = seed;
+        break;
+      }
+    }
     GWShell.enterFloor(floor);
   }, id);
   await page.waitForFunction(() => !GWLoading.isOpen() && GWShell.mode === 'world',

@@ -100,7 +100,7 @@
       const open = store.unlockedFloors().filter((f) => f.open);
       const out = [];
       for (const entry of open) {
-        for (const id of entry.floor.games) {
+        for (const id of C.gamesOn(entry.index, store.s.seed)) {
           const def = GWGames.get(id);
           if (def) out.push({ def, floor: entry.floor, index: entry.index, weight: entry.index === store.s.floor ? 6 : 1 });
         }

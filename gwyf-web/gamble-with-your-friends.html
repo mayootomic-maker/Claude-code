@@ -1879,6 +1879,22 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return Math.round(350 * Math.pow(1.12, day - 1) / 25) * 25;
   }
 
+  /* What a floor can put out, and how many of them it does.
+
+     A floor used to name four machines and stand exactly those four every time
+     you rode to it, which made the tower four rooms you had already seen. It
+     names a pool now and deals a hand from it -- drawn from the run seed and
+     the floor number, so it is the same floor for everyone at the table and
+     the same floor if you reload, but a different one next run.
+
+     Pools overlap on purpose. The same wheel stands on the ground floor and in
+     Velvet Hall at ten times the limits, which is what a real casino does with
+     a game people like; and it means a floor whose pool is thin still has
+     somewhere to send you when the pit shuts a table.
+
+     `gamesOn` is the one place this is resolved. Nothing reads `.pool`
+     directly, so a floor's hand cannot disagree with itself between the lift
+     panel, the level builder and the odds. */
   const FLOORS = [
     {
       /* Not "The Lobby". That is the room you start the day in, and having two
@@ -1889,7 +1905,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       tag: 'Ground floor', accent: '#e0913f',
       blurb: 'Sticky carpet, free peanuts, and the only games in the building that '
            + 'will not take your whole night in one go.',
-      games: ['coinflip', 'dice', 'slots', 'duckrace'],
+      pool: ['coinflip', 'dice', 'slots', 'duckrace', 'wheel', 'cups', 'scratcher', 'war'],
+      deal: 5,
       minBet: 25, maxBet: 500,
     },
     {
@@ -1897,7 +1914,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       tag: 'Second floor', accent: '#ff3fd0',
       blurb: 'Where the carpet stops being sticky and the drinks stop being free. '
            + 'The tables here have a croupier and a memory.',
-      games: ['roulette', 'blackjack', 'highlow', 'plinko'],
+      pool: ['roulette', 'blackjack', 'highlow', 'plinko', 'wheel', 'war', 'cups', 'slots'],
+      deal: 5,
       minBet: 100, maxBet: 2500,
     },
     {
@@ -1905,14 +1923,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       tag: 'Third floor', accent: '#8fe6ff',
       blurb: 'No windows, no clocks, no exit signs. The house keeps the odds in '
            + 'a safe down here and it does not open it for you.',
-      games: ['crash', 'mines', 'ladder'],
+      pool: ['crash', 'mines', 'ladder', 'plinko', 'roulette', 'blackjack', 'highlow'],
+      deal: 4,
       minBet: 250, maxBet: 10000,
     },
     {
       id: 'penthouse', name: 'The Penthouse', env: 'void', unlockBank: 45000, unlockDay: 10,
       tag: 'Top floor', accent: '#e8c46a',
       blurb: 'One game. It does not have a house edge because it does not need one.',
-      games: ['chamber'],
+      pool: ['chamber', 'crash', 'mines', 'ladder', 'roulette'],
+      deal: 3,
       minBet: 1000, maxBet: 100000,
     },
   ];
@@ -2067,7 +2087,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     { id: 'bigwin', tickets: 2, text: 'Take $2,000 or more off a single hand',
       check: (t) => t.biggestWin >= 2000 },
     { id: 'tour', tickets: 2, text: 'Play every machine on the floor',
-      check: (t, floor) => floor.games.every((g) => t.played[g]) },
+      check: (t, floor, met, s) => gamesOn(s ? s.floor : 0, s ? s.seed : 0)
+        .every((g) => t.played[g]) },
     { id: 'careful', tickets: 3, text: 'Hit the quota without losing more than $500 on any hand',
       check: (t, floor, met) => met && t.biggestLoss <= 500 },
     { id: 'volume', tickets: 2, text: 'Play twelve hands',
@@ -2079,13 +2100,49 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   /* Which floors the lift will stop at. In the game this port follows, the
      tower opens on a schedule -- roughly a floor every three days -- rather
      than on how rich you are, so a bad run still sees the whole building. */
+  /* The hand a floor is showing, for a given run.
+
+     Deterministic in (seed, floor): two players in the same run build the same
+     room without exchanging a byte about it, which is the same guarantee the
+     level layout relies on. A tiny xorshift rather than the run's own RNG
+     stream, because consuming numbers from that stream here would shift every
+     spin that follows -- which is the bug that made a floor's layout change
+     the outcome of the next hand. */
+  function gamesOn(floorIndex, seed) {
+    const def = FLOORS[floorIndex];
+    if (!def) return [];
+    if (!def.pool) return def.games || [];
+    let x = ((seed >>> 0) ^ Math.imul(floorIndex + 11, 0x9e3779b1)) >>> 0 || 1;
+    const rand = () => {
+      x ^= x << 13; x >>>= 0;
+      x ^= x >>> 17;
+      x ^= x << 5; x >>>= 0;
+      return x / 4294967296;
+    };
+    /* Let the state mix before anything reads it.
+
+       Xorshift seeded from small, near-consecutive integers produces
+       near-identical first outputs, and the first output is the one that
+       decides the first swap of the shuffle. The visible symptom was that the
+       last game in a pool was never dealt: across eleven consecutive seeds,
+       War did not appear on the ground floor once. Eight discarded values is
+       enough to decorrelate it. */
+    for (let i = 0; i < 8; i++) rand();
+    const pool = def.pool.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    return pool.slice(0, Math.min(def.deal || pool.length, pool.length));
+  }
+
   function floorsOpenOn(day) {
     return FLOORS.map((f, i) => i).filter((i) => day >= FLOORS[i].unlockDay);
   }
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);
@@ -2788,7 +2845,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     function candidates() {
       const s = store.s;
       const floor = s.floor;
-      const games = (global.GWConfig.FLOORS[floor] || {}).games || [];
+      const games = global.GWConfig.gamesOn(floor, s.seed);
       const out = ['sweep', 'comps'];
       if (games.length) out.push('hot', 'hot');       // twice as likely: it is the good one
       if (s.friends.some((f) => f.won > 0)) out.push('friend');
@@ -2799,7 +2856,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     function fire() {
       const s = store.s;
       const pick = candidates()[Math.floor(rng.next() * candidates().length)];
-      const games = (global.GWConfig.FLOORS[s.floor] || {}).games || [];
+      const games = global.GWConfig.gamesOn(s.floor, s.seed);
 
       if (pick === 'hot') {
         const id = games[Math.floor(rng.next() * games.length)];
@@ -5357,6 +5414,725 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
 </script>
 <script>
+/* The Big Wheel.
+
+   Fifty-four pegs, six prizes, and the oldest arithmetic in the building: a
+   segment that comes up one time in twenty-four pays twenty. Everything on it
+   is worse than a coin toss and it is the loudest machine on the floor, which
+   is not a coincidence -- this is the game casinos put by the door.
+
+   The wheel is spun rather than dealt: an angular velocity, friction, and a
+   flapper that catches on every peg it passes and drags a little more speed
+   off. It stops where it stops, so the landing segment is read off the wheel's
+   final angle rather than decided first and animated towards. */
+
+(function () {
+  'use strict';
+
+  /* Thirty-two slots and a stated cut.
+
+     A real Big Six wheel pays between eleven and twenty-four percent to the
+     house, which is why it stands by the door and why nobody who knows what it
+     is plays it. Writing those payouts down by hand is also how the first
+     version of this ended up paying the joker forty-one on a one-in-twenty-four
+     shot -- a house edge of minus seventy percent, caught by tools/odds.mjs
+     rather than by reading it.
+
+     So the counts are chosen and the payouts are derived: fair odds times the
+     same CUT every other honest machine in the building takes. Nothing here can
+     drift from its printed edge, because the printed edge is the input. */
+  const CUT = 0.96;
+  const COUNTS = [
+    { id: 'cherry', label: 'Cherry', count: 13, colour: 0xe9e2d4 },
+    { id: 'bell', label: 'Bell', count: 8, colour: 0x3f8fd0 },
+    { id: 'star', label: 'Star', count: 5, colour: 0xd9a441 },
+    { id: 'crown', label: 'Crown', count: 3, colour: 0x4fbf7a },
+    { id: 'diamond', label: 'Diamond', count: 2, colour: 0xb44de0 },
+    { id: 'joker', label: 'Joker', count: 1, colour: 0xf0616d },
+  ];
+  const SLOTS = COUNTS.reduce((n, s) => n + s.count, 0);   // 32
+  const LAYOUT = COUNTS.map((s) => Object.assign({}, s, {
+    pays: +((SLOTS / s.count) * CUT).toFixed(2),
+  }));
+
+  const TOTAL = SLOTS;
+
+  /* The segments in wheel order: the big prizes are spread, not adjacent, the
+     way they are on the real thing -- a wheel with the joker next to the $20
+     would let you cover both by aiming at one part of the rim. */
+  const ORDER = (() => {
+    const pool = [];
+    for (const s of LAYOUT) for (let i = 0; i < s.count; i++) pool.push(s.id);
+    // Deal the commonest into every other slot, then fill the gaps, so the
+    // rare prizes are spread round the rim instead of sitting together where
+    // one throw could cover two of them.
+    const out = new Array(TOTAL).fill(null);
+    const ones = pool.filter((p) => p === 'cherry');
+    const rest = pool.filter((p) => p !== 'cherry');
+    for (let i = 0; i < ones.length; i++) out[i * 2] = 'cherry';
+    let k = 0;
+    for (let i = 0; i < TOTAL; i++) if (!out[i]) out[i] = rest[k++];
+    return out;
+  })();
+
+  const seg = (id) => LAYOUT.find((s) => s.id === id);
+  const STEP = (Math.PI * 2) / TOTAL;
+
+  GWGames.register({
+    id: 'wheel',
+    name: 'The Big Wheel',
+    icon: '🎡',
+    floor: 0,
+    blurb: 'Thirty-two slots, six prizes and a leather flapper. The joker is one '
+         + 'of them and pays thirty to one, which is exactly what it should.',
+    bets: LAYOUT.map((s) => ({
+      id: s.id,
+      label: s.label,
+      pays: s.pays,
+      prob: s.count / TOTAL,
+      note: s.count + ' of the ' + TOTAL + ' slots.',
+    })),
+
+    build(ctx) {
+      const g = new THREE.Group();
+
+      // The post it stands on, and a shallow plinth so it is not floating.
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.19, 1.25, 14),
+        new THREE.MeshStandardMaterial({ color: 0x2a1c16, roughness: 0.6, metalness: 0.25 })
+      );
+      post.position.y = 0.62;
+      post.castShadow = true;
+      g.add(post);
+
+      const wheel = new THREE.Group();
+      wheel.position.set(0, 1.62, 0);
+      g.add(wheel);
+
+      const R = 1.15;
+      // One wedge per slot, coloured by its prize, alternating shade so the
+      // spokes read even where two neighbours share a colour.
+      for (let i = 0; i < TOTAL; i++) {
+        const s = seg(ORDER[i]);
+        const shade = new THREE.Color(s.colour).multiplyScalar(i % 2 ? 0.82 : 1);
+        const wedge = new THREE.Mesh(
+          new THREE.CircleGeometry(R, 10, i * STEP - STEP / 2, STEP),
+          new THREE.MeshStandardMaterial({ color: shade, roughness: 0.55, metalness: 0.1 })
+        );
+        wedge.position.z = 0.035;
+        wheel.add(wedge);
+        // A peg on every boundary, which is what the flapper ticks against.
+        const peg = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.018, 0.018, 0.1, 6),
+          new THREE.MeshStandardMaterial({ color: 0xd8d2c4, metalness: 0.85, roughness: 0.3 })
+        );
+        peg.rotation.x = Math.PI / 2;
+        peg.position.set(Math.cos(i * STEP + STEP / 2) * (R - 0.05),
+                         Math.sin(i * STEP + STEP / 2) * (R - 0.05), 0.075);
+        wheel.add(peg);
+      }
+
+      const back = new THREE.Mesh(
+        new THREE.CylinderGeometry(R + 0.07, R + 0.07, 0.07, 48),
+        new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.7 })
+      );
+      back.rotation.x = Math.PI / 2;
+      wheel.add(back);
+      const hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, 0.13, 16),
+        new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.9, roughness: 0.22 })
+      );
+      hub.rotation.x = Math.PI / 2;
+      hub.position.z = 0.06;
+      wheel.add(hub);
+
+      // The flapper, at twelve o'clock, hanging into the pegs' path.
+      const flapper = new THREE.Group();
+      flapper.position.set(0, 1.62 + R + 0.10, 0.08);
+      const strap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, 0.24, 0.014),
+        new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.85 })
+      );
+      strap.position.y = -0.12;
+      flapper.add(strap);
+      g.add(flapper);
+
+      ctx.mount(g);
+      ctx.view([0, 1.75, 3.5], [0, 1.55, 0]);
+
+      const stop = ctx.stage.onTick((dt, now) => {
+        if (wheel.userData.busy) return;
+        // Barely turning while nobody is playing, so it reads as a thing that
+        // moves rather than a painted disc.
+        wheel.rotation.z += dt * 0.16;
+        flapper.rotation.z = Math.sin(now * 2.1) * 0.05;
+      });
+
+      return { wheel, flapper, root: g, R, dispose() { stop(); } };
+    },
+
+    async play(ctx, handle, bet) {
+      const wheel = handle.wheel;
+      wheel.userData.busy = true;
+
+      const wantWin = ctx.store.s.mods.alwaysWin ? true
+        : ctx.store.s.mods.alwaysLose ? false : null;
+
+      /* Pick the slot honestly, then solve for the angle that lands on it.
+
+         The alternative -- spinning with friction and reading off wherever it
+         stops -- sounds more honest and is not: floating-point drift near the
+         boundary would put the payout a hair away from the printed odds, and
+         the odds panel is the one thing in this game that must be exact. */
+      let index;
+      if (wantWin === null) {
+        index = ctx.rng.int(0, TOTAL - 1);
+      } else {
+        const want = ORDER.map((id, i) => ({ id, i }))
+          .filter((s) => (s.id === bet.id) === wantWin);
+        index = want[ctx.rng.int(0, want.length - 1)].i;
+      }
+      const landed = seg(ORDER[index]);
+
+      // Where that slot has to end up: under the flapper at twelve o'clock.
+      const target = Math.PI / 2 - index * STEP;
+      const turns = 5 + ctx.rng.int(0, 3);
+      const from = wheel.rotation.z;
+      const to = target + turns * Math.PI * 2
+        + Math.ceil((from - target) / (Math.PI * 2)) * Math.PI * 2;
+
+      ctx.audio.play('whoosh');
+      let lastPeg = -1;
+      await ctx.animate(3.6, (t) => {
+        wheel.rotation.z = from + (to - from) * t;
+        // The flapper is dragged aside by each peg and falls back: read the
+        // angle, not the time, so it ticks slower as the wheel slows.
+        const pegPhase = (wheel.rotation.z / STEP) % 1;
+        handle.flapper.rotation.z = -Math.sin(pegPhase * Math.PI) * 0.42;
+        const peg = Math.floor(wheel.rotation.z / STEP);
+        if (peg !== lastPeg) { lastPeg = peg; ctx.audio.play('tick'); }
+      }, GWGames.EASE.outCubic);
+
+      wheel.rotation.z = target;
+      handle.flapper.rotation.z = 0;
+      wheel.userData.busy = false;
+
+      const won = landed.id === bet.id;
+      ctx.audio.play(won ? (landed.pays > 10 ? 'big' : 'cash') : 'lose');
+      return {
+        multiplier: won ? landed.pays : 0,
+        headline: landed.label + (won ? '' : ' — not yours'),
+        tone: won ? (landed.pays > 10 ? 'huge' : 'win') : 'lose',
+        detail: 'Landed on ' + landed.label,
+      };
+    },
+  });
+})();
+
+</script>
+<script>
+/* Three Cups.
+
+   A ball goes under one of three cups, the cups are swapped in front of you,
+   and you say which. Watching it properly should work -- and it does, exactly
+   one time in three, because the swaps are faster than an eye can track by
+   design and the game is honest about that in the odds panel. There is no
+   sleight of hand in the code: the ball stays under the cup it started under
+   and the cup's index is tracked through every swap.
+
+   It pays 2.85 on a one-in-three shot, which is a five percent cut. The
+   temptation with a game like this is to cheat on the last swap when the
+   player is right; the temptation is the reason `play` never looks at the
+   answer before the ball is placed. */
+
+(function () {
+  'use strict';
+
+  const PAYS = 2.85;
+  const SPOTS = [-0.62, 0, 0.62];
+
+  function makeCup(colour) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.17, 0.23, 0.34, 20, 1, true),
+      new THREE.MeshStandardMaterial({
+        color: colour, roughness: 0.45, metalness: 0.15, side: THREE.DoubleSide,
+      })
+    );
+    body.position.y = 0.17;
+    body.castShadow = true;
+    g.add(body);
+    const top = new THREE.Mesh(
+      new THREE.CircleGeometry(0.17, 20),
+      new THREE.MeshStandardMaterial({ color: colour, roughness: 0.45, metalness: 0.15 })
+    );
+    top.rotation.x = -Math.PI / 2;
+    top.position.y = 0.34;
+    g.add(top);
+    return g;
+  }
+
+  GWGames.register({
+    id: 'cups',
+    name: 'Three Cups',
+    icon: '🥤',
+    floor: 0,
+    blurb: 'The ball is under one of them and stays there. Watching closely is '
+         + 'worth precisely nothing, which the man running it will not tell you.',
+    bets: [
+      { id: 'pick', label: 'Find the ball', pays: PAYS, prob: 1 / 3,
+        note: 'One in three, paying 2.85. The five percent is the table.' },
+    ],
+
+    build(ctx) {
+      const g = new THREE.Group();
+      g.add(GWStage.table({ radius: 1.35, colour: 0x2c1b3f, rail: 0x241318 }));
+
+      const cups = SPOTS.map((x, i) => {
+        const cup = makeCup([0xc0392b, 0x2e86c1, 0xd9a441][i]);
+        cup.position.set(x, 0.02, 0);
+        cup.userData.slot = i;
+        g.add(cup);
+        return cup;
+      });
+
+      const ball = new THREE.Mesh(
+        new THREE.SphereGeometry(0.075, 14, 12),
+        new THREE.MeshStandardMaterial({ color: 0xf2ede4, roughness: 0.5 })
+      );
+      ball.position.set(0, 0.075, 0);
+      ball.visible = false;
+      g.add(ball);
+
+      ctx.mount(g);
+      ctx.view([0, 1.15, 2.15], [0, 0.15, 0]);
+      return { cups, ball, root: g, dispose() {} };
+    },
+
+    async play(ctx, handle, bet) {
+      const { cups, ball } = handle;
+      // Where each cup currently stands. Index into SPOTS.
+      const at = cups.map((c, i) => i);
+      for (let i = 0; i < 3; i++) { cups[i].position.set(SPOTS[i], 0.02, 0); }
+
+      const mods = ctx.store.s.mods;
+      const under = mods.alwaysWin || mods.alwaysLose ? 0 : ctx.rng.int(0, 2);
+
+      // Show the ball going under, so the swap that follows means something.
+      ctx.setStatus('Watch it.');
+      ball.visible = true;
+      ball.position.set(SPOTS[under], 0.075, 0);
+      await ctx.animate(0.42, (t) => { cups[under].position.y = 0.02 + t * 0.30; },
+        GWGames.EASE.outCubic);
+      await ctx.wait(0.28);
+      await ctx.animate(0.30, (t) => { cups[under].position.y = 0.32 - t * 0.30; },
+        GWGames.EASE.inCubic);
+      ball.visible = false;
+
+      /* The swaps. Two cups arc past each other, one in front and one behind,
+         so neither passes through the other. Each swap is a little quicker
+         than the last. */
+      const swaps = 5 + ctx.rng.int(0, 3);
+      for (let s = 0; s < swaps; s++) {
+        const a = ctx.rng.int(0, 2);
+        let b = ctx.rng.int(0, 1);
+        if (b >= a) b++;                        // any of the other two
+        const ca = cups[at.indexOf(a)], cb = cups[at.indexOf(b)];
+        const xa = SPOTS[a], xb = SPOTS[b];
+        const dur = Math.max(0.16, 0.36 - s * 0.03);
+        ctx.audio.play('tick');
+        await ctx.animate(dur, (t) => {
+          const e = GWGames.EASE.inOutCubic(t);
+          ca.position.x = xa + (xb - xa) * e;
+          cb.position.x = xb + (xa - xb) * e;
+          ca.position.z = Math.sin(e * Math.PI) * 0.34;
+          cb.position.z = -Math.sin(e * Math.PI) * 0.34;
+        });
+        ca.position.z = cb.position.z = 0;
+        const ia = at.indexOf(a), ib = at.indexOf(b);
+        at[ia] = b; at[ib] = a;
+      }
+
+      /* Which cup is over the ball now: the one whose slot is the one the ball
+         was placed under. Tracked, never re-decided. */
+      const winner = cups[at.indexOf(under)];
+
+      ctx.setStatus('Which one?');
+      const answer = await ctx.prompt({ meshes: cups.map((c) => c.children[0]) });
+      const chosen = answer.object.parent;
+      let won = chosen === winner;
+      // The two mods are the only things that touch the outcome, and they do it
+      // by moving the ball rather than by lying about where it is.
+      if (mods.alwaysWin) won = true;
+      else if (mods.alwaysLose) won = false;
+      const reveal = won ? chosen : winner;
+
+      ball.position.set(reveal.position.x, 0.075, 0);
+      ball.visible = true;
+      ctx.audio.play('whoosh');
+      await ctx.animate(0.36, (t) => { reveal.position.y = 0.02 + t * 0.34; },
+        GWGames.EASE.outCubic);
+      if (!won) {
+        // Lift theirs too, so an empty cup is shown to be empty.
+        await ctx.animate(0.26, (t) => { chosen.position.y = 0.02 + t * 0.34; },
+          GWGames.EASE.outCubic);
+      }
+      await ctx.wait(0.5);
+
+      ctx.audio.play(won ? 'cash' : 'lose');
+      return {
+        multiplier: won ? PAYS : 0,
+        headline: won ? 'Under that one' : 'It was the other one',
+        tone: won ? 'win' : 'lose',
+        detail: { picked: chosen.userData.slot, ball: under },
+      };
+    },
+  });
+})();
+
+</script>
+<script>
+/* The Scratcher.
+
+   Three panels, scratched one at a time. Three of a kind pays what that symbol
+   is worth; anything else pays nothing. It is the fastest game in the building
+   -- about four seconds a card -- which is the point of it: this is the machine
+   you play when the clock is nearly out and you are short.
+
+   The symbols are drawn independently per panel with the weights below, so the
+   chance of three of a kind is the sum over symbols of p cubed. That sum, times
+   what each pays, is where the printed edge comes from -- and because the draws
+   are independent, revealing two matching symbols really does leave the third
+   open, which is the only reason scratching one at a time is worth watching. */
+
+(function () {
+  'use strict';
+
+  /* Payouts derived, not written down.
+
+     Hand-written prizes gave this a forty-three percent house edge on the
+     first pass -- caught by tools/odds.mjs, not by reading it. So the weights
+     are chosen and the prizes fall out of them: every symbol is set to
+     contribute the same share of the return, which means the common ones pay
+     a little often and the rare ones pay a lot rarely, and the total is the
+     same CUT every other honest machine here takes.
+
+       pays(i) = share / p(i)^3,  share = CUT / (number of symbols)
+
+     so the sum of p^3 * pays over the symbols is exactly CUT, whatever the
+     weights are changed to later. */
+  const CUT = 0.96;
+  const WEIGHTS = [
+    { id: 'cherry', face: '\u{1F352}', p: 0.34 },
+    { id: 'bell', face: '\u{1F514}', p: 0.26 },
+    { id: 'clover', face: '\u{1F340}', p: 0.20 },
+    { id: 'crown', face: '\u{1F451}', p: 0.13 },
+    { id: 'skull', face: '\u{1F480}', p: 0.07 },
+  ];
+  const SHARE = CUT / WEIGHTS.length;
+  const SYMBOLS = WEIGHTS.map((s) => Object.assign({}, s, {
+    pays: +(SHARE / Math.pow(s.p, 3)).toFixed(2),
+  }));
+
+  // How often a card is a winner at all, and what one returns on average --
+  // the second is CUT by construction, and is computed rather than asserted so
+  // that changing a weight cannot quietly make the printed figure a lie.
+  const pAny = SYMBOLS.reduce((n, s) => n + Math.pow(s.p, 3), 0);
+  const rtp = SYMBOLS.reduce((n, s) => n + Math.pow(s.p, 3) * s.pays, 0);
+
+  function panelTexture(face) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#efe7d8';
+    g.fillRect(0, 0, 128, 128);
+    g.font = '78px serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(face, 64, 70);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  GWGames.register({
+    id: 'scratcher',
+    name: 'The Scratcher',
+    icon: '🎟️',
+    floor: 0,
+    blurb: 'Three panels, three of a kind, four seconds a card. The machine you '
+         + 'end up at when the doors are closing and you are two hundred short.',
+    bets: [
+      { id: 'card', label: 'Buy a card', pays: +rtp.toFixed(4), prob: 1,
+        note: 'Three of a kind pays. It happens ' + (pAny * 100).toFixed(1)
+            + '% of the time.' },
+    ],
+    paysAsRtp: true,
+
+    oddsRows() {
+      return SYMBOLS.map((s) => ({
+        label: 'Three ' + s.face,
+        pays: s.pays,
+        prob: Math.pow(s.p, 3),
+      }));
+    },
+
+    build(ctx) {
+      const g = new THREE.Group();
+
+      // A dispenser to take the card from, so the card comes from somewhere.
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 1.5, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0x8a2436, roughness: 0.55, metalness: 0.2 })
+      );
+      body.position.set(0, 0.75, -0.45);
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      const shelf = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, 0.08, 0.85),
+        new THREE.MeshStandardMaterial({ color: 0x2a1c16, roughness: 0.6 })
+      );
+      shelf.position.set(0, 1.0, 0.05);
+      shelf.receiveShadow = true;
+      g.add(shelf);
+
+      const card = new THREE.Group();
+      card.position.set(0, 1.05, 0.06);
+      card.rotation.x = -Math.PI / 2;
+      g.add(card);
+      const stock = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.05, 0.62),
+        new THREE.MeshStandardMaterial({ color: 0xe6dcc8, roughness: 0.85 })
+      );
+      card.add(stock);
+
+      // Three panels: the symbol underneath, and a scratch-off cover over it.
+      const panels = [];
+      for (let i = 0; i < 3; i++) {
+        const holder = new THREE.Group();
+        holder.position.set((i - 1) * 0.33, -0.02, 0.002);
+        const face = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.27, 0.27),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 })
+        );
+        face.position.z = 0.001;
+        holder.add(face);
+        const cover = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.28, 0.28),
+          new THREE.MeshStandardMaterial({ color: 0xa9a296, roughness: 0.55, metalness: 0.4 })
+        );
+        cover.position.z = 0.004;
+        holder.add(cover);
+        card.add(holder);
+        panels.push({ holder, face, cover });
+      }
+
+      ctx.mount(g);
+      ctx.view([0, 1.72, 1.55], [0, 1.03, 0]);
+      return {
+        panels, card, root: g,
+        dispose() {
+          for (const p of panels) if (p.face.material.map) p.face.material.map.dispose();
+        },
+      };
+    },
+
+    async play(ctx, handle, bet) {
+      const { panels } = handle;
+      const mods = ctx.store.s.mods;
+
+      const draw = () => {
+        let r = ctx.rng.float(0, 1);
+        for (const s of SYMBOLS) { if ((r -= s.p) <= 0) return s; }
+        return SYMBOLS[0];
+      };
+
+      let picks;
+      if (mods.alwaysWin) { const s = draw(); picks = [s, s, s]; }
+      else if (mods.alwaysLose) {
+        picks = [SYMBOLS[0], SYMBOLS[0], SYMBOLS[1]];
+      } else {
+        picks = [draw(), draw(), draw()];
+      }
+
+      // Reset the covers from the last card.
+      for (const p of panels) {
+        p.cover.visible = true;
+        p.cover.scale.set(1, 1, 1);
+        p.cover.material.opacity = 1;
+        p.cover.material.transparent = false;
+      }
+
+      for (let i = 0; i < 3; i++) {
+        const p = panels[i];
+        if (p.face.material.map) p.face.material.map.dispose();
+        p.face.material.map = panelTexture(picks[i].face);
+        p.face.material.needsUpdate = true;
+        ctx.audio.play('chip');
+        // The cover flakes away rather than vanishing: scale it off from the
+        // middle and fade it, which reads as scratching without a shader.
+        p.cover.material.transparent = true;
+        await ctx.animate(0.34, (t) => {
+          p.cover.scale.set(1 - t, 1 - t * 0.15, 1);
+          p.cover.material.opacity = 1 - t;
+        }, GWGames.EASE.outCubic);
+        p.cover.visible = false;
+        await ctx.wait(0.18);
+      }
+
+      const same = picks[0].id === picks[1].id && picks[1].id === picks[2].id;
+      const prize = same ? picks[0] : null;
+      await ctx.wait(0.35);
+      ctx.audio.play(same ? (prize.pays >= 80 ? 'big' : 'cash') : 'lose');
+      return {
+        multiplier: same ? prize.pays : 0,
+        headline: same ? 'Three ' + prize.face : picks.map((p) => p.face).join(' '),
+        tone: same ? (prize.pays >= 80 ? 'huge' : 'win') : 'lose',
+        detail: { symbols: picks.map((p) => p.id) },
+      };
+    },
+  });
+})();
+
+</script>
+<script>
+/* War.
+
+   One card each, higher wins, and that is the whole game. It exists for the
+   same reason the scratcher does -- it takes three seconds -- but it is the
+   other kind of quick: an even-money bet at nearly the lowest edge on the
+   ground floor, so it is what you play when you need to hold your ground
+   rather than gain any.
+
+   Ranks are drawn uniformly and independently, so a tie is 1 in 13. A tie does
+   not lose here, it goes to war: one card each again, and that second round
+   pays double. Which means the edge is small and comes almost entirely from
+   losing the war outright. */
+
+(function () {
+  'use strict';
+
+  const RANKS = GWCards.RANKS;
+  const SUITS = ['s', 'h', 'd', 'c'];
+
+  /* Where the edge is.
+
+     Win and lose are equal by symmetry -- (1 - 1/13)/2 each -- so an even-money
+     bet on the higher card returns 0.923 before ties are dealt with, and the
+     entire house edge has to come out of what happens on a tie.
+
+     The first version sent ties to war for double, which returns more than the
+     stake and made the whole game pay nine percent to the player. Caught by
+     tools/odds.mjs, which is the only reason it did not ship. Here the house
+     takes half and calls it a draw -- the surrender line from real casino war,
+     and the cleanest way to buy an edge out of one in thirteen hands. */
+  const P_TIE = 1 / 13;
+  const P_WIN = (1 - P_TIE) / 2;
+  const TIE_BACK = 0.5;
+  const RTP = P_WIN * 2 + P_TIE * TIE_BACK;
+
+  GWGames.register({
+    id: 'war',
+    name: 'War',
+    icon: '⚔️',
+    floor: 0,
+    blurb: 'One card each, higher wins, three seconds a hand. A tie is a draw '
+         + 'and the house keeps half of it, which is where its whole living comes from.',
+    bets: [
+      { id: 'play', label: 'Play a hand', pays: +RTP.toFixed(4), prob: 1,
+        note: 'Even money. A tie gives you half your stake back.' },
+    ],
+    paysAsRtp: true,
+
+    oddsRows() {
+      return [
+        { label: 'Your card is higher', pays: 2, prob: P_WIN },
+        { label: 'Theirs is higher', pays: 0, prob: P_WIN },
+        { label: 'A tie — half back', pays: TIE_BACK, prob: P_TIE },
+      ];
+    },
+
+    build(ctx) {
+      const g = new THREE.Group();
+      g.add(GWStage.table({ radius: 1.7, colour: 0x3d1220, rail: 0x2a1710 }));
+
+      const stack = new THREE.Group();
+      for (let i = 0; i < 18; i++) {
+        const c = GWCards.card('A', 's');
+        c.rotation.x = Math.PI / 2;
+        c.position.set(0, 0.012 + i * 0.012, -0.95);
+        c.rotation.z = ctx.rng.float(-0.02, 0.02);
+        stack.add(c);
+      }
+      g.add(stack);
+
+      ctx.mount(g);
+      ctx.view([0, 1.95, 2.4], [0, 0.02, 0.1]);
+      return { root: g, laid: [], dispose() { clear(this); } };
+    },
+
+    async play(ctx, handle, bet) {
+      clear(handle);
+      const mods = ctx.store.s.mods;
+
+      let mine = ctx.rng.int(1, 13);
+      let theirs = ctx.rng.int(1, 13);
+      if (mods.alwaysWin) { mine = 13; theirs = 2; }
+      else if (mods.alwaysLose) { mine = 2; theirs = 13; }
+
+      await deal(ctx, handle, mine, -0.5, 0, 1);
+      await deal(ctx, handle, theirs, 0.5, 0, 1);
+      await ctx.wait(0.3);
+
+      if (mine === theirs) {
+        ctx.audio.play('deny');
+        return { multiplier: TIE_BACK,
+                 headline: 'Two ' + RANKS[mine - 1] + 's — half back',
+                 tone: 'push', detail: { mine, theirs } };
+      }
+      const won = mine > theirs;
+      ctx.audio.play(won ? 'cash' : 'lose');
+      return {
+        multiplier: won ? 2 : 0,
+        headline: won ? RANKS[mine - 1] + ' beats ' + RANKS[theirs - 1]
+                      : RANKS[theirs - 1] + ' beats ' + RANKS[mine - 1],
+        tone: won ? 'win' : 'lose',
+        detail: { mine, theirs },
+      };
+    },
+  });
+
+  async function deal(ctx, handle, rank, x, lift, round) {
+    // Off the run's own stream, like everything else: a suit is cosmetic but a
+    // reload should deal the same table it dealt before.
+    const suit = SUITS[ctx.rng.int(0, 3)];
+    const card = GWCards.card(RANKS[rank - 1], suit);
+    card.rotation.x = Math.PI / 2;
+    card.position.set(0, 0.24 + lift, -0.95);
+    handle.root.add(card);
+    handle.laid.push(card);
+    ctx.audio.play('chip');
+    const fromZ = -0.95, toZ = round === 1 ? 0.1 : 0.1 - round * 0.06;
+    await ctx.animate(0.26, (t) => {
+      card.position.x = x * t;
+      card.position.z = fromZ + (toZ - fromZ) * t;
+      card.position.y = 0.24 + lift - 0.22 * t + Math.sin(t * Math.PI) * 0.12;
+      card.rotation.z = (1 - t) * 0.6;
+    }, GWGames.EASE.outCubic);
+  }
+
+  function clear(handle) {
+    for (const c of handle.laid) {
+      if (c.parent) c.parent.remove(c);
+      if (c.geometry) c.geometry.dispose();
+    }
+    handle.laid.length = 0;
+  }
+})();
+
+</script>
+<script>
 /* Five ducks, one length of water.
 
    Each duck gets its own speed curve for the race -- a base pace, a wobble and
@@ -7550,6 +8326,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     highlow: { w: 4.3, d: 4.3 }, plinko: { w: 3.0, d: 1.4 },
     crash: { w: 3.2, d: 1.4 }, mines: { w: 4.5, d: 4.5 },
     ladder: { w: 3.6, d: 4.0 }, chamber: { w: 3.0, d: 3.0 },
+    wheel: { w: 2.8, d: 1.6 }, cups: { w: 3.2, d: 3.2 },
+    scratcher: { w: 2.0, d: 1.5 }, war: { w: 3.4, d: 3.4 },
   };
 
   /* Dark shell, bright carpet, warm metal.
@@ -7603,6 +8381,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   function build(opts) {
     const floorDef = C.FLOORS[opts.floor];
+    /* The hand this floor is showing tonight, dealt by the caller. A floor
+       names a pool rather than a fixed four now, so the builder has to be told
+       which of them it is standing rather than reading the pool itself and
+       standing all of it. */
+    const games = opts.games || C.gamesOn(opts.floor, 0);
     const theme = THEME[floorDef.id];
     const size = SIZE[floorDef.id];
     const rng = opts.rng;
@@ -7818,8 +8601,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        a coin toss near a dice table near a slot bank instead of grouping every
        copy of one machine in whichever corner the shuffle happened to favour. */
     const wanted = [];
+    /* Biggest first, within each round.
+
+       The spots are shuffled and taken in order, so a small machine that lands
+       in the middle of a wall can leave nothing wide enough for a five-metre
+       table -- War went unplaced entirely on some seeds, and a game that is
+       dealt to a floor and then silently not built is worse than one that was
+       never dealt. Largest footprint first is the usual answer to that and
+       costs nothing. */
+    const bySize = games.slice().sort((a, b) => {
+      const fa = FOOTPRINT[a] || { w: 4, d: 4 }, fb = FOOTPRINT[b] || { w: 4, d: 4 };
+      return (fb.w * fb.d) - (fa.w * fa.d);
+    });
     for (let copy = 0; copy < (COPIES[floorDef.id] || 1); copy++) {
-      for (const gameId of floorDef.games) wanted.push(gameId);
+      for (const gameId of bySize) wanted.push(gameId);
     }
     for (const gameId of wanted) {
       const foot = FOOTPRINT[gameId] || { w: 4, d: 4 };
@@ -8114,7 +8909,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      where each one is matters; randomising that would only make the hub harder
      to learn without making it more interesting. */
   function buildLobby(opts) {
-    const W = 22, D = 17;
+    const W = 34, D = 26;
     const halfW = W / 2, halfD = D / 2;
     const theme = { carpet: '#8a6a2a', wall: 0x161010, trim: 0x9a7333, neon: 0xffc978, ceiling: 0x0b0807 };
 
@@ -8280,6 +9075,76 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       focus: new THREE.Vector3(0, 2.4, halfD - 0.62),
     });
 
+    /* The crate you wake up in.
+
+       Every day starts the same way in the game this follows: you come round
+       inside a packing box in the yard, with the lid up and the limo already
+       running. Its walls are solid and shin-high on the inside, so stepping
+       out is a step rather than a puzzle -- a box you have to work out how to
+       escape is a joke that stops being funny on day two. */
+    const crate = { x: -halfW + 4.2, z: halfD - 5.0, w: 1.9, d: 1.9, h: 0.62 };
+    const crateMat = track(new THREE.MeshStandardMaterial({
+      color: 0x6b4a2a, roughness: 0.92,
+    }));
+    for (const [dx, dz, ww, dd] of [
+      [-crate.w / 2, 0, 0.12, crate.d], [crate.w / 2, 0, 0.12, crate.d],
+      [0, -crate.d / 2, crate.w, 0.12], [0, crate.d / 2, crate.w, 0.12]]) {
+      slab(crate.x + dx, crate.z + dz, ww, dd, crate.h, 0, crateMat, 'crate');
+    }
+    // The lid, thrown back against the side.
+    const lid = new THREE.Mesh(
+      track(new THREE.BoxGeometry(crate.w, 0.09, crate.d)), crateMat
+    );
+    lid.position.set(crate.x - crate.w * 0.62, crate.h + 0.5, crate.z);
+    lid.rotation.z = -1.15;
+    lid.castShadow = true;
+    group.add(lid);
+    group.add(sign('WAKE UP', crate.x, 1.55, crate.z - crate.d / 2 - 0.1,
+      theme.neon, 1.6, 0));
+
+    /* Something to climb on, on the way to the doors.
+
+       The movement grew a jump, a landing and air control that barely steers,
+       and until now the only thing in the building to use them on was a flat
+       carpet. A run of crates and a beam across the yard is where you find out
+       what the controls do, and there is a ticket on the far end so that
+       finding out is worth doing rather than a thing to look at. */
+    const jumps = [];
+    const course = [
+      { x: -6.5, z: 6.0, w: 1.7, d: 1.7, h: 0.55 },
+      { x: -3.4, z: 5.2, w: 1.5, d: 1.5, h: 1.05 },
+      { x: -0.4, z: 6.4, w: 1.4, d: 1.4, h: 1.55 },
+      { x: 2.8, z: 5.4, w: 1.3, d: 1.3, h: 2.05 },
+      { x: 6.2, z: 6.2, w: 2.2, d: 1.2, h: 2.45 },
+    ];
+    for (const b of course) {
+      slab(b.x, b.z, b.w, b.d, b.h, 0, crateMat, 'crate');
+      // A lip of trim on the top edge, so the height reads before you jump.
+      slab(b.x, b.z, b.w + 0.1, b.d + 0.1, 0.05, b.h, trimMat, null);
+      jumps.push(b);
+    }
+    const top = course[course.length - 1];
+    anchors.push({
+      kind: 'fixture', action: 'prize', label: 'Somebody left a ticket up here',
+      position: new THREE.Vector3(top.x, top.h, top.z),
+      rotationY: 0,
+      half: { hw: top.w / 2, hd: top.d / 2 },
+      stand: new THREE.Vector3(top.x, 0, top.z),
+      focus: new THREE.Vector3(top.x, top.h + 0.4, top.z),
+    });
+    const prize = new THREE.Mesh(
+      track(new THREE.TorusGeometry(0.17, 0.055, 10, 22)),
+      track(new THREE.MeshStandardMaterial({
+        color: 0xe9b44c, metalness: 0.85, roughness: 0.25,
+        emissive: 0x6b4a10, emissiveIntensity: 0.6,
+      }))
+    );
+    prize.position.set(top.x, top.h + 0.42, top.z);
+    prize.rotation.x = Math.PI / 2;
+    group.add(prize);
+    sites.points.push({ at: new THREE.Vector3(top.x, top.h + 1.0, top.z),
+                        colour: 0xffd27a, intensity: 8, distance: 6 });
+
     // Somewhere to stand about. A rug and a low table, so the middle of the
     // room is not an empty square.
     const rug = new THREE.Mesh(
@@ -8300,7 +9165,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return {
       group, solids, anchors, theme, sites,
       lift: { x: 0, z: halfD - 1.6, w: doorW, d: 1.6 },
-      spawn: { x: 3.0, z: -3.0, angle: 0.4 },
+      // Inside the crate, looking out across the yard at the limo.
+      spawn: { x: -halfW + 4.2, z: halfD - 5.0, angle: Math.PI * 0.78 },
+      crate,
+      jumps,
       size: { w: W, d: D, height: WALL_H },
       name: 'The Lobby',
       isLobby: true,
@@ -10824,7 +11692,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const open = store.unlockedFloors().filter((f) => f.open);
       const out = [];
       for (const entry of open) {
-        for (const id of entry.floor.games) {
+        for (const id of C.gamesOn(entry.index, store.s.seed)) {
           const def = GWGames.get(id);
           if (def) out.push({ def, floor: entry.floor, index: entry.index, weight: entry.index === store.s.floor ? 6 : 1 });
         }
@@ -11782,7 +12650,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const s = shell.store.s;
       const floors = shell.store.unlockedFloors().map((entry, i) => {
         const f = entry.floor;
-        const games = f.games.map((id) => GWGames.get(id)).filter(Boolean);
+        const games = C.gamesOn(i, s.seed).map((id) => GWGames.get(id)).filter(Boolean);
         return '<button class="floorcard" style="--floor-accent:' + f.accent + '"'
           + (entry.open ? '' : ' disabled') + ' data-floor="' + i + '">'
           + '<span class="floorcard__no">' + i + '</span>'
@@ -11797,7 +12665,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }).join('');
 
       const here = C.FLOORS[s.floor];
-      const tables = here.games.map((id) => {
+      const tables = C.gamesOn(s.floor, s.seed).map((id) => {
         const g = GWGames.get(id);
         if (!g) return '';
         const edge = g.paysAsRtp
@@ -12315,7 +13183,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     if (s.challenge && s.challenge.accepted) {
       const def = C.CHALLENGES.find((ch) => ch.id === s.challenge.id);
       const tally = s.challengeState || GWState.newTally();
-      if (def && def.check(tally, C.FLOORS[s.floor], met)) {
+      if (def && def.check(tally, C.FLOORS[s.floor], met, s)) {
         meta.tickets += def.tickets;
         challengeWon = { text: def.text, tickets: def.tickets };
       }
@@ -13415,7 +14283,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     GWLoading.step('Laying the carpet');
     await frame();
 
-    shell.level = GWLevel.build({ floor: index, rng: layoutRng(index) });
+    shell.level = GWLevel.build({
+      floor: index, rng: layoutRng(index),
+      games: C.gamesOn(index, shell.store.s.seed),
+    });
     shell.stage.group.add(shell.level.group);
     shell.stage.setLightSites(shell.level.sites);
     shell.stage.setAccent(shell.level.theme.neon);

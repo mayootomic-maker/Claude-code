@@ -85,7 +85,7 @@ for (let seed = 0; seed < SEEDS; seed++) {
     await page.evaluate((f) => GWShell.enterFloor(f), floor);
     await settled();
     const report = await page.evaluate(async () => {
-      const wanted = GWConfig.FLOORS[GWShell.store.s.floor].games;
+      const wanted = GWConfig.gamesOn(GWShell.store.s.floor, GWShell.store.s.seed);
       const built = GWShell.anchors.map((a) => a.def.id);
       const rows = [];
       for (const rec of GWShell.anchors) {

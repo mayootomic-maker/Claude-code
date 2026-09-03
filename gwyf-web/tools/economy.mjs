@@ -59,9 +59,9 @@ function edgeOf(def, bet) {
 
 /* The best bet on a floor, and how bad it is. Every honest bet loses money, so
    "best" means "loses least" unless an item has moved it. */
-function floorBets(floorIndex, items) {
+function floorBets(floorIndex, items, seedForFloors) {
   const out = [];
-  for (const id of C.FLOORS[floorIndex].games) {
+  for (const id of C.gamesOn(floorIndex, seedForFloors)) {
     const def = GAMES.get(id);
     if (!def) continue;
     for (const bet of def.bets) {
@@ -154,7 +154,7 @@ function simulate(seed, policy, tune) {
       fronted += front;
     }
 
-    const choices = floorBets(floor, items);
+    const choices = floorBets(floor, items, seed);
     /* Heat, because it is the constraint that decides everything.
 
        Without it a player who owns the two-headed coin simply grinds the coin

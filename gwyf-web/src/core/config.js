@@ -26,6 +26,22 @@
     return Math.round(350 * Math.pow(1.12, day - 1) / 25) * 25;
   }
 
+  /* What a floor can put out, and how many of them it does.
+
+     A floor used to name four machines and stand exactly those four every time
+     you rode to it, which made the tower four rooms you had already seen. It
+     names a pool now and deals a hand from it -- drawn from the run seed and
+     the floor number, so it is the same floor for everyone at the table and
+     the same floor if you reload, but a different one next run.
+
+     Pools overlap on purpose. The same wheel stands on the ground floor and in
+     Velvet Hall at ten times the limits, which is what a real casino does with
+     a game people like; and it means a floor whose pool is thin still has
+     somewhere to send you when the pit shuts a table.
+
+     `gamesOn` is the one place this is resolved. Nothing reads `.pool`
+     directly, so a floor's hand cannot disagree with itself between the lift
+     panel, the level builder and the odds. */
   const FLOORS = [
     {
       /* Not "The Lobby". That is the room you start the day in, and having two
@@ -36,7 +52,8 @@
       tag: 'Ground floor', accent: '#e0913f',
       blurb: 'Sticky carpet, free peanuts, and the only games in the building that '
            + 'will not take your whole night in one go.',
-      games: ['coinflip', 'dice', 'slots', 'duckrace'],
+      pool: ['coinflip', 'dice', 'slots', 'duckrace', 'wheel', 'cups', 'scratcher', 'war'],
+      deal: 5,
       minBet: 25, maxBet: 500,
     },
     {
@@ -44,7 +61,8 @@
       tag: 'Second floor', accent: '#ff3fd0',
       blurb: 'Where the carpet stops being sticky and the drinks stop being free. '
            + 'The tables here have a croupier and a memory.',
-      games: ['roulette', 'blackjack', 'highlow', 'plinko'],
+      pool: ['roulette', 'blackjack', 'highlow', 'plinko', 'wheel', 'war', 'cups', 'slots'],
+      deal: 5,
       minBet: 100, maxBet: 2500,
     },
     {
@@ -52,14 +70,16 @@
       tag: 'Third floor', accent: '#8fe6ff',
       blurb: 'No windows, no clocks, no exit signs. The house keeps the odds in '
            + 'a safe down here and it does not open it for you.',
-      games: ['crash', 'mines', 'ladder'],
+      pool: ['crash', 'mines', 'ladder', 'plinko', 'roulette', 'blackjack', 'highlow'],
+      deal: 4,
       minBet: 250, maxBet: 10000,
     },
     {
       id: 'penthouse', name: 'The Penthouse', env: 'void', unlockBank: 45000, unlockDay: 10,
       tag: 'Top floor', accent: '#e8c46a',
       blurb: 'One game. It does not have a house edge because it does not need one.',
-      games: ['chamber'],
+      pool: ['chamber', 'crash', 'mines', 'ladder', 'roulette'],
+      deal: 3,
       minBet: 1000, maxBet: 100000,
     },
   ];
@@ -214,7 +234,8 @@
     { id: 'bigwin', tickets: 2, text: 'Take $2,000 or more off a single hand',
       check: (t) => t.biggestWin >= 2000 },
     { id: 'tour', tickets: 2, text: 'Play every machine on the floor',
-      check: (t, floor) => floor.games.every((g) => t.played[g]) },
+      check: (t, floor, met, s) => gamesOn(s ? s.floor : 0, s ? s.seed : 0)
+        .every((g) => t.played[g]) },
     { id: 'careful', tickets: 3, text: 'Hit the quota without losing more than $500 on any hand',
       check: (t, floor, met) => met && t.biggestLoss <= 500 },
     { id: 'volume', tickets: 2, text: 'Play twelve hands',
@@ -226,13 +247,49 @@
   /* Which floors the lift will stop at. In the game this port follows, the
      tower opens on a schedule -- roughly a floor every three days -- rather
      than on how rich you are, so a bad run still sees the whole building. */
+  /* The hand a floor is showing, for a given run.
+
+     Deterministic in (seed, floor): two players in the same run build the same
+     room without exchanging a byte about it, which is the same guarantee the
+     level layout relies on. A tiny xorshift rather than the run's own RNG
+     stream, because consuming numbers from that stream here would shift every
+     spin that follows -- which is the bug that made a floor's layout change
+     the outcome of the next hand. */
+  function gamesOn(floorIndex, seed) {
+    const def = FLOORS[floorIndex];
+    if (!def) return [];
+    if (!def.pool) return def.games || [];
+    let x = ((seed >>> 0) ^ Math.imul(floorIndex + 11, 0x9e3779b1)) >>> 0 || 1;
+    const rand = () => {
+      x ^= x << 13; x >>>= 0;
+      x ^= x >>> 17;
+      x ^= x << 5; x >>>= 0;
+      return x / 4294967296;
+    };
+    /* Let the state mix before anything reads it.
+
+       Xorshift seeded from small, near-consecutive integers produces
+       near-identical first outputs, and the first output is the one that
+       decides the first swap of the shuffle. The visible symptom was that the
+       last game in a pool was never dealt: across eleven consecutive seeds,
+       War did not appear on the ground floor once. Eight discarded values is
+       enough to decorrelate it. */
+    for (let i = 0; i < 8; i++) rand();
+    const pool = def.pool.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    return pool.slice(0, Math.min(def.deal || pool.length, pool.length));
+  }
+
   function floorsOpenOn(day) {
     return FLOORS.map((f, i) => i).filter((i) => day >= FLOORS[i].unlockDay);
   }
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);

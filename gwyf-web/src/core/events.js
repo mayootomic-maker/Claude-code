@@ -43,7 +43,7 @@
     function candidates() {
       const s = store.s;
       const floor = s.floor;
-      const games = (global.GWConfig.FLOORS[floor] || {}).games || [];
+      const games = global.GWConfig.gamesOn(floor, s.seed);
       const out = ['sweep', 'comps'];
       if (games.length) out.push('hot', 'hot');       // twice as likely: it is the good one
       if (s.friends.some((f) => f.won > 0)) out.push('friend');
@@ -54,7 +54,7 @@
     function fire() {
       const s = store.s;
       const pick = candidates()[Math.floor(rng.next() * candidates().length)];
-      const games = (global.GWConfig.FLOORS[s.floor] || {}).games || [];
+      const games = global.GWConfig.gamesOn(s.floor, s.seed);
 
       if (pick === 'hot') {
         const id = games[Math.floor(rng.next() * games.length)];

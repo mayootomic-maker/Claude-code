@@ -103,7 +103,12 @@ for (const g of games) {
      previous game's panel still on screen -- and the screenshots it saved were
      black. Nothing here may reach past what a player can press. */
   await page.evaluate((id) => {
-    const floor = GWConfig.FLOORS.findIndex((f) => f.games.includes(id));
+    // Floors deal a hand from a pool, so the seed has to be one that puts this
+    // machine out before the floor is entered.
+    const floor = GWConfig.FLOORS.findIndex((f) => (f.pool || f.games || []).includes(id));
+    for (let seed = 1; seed < 400; seed++) {
+      if (GWConfig.gamesOn(floor, seed).includes(id)) { GWShell.store.s.seed = seed; break; }
+    }
     GWShell.enterFloor(floor);
   }, g.id);
   await page.waitForFunction(() => !GWLoading.isOpen() && GWShell.mode === 'world',

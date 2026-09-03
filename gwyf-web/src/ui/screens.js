@@ -325,7 +325,7 @@
       const s = shell.store.s;
       const floors = shell.store.unlockedFloors().map((entry, i) => {
         const f = entry.floor;
-        const games = f.games.map((id) => GWGames.get(id)).filter(Boolean);
+        const games = C.gamesOn(i, s.seed).map((id) => GWGames.get(id)).filter(Boolean);
         return '<button class="floorcard" style="--floor-accent:' + f.accent + '"'
           + (entry.open ? '' : ' disabled') + ' data-floor="' + i + '">'
           + '<span class="floorcard__no">' + i + '</span>'
@@ -340,7 +340,7 @@
       }).join('');
 
       const here = C.FLOORS[s.floor];
-      const tables = here.games.map((id) => {
+      const tables = C.gamesOn(s.floor, s.seed).map((id) => {
         const g = GWGames.get(id);
         if (!g) return '';
         const edge = g.paysAsRtp
@@ -858,7 +858,7 @@
     if (s.challenge && s.challenge.accepted) {
       const def = C.CHALLENGES.find((ch) => ch.id === s.challenge.id);
       const tally = s.challengeState || GWState.newTally();
-      if (def && def.check(tally, C.FLOORS[s.floor], met)) {
+      if (def && def.check(tally, C.FLOORS[s.floor], met, s)) {
         meta.tickets += def.tickets;
         challengeWon = { text: def.text, tickets: def.tickets };
       }

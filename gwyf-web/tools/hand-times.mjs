@@ -27,7 +27,10 @@ console.log('game          stake lands   hand ends   your turn again');
 const rows = [];
 for (const id of ids) {
   await page.evaluate((id) => {
-    const floor = GWConfig.FLOORS.findIndex((f) => f.games.includes(id));
+    const floor = GWConfig.FLOORS.findIndex((f) => (f.pool || f.games || []).includes(id));
+    for (let seed = 1; seed < 400; seed++) {
+      if (GWConfig.gamesOn(floor, seed).includes(id)) { GWShell.store.s.seed = seed; break; }
+    }
     GWShell.enterFloor(floor);
   }, id);
   await page.waitForFunction(() => !GWLoading.isOpen() && GWShell.mode === 'world',

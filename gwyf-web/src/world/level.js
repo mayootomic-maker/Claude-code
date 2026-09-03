@@ -34,6 +34,8 @@
     highlow: { w: 4.3, d: 4.3 }, plinko: { w: 3.0, d: 1.4 },
     crash: { w: 3.2, d: 1.4 }, mines: { w: 4.5, d: 4.5 },
     ladder: { w: 3.6, d: 4.0 }, chamber: { w: 3.0, d: 3.0 },
+    wheel: { w: 2.8, d: 1.6 }, cups: { w: 3.2, d: 3.2 },
+    scratcher: { w: 2.0, d: 1.5 }, war: { w: 3.4, d: 3.4 },
   };
 
   /* Dark shell, bright carpet, warm metal.
@@ -87,6 +89,11 @@
 
   function build(opts) {
     const floorDef = C.FLOORS[opts.floor];
+    /* The hand this floor is showing tonight, dealt by the caller. A floor
+       names a pool rather than a fixed four now, so the builder has to be told
+       which of them it is standing rather than reading the pool itself and
+       standing all of it. */
+    const games = opts.games || C.gamesOn(opts.floor, 0);
     const theme = THEME[floorDef.id];
     const size = SIZE[floorDef.id];
     const rng = opts.rng;
@@ -302,8 +309,20 @@
        a coin toss near a dice table near a slot bank instead of grouping every
        copy of one machine in whichever corner the shuffle happened to favour. */
     const wanted = [];
+    /* Biggest first, within each round.
+
+       The spots are shuffled and taken in order, so a small machine that lands
+       in the middle of a wall can leave nothing wide enough for a five-metre
+       table -- War went unplaced entirely on some seeds, and a game that is
+       dealt to a floor and then silently not built is worse than one that was
+       never dealt. Largest footprint first is the usual answer to that and
+       costs nothing. */
+    const bySize = games.slice().sort((a, b) => {
+      const fa = FOOTPRINT[a] || { w: 4, d: 4 }, fb = FOOTPRINT[b] || { w: 4, d: 4 };
+      return (fb.w * fb.d) - (fa.w * fa.d);
+    });
     for (let copy = 0; copy < (COPIES[floorDef.id] || 1); copy++) {
-      for (const gameId of floorDef.games) wanted.push(gameId);
+      for (const gameId of bySize) wanted.push(gameId);
     }
     for (const gameId of wanted) {
       const foot = FOOTPRINT[gameId] || { w: 4, d: 4 };
@@ -598,7 +617,7 @@
      where each one is matters; randomising that would only make the hub harder
      to learn without making it more interesting. */
   function buildLobby(opts) {
-    const W = 22, D = 17;
+    const W = 34, D = 26;
     const halfW = W / 2, halfD = D / 2;
     const theme = { carpet: '#8a6a2a', wall: 0x161010, trim: 0x9a7333, neon: 0xffc978, ceiling: 0x0b0807 };
 
@@ -764,6 +783,76 @@
       focus: new THREE.Vector3(0, 2.4, halfD - 0.62),
     });
 
+    /* The crate you wake up in.
+
+       Every day starts the same way in the game this follows: you come round
+       inside a packing box in the yard, with the lid up and the limo already
+       running. Its walls are solid and shin-high on the inside, so stepping
+       out is a step rather than a puzzle -- a box you have to work out how to
+       escape is a joke that stops being funny on day two. */
+    const crate = { x: -halfW + 4.2, z: halfD - 5.0, w: 1.9, d: 1.9, h: 0.62 };
+    const crateMat = track(new THREE.MeshStandardMaterial({
+      color: 0x6b4a2a, roughness: 0.92,
+    }));
+    for (const [dx, dz, ww, dd] of [
+      [-crate.w / 2, 0, 0.12, crate.d], [crate.w / 2, 0, 0.12, crate.d],
+      [0, -crate.d / 2, crate.w, 0.12], [0, crate.d / 2, crate.w, 0.12]]) {
+      slab(crate.x + dx, crate.z + dz, ww, dd, crate.h, 0, crateMat, 'crate');
+    }
+    // The lid, thrown back against the side.
+    const lid = new THREE.Mesh(
+      track(new THREE.BoxGeometry(crate.w, 0.09, crate.d)), crateMat
+    );
+    lid.position.set(crate.x - crate.w * 0.62, crate.h + 0.5, crate.z);
+    lid.rotation.z = -1.15;
+    lid.castShadow = true;
+    group.add(lid);
+    group.add(sign('WAKE UP', crate.x, 1.55, crate.z - crate.d / 2 - 0.1,
+      theme.neon, 1.6, 0));
+
+    /* Something to climb on, on the way to the doors.
+
+       The movement grew a jump, a landing and air control that barely steers,
+       and until now the only thing in the building to use them on was a flat
+       carpet. A run of crates and a beam across the yard is where you find out
+       what the controls do, and there is a ticket on the far end so that
+       finding out is worth doing rather than a thing to look at. */
+    const jumps = [];
+    const course = [
+      { x: -6.5, z: 6.0, w: 1.7, d: 1.7, h: 0.55 },
+      { x: -3.4, z: 5.2, w: 1.5, d: 1.5, h: 1.05 },
+      { x: -0.4, z: 6.4, w: 1.4, d: 1.4, h: 1.55 },
+      { x: 2.8, z: 5.4, w: 1.3, d: 1.3, h: 2.05 },
+      { x: 6.2, z: 6.2, w: 2.2, d: 1.2, h: 2.45 },
+    ];
+    for (const b of course) {
+      slab(b.x, b.z, b.w, b.d, b.h, 0, crateMat, 'crate');
+      // A lip of trim on the top edge, so the height reads before you jump.
+      slab(b.x, b.z, b.w + 0.1, b.d + 0.1, 0.05, b.h, trimMat, null);
+      jumps.push(b);
+    }
+    const top = course[course.length - 1];
+    anchors.push({
+      kind: 'fixture', action: 'prize', label: 'Somebody left a ticket up here',
+      position: new THREE.Vector3(top.x, top.h, top.z),
+      rotationY: 0,
+      half: { hw: top.w / 2, hd: top.d / 2 },
+      stand: new THREE.Vector3(top.x, 0, top.z),
+      focus: new THREE.Vector3(top.x, top.h + 0.4, top.z),
+    });
+    const prize = new THREE.Mesh(
+      track(new THREE.TorusGeometry(0.17, 0.055, 10, 22)),
+      track(new THREE.MeshStandardMaterial({
+        color: 0xe9b44c, metalness: 0.85, roughness: 0.25,
+        emissive: 0x6b4a10, emissiveIntensity: 0.6,
+      }))
+    );
+    prize.position.set(top.x, top.h + 0.42, top.z);
+    prize.rotation.x = Math.PI / 2;
+    group.add(prize);
+    sites.points.push({ at: new THREE.Vector3(top.x, top.h + 1.0, top.z),
+                        colour: 0xffd27a, intensity: 8, distance: 6 });
+
     // Somewhere to stand about. A rug and a low table, so the middle of the
     // room is not an empty square.
     const rug = new THREE.Mesh(
@@ -784,7 +873,10 @@
     return {
       group, solids, anchors, theme, sites,
       lift: { x: 0, z: halfD - 1.6, w: doorW, d: 1.6 },
-      spawn: { x: 3.0, z: -3.0, angle: 0.4 },
+      // Inside the crate, looking out across the yard at the limo.
+      spawn: { x: -halfW + 4.2, z: halfD - 5.0, angle: Math.PI * 0.78 },
+      crate,
+      jumps,
       size: { w: W, d: D, height: WALL_H },
       name: 'The Lobby',
       isLobby: true,
