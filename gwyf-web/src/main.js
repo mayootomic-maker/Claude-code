@@ -520,6 +520,9 @@
     const def = C.FLOORS[index];
     const s = shell.store.s;
     s.floor = index;
+    // Remember the highest floor this run has reached, so the lift keeps
+    // stopping there for the rest of it.
+    s.highestFloor = Math.max(s.highestFloor || 0, index);
     s.phase = 'floor';
 
     GWScreens.close(true);
@@ -645,9 +648,20 @@
      plane turned the lobby black three metres past the rug, and the same
      setting fogs nothing at all in a thirty-four metre hall. Scaled to the
      room, the far wall is always dim and always there. */
+  /* How far you can see, which is also how much gets drawn.
+
+     Scaled to the room, but capped. A fifty-six metre hall with the fog set to
+     its own diagonal has nothing fading anywhere, so every machine on the floor
+     is drawn at full detail from the far end -- 659 draw calls and 239,000
+     triangles, measured, against about fifty before the floors were enlarged.
+     Capped, the far end of a big room falls away into the dark, which is both
+     what a casino actually looks like and the thing that makes the room feel
+     big rather than merely wide. `cullDistantMachines` reads the same number,
+     so a machine is only ever dropped once it has already faded out. */
+  const FOG_CAP = 34;
   function fogForRoom() {
     const size = shell.level.size;
-    const far = Math.max(size.w, size.d) * 1.08;
+    const far = Math.min(FOG_CAP, Math.max(size.w, size.d) * 1.08);
     shell.stage.setFog(shell.level.theme.ceiling, far * 0.34, far);
   }
 
@@ -923,7 +937,9 @@
     }
     // On a floor: play until the quota is met, then the lift is the way on.
     if (s.bank < s.quota) return { text: 'Make ' + money(s.quota - s.bank) + ' before the doors close' };
-    return { lift: true, text: 'Quota met — the lift is at the north end' };
+    // The lift answers from anywhere now, so this points at the button rather
+    // than sending you on a walk that no longer buys anything.
+    return { lift: true, text: 'Quota met — take the lift up whenever you like' };
   }
 
   const guideTo = new THREE.Vector3();
@@ -1171,12 +1187,17 @@
     setMode('world');
   }
 
+  /* The lift, from anywhere.
+
+     It used to refuse unless you were standing in the alcove, which in a
+     five-minute day is a tax on the one action the tower is built around --
+     you spent a fifth of the night walking north to press a button. The
+     arrival screen already covers the journey, so the fiction holds: you
+     press for the lift, and the next thing you see is the doors opening
+     somewhere else. Standing in the alcove and pressing use does the same
+     thing, for anyone who would rather walk. */
   function callLift() {
-    if (shell.mode === 'world' && !shell.player.inLift()) {
-      shell.store.say('The lift is at the north end of the floor.', 'flat');
-      shell.audio.play('deny');
-      return;
-    }
+    if (shell.mode === 'table') leaveMachine();
     shell.audio.play('click');
     GWScreens.show('tower');
   }

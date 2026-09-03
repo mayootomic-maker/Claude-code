@@ -333,7 +333,9 @@
           + '<p class="floorcard__blurb">' + esc(f.blurb) + '</p>'
           + '<p class="floorcard__games">' + games.map((g) => g.icon + ' ' + esc(g.name)).join(' · ')
           + ' — bets ' + money(f.minBet) + ' to ' + money(f.maxBet) + '</p></span>'
-          + '<span class="floorcard__lock">' + (entry.open ? (i === s.floor ? 'You are here' : 'Open')
+          + '<span class="floorcard__lock">' + (entry.open
+            ? (i === s.floor ? 'You are here'
+              : entry.visited ? 'Been there' : 'Open')
             : 'Opens on day ' + entry.opensOn) + '</span></button>';
       }).join('');
 
@@ -353,6 +355,8 @@
       return {
         title: 'The lift', width: 'wide',
         html: '<p class="sheet__kicker">The lift</p><h2 class="sheet__title">Which floor</h2>'
+          + '<p class="sheet__lead">Press for any floor the building has opened to you. '
+          + 'Once you have been to one it stays on the panel for the rest of the run.</p>'
           + '<div class="floors">' + floors + '</div>'
           + '<h3 class="rail__label" style="margin:1.4rem 0 0.5rem">On ' + esc(here.name)
           + ' — walk over to one</h3>'

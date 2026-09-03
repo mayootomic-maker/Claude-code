@@ -69,6 +69,7 @@
       strikes: 0,
       timeLeft: C.DAY_SECONDS,
       floor: 0,
+      highestFloor: 0,
       crowbarFloor: -1,
       game: null,
       items: {},
@@ -126,12 +127,21 @@
      Opened by the day, the way the tower does it -- a floor roughly every three
      days -- with the crowbar and the mod menu as the two ways round it. Gating
      on the bank instead meant a run that went badly never saw the building. */
+  /* Which floors the lift will stop at.
+
+     A floor you have already been to stays on the panel for the rest of the
+     run. The schedule decides when the building first lets you up; it does not
+     get to take a floor away again because the calendar moved on, which is
+     what happened before and made the lift feel arbitrary -- you could ride to
+     the Vault on day seven and find it missing from the list on day eight. */
   Store.prototype.unlockedFloors = function () {
     const s = this.s;
+    const reached = s.highestFloor === undefined ? 0 : s.highestFloor;
     return C.FLOORS.map((f, i) => ({
       floor: f, index: i,
-      open: s.mods.allFloors || s.day >= f.unlockDay || s.crowbarFloor >= i,
+      open: s.mods.allFloors || s.day >= f.unlockDay || s.crowbarFloor >= i || i <= reached,
       opensOn: f.unlockDay,
+      visited: i <= reached,
     }));
   };
 

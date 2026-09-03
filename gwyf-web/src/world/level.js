@@ -70,9 +70,20 @@
      the other two silently vanished. A dice table is five metres across; the
      room has to be sized for what stands in it. */
   const SIZE = {
-    lobby: { w: 34, d: 25 }, velvet: { w: 31, d: 23 },
-    vault: { w: 26, d: 19 }, penthouse: { w: 18, d: 16 },
+    lobby: { w: 56, d: 40 }, velvet: { w: 52, d: 38 },
+    vault: { w: 44, d: 32 }, penthouse: { w: 30, d: 26 },
   };
+
+  /* How many of each machine a floor puts out.
+
+     A real casino floor is banks of the same machine, not one of each, and at
+     one apiece these rooms were four tables in a hall you could cross in six
+     seconds. More copies also gives the heat system somewhere to send you: the
+     pit shutting the coin toss matters less when there are three of them, and
+     it matters in the right way -- you walk. The count comes down as you climb,
+     because the top of the building is meant to feel like fewer, larger,
+     worse decisions. */
+  const COPIES = { lobby: 3, velvet: 3, vault: 3, penthouse: 2 };
 
   function build(opts) {
     const floorDef = C.FLOORS[opts.floor];
@@ -263,20 +274,35 @@
       candidates.push({ x: -halfW + inset, z, rot: -Math.PI / 2 }); // west wall, facing east
       candidates.push({ x: halfW - inset, z, rot: Math.PI / 2 });   // east wall, facing west
     }
-    for (let x = -halfW + 6; x <= halfW - 6 + 0.01; x += 5.5) {
-      candidates.push({ x, z: 0, rot: rng.chance(0.5) ? 0 : Math.PI });
+    /* Islands, in rows down the middle rather than one line across it. A hall
+       this size with a single row of tables reads as a corridor with an alcove
+       at each end; two rows with a lane between them reads as a floor. */
+    for (const z of [-halfD * 0.42, halfD * 0.42]) {
+      for (let x = -halfW + 7; x <= halfW - 7 + 0.01; x += 5.5) {
+        candidates.push({ x, z, rot: z < 0 ? Math.PI : 0 });
+      }
     }
     rng.shuffle(candidates);
 
     const anchors = [];
-    for (const gameId of floorDef.games) {
+    /* Round-robin rather than all of one then all of the next, so a floor puts
+       a coin toss near a dice table near a slot bank instead of grouping every
+       copy of one machine in whichever corner the shuffle happened to favour. */
+    const wanted = [];
+    for (let copy = 0; copy < (COPIES[floorDef.id] || 1); copy++) {
+      for (const gameId of floorDef.games) wanted.push(gameId);
+    }
+    for (const gameId of wanted) {
       const foot = FOOTPRINT[gameId] || { w: 4, d: 4 };
       const spot = candidates.find((c) => !c.used && fits(c, foot));
       if (!spot) {
-        // Every machine on a floor has to fit somewhere, or the player walks
-        // around looking for a table that was never built.
-        console.warn('[gwyf] no room on ' + floorDef.name + ' for ' + gameId
-          + ' (' + foot.w + ' by ' + foot.d + ')');
+        /* The first copy of a machine has to fit somewhere, or the player walks
+           the floor looking for a table that was never built. A later copy
+           failing just means the room filled up, which is fine and silent. */
+        if (!anchors.some((a) => a.gameId === gameId)) {
+          console.warn('[gwyf] no room on ' + floorDef.name + ' for ' + gameId
+            + ' (' + foot.w + ' by ' + foot.d + ')');
+        }
         continue;
       }
       spot.used = true;
