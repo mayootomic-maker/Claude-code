@@ -136,9 +136,11 @@
 
       ctx.mount(g);
       ctx.view([0, 1.72, 1.55], [0, 1.03, 0]);
+      const stopSign = ctx.placard({ y: 0.95, z: 0.72, scale: 0.8 });
       return {
         panels, card, root: g,
         dispose() {
+          stopSign();
           for (const p of panels) if (p.face.material.map) p.face.material.map.dispose();
         },
       };

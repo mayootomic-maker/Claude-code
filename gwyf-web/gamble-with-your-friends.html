@@ -4790,6 +4790,79 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       get group() { return shell.stage.group; },
       model(name) { return GWModels.instance(shell.lib, name); },
 
+      /* The lit placard on the rail of a table.
+
+         Two jobs in one small object. The first is information: a card table
+         has a sign on it saying what it will take, and until now the only way
+         to find that out was to walk up and open a panel. The second is that a
+         card table does not move -- measured, six of the fourteen machines on
+         a floor stood perfectly still with nobody at them, which is what makes
+         a room read as a showroom. The placard breathes, slowly, the way a lit
+         sign does, so every table on the floor is doing something.
+
+         The numbers come out of the floor the machine is standing on rather
+         than being written down here, so a placard cannot disagree with the
+         rail. Returns the stop function for the game's dispose. */
+      placard(opts) {
+        const o = Object.assign({ x: 0, y: 0.06, z: 1.35, rotY: 0, scale: 1 }, opts || {});
+        const def = shell.store.floorLimits();
+        const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 128;
+        const g = c.getContext('2d');
+        g.fillStyle = '#140d0b';
+        g.fillRect(0, 0, 256, 128);
+        g.strokeStyle = '#b08234';
+        g.lineWidth = 5;
+        g.strokeRect(6, 6, 244, 116);
+        g.textAlign = 'center';
+        g.fillStyle = '#f2ebe6';
+        g.font = '700 40px Inter, system-ui, sans-serif';
+        g.fillText(money(def.minBet), 128, 54);
+        g.fillStyle = '#9a7333';
+        g.font = '600 22px Inter, system-ui, sans-serif';
+        g.fillText('to ' + money(def.maxBet), 128, 92);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const group = new THREE.Group();
+        const faceMat = new THREE.MeshStandardMaterial({
+          map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.5,
+          roughness: 0.6,
+        });
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.23), faceMat);
+        face.position.z = 0.021;
+        group.add(face);
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: 0x241a15, roughness: 0.55, metalness: 0.3,
+        });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.29, 0.04), bodyMat);
+        group.add(body);
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.018, 0.022, 0.20, 8),
+          new THREE.MeshStandardMaterial({ color: 0xb08234, metalness: 0.9, roughness: 0.3 })
+        );
+        post.position.y = -0.24;
+        group.add(post);
+        group.position.set(o.x, o.y + 0.30, o.z);
+        group.rotation.y = o.rotY;
+        group.scale.setScalar(o.scale);
+        // Tilted back, the way a placard on a rail is.
+        group.rotation.x = -0.22;
+        // Trim, not machine: the camera frames the table, not the sign on it.
+        group.userData.trim = true;
+        shell.mountMachine(group);
+
+        let t = Math.random() * 6;
+        return shell.stage.onTick((dt) => {
+          t += dt;
+          // Two frequencies, so it does not read as a metronome.
+          faceMat.emissiveIntensity = 0.46 + Math.sin(t * 1.1) * 0.14
+                                           + Math.sin(t * 0.37) * 0.06;
+        });
+      },
+
       /* Fold a part of a machine into one mesh per material.
 
          A cabinet is built from slabs the way the rooms are, and a wheel is
@@ -5456,13 +5529,27 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
          and a quarter of a million triangles for a machine showing nine
          symbols. A drum position is visible when sin(a + angle) is positive --
          that is where the payline is -- so everything else is switched off. */
-      const stop = ctx.stage.onTick(() => {
+      /* Attract mode.
+
+         A cabinet whose reels are stopped is, from anywhere but the stool,
+         indistinguishable from a wardrobe: measured across a floor, it was the
+         only machine left that did not move on its own. Real cabinets solve
+         this with the marquee rather than the reels -- the sign breathes and
+         the glow behind the window rises and falls with it, which reads from
+         the far end of a hall and costs one uniform a frame. */
+      const signMat = sign.material;
+      let attract = Math.random() * 8;
+      const stop = ctx.stage.onTick((dt) => {
         for (const r of reels) {
           r.drum.rotation.x = r.angle;
           for (const holder of r.holders) {
             holder.visible = Math.sin(holder.userData.a + r.angle) > -0.12;
           }
         }
+        attract += dt;
+        const pulse = 0.55 + Math.sin(attract * 1.35) * 0.22 + Math.sin(attract * 0.41) * 0.1;
+        signMat.emissiveIntensity = pulse;
+        glow.intensity = 1.2 + pulse * 0.7;
       });
 
       return { reels, root: g, dispose() { stop(); hubGeo.dispose(); hubMat.dispose(); } };
@@ -5975,7 +6062,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.mount(g);
       ctx.view([0, 1.15, 2.15], [0, 0.15, 0]);
-      return { cups, ball, root: g, dispose() {} };
+      const stopSign = ctx.placard({ x: 0.86, z: 0.74, rotY: -0.62, scale: 0.8 });
+      return { cups, ball, root: g, dispose() { stopSign(); } };
     },
 
     async play(ctx, handle, bet) {
@@ -6199,9 +6287,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.mount(g);
       ctx.view([0, 1.72, 1.55], [0, 1.03, 0]);
+      const stopSign = ctx.placard({ y: 0.95, z: 0.72, scale: 0.8 });
       return {
         panels, card, root: g,
         dispose() {
+          stopSign();
           for (const p of panels) if (p.face.material.map) p.face.material.map.dispose();
         },
       };
@@ -6338,7 +6428,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.mount(g);
       ctx.view([0, 1.95, 2.4], [0, 0.02, 0.1]);
-      return { root: g, laid: [], dispose() { clear(this); } };
+      const stopSign = ctx.placard({ x: 1.06, z: 0.96, rotY: -0.62, scale: 0.9 });
+      return { root: g, laid: [], dispose() { stopSign(); clear(this); } };
     },
 
     async play(ctx, handle, bet) {
@@ -6941,12 +7032,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.mount(g);
       ctx.view([0, 2.85, 3.05], [0, 0.02, -0.04]);
 
+      const stopSign = ctx.placard({ x: 1.32, z: 1.20, rotY: -0.62 });
+
       return {
         root: g,
         origin: new THREE.Vector3(-1.42, 0.32, -0.72),
         deck: [],
         hands: { player: [], dealer: [] },
-        dispose() { clearTable(this); },
+        dispose() { stopSign(); clearTable(this); },
       };
     },
 
@@ -7218,7 +7311,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.mount(g);
       ctx.view([0, 2.0, 2.5], [0, 0.0, 0]);
-      return { root: g, cards: [], dispose() { wipe(this); } };
+      const stopSign = ctx.placard({ x: 1.22, z: 1.10, rotY: -0.62 });
+      return { root: g, cards: [], dispose() { stopSign(); wipe(this); } };
     },
 
     async play(ctx, handle, bet) {
@@ -7992,7 +8086,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.mount(g);
       ctx.view([0, 3.95, 1.35], [0, -0.02, 0]);
-      return { root: g, tiles, geo, dispose() { geo.dispose(); } };
+      const stopSign = ctx.placard({ x: 1.76, z: 0.94, rotY: -0.82 });
+      return { root: g, tiles, geo, dispose() { stopSign(); geo.dispose(); } };
     },
 
     async play(ctx, handle, bet, opts) {
@@ -8466,7 +8561,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
          move reads as one that is broken. So the cylinder rolls over a notch
          every few seconds -- the same sixth of a turn a hand would give it --
          and the hammer breathes back a hair as it goes. */
-      let restFor = 2.0, rolling = 0;
+      let restFor = 2.0, rolling = 0, sway = Math.random() * 8;
       const NOTCH = (Math.PI * 2) / CHAMBERS;
       const stop = ctx.stage.onTick((dt) => {
         if (rig.userData.busy) return;
@@ -8479,6 +8574,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           return;
         }
         restFor -= dt;
+        // Between rolls it is not frozen: the whole rig rocks a hair on its
+        // stand. A machine that moves once every four seconds and is a
+        // photograph in between is still a photograph most of the time.
+        sway += dt;
+        rig.position.x = Math.sin(sway * 0.8) * 0.004;
+        hammer.rotation.x = Math.sin(sway * 1.3) * 0.012;
         if (restFor <= 0) rolling = 1;
       });
 
@@ -16478,7 +16579,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     });
     if (!blockers.length) return;
 
-    const box = new THREE.Box3().setFromObject(record.holder);
+    const box = machineBox(record);
     const centre = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const targets = [centre,
@@ -16555,8 +16656,36 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      machine or shove the camera through the plaster, the field of view opens
      until the machine's bounding sphere fits, which is what a camera operator
      does about exactly this. */
+  /* The machine's own extent, without the furniture bolted to it.
+
+     Both the framing and the clear-shot search measure a machine by its
+     bounding box, and both got worse the moment a table grew a placard on its
+     rail: a sign thirty centimetres above the felt and two metres out from the
+     middle pushed the box out far enough to widen the lens, and at Three Cups
+     it pushed a cup off the bottom of the screen -- which, since the game is
+     played by clicking a cup, made the machine unplayable. Anything marked as
+     trim is skipped here. It is still drawn; it is just not what the camera is
+     being asked to frame. */
+  const decorBox = new THREE.Box3();
+  const decorTmp = new THREE.Box3();
+  function machineBox(record) {
+    decorBox.makeEmpty();
+    record.holder.updateMatrixWorld(true);
+    record.holder.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      for (let n = o; n; n = n.parent) {
+        if (n.userData.trim) return;
+        if (n === record.holder) break;
+      }
+      decorTmp.setFromObject(o);
+      decorBox.union(decorTmp);
+    });
+    if (decorBox.isEmpty()) decorBox.setFromObject(record.holder);
+    return decorBox;
+  }
+
   function fitTableFov(record, pos) {
-    const box = new THREE.Box3().setFromObject(record.holder);
+    const box = machineBox(record);
     const centre = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     const dist = pos.distanceTo(centre);

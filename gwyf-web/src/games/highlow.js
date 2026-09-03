@@ -54,7 +54,8 @@
 
       ctx.mount(g);
       ctx.view([0, 2.0, 2.5], [0, 0.0, 0]);
-      return { root: g, cards: [], dispose() { wipe(this); } };
+      const stopSign = ctx.placard({ x: 1.22, z: 1.10, rotY: -0.62 });
+      return { root: g, cards: [], dispose() { stopSign(); wipe(this); } };
     },
 
     async play(ctx, handle, bet) {

@@ -1285,7 +1285,7 @@
     });
     if (!blockers.length) return;
 
-    const box = new THREE.Box3().setFromObject(record.holder);
+    const box = machineBox(record);
     const centre = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const targets = [centre,
@@ -1362,8 +1362,36 @@
      machine or shove the camera through the plaster, the field of view opens
      until the machine's bounding sphere fits, which is what a camera operator
      does about exactly this. */
+  /* The machine's own extent, without the furniture bolted to it.
+
+     Both the framing and the clear-shot search measure a machine by its
+     bounding box, and both got worse the moment a table grew a placard on its
+     rail: a sign thirty centimetres above the felt and two metres out from the
+     middle pushed the box out far enough to widen the lens, and at Three Cups
+     it pushed a cup off the bottom of the screen -- which, since the game is
+     played by clicking a cup, made the machine unplayable. Anything marked as
+     trim is skipped here. It is still drawn; it is just not what the camera is
+     being asked to frame. */
+  const decorBox = new THREE.Box3();
+  const decorTmp = new THREE.Box3();
+  function machineBox(record) {
+    decorBox.makeEmpty();
+    record.holder.updateMatrixWorld(true);
+    record.holder.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      for (let n = o; n; n = n.parent) {
+        if (n.userData.trim) return;
+        if (n === record.holder) break;
+      }
+      decorTmp.setFromObject(o);
+      decorBox.union(decorTmp);
+    });
+    if (decorBox.isEmpty()) decorBox.setFromObject(record.holder);
+    return decorBox;
+  }
+
   function fitTableFov(record, pos) {
-    const box = new THREE.Box3().setFromObject(record.holder);
+    const box = machineBox(record);
     const centre = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     const dist = pos.distanceTo(centre);

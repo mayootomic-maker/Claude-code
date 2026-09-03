@@ -91,7 +91,8 @@
 
       ctx.mount(g);
       ctx.view([0, 3.95, 1.35], [0, -0.02, 0]);
-      return { root: g, tiles, geo, dispose() { geo.dispose(); } };
+      const stopSign = ctx.placard({ x: 1.76, z: 0.94, rotY: -0.82 });
+      return { root: g, tiles, geo, dispose() { stopSign(); geo.dispose(); } };
     },
 
     async play(ctx, handle, bet, opts) {

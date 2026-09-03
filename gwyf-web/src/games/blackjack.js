@@ -105,12 +105,14 @@
       ctx.mount(g);
       ctx.view([0, 2.85, 3.05], [0, 0.02, -0.04]);
 
+      const stopSign = ctx.placard({ x: 1.32, z: 1.20, rotY: -0.62 });
+
       return {
         root: g,
         origin: new THREE.Vector3(-1.42, 0.32, -0.72),
         deck: [],
         hands: { player: [], dealer: [] },
-        dispose() { clearTable(this); },
+        dispose() { stopSign(); clearTable(this); },
       };
     },
 

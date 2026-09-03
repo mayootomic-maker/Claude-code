@@ -49,6 +49,79 @@
       get group() { return shell.stage.group; },
       model(name) { return GWModels.instance(shell.lib, name); },
 
+      /* The lit placard on the rail of a table.
+
+         Two jobs in one small object. The first is information: a card table
+         has a sign on it saying what it will take, and until now the only way
+         to find that out was to walk up and open a panel. The second is that a
+         card table does not move -- measured, six of the fourteen machines on
+         a floor stood perfectly still with nobody at them, which is what makes
+         a room read as a showroom. The placard breathes, slowly, the way a lit
+         sign does, so every table on the floor is doing something.
+
+         The numbers come out of the floor the machine is standing on rather
+         than being written down here, so a placard cannot disagree with the
+         rail. Returns the stop function for the game's dispose. */
+      placard(opts) {
+        const o = Object.assign({ x: 0, y: 0.06, z: 1.35, rotY: 0, scale: 1 }, opts || {});
+        const def = shell.store.floorLimits();
+        const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 128;
+        const g = c.getContext('2d');
+        g.fillStyle = '#140d0b';
+        g.fillRect(0, 0, 256, 128);
+        g.strokeStyle = '#b08234';
+        g.lineWidth = 5;
+        g.strokeRect(6, 6, 244, 116);
+        g.textAlign = 'center';
+        g.fillStyle = '#f2ebe6';
+        g.font = '700 40px Inter, system-ui, sans-serif';
+        g.fillText(money(def.minBet), 128, 54);
+        g.fillStyle = '#9a7333';
+        g.font = '600 22px Inter, system-ui, sans-serif';
+        g.fillText('to ' + money(def.maxBet), 128, 92);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const group = new THREE.Group();
+        const faceMat = new THREE.MeshStandardMaterial({
+          map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.5,
+          roughness: 0.6,
+        });
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.23), faceMat);
+        face.position.z = 0.021;
+        group.add(face);
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: 0x241a15, roughness: 0.55, metalness: 0.3,
+        });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.29, 0.04), bodyMat);
+        group.add(body);
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.018, 0.022, 0.20, 8),
+          new THREE.MeshStandardMaterial({ color: 0xb08234, metalness: 0.9, roughness: 0.3 })
+        );
+        post.position.y = -0.24;
+        group.add(post);
+        group.position.set(o.x, o.y + 0.30, o.z);
+        group.rotation.y = o.rotY;
+        group.scale.setScalar(o.scale);
+        // Tilted back, the way a placard on a rail is.
+        group.rotation.x = -0.22;
+        // Trim, not machine: the camera frames the table, not the sign on it.
+        group.userData.trim = true;
+        shell.mountMachine(group);
+
+        let t = Math.random() * 6;
+        return shell.stage.onTick((dt) => {
+          t += dt;
+          // Two frequencies, so it does not read as a metronome.
+          faceMat.emissiveIntensity = 0.46 + Math.sin(t * 1.1) * 0.14
+                                           + Math.sin(t * 0.37) * 0.06;
+        });
+      },
+
       /* Fold a part of a machine into one mesh per material.
 
          A cabinet is built from slabs the way the rooms are, and a wheel is

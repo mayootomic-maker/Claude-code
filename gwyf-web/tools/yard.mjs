@@ -105,7 +105,25 @@ const climbed = await page.evaluate(() => {
 });
 check('the top box is a real climb', climbed && climbed.height > 2,
   climbed ? climbed.height + ' m' : 'no prize anchor');
-await page.waitForTimeout(600);
+/* Wait to be standing on it, not a fixed number of milliseconds.
+
+   Dropping the player onto the top box leaves them mid-air for a frame or
+   two, and the ticket is refused below the box's height -- which is the whole
+   point of it. A fixed wait raced that: the same run passed and failed on
+   alternate goes because sometimes the press landed while they were still
+   falling. */
+const landed = await page.waitForFunction((h) => {
+  const st = GWShell.player.state;
+  return st.grounded && st.y > h - 0.05;
+}, climbed.height, { timeout: 8000 }).then(() => true).catch(() => false);
+check('and you land on top of it', landed);
+// And wait for the frame to notice, the same way useFixture does: pressing E
+// before `nearest` has caught up is a keypress into an empty room.
+const inReach = await page.waitForFunction(() => {
+  const n = GWShell.player.nearest;
+  return !!(n && n.anchor && n.anchor.action === 'prize');
+}, null, { timeout: 8000 }).then(() => true).catch(() => false);
+check('and the ticket is in reach from up there', inReach);
 await page.keyboard.press('e');
 await page.waitForTimeout(500);
 const after = await page.evaluate(() => GWShell.store.meta.tickets);

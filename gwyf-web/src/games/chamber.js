@@ -105,7 +105,7 @@
          move reads as one that is broken. So the cylinder rolls over a notch
          every few seconds -- the same sixth of a turn a hand would give it --
          and the hammer breathes back a hair as it goes. */
-      let restFor = 2.0, rolling = 0;
+      let restFor = 2.0, rolling = 0, sway = Math.random() * 8;
       const NOTCH = (Math.PI * 2) / CHAMBERS;
       const stop = ctx.stage.onTick((dt) => {
         if (rig.userData.busy) return;
@@ -118,6 +118,12 @@
           return;
         }
         restFor -= dt;
+        // Between rolls it is not frozen: the whole rig rocks a hair on its
+        // stand. A machine that moves once every four seconds and is a
+        // photograph in between is still a photograph most of the time.
+        sway += dt;
+        rig.position.x = Math.sin(sway * 0.8) * 0.004;
+        hammer.rotation.x = Math.sin(sway * 1.3) * 0.012;
         if (restFor <= 0) rolling = 1;
       });
 

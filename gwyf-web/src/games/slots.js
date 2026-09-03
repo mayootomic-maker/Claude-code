@@ -244,13 +244,27 @@
          and a quarter of a million triangles for a machine showing nine
          symbols. A drum position is visible when sin(a + angle) is positive --
          that is where the payline is -- so everything else is switched off. */
-      const stop = ctx.stage.onTick(() => {
+      /* Attract mode.
+
+         A cabinet whose reels are stopped is, from anywhere but the stool,
+         indistinguishable from a wardrobe: measured across a floor, it was the
+         only machine left that did not move on its own. Real cabinets solve
+         this with the marquee rather than the reels -- the sign breathes and
+         the glow behind the window rises and falls with it, which reads from
+         the far end of a hall and costs one uniform a frame. */
+      const signMat = sign.material;
+      let attract = Math.random() * 8;
+      const stop = ctx.stage.onTick((dt) => {
         for (const r of reels) {
           r.drum.rotation.x = r.angle;
           for (const holder of r.holders) {
             holder.visible = Math.sin(holder.userData.a + r.angle) > -0.12;
           }
         }
+        attract += dt;
+        const pulse = 0.55 + Math.sin(attract * 1.35) * 0.22 + Math.sin(attract * 0.41) * 0.1;
+        signMat.emissiveIntensity = pulse;
+        glow.intensity = 1.2 + pulse * 0.7;
       });
 
       return { reels, root: g, dispose() { stop(); hubGeo.dispose(); hubMat.dispose(); } };

@@ -73,7 +73,8 @@
 
       ctx.mount(g);
       ctx.view([0, 1.15, 2.15], [0, 0.15, 0]);
-      return { cups, ball, root: g, dispose() {} };
+      const stopSign = ctx.placard({ x: 0.86, z: 0.74, rotY: -0.62, scale: 0.8 });
+      return { cups, ball, root: g, dispose() { stopSign(); } };
     },
 
     async play(ctx, handle, bet) {
