@@ -58,11 +58,22 @@ people close the tab.
 ## The day
 
 You come round inside a packing crate in the yard, lid thrown back against the
-side, with the loan shark at his terminal, the shop, the shelf your purchases
-sit on, a run of crates to climb and the limo already running. Getting in the
-limo starts the five minutes. When the doors close you are walked back out to
-the same yard, and **nothing is settled until you get in the car again** — the
-report is the last thing that happens rather than the thing that interrupts.
+side, with a run of crates to climb and the limo idling behind a roller shutter.
+Getting in the limo starts the five minutes. When the doors close you are walked
+back out to the same yard, and **nothing is settled until you get in the car
+again** — the report is the last thing that happens rather than the thing that
+interrupts.
+
+**The hub is two rooms, not one.** West is the yard: cold work lights on bare
+concrete, a chain-link run with stacked freight behind it, painted bays, a skip,
+the crate and the parkour. East, through a doorway with a step up and a canopy
+over it, is the lobby: carpet, a coffered ceiling, the shop with its stock on
+three shelves, a collection window with its shutter half up, the loan shark
+behind a teller's grille, a rope line that leads you to him and a board listing
+tonight's floors. They are two different places doing two different jobs and
+lighting them the same made both worse — warm floods on concrete read as brown
+cardboard, and the yard stopped being anywhere. Crossing the threshold is the
+only place in the building where the floor changes under your feet.
 
 The crate has three walls and a fallen one. Four sides is a box you cannot get
 out of: the controller has no step-up, so shin-high and impassable are the same
@@ -88,6 +99,20 @@ different one next run. Pools overlap on purpose: the same wheel stands
 downstairs and in Velvet Hall at ten times the limits, which is what a real
 casino does with a game people like.
 
+**A floor is a plan of rooms, not one box.** It is divided into cells of about
+fourteen metres and each is built by a zone — an entrance where the lift opens,
+a sunken pit with a rail round it, alcoves, a bar, a cashier's cage, a lounge,
+a colonnade — weighted differently per floor, so the Vault gets cages and the
+Penthouse gets lounges. Each zone offers the places a machine can stand, and
+they are taken before the generic wall slots. Before this, every floor was a
+rectangle with machines on wall slots and two rows of islands, four times over
+with the lights changed: correct, walkable, and with nowhere on it you could
+describe to somebody else.
+
+Zones only ever use the materials the level hands them, which is the whole
+reason it is affordable — `mergeStatic` buckets by material, so six built zones
+come to about sixty draw calls between them.
+
 **The floors are laid out fresh every time you take the lift to one.** Machines
 are placed from candidate slots by the run's own seeded RNG, and a slot is only
 taken if the machine's real footprint fits: clear of the walls, the pillars, the
@@ -95,6 +120,15 @@ lift and everything already placed, *and* with the spot you have to stand in to
 play it clear as well. That last check is not an optimisation. Without it four
 of the twelve landed with their only approach buried in a pillar — placed,
 drawn, lit, and unusable, with the prompt that never appeared as the only clue.
+
+**Nothing on the floor stands perfectly still.** The wheel turns, the ducks bob,
+the crash board replays a round to itself, the revolver rolls a chamber, the
+plinko pockets chase out to the ends and back, the slot cabinet's marquee
+breathes, and every card table carries a lit placard on the rail saying what it
+takes — read off the floor the machine is standing on, so it cannot disagree
+with the rail. `tools/idles.mjs` asks each machine on each floor whether
+anything about it changed over a second and a half, off the transforms and the
+light levels rather than off pixels. Its first run found six of fourteen dead.
 
 **The interface is in the corners**, not in a bar above the game: tickets and
 the challenge card top-left, DAY ENDS IN over the clock top-centre, the day, the
@@ -114,6 +148,15 @@ the ticker about a roulette win while the winner was still stood by the lift.
 When one of them is about to put the whole account on something, they stop where
 they are and argue about it, and you can walk over and shout at them in person
 rather than pressing Q from across the building.
+
+They also have bodies that answer you. Gestures lay over the walk and the mood
+rather than interrupting them, so somebody who starts walking mid-wave finishes
+the wave while they walk: they wave when you come up to them, point at the table
+they are setting off for, shrug at a loss, cheer a win, and look at their wrists
+when the clock warns. And they react to *your* hands, not only their own — every
+settlement in the building comes through the one `resolve` funnel, so a hand
+that doubles or busts is one the room notices, louder from three metres than
+from twelve.
 
 Two thirds of their turns happen on the floor you are standing on. They can play
 anywhere the bank has opened and a friend upstairs spends the same money — but
@@ -334,6 +377,11 @@ node gwyf-web/tools/together.mjs                 # two windows playing together,
 node gwyf-web/tools/crew-shot.mjs out.png        # the four friends, assembled as the game builds them
 node gwyf-web/tools/pose-shot.mjs out.png        # every pose the animation holds, side by side
 node gwyf-web/tools/postcards.mjs                # one shot of every machine from where you stand at it
+node gwyf-web/tools/rooms.mjs 5                  # the floors are rooms: zones, one bar, and a draw-call budget
+node gwyf-web/tools/idles.mjs 3                  # every machine is doing something with nobody at it
+node gwyf-web/tools/yard.mjs                     # the day, from waking up in the crate to getting back in the car
+node gwyf-web/tools/shop.mjs                     # every item and perk does what its description claims
+node gwyf-web/tools/framing.mjs --all 3          # every machine on screen, lit and unblocked when you sit at it
 ```
 
 `together.mjs` exists because of a bug it would have caught on day one. The
@@ -357,7 +405,7 @@ this covers the days — quota, strikes, interest, the shark taking things, and
 whether each of the three endings can actually be reached. It is what caught
 the debt being unpayable, which made one of them unreachable by playing.
 
-`drive.mjs` opens the built file in Chromium, walks all twelve tables, plays a
+`drive.mjs` opens the built file in Chromium, walks all sixteen tables, plays a
 hand at each — answering prompts and clicking tiles on the table — and fails on
 any console error. It found the bugs that mattered: a `[hidden]` attribute
 beaten by a `display: grid` rule so the boot screen sat invisibly over the page
@@ -376,11 +424,12 @@ assets/      models.json — quantised geometry + materials, one file
 src/
   core/      rng, config, run state, audio, the friends, heat, the floor's events
   gfx/       model decoder, HDR environment, stage, physics, cards
-  games/     twelve games, one file each, all through one contract
+  games/     sixteen games, one file each, all through one contract
   world/     collision, level generation, the player, the friends' bodies
   ui/        screens, loading, touch controls, mod menu
   net/       the link to another copy of the game, and what is shared over it
-tools/       drive, walk, reach, odds, shoot, postcards, crew-shot, measure-plinko
+tools/       drive, walk, reach, rooms, idles, yard, shop, framing, odds, shoot,
+             postcards, crew-shot, measure-plinko, economy, feel, lift
 build.mjs    inlines the lot into one HTML file
 ```
 
@@ -451,7 +500,26 @@ worth knowing about:
   299 draw calls and 274k triangles to 94 and 36k.
 - **The tables were triangle fans z-fighting with the top cap of their own
   aprons**, which drew a dark sunburst across every felt in the building. It
-  looked exactly like shadow acne, which is what made it expensive to find.
+  looked exactly like shadow acne, which is what made it expensive to find. The
+  Big Wheel had the same fault a second time — its thirty-two wedges sat on
+  exactly the plane of its backing disc, and the fight came out as radial
+  streaks across the whole face. Its face is one canvas texture now: the slot
+  colours, the dividing lines and the prize painted in each slot, all read out
+  of the same array the odds panel reads, standing proud of a deeper drum.
+- **Machines did not fold, and four of them made a material per mesh.** The
+  rooms had folded into a handful of draw calls for months while the machines
+  standing in them had not — `mergeStatic` baked into world space, so anything
+  that still moved was off limits. Baking into the *root's* space instead lets
+  a group that moves fold: the wheel's pegs, drum and hub collapse into three
+  meshes and it goes on spinning. That, plus sharing materials in the four
+  games that were making one per mesh, took the busiest floor from 542 draw
+  calls with eight machines drawn to about 420 with ten.
+- **A sign on a table made the table unplayable.** Both the table framing and
+  the clear-shot search measure a machine by its bounding box. Adding a placard
+  to the rail widened the lens enough to push a cup off the bottom of the
+  screen at Three Cups — and the game is played by clicking a cup. Trim is
+  excluded from that measurement now: still drawn, just not what the camera is
+  asked to frame.
 
 ## Limits, stated
 
