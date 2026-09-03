@@ -144,27 +144,47 @@
       pins.instanceMatrix.needsUpdate = true;
       rig.add(pins);
 
+      /* Pockets and dividers, sharing materials by colour.
+
+         The pay ladder is symmetric, so thirteen pockets carry six colours
+         between them, and every divider is the same brass. One material each
+         would be twenty-seven materials nothing could fold. */
+      const pocketMats = new Map();
+      const pocketMat = (colour) => {
+        if (!pocketMats.has(colour)) {
+          pocketMats.set(colour, new THREE.MeshStandardMaterial({
+            color: colour, roughness: 0.5, emissive: colour, emissiveIntensity: 0.22,
+          }));
+        }
+        return pocketMats.get(colour);
+      };
+      const pocketGeo = new THREE.BoxGeometry(PITCH * 0.94, PITCH * 0.9, 0.30);
+      const dividerMat = new THREE.MeshStandardMaterial({
+        color: 0xb08234, metalness: 1, roughness: 0.3,
+      });
+      const dividerGeo = new THREE.BoxGeometry(0.032, PITCH * 1.5, 0.28);
+      const labels = [];
       for (let i = 0; i < SLOTS; i++) {
         const x = (i - board.half + 0.5) * PITCH;
-        const pocket = new THREE.Mesh(
-          new THREE.BoxGeometry(PITCH * 0.94, PITCH * 0.9, 0.30),
-          new THREE.MeshStandardMaterial({
-            color: SLOT_COLOUR(i), roughness: 0.5,
-            emissive: SLOT_COLOUR(i), emissiveIntensity: 0.22,
-          })
-        );
+        const pocket = new THREE.Mesh(pocketGeo, pocketMat(SLOT_COLOUR(i)));
         pocket.position.set(x, floorY, 0);
         rig.add(pocket);
-        rig.add(label(PAYS[i] + '×', x, floorY - PITCH * 0.72, PITCH * 1.02));
+        labels.push(label(PAYS[i] + '×', x, floorY - PITCH * 0.72, PITCH * 1.02));
       }
       for (let i = 0; i <= SLOTS; i++) {
-        const divider = new THREE.Mesh(
-          new THREE.BoxGeometry(0.032, PITCH * 1.5, 0.28),
-          new THREE.MeshStandardMaterial({ color: 0xb08234, metalness: 1, roughness: 0.3 })
-        );
+        const divider = new THREE.Mesh(dividerGeo, dividerMat);
         divider.position.set((i - board.half) * PITCH, floorY + PITCH * 0.24, 0);
         rig.add(divider);
       }
+
+      /* The case is finished: fold it before the ball and the labels go in.
+
+         Everything added so far is bolted to the rig and never moves against
+         it, so the backing, sides, bars, pockets and dividers collapse into
+         four meshes. The labels are textured and the ball moves, so both come
+         after -- fold only sees what is already there. */
+      ctx.fold(rig);
+      for (const l of labels) rig.add(l);
 
       const ball = new THREE.Mesh(
         new THREE.SphereGeometry(PITCH * 0.26, 20, 14),
@@ -174,13 +194,42 @@
       ball.visible = false;
       rig.add(ball);
 
+      /* The pockets chase, so the board is doing something.
+
+         A pegboard with nothing falling through it is a wall with studs in it.
+         A light running along the pay row -- out from the middle to the big
+         ends and back, which is also the shape of the pay ladder -- says both
+         "machine" and "the edges are the ones worth hitting" without a caption.
+         Emissive intensity only: the materials are shared by colour, so this
+         drives a copy per colour rather than per pocket, and nothing is
+         recompiled. */
+      let sweep = 0;
+      const stop = ctx.stage.onTick((dt) => {
+        if (rig.userData.busy) { for (const m of pocketMats.values()) m.emissiveIntensity = 0.22; return; }
+        sweep += dt * 1.5;
+        const at = Math.abs(((sweep % 2) - 1));      // 1 .. 0 .. 1, a triangle
+        for (const [colour, mat] of pocketMats) {
+          // How far out this colour's pockets sit, as 0 in the middle to 1 at
+          // the ends -- read back off the pay ladder rather than stored.
+          let near = 1;
+          for (let i = 0; i < SLOTS; i++) {
+            if (SLOT_COLOUR(i) !== colour) continue;
+            near = Math.min(near, Math.abs(i - board.half) / board.half);
+          }
+          mat.emissiveIntensity = 0.16 + Math.max(0, 1 - Math.abs(near - at) * 4) * 0.55;
+        }
+      });
+
       ctx.mount(g);
       ctx.view([0, 2.40, 6.15], [0, 2.25, 0]);
 
-      return { board, ball, root: g, dispose() { pegGeo.dispose(); pegMat.dispose(); } };
+      return { board, ball, root: g, rig,
+               dispose() { stop(); pegGeo.dispose(); pegMat.dispose();
+                           pocketGeo.dispose(); dividerGeo.dispose(); } };
     },
 
     async play(ctx, handle, bet) {
+      handle.rig.userData.busy = true;
       const store = ctx.store;
       // The magnet does not move the ball in flight. It leans on the release,
       // which is the only thing anybody could actually tamper with.
@@ -202,6 +251,7 @@
       ctx.audio.play(pay >= 5 ? 'big' : pay >= 1 ? 'win' : 'lose');
       await ctx.wait(0.45);
       handle.ball.visible = false;
+      handle.rig.userData.busy = false;
 
       return {
         multiplier: pay,

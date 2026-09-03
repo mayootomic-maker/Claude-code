@@ -188,6 +188,12 @@
       glow.position.set(0, DRUM_Y + 0.30, 0.30);
       g.add(glow);
 
+      /* The cabinet is finished, so fold it: the shell's six panels become one
+         mesh and the four brass bands another. Done here, before the drums are
+         built, because the drums turn and the symbols are switched on and off
+         individually -- fold only ever sees what is already in the group. */
+      ctx.fold(g);
+
       const hubMat = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.5, metalness: 0.3 });
       const hubGeo = new THREE.CylinderGeometry(RADIUS * 0.42, RADIUS * 0.42, 0.40, 24);
 

@@ -116,8 +116,24 @@
       ctx.mount(g);
       ctx.view([2.30, 2.70, 4.85], [0.05, 1.25, -0.45]);
 
-      return { root: g, rungs, climber, home: climber.position.clone(),
-               layout: { RISE, RUN }, dispose() {} };
+      /* The climber shifts its weight while it waits.
+
+         A chip standing perfectly still on a ledge in front of a hole reads as
+         a piece of scenery. A slow bob and a lean towards the first rung reads
+         as something about to try, which is what the machine is asking you to
+         pay for. */
+      const home = climber.position.clone();
+      let t = Math.random() * 6;
+      const stop = ctx.stage.onTick((dt) => {
+        if (climber.userData.busy) return;
+        t += dt;
+        climber.position.y = home.y + Math.sin(t * 1.5) * 0.035;
+        climber.position.z = home.z - Math.max(0, Math.sin(t * 0.45)) * 0.10;
+        climber.rotation.z = Math.sin(t * 0.9) * 0.06;
+      });
+
+      return { root: g, rungs, climber, home,
+               layout: { RISE, RUN }, dispose() { stop(); } };
     },
 
     async play(ctx, handle, bet) {
@@ -128,6 +144,8 @@
         r.rotation.z = 0;
         r.visible = true;
       });
+      // The waiting bob stops while the round runs; both move the same chip.
+      handle.climber.userData.busy = true;
       handle.climber.position.copy(handle.home);
       handle.climber.rotation.set(Math.PI / 2, 0, 0);
 
@@ -152,6 +170,7 @@
           ctx.live(null);
           await descend(ctx, handle);
           ctx.audio.play('cash');
+          handle.climber.userData.busy = false;
           return { multiplier: cumulative(step - 1), headline: '×' + cumulative(step - 1).toFixed(2) + ' banked',
                    tone: 'win', detail: { rung: step } };
         }
@@ -161,6 +180,7 @@
         if (!holds) {
           ctx.live(null);
           ctx.audio.play('bust');
+          handle.climber.userData.busy = false;
           return { multiplier: 0, headline: 'RUNG ' + (step + 1) + ' GAVE WAY', tone: 'lose',
                    detail: { rung: step + 1 } };
         }
@@ -171,6 +191,7 @@
 
       ctx.live(null);
       ctx.audio.play('big');
+      handle.climber.userData.busy = false;
       return { multiplier: cumulative(HOLD.length - 1), headline: 'TOP OF THE LADDER',
                tone: 'huge', detail: { rung: HOLD.length } };
     },

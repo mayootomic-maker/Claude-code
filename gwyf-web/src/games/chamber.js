@@ -98,10 +98,36 @@
       ctx.mount(g);
       ctx.view([0.15, 1.30, 2.55], [0, 0.70, 0]);
 
-      return { root: g, rig, cylinder, hammer, flash, dispose() {} };
+      /* Something to do while nobody is playing.
+
+         A revolver on a stand is the most inert object in the building: from
+         across a room it is a prop, and a prop in a row of machines that all
+         move reads as one that is broken. So the cylinder rolls over a notch
+         every few seconds -- the same sixth of a turn a hand would give it --
+         and the hammer breathes back a hair as it goes. */
+      let restFor = 2.0, rolling = 0;
+      const NOTCH = (Math.PI * 2) / CHAMBERS;
+      const stop = ctx.stage.onTick((dt) => {
+        if (rig.userData.busy) return;
+        if (rolling > 0) {
+          const step = Math.min(dt / 0.5, rolling);
+          rig.rotation.z += NOTCH * step;
+          hammer.rotation.x = -Math.sin((1 - rolling + step) * Math.PI) * 0.22;
+          rolling -= step;
+          if (rolling <= 0) { rolling = 0; hammer.rotation.x = 0; restFor = 2.4 + Math.random() * 3.5; }
+          return;
+        }
+        restFor -= dt;
+        if (restFor <= 0) rolling = 1;
+      });
+
+      return { root: g, rig, cylinder, hammer, flash, dispose() { stop(); } };
     },
 
     async play(ctx, handle, bet) {
+      // The idle roll stops for the duration: two things turning the same
+      // cylinder is how a chamber gets skipped.
+      handle.rig.userData.busy = true;
       const order = loadCylinder(ctx);
       handle.rig.rotation.z = 0;
 
@@ -126,6 +152,7 @@
         if (answer.id === 'walk') {
           ctx.live(null);
           ctx.audio.play('cash');
+          handle.rig.userData.busy = false;
           return { multiplier: payout(pulls), headline: '×' + payout(pulls).toFixed(2) + ' and out',
                    tone: 'win', detail: { pulls } };
         }
@@ -134,6 +161,7 @@
         await pullTrigger(ctx, handle, pulls, live);
         if (live) {
           ctx.live(null);
+          handle.rig.userData.busy = false;
           return { multiplier: 0, headline: 'CHAMBER ' + (pulls + 1), tone: 'lose',
                    detail: { pulls: pulls + 1, died: true } };
         }
@@ -146,6 +174,7 @@
       ctx.store.meta.tickets += 2;
       ctx.store.saveMeta();
       ctx.announce('Four pulls. The room gives you two tickets and a wide berth.', 'good');
+      handle.rig.userData.busy = false;
       return { multiplier: payout(MAX_PULLS), headline: 'ALL FOUR', tone: 'huge',
                detail: { pulls: MAX_PULLS, tickets: 2 } };
     },

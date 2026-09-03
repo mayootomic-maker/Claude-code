@@ -257,6 +257,12 @@
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
         mood: 0, moodLeft: 0, idleFor: 0, tilting: false, offering: false, anchor: null,
         lookAtPlayer: 0,
+        /* A gesture is a one-shot on top of the blend: a name, how long it has
+           left, and how long it started with, so the pose can be shaped over
+           its own life rather than switched on and off. `gestureAt` is what is
+           being pointed at, in world space. */
+        gesture: null, gestureLeft: 0, gestureFor: 1, gestureAt: null,
+        greeted: 0,
       };
       spawnAt(person);
       group.add(body.group);
@@ -339,6 +345,13 @@
       }
       person.blocked = 0;
       person.detour = 0;
+      /* Point at where they are off to.
+
+         A friend announcing a bet used to turn on the spot and set off, and
+         from across a hall that is indistinguishable from wandering. Pointing
+         at the table first says both that they have decided something and
+         which machine they decided it about. */
+      if (person.dest) doGesture(person, 'point', 1.4, person.dest);
       // Whether the bet should now wait for a body to get there. The caller
       // holds the money until it does; if this says no -- the table is on
       // another floor, or there is no room drawn at all -- the bet keeps its
@@ -351,6 +364,56 @@
       if (!person) return;
       person.mood = net > 0 ? 1 : net < 0 ? -1 : 0;
       person.moodLeft = 2.4;
+      // Winning is worth pointing at; losing is worth a shrug.
+      doGesture(person, net > 0 ? 'cheer' : 'shrug', net > 0 ? 1.5 : 1.2);
+    }
+
+    /* --- gestures -----------------------------------------------------------
+
+       A gesture is a short, deliberate movement laid over whatever the body is
+       already doing: a point, a wave, a shrug, a look at a watch. They exist
+       because the crew had exactly three things to say with their bodies --
+       walking, playing and how the last hand went -- and a room where nobody
+       ever acknowledges anybody is a room full of furniture that breathes.
+
+       Nothing here interrupts. A gesture is a weight that comes and goes, so a
+       friend who starts walking mid-wave finishes the wave while they walk. */
+    function doGesture(person, name, seconds, at) {
+      // A gesture already running is only replaced by a fresher one of at
+      // least equal standing: a wave must not stamp on a cheer.
+      const RANK = { check: 0, greet: 1, shrug: 2, point: 2, cheer: 3 };
+      if (person.gesture && person.gestureLeft > 0
+          && (RANK[person.gesture] || 0) > (RANK[name] || 0)) return;
+      person.gesture = name;
+      person.gestureFor = seconds;
+      person.gestureLeft = seconds;
+      person.gestureAt = at ? at.clone() : null;
+    }
+
+    /* What the crew does when something happens to *you*.
+
+       They bet their own money and reacted to their own results, and stood
+       there like fence posts while the player took the building apart. `kind`
+       is what happened; how loud the reaction is depends on how far away they
+       are, because three people cheering from across a hall at a two-dollar
+       win is worse than silence. */
+    function react(kind, at) {
+      for (const person of people) {
+        if (person.state === 'away') continue;
+        const near = at ? person.pos.distanceTo(at) : 0;
+        if (near > 14) continue;
+        if (kind === 'win') {
+          person.mood = 1; person.moodLeft = near < 7 ? 1.9 : 1.2;
+          doGesture(person, 'cheer', 1.5);
+        } else if (kind === 'loss') {
+          person.mood = -1; person.moodLeft = 1.6;
+          doGesture(person, 'shrug', 1.1);
+        } else if (kind === 'late') {
+          doGesture(person, 'check', 1.6);
+        } else if (kind === 'point' && at) {
+          doGesture(person, 'point', 1.8, at);
+        }
+      }
     }
 
     function speak(mateId, text) {
@@ -535,6 +598,7 @@
          does; turning just the head, and only as far as a neck goes, is what a
          person does. Past that the body comes round with it. */
       person.lookAtPlayer = 0;
+      if (person.greeted > 0) person.greeted -= dt;
       if (playerPos) {
         const dx = playerPos.x - person.pos.x;
         const dz = playerPos.z - person.pos.z;
@@ -544,6 +608,15 @@
           while (off < -Math.PI) off += Math.PI * 2;
           if (Math.abs(off) < 1.9) {
             person.lookAtPlayer = Math.max(-0.85, Math.min(0.85, off));
+            /* And say hello, once. Walking up to somebody who looks at you and
+               does nothing else is worse than being ignored, and a wave every
+               time you passed would be a nervous tic -- so it fires inside two
+               and a half metres and then holds off for half a minute. */
+            if (Math.hypot(dx, dz) < 2.5 && person.greeted <= 0
+                && !person.dest && person.state !== 'play') {
+              person.greeted = 30;
+              doGesture(person, 'greet', 1.3);
+            }
           } else if (!person.dest) {
             // Behind them: they turn round rather than crane over a shoulder.
             person.wantYaw = Math.atan2(-dx, -dz);
@@ -751,6 +824,66 @@
       handOut += w.tilt * 0.14;
       browTilt += w.tilt * 0.85;
 
+      /* --- gestures, laid over the top -------------------------------------
+
+         Each one is shaped over its own life rather than switched on flat: `g`
+         rises and falls so a wave starts and ends with the arm down, and a
+         point settles rather than snapping out. Nothing here is exclusive with
+         the states above -- somebody can be walking, pleased with themselves
+         and checking the time at once, which is what people do. */
+      if (person.gestureLeft > 0) {
+        person.gestureLeft = Math.max(0, person.gestureLeft - dt);
+        const t = 1 - person.gestureLeft / person.gestureFor;
+        // In over the first fifth, out over the last quarter.
+        const g = Math.min(1, t / 0.2, (1 - t) / 0.25);
+        const beatFast = Math.sin(t * person.gestureFor * 9);
+
+        if (person.gesture === 'greet') {
+          // One hand up and waving, weight on the back foot.
+          handLift += g * 0.62;
+          handOut += g * (0.16 + beatFast * 0.07);
+          headTilt -= g * 0.10;
+          browTilt -= g * 0.3;
+          roll += g * beatFast * 0.035;
+        } else if (person.gesture === 'point') {
+          // Arms out towards it, and the head turned to follow -- pointing at
+          // something you are not looking at reads as a spasm.
+          handLift += g * 0.30;
+          handOut += g * 0.34;
+          lean -= g * 0.06;
+          if (person.gestureAt) {
+            const want = Math.atan2(-(person.gestureAt.x - person.pos.x),
+                                    -(person.gestureAt.z - person.pos.z));
+            let off = want - person.yaw;
+            while (off > Math.PI) off -= Math.PI * 2;
+            while (off < -Math.PI) off += Math.PI * 2;
+            headTurn += g * Math.max(-1.1, Math.min(1.1, off));
+          }
+        } else if (person.gesture === 'shrug') {
+          // Hands out and up a little, head down, brows up: the whole point of
+          // a shrug is that it is over before it is finished.
+          handOut += g * 0.26;
+          handLift += g * 0.16;
+          headTilt += g * 0.14;
+          browTilt -= g * 0.35;
+          squash += g * 0.03;
+        } else if (person.gesture === 'cheer') {
+          handLift += g * 0.66;
+          handOut += g * 0.14;
+          rise += g * Math.abs(Math.sin(t * 11)) * 0.10;
+          browTilt -= g * 0.5;
+          headTilt -= g * 0.18;
+        } else if (person.gesture === 'check') {
+          // A look at the wrist: one hand up and across, head down over it.
+          handLift += g * 0.34;
+          handOut -= g * 0.10;
+          headTilt += g * 0.30;
+          lean += g * 0.08;
+          browTilt += g * 0.25;
+        }
+        if (person.gestureLeft === 0) { person.gesture = null; person.gestureAt = null; }
+      }
+
       // Looking at whoever walked up beats looking around the room.
       if (person.lookAtPlayer) headTurn = person.lookAtPlayer;
 
@@ -840,7 +973,7 @@
     }
 
     return {
-      people, update, go, settled, speak, tilt, offer, dispose, group,
+      people, update, go, settled, speak, tilt, offer, react, dispose, group,
       /* What somebody is doing, for the crew rail. The rail used to read the
          game they had picked, which after a bet was announced but before they
          got there said "Roulette" about somebody standing by the lift. */

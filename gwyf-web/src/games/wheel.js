@@ -94,30 +94,47 @@
       g.add(wheel);
 
       const R = 1.15;
-      // One wedge per slot, coloured by its prize, alternating shade so the
-      // spokes read even where two neighbours share a colour.
+      /* The face is one texture, not thirty-two meshes.
+
+         A real Big Six wheel has the prize painted in each slot, and a wheel
+         with no lettering on it is a colour chart. Thirty-two labels as planes
+         would be thirty-two more draw calls on a machine a floor stands three
+         copies of; painted into one canvas they cost one, and the same canvas
+         draws the slot colours, the dividing lines and the gold rim. Every
+         colour and every count comes out of LAYOUT, so the face cannot drift
+         from the odds panel -- they read the same array. */
+      const face = new THREE.Mesh(
+        new THREE.CircleGeometry(R, 64),
+        new THREE.MeshStandardMaterial({
+          map: faceTexture(), roughness: 0.5, metalness: 0.05,
+        })
+      );
+      face.position.z = 0.086;
+      wheel.add(face);
+
+      // A peg on every boundary, which is what the flapper ticks against.
+      const pegMat = new THREE.MeshStandardMaterial({
+        color: 0xd8d2c4, metalness: 0.85, roughness: 0.3,
+      });
+      const pegGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.13, 6);
       for (let i = 0; i < TOTAL; i++) {
-        const s = seg(ORDER[i]);
-        const shade = new THREE.Color(s.colour).multiplyScalar(i % 2 ? 0.82 : 1);
-        const wedge = new THREE.Mesh(
-          new THREE.CircleGeometry(R, 10, i * STEP - STEP / 2, STEP),
-          new THREE.MeshStandardMaterial({ color: shade, roughness: 0.55, metalness: 0.1 })
-        );
-        wedge.position.z = 0.035;
-        wheel.add(wedge);
-        // A peg on every boundary, which is what the flapper ticks against.
-        const peg = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.018, 0.018, 0.1, 6),
-          new THREE.MeshStandardMaterial({ color: 0xd8d2c4, metalness: 0.85, roughness: 0.3 })
-        );
+        const peg = new THREE.Mesh(pegGeo, pegMat);
         peg.rotation.x = Math.PI / 2;
         peg.position.set(Math.cos(i * STEP + STEP / 2) * (R - 0.05),
-                         Math.sin(i * STEP + STEP / 2) * (R - 0.05), 0.075);
+                         Math.sin(i * STEP + STEP / 2) * (R - 0.05), 0.15);
         wheel.add(peg);
       }
 
+      /* The drum behind the wedges, and the reason it is 0.16 deep.
+
+         It used to be 0.07, which put its front face at z = 0.035 -- the exact
+         plane the wedges sat on. Two coplanar triangle fans z-fight, and the
+         fight came out as a sunburst of radial streaks across the whole wheel:
+         from the stool it looked like the paint had been scratched off. The
+         wedges now stand 6 mm proud of the drum, which also gives the rim a
+         thickness worth looking at. */
       const back = new THREE.Mesh(
-        new THREE.CylinderGeometry(R + 0.07, R + 0.07, 0.07, 48),
+        new THREE.CylinderGeometry(R + 0.07, R + 0.07, 0.16, 48),
         new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.7 })
       );
       back.rotation.x = Math.PI / 2;
@@ -127,7 +144,7 @@
         new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.9, roughness: 0.22 })
       );
       hub.rotation.x = Math.PI / 2;
-      hub.position.z = 0.06;
+      hub.position.z = 0.14;
       wheel.add(hub);
 
       // The flapper, at twelve o'clock, hanging into the pegs' path.
@@ -140,6 +157,12 @@
       strap.position.y = -0.12;
       flapper.add(strap);
       g.add(flapper);
+
+      /* Nothing on the wheel moves relative to the wheel -- it turns as one
+         disc -- so the thirty-two pegs, the drum and the hub fold into three
+         meshes and it goes on spinning. The face is textured and so is left
+         alone, and the flapper is hinged. */
+      ctx.fold(wheel);
 
       ctx.mount(g);
       ctx.view([0, 1.75, 3.5], [0, 1.55, 0]);
@@ -211,4 +234,71 @@
       };
     },
   });
+
+  /* The wheel's face, painted once.
+
+     Cached at module scope because every wheel in the building is the same
+     wheel: three copies on a floor would otherwise each carry a megabyte of
+     canvas. Drawn at 1024 so the lettering survives being read from the stool
+     -- at 512 the joker was a smudge. */
+  let faceCanvas = null;
+  function faceTexture() {
+    if (faceCanvas) return faceCanvas;
+    const S = 1024, half = S / 2;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    g.translate(half, half);
+    /* The canvas y axis points down and the geometry's v axis points up, so
+       the face is drawn mirrored -- otherwise the lettering comes out
+       backwards and the slot the flapper sits over is not the slot the
+       arithmetic says it is. */
+    g.scale(1, -1);
+
+    for (let i = 0; i < TOTAL; i++) {
+      const s = seg(ORDER[i]);
+      const a0 = i * STEP - STEP / 2, a1 = a0 + STEP;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.arc(0, 0, half - 6, a0, a1);
+      g.closePath();
+      const shade = new THREE.Color(s.colour).multiplyScalar(i % 2 ? 0.82 : 1);
+      g.fillStyle = '#' + shade.getHexString();
+      g.fill();
+      // A dividing line on every boundary, in line with the peg above it.
+      g.strokeStyle = 'rgba(20,14,12,0.55)';
+      g.lineWidth = 4;
+      g.stroke();
+
+      // The prize, reading outwards along the slot's middle.
+      g.save();
+      g.rotate(a0 + STEP / 2);
+      g.scale(1, -1);
+      g.fillStyle = new THREE.Color(s.colour).getHSL({}).l > 0.55 ? '#1a1210' : '#f4ede4';
+      g.font = '700 40px Inter, system-ui, sans-serif';
+      g.textAlign = 'right';
+      g.textBaseline = 'middle';
+      g.fillText(s.label.toUpperCase(), half - 34, 0);
+      g.font = '700 30px Inter, system-ui, sans-serif';
+      g.fillText('x' + s.pays.toFixed(0), half - 200, 0);
+      g.restore();
+    }
+
+    // The gold rim, and a dark hub the metal one sits in.
+    g.beginPath();
+    g.arc(0, 0, half - 5, 0, Math.PI * 2);
+    g.strokeStyle = '#b08234';
+    g.lineWidth = 12;
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, 92, 0, Math.PI * 2);
+    g.fillStyle = '#181110';
+    g.fill();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    faceCanvas = tex;
+    return tex;
+  }
 })();

@@ -132,6 +132,20 @@
     wire();
     shell.store.on('say', renderTicker);
     shell.store.on('bank', () => { renderHud(); refreshPlayButton(); });
+    /* The room watches you play.
+
+       Every settlement in the building comes through `resolve`, the friends'
+       own bets included, so a hand that was not yours is skipped -- they
+       already react to their own through `settled`. What counts as worth
+       reacting to is the size of the swing against the stake, not against the
+       bank: doubling a hundred is a moment whichever night it happens on. */
+    shell.store.on('resolve', (r) => {
+      if (!shell.crew || !r || (r.detail && r.detail.by)) return;
+      if (!r.stake) return;
+      const swing = r.net / r.stake;
+      if (swing >= 1) shell.crew.react('win', shell.player.state.pos);
+      else if (swing <= -0.999) shell.crew.react('loss', shell.player.state.pos);
+    });
 
     GWScreens.init(shell);
     GWModMenu.init(shell);
@@ -372,6 +386,10 @@
           warned.add(mark.at);
           shell.store.say(mark.text, mark.tone);
           shell.audio.play(mark.at <= 10 ? 'alarm' : 'tick');
+          // The crew look at the time too. A line in the ticker is something
+          // you have to be reading; three people checking their watches is
+          // something you see out of the corner of an eye.
+          if (shell.crew) shell.crew.react('late', shell.player.state.pos);
         }
       }
 
@@ -787,13 +805,42 @@
      -- by the time a machine is dropped it has already faded into the wall
      colour. three.js frustum-culls what is behind you on its own; this is for
      what is in front of you and too far away to read. */
+  /* How far away a machine is still drawn.
+
+     Not the fog's distance. A slot cabinet is forty-odd symbol meshes and a
+     floor deals up to fifteen machines now; with the fog at thirty-four metres
+     you can stand at the lift on Velvet Hall and see all of them at once,
+     which measured 924 draw calls and a quarter of a million triangles. The
+     budget here is draw calls rather than metres, so the radius tightens as a
+     floor gets busier -- and it never exceeds the fog, so a machine has always
+     faded most of the way out before it is dropped. */
+  const MACHINE_CULL = 26;
+  /* And how many are drawn at once, whatever the distance.
+
+     A distance is the wrong budget. A slot cabinet is forty-odd symbol meshes
+     and a floor deals fifteen machines, so what a radius buys depends entirely
+     on which machines happen to be inside it -- measured, the same radius gave
+     143 draw calls on one seed and 438 on the next. The budget is draw calls,
+     so it is spent on the nearest few and the rest are switched off. Anything
+     dropped is already deep in fog at this range. */
+  const MACHINE_BUDGET = 10;
+  const byDistance = [];
   function cullDistantMachines() {
-    const far = shell.stage.fogFar;
+    const far = Math.min(shell.stage.fogFar, MACHINE_CULL);
     const eye = shell.player.state.pos;
+    byDistance.length = 0;
     for (const record of shell.anchors) {
       const p = record.anchor.position;
       const dx = p.x - eye.x, dz = p.z - eye.z;
-      record.holder.visible = (dx * dx + dz * dz) < far * far;
+      byDistance.push({ record, d2: dx * dx + dz * dz });
+    }
+    byDistance.sort((a, b) => a.d2 - b.d2);
+    let shown = 0;
+    for (const entry of byDistance) {
+      const record = entry.record;
+      const inRange = entry.d2 < far * far;
+      record.holder.visible = inRange && shown < MACHINE_BUDGET;
+      if (record.holder.visible) shown++;
       // The lamp over a table says how hot it is: warm white when nobody
       // cares, amber once they do, red when it is shut. It is the one signal
       // you can read from across the room without reading anything.

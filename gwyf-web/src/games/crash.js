@@ -114,10 +114,44 @@
       ctx.mount(g);
       ctx.view([0, 2.05, 4.85], [0, 1.62, 0]);
 
-      return { root: g, curve, curveGeo, positions, head, glow, dispose() { curveGeo.dispose(); } };
+      /* A board with nothing drawn on it is a blank board.
+
+         While nobody is playing it replays a round to itself: the line climbs,
+         it busts, it clears, it starts again. Two things come free with that --
+         the machine reads as a machine from the far end of a hall, and anybody
+         who has not played it has already watched what it does before they put
+         money on it. Driven off the same positions buffer the real round uses,
+         so a hand starting mid-demo simply overwrites it. */
+      let demo = 0, demoTo = 1.9 + Math.random() * 2.2;
+      const stop = ctx.stage.onTick((dt) => {
+        if (curve.userData.busy) return;
+        demo += dt * 0.55;
+        if (demo > demoTo + 0.8) { demo = 0; demoTo = 1.9 + Math.random() * 2.2; }
+        if (demo > demoTo) { curveGeo.setDrawRange(0, 0); head.visible = false; return; }
+        // Sixty points a second of demo time, plotted with the same two
+        // functions the real round uses so the shape on the board is the shape
+        // the machine actually pays.
+        const n = Math.max(2, Math.min(MAX_POINTS, Math.round(demo * 60)));
+        for (let i = 0; i < n; i++) {
+          const t = (i / 60);
+          positions[i * 3] = -SPAN / 2 + Math.min(t / 12, 1) * SPAN;
+          positions[i * 3 + 1] = Math.min(yFor(multAt(t)), HEIGHT);
+          positions[i * 3 + 2] = 0;
+        }
+        curveGeo.attributes.position.needsUpdate = true;
+        curveGeo.setDrawRange(0, n);
+        head.position.set(positions[(n - 1) * 3], positions[(n - 1) * 3 + 1], 0);
+        head.visible = true;
+      });
+
+      return { root: g, curve, curveGeo, positions, head, glow,
+               dispose() { stop(); curveGeo.dispose(); } };
     },
 
     async play(ctx, handle, bet) {
+      // Hands off: the idle replay and the real round draw into the same
+      // buffer, and the real one wins for as long as it lasts.
+      handle.curve.userData.busy = true;
       const bust = drawBust(ctx);
       handle.curveGeo.setDrawRange(0, 0);
       handle.head.visible = true;
@@ -162,6 +196,7 @@
       if (cashed !== null) {
         ctx.live(null);
         ctx.audio.play('cash');
+        handle.curve.userData.busy = false;
         return { multiplier: cashed, headline: '×' + cashed.toFixed(2),
                  tone: cashed >= 3 ? 'huge' : 'win', detail: { bust, cashed } };
       }
@@ -175,6 +210,7 @@
       });
       ctx.live(null);
       handle.head.visible = false;
+      handle.curve.userData.busy = false;
       return { multiplier: 0, headline: 'BUST AT ×' + bust.toFixed(2), tone: 'lose',
                detail: { bust } };
     },

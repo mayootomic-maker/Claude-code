@@ -4790,6 +4790,18 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       get group() { return shell.stage.group; },
       model(name) { return GWModels.instance(shell.lib, name); },
 
+      /* Fold a part of a machine into one mesh per material.
+
+         A cabinet is built from slabs the way the rooms are, and a wheel is
+         two dozen wedges and two dozen pegs -- every one of them its own draw
+         call, standing on a floor that draws eight machines at once. Anything
+         that never moves relative to the group it is in can be folded, and the
+         group goes on moving: the wheel spins as one mesh. Call it once the
+         part is fully built and never on a group whose children animate
+         separately -- a mesh that has been folded away is gone, so a game that
+         still holds a reference to it would be moving nothing. */
+      fold(root) { return GWLevel.mergeStatic(root); },
+
       /* Run `fn(t, dt, elapsed)` for `seconds`, driven by the stage's own loop
          so animations pause with the renderer instead of racing on in a
          background tab. */
@@ -5388,6 +5400,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       glow.position.set(0, DRUM_Y + 0.30, 0.30);
       g.add(glow);
 
+      /* The cabinet is finished, so fold it: the shell's six panels become one
+         mesh and the four brass bands another. Done here, before the drums are
+         built, because the drums turn and the symbols are switched on and off
+         individually -- fold only ever sees what is already in the group. */
+      ctx.fold(g);
+
       const hubMat = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.5, metalness: 0.3 });
       const hubGeo = new THREE.CylinderGeometry(RADIUS * 0.42, RADIUS * 0.42, 0.40, 24);
 
@@ -5671,30 +5689,47 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       g.add(wheel);
 
       const R = 1.15;
-      // One wedge per slot, coloured by its prize, alternating shade so the
-      // spokes read even where two neighbours share a colour.
+      /* The face is one texture, not thirty-two meshes.
+
+         A real Big Six wheel has the prize painted in each slot, and a wheel
+         with no lettering on it is a colour chart. Thirty-two labels as planes
+         would be thirty-two more draw calls on a machine a floor stands three
+         copies of; painted into one canvas they cost one, and the same canvas
+         draws the slot colours, the dividing lines and the gold rim. Every
+         colour and every count comes out of LAYOUT, so the face cannot drift
+         from the odds panel -- they read the same array. */
+      const face = new THREE.Mesh(
+        new THREE.CircleGeometry(R, 64),
+        new THREE.MeshStandardMaterial({
+          map: faceTexture(), roughness: 0.5, metalness: 0.05,
+        })
+      );
+      face.position.z = 0.086;
+      wheel.add(face);
+
+      // A peg on every boundary, which is what the flapper ticks against.
+      const pegMat = new THREE.MeshStandardMaterial({
+        color: 0xd8d2c4, metalness: 0.85, roughness: 0.3,
+      });
+      const pegGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.13, 6);
       for (let i = 0; i < TOTAL; i++) {
-        const s = seg(ORDER[i]);
-        const shade = new THREE.Color(s.colour).multiplyScalar(i % 2 ? 0.82 : 1);
-        const wedge = new THREE.Mesh(
-          new THREE.CircleGeometry(R, 10, i * STEP - STEP / 2, STEP),
-          new THREE.MeshStandardMaterial({ color: shade, roughness: 0.55, metalness: 0.1 })
-        );
-        wedge.position.z = 0.035;
-        wheel.add(wedge);
-        // A peg on every boundary, which is what the flapper ticks against.
-        const peg = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.018, 0.018, 0.1, 6),
-          new THREE.MeshStandardMaterial({ color: 0xd8d2c4, metalness: 0.85, roughness: 0.3 })
-        );
+        const peg = new THREE.Mesh(pegGeo, pegMat);
         peg.rotation.x = Math.PI / 2;
         peg.position.set(Math.cos(i * STEP + STEP / 2) * (R - 0.05),
-                         Math.sin(i * STEP + STEP / 2) * (R - 0.05), 0.075);
+                         Math.sin(i * STEP + STEP / 2) * (R - 0.05), 0.15);
         wheel.add(peg);
       }
 
+      /* The drum behind the wedges, and the reason it is 0.16 deep.
+
+         It used to be 0.07, which put its front face at z = 0.035 -- the exact
+         plane the wedges sat on. Two coplanar triangle fans z-fight, and the
+         fight came out as a sunburst of radial streaks across the whole wheel:
+         from the stool it looked like the paint had been scratched off. The
+         wedges now stand 6 mm proud of the drum, which also gives the rim a
+         thickness worth looking at. */
       const back = new THREE.Mesh(
-        new THREE.CylinderGeometry(R + 0.07, R + 0.07, 0.07, 48),
+        new THREE.CylinderGeometry(R + 0.07, R + 0.07, 0.16, 48),
         new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.7 })
       );
       back.rotation.x = Math.PI / 2;
@@ -5704,7 +5739,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.9, roughness: 0.22 })
       );
       hub.rotation.x = Math.PI / 2;
-      hub.position.z = 0.06;
+      hub.position.z = 0.14;
       wheel.add(hub);
 
       // The flapper, at twelve o'clock, hanging into the pegs' path.
@@ -5717,6 +5752,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       strap.position.y = -0.12;
       flapper.add(strap);
       g.add(flapper);
+
+      /* Nothing on the wheel moves relative to the wheel -- it turns as one
+         disc -- so the thirty-two pegs, the drum and the hub fold into three
+         meshes and it goes on spinning. The face is textured and so is left
+         alone, and the flapper is hinged. */
+      ctx.fold(wheel);
 
       ctx.mount(g);
       ctx.view([0, 1.75, 3.5], [0, 1.55, 0]);
@@ -5788,6 +5829,73 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       };
     },
   });
+
+  /* The wheel's face, painted once.
+
+     Cached at module scope because every wheel in the building is the same
+     wheel: three copies on a floor would otherwise each carry a megabyte of
+     canvas. Drawn at 1024 so the lettering survives being read from the stool
+     -- at 512 the joker was a smudge. */
+  let faceCanvas = null;
+  function faceTexture() {
+    if (faceCanvas) return faceCanvas;
+    const S = 1024, half = S / 2;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    g.translate(half, half);
+    /* The canvas y axis points down and the geometry's v axis points up, so
+       the face is drawn mirrored -- otherwise the lettering comes out
+       backwards and the slot the flapper sits over is not the slot the
+       arithmetic says it is. */
+    g.scale(1, -1);
+
+    for (let i = 0; i < TOTAL; i++) {
+      const s = seg(ORDER[i]);
+      const a0 = i * STEP - STEP / 2, a1 = a0 + STEP;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.arc(0, 0, half - 6, a0, a1);
+      g.closePath();
+      const shade = new THREE.Color(s.colour).multiplyScalar(i % 2 ? 0.82 : 1);
+      g.fillStyle = '#' + shade.getHexString();
+      g.fill();
+      // A dividing line on every boundary, in line with the peg above it.
+      g.strokeStyle = 'rgba(20,14,12,0.55)';
+      g.lineWidth = 4;
+      g.stroke();
+
+      // The prize, reading outwards along the slot's middle.
+      g.save();
+      g.rotate(a0 + STEP / 2);
+      g.scale(1, -1);
+      g.fillStyle = new THREE.Color(s.colour).getHSL({}).l > 0.55 ? '#1a1210' : '#f4ede4';
+      g.font = '700 40px Inter, system-ui, sans-serif';
+      g.textAlign = 'right';
+      g.textBaseline = 'middle';
+      g.fillText(s.label.toUpperCase(), half - 34, 0);
+      g.font = '700 30px Inter, system-ui, sans-serif';
+      g.fillText('x' + s.pays.toFixed(0), half - 200, 0);
+      g.restore();
+    }
+
+    // The gold rim, and a dark hub the metal one sits in.
+    g.beginPath();
+    g.arc(0, 0, half - 5, 0, Math.PI * 2);
+    g.strokeStyle = '#b08234';
+    g.lineWidth = 12;
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, 92, 0, Math.PI * 2);
+    g.fillStyle = '#181110';
+    g.fill();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    faceCanvas = tex;
+    return tex;
+  }
 })();
 
 </script>
@@ -7387,27 +7495,47 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       pins.instanceMatrix.needsUpdate = true;
       rig.add(pins);
 
+      /* Pockets and dividers, sharing materials by colour.
+
+         The pay ladder is symmetric, so thirteen pockets carry six colours
+         between them, and every divider is the same brass. One material each
+         would be twenty-seven materials nothing could fold. */
+      const pocketMats = new Map();
+      const pocketMat = (colour) => {
+        if (!pocketMats.has(colour)) {
+          pocketMats.set(colour, new THREE.MeshStandardMaterial({
+            color: colour, roughness: 0.5, emissive: colour, emissiveIntensity: 0.22,
+          }));
+        }
+        return pocketMats.get(colour);
+      };
+      const pocketGeo = new THREE.BoxGeometry(PITCH * 0.94, PITCH * 0.9, 0.30);
+      const dividerMat = new THREE.MeshStandardMaterial({
+        color: 0xb08234, metalness: 1, roughness: 0.3,
+      });
+      const dividerGeo = new THREE.BoxGeometry(0.032, PITCH * 1.5, 0.28);
+      const labels = [];
       for (let i = 0; i < SLOTS; i++) {
         const x = (i - board.half + 0.5) * PITCH;
-        const pocket = new THREE.Mesh(
-          new THREE.BoxGeometry(PITCH * 0.94, PITCH * 0.9, 0.30),
-          new THREE.MeshStandardMaterial({
-            color: SLOT_COLOUR(i), roughness: 0.5,
-            emissive: SLOT_COLOUR(i), emissiveIntensity: 0.22,
-          })
-        );
+        const pocket = new THREE.Mesh(pocketGeo, pocketMat(SLOT_COLOUR(i)));
         pocket.position.set(x, floorY, 0);
         rig.add(pocket);
-        rig.add(label(PAYS[i] + '×', x, floorY - PITCH * 0.72, PITCH * 1.02));
+        labels.push(label(PAYS[i] + '×', x, floorY - PITCH * 0.72, PITCH * 1.02));
       }
       for (let i = 0; i <= SLOTS; i++) {
-        const divider = new THREE.Mesh(
-          new THREE.BoxGeometry(0.032, PITCH * 1.5, 0.28),
-          new THREE.MeshStandardMaterial({ color: 0xb08234, metalness: 1, roughness: 0.3 })
-        );
+        const divider = new THREE.Mesh(dividerGeo, dividerMat);
         divider.position.set((i - board.half) * PITCH, floorY + PITCH * 0.24, 0);
         rig.add(divider);
       }
+
+      /* The case is finished: fold it before the ball and the labels go in.
+
+         Everything added so far is bolted to the rig and never moves against
+         it, so the backing, sides, bars, pockets and dividers collapse into
+         four meshes. The labels are textured and the ball moves, so both come
+         after -- fold only sees what is already there. */
+      ctx.fold(rig);
+      for (const l of labels) rig.add(l);
 
       const ball = new THREE.Mesh(
         new THREE.SphereGeometry(PITCH * 0.26, 20, 14),
@@ -7417,13 +7545,42 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ball.visible = false;
       rig.add(ball);
 
+      /* The pockets chase, so the board is doing something.
+
+         A pegboard with nothing falling through it is a wall with studs in it.
+         A light running along the pay row -- out from the middle to the big
+         ends and back, which is also the shape of the pay ladder -- says both
+         "machine" and "the edges are the ones worth hitting" without a caption.
+         Emissive intensity only: the materials are shared by colour, so this
+         drives a copy per colour rather than per pocket, and nothing is
+         recompiled. */
+      let sweep = 0;
+      const stop = ctx.stage.onTick((dt) => {
+        if (rig.userData.busy) { for (const m of pocketMats.values()) m.emissiveIntensity = 0.22; return; }
+        sweep += dt * 1.5;
+        const at = Math.abs(((sweep % 2) - 1));      // 1 .. 0 .. 1, a triangle
+        for (const [colour, mat] of pocketMats) {
+          // How far out this colour's pockets sit, as 0 in the middle to 1 at
+          // the ends -- read back off the pay ladder rather than stored.
+          let near = 1;
+          for (let i = 0; i < SLOTS; i++) {
+            if (SLOT_COLOUR(i) !== colour) continue;
+            near = Math.min(near, Math.abs(i - board.half) / board.half);
+          }
+          mat.emissiveIntensity = 0.16 + Math.max(0, 1 - Math.abs(near - at) * 4) * 0.55;
+        }
+      });
+
       ctx.mount(g);
       ctx.view([0, 2.40, 6.15], [0, 2.25, 0]);
 
-      return { board, ball, root: g, dispose() { pegGeo.dispose(); pegMat.dispose(); } };
+      return { board, ball, root: g, rig,
+               dispose() { stop(); pegGeo.dispose(); pegMat.dispose();
+                           pocketGeo.dispose(); dividerGeo.dispose(); } };
     },
 
     async play(ctx, handle, bet) {
+      handle.rig.userData.busy = true;
       const store = ctx.store;
       // The magnet does not move the ball in flight. It leans on the release,
       // which is the only thing anybody could actually tamper with.
@@ -7445,6 +7602,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.audio.play(pay >= 5 ? 'big' : pay >= 1 ? 'win' : 'lose');
       await ctx.wait(0.45);
       handle.ball.visible = false;
+      handle.rig.userData.busy = false;
 
       return {
         multiplier: pay,
@@ -7597,10 +7755,44 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.mount(g);
       ctx.view([0, 2.05, 4.85], [0, 1.62, 0]);
 
-      return { root: g, curve, curveGeo, positions, head, glow, dispose() { curveGeo.dispose(); } };
+      /* A board with nothing drawn on it is a blank board.
+
+         While nobody is playing it replays a round to itself: the line climbs,
+         it busts, it clears, it starts again. Two things come free with that --
+         the machine reads as a machine from the far end of a hall, and anybody
+         who has not played it has already watched what it does before they put
+         money on it. Driven off the same positions buffer the real round uses,
+         so a hand starting mid-demo simply overwrites it. */
+      let demo = 0, demoTo = 1.9 + Math.random() * 2.2;
+      const stop = ctx.stage.onTick((dt) => {
+        if (curve.userData.busy) return;
+        demo += dt * 0.55;
+        if (demo > demoTo + 0.8) { demo = 0; demoTo = 1.9 + Math.random() * 2.2; }
+        if (demo > demoTo) { curveGeo.setDrawRange(0, 0); head.visible = false; return; }
+        // Sixty points a second of demo time, plotted with the same two
+        // functions the real round uses so the shape on the board is the shape
+        // the machine actually pays.
+        const n = Math.max(2, Math.min(MAX_POINTS, Math.round(demo * 60)));
+        for (let i = 0; i < n; i++) {
+          const t = (i / 60);
+          positions[i * 3] = -SPAN / 2 + Math.min(t / 12, 1) * SPAN;
+          positions[i * 3 + 1] = Math.min(yFor(multAt(t)), HEIGHT);
+          positions[i * 3 + 2] = 0;
+        }
+        curveGeo.attributes.position.needsUpdate = true;
+        curveGeo.setDrawRange(0, n);
+        head.position.set(positions[(n - 1) * 3], positions[(n - 1) * 3 + 1], 0);
+        head.visible = true;
+      });
+
+      return { root: g, curve, curveGeo, positions, head, glow,
+               dispose() { stop(); curveGeo.dispose(); } };
     },
 
     async play(ctx, handle, bet) {
+      // Hands off: the idle replay and the real round draw into the same
+      // buffer, and the real one wins for as long as it lasts.
+      handle.curve.userData.busy = true;
       const bust = drawBust(ctx);
       handle.curveGeo.setDrawRange(0, 0);
       handle.head.visible = true;
@@ -7645,6 +7837,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (cashed !== null) {
         ctx.live(null);
         ctx.audio.play('cash');
+        handle.curve.userData.busy = false;
         return { multiplier: cashed, headline: '×' + cashed.toFixed(2),
                  tone: cashed >= 3 ? 'huge' : 'win', detail: { bust, cashed } };
       }
@@ -7658,6 +7851,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       });
       ctx.live(null);
       handle.head.visible = false;
+      handle.curve.userData.busy = false;
       return { multiplier: 0, headline: 'BUST AT ×' + bust.toFixed(2), tone: 'lose',
                detail: { bust } };
     },
@@ -8020,8 +8214,24 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.mount(g);
       ctx.view([2.30, 2.70, 4.85], [0.05, 1.25, -0.45]);
 
-      return { root: g, rungs, climber, home: climber.position.clone(),
-               layout: { RISE, RUN }, dispose() {} };
+      /* The climber shifts its weight while it waits.
+
+         A chip standing perfectly still on a ledge in front of a hole reads as
+         a piece of scenery. A slow bob and a lean towards the first rung reads
+         as something about to try, which is what the machine is asking you to
+         pay for. */
+      const home = climber.position.clone();
+      let t = Math.random() * 6;
+      const stop = ctx.stage.onTick((dt) => {
+        if (climber.userData.busy) return;
+        t += dt;
+        climber.position.y = home.y + Math.sin(t * 1.5) * 0.035;
+        climber.position.z = home.z - Math.max(0, Math.sin(t * 0.45)) * 0.10;
+        climber.rotation.z = Math.sin(t * 0.9) * 0.06;
+      });
+
+      return { root: g, rungs, climber, home,
+               layout: { RISE, RUN }, dispose() { stop(); } };
     },
 
     async play(ctx, handle, bet) {
@@ -8032,6 +8242,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         r.rotation.z = 0;
         r.visible = true;
       });
+      // The waiting bob stops while the round runs; both move the same chip.
+      handle.climber.userData.busy = true;
       handle.climber.position.copy(handle.home);
       handle.climber.rotation.set(Math.PI / 2, 0, 0);
 
@@ -8056,6 +8268,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           ctx.live(null);
           await descend(ctx, handle);
           ctx.audio.play('cash');
+          handle.climber.userData.busy = false;
           return { multiplier: cumulative(step - 1), headline: '×' + cumulative(step - 1).toFixed(2) + ' banked',
                    tone: 'win', detail: { rung: step } };
         }
@@ -8065,6 +8278,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         if (!holds) {
           ctx.live(null);
           ctx.audio.play('bust');
+          handle.climber.userData.busy = false;
           return { multiplier: 0, headline: 'RUNG ' + (step + 1) + ' GAVE WAY', tone: 'lose',
                    detail: { rung: step + 1 } };
         }
@@ -8075,6 +8289,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       ctx.live(null);
       ctx.audio.play('big');
+      handle.climber.userData.busy = false;
       return { multiplier: cumulative(HOLD.length - 1), headline: 'TOP OF THE LADDER',
                tone: 'huge', detail: { rung: HOLD.length } };
     },
@@ -8244,10 +8459,36 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.mount(g);
       ctx.view([0.15, 1.30, 2.55], [0, 0.70, 0]);
 
-      return { root: g, rig, cylinder, hammer, flash, dispose() {} };
+      /* Something to do while nobody is playing.
+
+         A revolver on a stand is the most inert object in the building: from
+         across a room it is a prop, and a prop in a row of machines that all
+         move reads as one that is broken. So the cylinder rolls over a notch
+         every few seconds -- the same sixth of a turn a hand would give it --
+         and the hammer breathes back a hair as it goes. */
+      let restFor = 2.0, rolling = 0;
+      const NOTCH = (Math.PI * 2) / CHAMBERS;
+      const stop = ctx.stage.onTick((dt) => {
+        if (rig.userData.busy) return;
+        if (rolling > 0) {
+          const step = Math.min(dt / 0.5, rolling);
+          rig.rotation.z += NOTCH * step;
+          hammer.rotation.x = -Math.sin((1 - rolling + step) * Math.PI) * 0.22;
+          rolling -= step;
+          if (rolling <= 0) { rolling = 0; hammer.rotation.x = 0; restFor = 2.4 + Math.random() * 3.5; }
+          return;
+        }
+        restFor -= dt;
+        if (restFor <= 0) rolling = 1;
+      });
+
+      return { root: g, rig, cylinder, hammer, flash, dispose() { stop(); } };
     },
 
     async play(ctx, handle, bet) {
+      // The idle roll stops for the duration: two things turning the same
+      // cylinder is how a chamber gets skipped.
+      handle.rig.userData.busy = true;
       const order = loadCylinder(ctx);
       handle.rig.rotation.z = 0;
 
@@ -8272,6 +8513,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         if (answer.id === 'walk') {
           ctx.live(null);
           ctx.audio.play('cash');
+          handle.rig.userData.busy = false;
           return { multiplier: payout(pulls), headline: '×' + payout(pulls).toFixed(2) + ' and out',
                    tone: 'win', detail: { pulls } };
         }
@@ -8280,6 +8522,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         await pullTrigger(ctx, handle, pulls, live);
         if (live) {
           ctx.live(null);
+          handle.rig.userData.busy = false;
           return { multiplier: 0, headline: 'CHAMBER ' + (pulls + 1), tone: 'lose',
                    detail: { pulls: pulls + 1, died: true } };
         }
@@ -8292,6 +8535,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       ctx.store.meta.tickets += 2;
       ctx.store.saveMeta();
       ctx.announce('Four pulls. The room gives you two tickets and a wide berth.', 'good');
+      handle.rig.userData.busy = false;
       return { multiplier: payout(MAX_PULLS), headline: 'ALL FOUR', tone: 'huge',
                detail: { pulls: MAX_PULLS, tickets: 2 } };
     },
@@ -8451,6 +8695,358 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
 </script>
 <script>
+/* Rooms made of rooms.
+
+   A floor used to be one rectangular hall: machines on slots down the four
+   walls, two rows of islands through the middle, pillars on a grid, ceiling
+   panels on a grid. Correct, fair to walk, and the same shape four times with
+   the lights changed -- there was nowhere on it you could describe to somebody
+   else, which is the test a room passes or fails.
+
+   So a floor is now planned as a coarse grid of cells and each cell is built
+   by one of the zones below: a pit with a rail round it, a bank of machines in
+   a recess, a bar, a lounge, a colonnade, a cashier's cage. Each zone puts up
+   its own architecture, asks for its own light, and offers the *slots* it has
+   for machines -- so a table stands inside the rail of a pit or in the recess
+   of an alcove because that is where the zone said a table goes, rather than
+   at a coordinate that happened to be free.
+
+   Two rules the plan keeps, both learned the hard way:
+
+   Every floor gets exactly one bar and at most one cage, because a floor with
+   three bars reads as a mistake and a floor with none has nothing on it that
+   is not a machine.
+
+   The cell the lift opens into is always the entrance, and the entrance holds
+   no machines. Arriving with a slot cabinet in your face is how the first
+   version of the lift alcove felt, and the fix is a room rather than a nudge
+   to the placement rules.
+
+   Zones only ever use the materials the level hands them, so `mergeStatic`
+   folds the whole floor into a handful of draw calls whatever is built. A zone
+   that makes its own material is a zone that costs a draw call per instance,
+   which is the one thing here that must not happen. */
+
+(function (global) {
+  'use strict';
+
+  /* What each floor is made of. Weights, not counts: the plan draws from these
+     so the same floor is a different arrangement every run without ever being
+     a arrangement the floor's character would not allow. */
+  const CHARACTER = {
+    lobby: { pit: 3, alcove: 4, lounge: 1, colonnade: 1 },
+    velvet: { pit: 4, colonnade: 3, lounge: 2, alcove: 1 },
+    vault: { colonnade: 4, pit: 3, lounge: 1 },
+    penthouse: { lounge: 3, pit: 3, colonnade: 1 },
+  };
+
+  /* Plan the floor.
+
+     Cells are about thirteen metres across, which is the smallest a pit with a
+     rail and three tables inside it will fit into. Rows and columns come out
+     of the room's own size so a bigger floor gets more spaces rather than
+     bigger ones. */
+  function plan(opts) {
+    const { w, d, rng, floorId, lift } = opts;
+    const cols = Math.max(2, Math.round(w / 14));
+    const rows = Math.max(2, Math.round(d / 14));
+    const cw = w / cols, cd = d / rows;
+    const weights = CHARACTER[floorId] || CHARACTER.lobby;
+
+    const cells = [];
+    /* Which cell the lift opens into.
+
+       By nearest centre rather than by dividing the coordinate, because the
+       lift sits at x = 0 and on a floor with an even number of columns that is
+       exactly on a boundary -- floor division and a containment test then
+       disagree about which cell it is in, and the entrance was planned into
+       one cell while the doors opened into its neighbour. */
+    let liftCol = 0, liftRow = 0, bestD = Infinity;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cx = -w / 2 + cw * (c + 0.5), cz = -d / 2 + cd * (r + 0.5);
+        const dist = Math.hypot(cx - lift.x, cz - lift.z);
+        if (dist < bestD) { bestD = dist; liftCol = c; liftRow = r; }
+      }
+    }
+
+    // One bar, and a cage only on a floor with room for one -- the Penthouse is
+    // four cells, and an entrance plus a bar plus a cage leaves it one room.
+    const spare = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (c === liftCol && r === liftRow) continue;
+        spare.push({ c, r });
+      }
+    }
+    rng.shuffle(spare);
+    const bar = spare.shift() || null;
+    const cage = cols * rows >= 6 ? spare.shift() : null;
+
+    const pick = () => {
+      const keys = Object.keys(weights);
+      let total = 0;
+      for (const k of keys) total += weights[k];
+      let roll = rng.float(0, total);
+      for (const k of keys) { if ((roll -= weights[k]) <= 0) return k; }
+      return keys[0];
+    };
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = -w / 2 + cw * (c + 0.5);
+        const z = -d / 2 + cd * (r + 0.5);
+        let type = 'pit';
+        if (c === liftCol && r === liftRow) type = 'entrance';
+        else if (bar && c === bar.c && r === bar.r) type = 'bar';
+        else if (cage && c === cage.c && r === cage.r) type = 'cage';
+        else type = pick();
+        // Which way the cell faces: towards the middle of the room, so a pit's
+        // tables and an alcove's recess turn to face where people walk.
+        const rot = Math.abs(x) > Math.abs(z)
+          ? (x > 0 ? Math.PI / 2 : -Math.PI / 2)
+          : (z > 0 ? 0 : Math.PI);
+        cells.push({ type, x, z, w: cw, d: cd, rot, col: c, row: r });
+      }
+    }
+    return { cells, cols, rows };
+  }
+
+  /* --- the zones -----------------------------------------------------------
+
+     Every builder takes the cell and a mason: `slab` for a solid box, `deco`
+     for something that is only to look at, `slot` to offer a place a machine
+     can stand, `light` to ask for light, and the level's own materials. None
+     of them may create geometry any other way. */
+
+  const ZONES = {
+
+    /* Where the lift opens. Deliberately empty of machines: a carpet inlay, a
+       sign over the doors, and enough room to turn around in. */
+    entrance(cell, m) {
+      m.inlay(cell.x, cell.z, Math.min(cell.w, cell.d) * 0.42);
+      m.light(cell.x, cell.z, 9, 1.35);
+      const f = facing(cell.rot);
+      // A pair of planters, so the space reads as a foyer rather than a gap.
+      for (const side of [-1, 1]) {
+        const px = cell.x + f.rx * side * cell.w * 0.3;
+        const pz = cell.z + f.rz * side * cell.d * 0.3;
+        m.slab(px, pz, 0.9, 0.9, 0.55, 0, m.mats.trim, 'planter');
+        m.deco(px, pz, 1.0, 1.0, 0.12, 0.55, m.mats.panel);
+      }
+      m.sign('THE FLOOR', cell.x + f.fx * cell.d * 0.36, 2.5,
+             cell.z + f.fz * cell.d * 0.36, cell.rot);
+    },
+
+    /* A pit: a waist-high rail enclosing three tables, with one gap to walk
+       in through. The rail is the thing that makes a group of tables read as a
+       place rather than as three tables. */
+    pit(cell, m) {
+      const rw = cell.w * 0.72, rd = cell.d * 0.72;
+      const hw = rw / 2, hd = rd / 2;
+      const f = facing(cell.rot);
+      const H = 0.92, T = 0.14;
+      // Three sides of rail; the fourth is the way in, facing the room.
+      const sides = [
+        { x: -hw, z: 0, w: T, d: rd },
+        { x: hw, z: 0, w: T, d: rd },
+        { x: 0, z: -hd, w: rw, d: T },
+        { x: 0, z: hd, w: rw, d: T },
+      ];
+      // Drop whichever side the cell faces, so the gap is towards the middle.
+      const gap = Math.abs(f.fx) > Math.abs(f.fz)
+        ? (f.fx > 0 ? 1 : 0) : (f.fz > 0 ? 3 : 2);
+      sides.forEach((s, i) => {
+        if (i === gap) return;
+        m.slab(cell.x + s.x, cell.z + s.z, s.w, s.d, H, 0, m.mats.rail, 'rail');
+        // A brass cap along the top, which is most of what says "casino".
+        m.deco(cell.x + s.x, cell.z + s.z, s.w + 0.1, s.d + 0.1, 0.07, H, m.mats.trim);
+      });
+      m.inlay(cell.x, cell.z, Math.min(rw, rd) * 0.46);
+      // Tables inside, in a row across the way in.
+      const along = Math.abs(f.fx) > Math.abs(f.fz) ? 'z' : 'x';
+      for (const t of [-0.3, 0.3]) {
+        const sx = cell.x + (along === 'x' ? rw * t : 0);
+        const sz = cell.z + (along === 'z' ? rd * t : 0);
+        m.slot(sx, sz, cell.rot);
+      }
+      m.slot(cell.x - f.fx * rd * 0.28, cell.z - f.fz * rd * 0.28, cell.rot);
+      m.light(cell.x, cell.z, 11, 1.15);
+    },
+
+    /* An alcove: a recess of low partitions with a bank of machines in it,
+       all facing the same way out. Where slot cabinets live. */
+    alcove(cell, m) {
+      const f = facing(cell.rot);
+      const bw = cell.w * 0.78, bd = cell.d * 0.4;
+      // The back wall of the recess, set away from the middle of the room.
+      const backX = cell.x - f.fx * cell.d * 0.28;
+      const backZ = cell.z - f.fz * cell.d * 0.28;
+      const across = Math.abs(f.fx) > Math.abs(f.fz);
+      m.slab(backX, backZ, across ? 0.35 : bw, across ? bw : 0.35,
+             2.5, 0, m.mats.panel, 'partition');
+      // Two returns, so it is a recess and not a wall.
+      for (const side of [-1, 1]) {
+        const ex = backX + f.rx * side * bw / 2 + f.fx * bd / 2;
+        const ez = backZ + f.rz * side * bw / 2 + f.fz * bd / 2;
+        m.slab(ex, ez, across ? bd : 0.3, across ? 0.3 : bd, 2.5, 0,
+               m.mats.panel, 'partition');
+      }
+      // A lit band along the back, at eye height.
+      m.glow(backX + f.fx * 0.2, backZ + f.fz * 0.2,
+             across ? 0.06 : bw * 0.9, across ? bw * 0.9 : 0.06, 1.9);
+      // Machines in a row along the back, facing out.
+      for (const t of [-0.28, 0, 0.28]) {
+        m.slot(backX + f.rx * bw * t + f.fx * 1.1,
+               backZ + f.rz * bw * t + f.fz * 1.1, cell.rot);
+      }
+      m.light(cell.x, cell.z, 8, 1.0);
+    },
+
+    /* A bar. No machines: a counter, stools, a backlit shelf of bottles. The
+       one place on the floor you are not being charged for standing. */
+    bar(cell, m) {
+      const f = facing(cell.rot);
+      const across = Math.abs(f.fx) > Math.abs(f.fz);
+      const len = (across ? cell.d : cell.w) * 0.7;
+      const bx = cell.x - f.fx * cell.d * 0.22;
+      const bz = cell.z - f.fz * cell.d * 0.22;
+      // Counter, and a brass rail along the customer side.
+      m.slab(bx, bz, across ? 0.9 : len, across ? len : 0.9, 1.05, 0, m.mats.rail, 'bar');
+      m.deco(bx, bz, across ? 1.1 : len + 0.1, across ? len + 0.1 : 1.1, 0.08, 1.05, m.mats.trim);
+      // The back shelf: two tiers, lit from behind.
+      const sx = bx - f.fx * 1.1, sz = bz - f.fz * 1.1;
+      m.slab(sx, sz, across ? 0.4 : len, across ? len : 0.4, 2.6, 0, m.mats.panel, 'shelf');
+      for (const y of [1.3, 1.8]) {
+        m.glow(sx + f.fx * 0.24, sz + f.fz * 0.24,
+               across ? 0.05 : len * 0.94, across ? len * 0.94 : 0.05, y);
+        // Bottles, as a row of thin boxes. Cheap, and reads correctly.
+        const n = Math.max(4, Math.round(len / 0.55));
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) / n - 0.5;
+          m.deco(sx + f.rx * len * t + f.fx * 0.26, sz + f.rz * len * t + f.fz * 0.26,
+                 0.13, 0.13, 0.34, y + 0.05, m.mats.glass);
+        }
+      }
+      // Stools on the near side.
+      const n = Math.max(3, Math.round(len / 1.3));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        const px = bx + f.rx * len * t + f.fx * 1.0;
+        const pz = bz + f.rz * len * t + f.fz * 1.0;
+        m.slab(px, pz, 0.42, 0.42, 0.72, 0, m.mats.rail, 'stool');
+        m.deco(px, pz, 0.5, 0.5, 0.09, 0.72, m.mats.trim);
+      }
+      m.sign('BAR', sx, 2.35, sz, cell.rot);
+      // A cabinet at the end of the counter. Every casino puts one there, and
+      // it stops a bar cell being a room with nothing in it to do.
+      m.slot(bx + f.rx * (len / 2 + 1.4) + f.fx * 0.6,
+             bz + f.rz * (len / 2 + 1.4) + f.fz * 0.6, cell.rot);
+      m.light(bx, bz, 7, 1.5);
+    },
+
+    /* The cashier: a cage with a counter and a slot under the glass. Nothing to
+       do here, which is the point -- it is where the money is not. */
+    cage(cell, m) {
+      const f = facing(cell.rot);
+      const across = Math.abs(f.fx) > Math.abs(f.fz);
+      const len = (across ? cell.d : cell.w) * 0.5;
+      const bx = cell.x - f.fx * cell.d * 0.24;
+      const bz = cell.z - f.fz * cell.d * 0.24;
+      m.slab(bx, bz, across ? 0.7 : len, across ? len : 0.7, 1.1, 0, m.mats.panel, 'cage');
+      // Bars from the counter to the ceiling, with a gap at the middle.
+      const n = Math.max(5, Math.round(len / 0.4));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        if (Math.abs(t) < 0.08) continue;                // the window
+        m.deco(bx + f.rx * len * t, bz + f.rz * len * t, 0.07, 0.07, 1.7, 1.1, m.mats.trim);
+      }
+      m.deco(bx, bz, across ? 0.8 : len + 0.2, across ? len + 0.2 : 0.8, 0.12, 2.8, m.mats.trim);
+      m.sign('CASHIER', bx - f.fx * 0.1, 2.05, bz - f.fz * 0.1, cell.rot);
+      // And one in the queue, for the people who changed their mind.
+      m.slot(bx + f.rx * (len / 2 + 1.5) + f.fx * 1.0,
+             bz + f.rz * (len / 2 + 1.5) + f.fz * 1.0, cell.rot);
+      m.light(bx + f.fx * 0.8, bz + f.fz * 0.8, 6, 1.2);
+    },
+
+    /* A lounge: a rug, seating, a low table and one machine, for the people
+       who came with somebody who is playing. */
+    lounge(cell, m) {
+      m.rug(cell.x, cell.z, Math.min(cell.w, cell.d) * 0.36);
+      const f = facing(cell.rot);
+      // A bench along the back, and two chairs facing it.
+      const bx = cell.x - f.fx * cell.d * 0.24, bz = cell.z - f.fz * cell.d * 0.24;
+      const across = Math.abs(f.fx) > Math.abs(f.fz);
+      m.slab(bx, bz, across ? 0.7 : cell.w * 0.44, across ? cell.d * 0.44 : 0.7,
+             0.46, 0, m.mats.rail, 'bench');
+      m.deco(bx - f.fx * 0.25, bz - f.fz * 0.25,
+             across ? 0.22 : cell.w * 0.44, across ? cell.d * 0.44 : 0.22, 0.6, 0.46, m.mats.panel);
+      m.slab(cell.x, cell.z, 1.3, 0.8, 0.4, 0, m.mats.trim, 'table');
+      for (const side of [-1, 1]) {
+        m.slab(cell.x + f.rx * side * 1.6 + f.fx * 0.5,
+               cell.z + f.rz * side * 1.6 + f.fz * 0.5, 0.7, 0.7, 0.44, 0, m.mats.rail, 'chair');
+      }
+      // Two cabinets on the open side. A lounge with one is a waiting room; a
+      // small floor also needs the slots, or its hand ends up out on the
+      // generic grid rather than in any of its rooms.
+      for (const side of [-1, 1]) {
+        m.slot(cell.x + f.fx * cell.d * 0.3 + f.rx * side * cell.w * 0.24,
+               cell.z + f.fz * cell.d * 0.3 + f.rz * side * cell.w * 0.24,
+               cell.rot + Math.PI);
+      }
+      m.light(cell.x, cell.z, 6, 0.85);
+    },
+
+    /* A colonnade: a run of columns with a walkway between them and machines
+       in the bays. Turns the middle of a big floor into a route. */
+    colonnade(cell, m) {
+      const f = facing(cell.rot);
+      const across = Math.abs(f.fx) > Math.abs(f.fz);
+      const len = (across ? cell.d : cell.w) * 0.82;
+      const n = Math.max(3, Math.round(len / 3.2));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        for (const side of [-1, 1]) {
+          const cx = cell.x + f.rx * len * t + f.fx * side * cell.d * 0.24;
+          const cz = cell.z + f.rz * len * t + f.fz * side * cell.d * 0.24;
+          m.column(cx, cz);
+        }
+      }
+      // An inlaid strip down the middle: the route reads from the floor.
+      m.strip(cell.x, cell.z, across ? 2.0 : len, across ? len : 2.0);
+      // Machines in the bays, alternating sides.
+      for (let i = 0; i < n - 1; i++) {
+        const t = (i + 1) / n - 0.5;
+        const side = i % 2 ? 1 : -1;
+        m.slot(cell.x + f.rx * len * t + f.fx * side * cell.d * 0.34,
+               cell.z + f.rz * len * t + f.fz * side * cell.d * 0.34,
+               cell.rot + (side > 0 ? Math.PI : 0));
+      }
+      m.light(cell.x, cell.z, 9, 1.05);
+    },
+  };
+
+  /* Which way is forward and which is sideways, for a cell's rotation. A zone
+     is authored facing its own -Z and turned into place, the same convention
+     the machines use -- getting this backwards points a bar's stools at the
+     wall behind it. */
+  function facing(rot) {
+    return {
+      fx: -Math.sin(rot), fz: -Math.cos(rot),
+      rx: Math.cos(rot), rz: -Math.sin(rot),
+    };
+  }
+
+  function build(cell, mason) {
+    const fn = ZONES[cell.type] || ZONES.pit;
+    fn(cell, mason);
+  }
+
+  global.GWZones = { plan, build, ZONES, CHARACTER };
+})(window);
+
+</script>
+<script>
 /* A floor of the tower, built to be walked around.
 
    Each floor is a hall: outer walls, a ceiling with lights in it, pillars, a
@@ -8538,7 +9134,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      it matters in the right way -- you walk. The count comes down as you climb,
      because the top of the building is meant to feel like fewer, larger,
      worse decisions. */
-  const COPIES = { lobby: 3, velvet: 3, vault: 3, penthouse: 2 };
+  const COPIES = { lobby: 3, velvet: 3, vault: 3, penthouse: 1 };
 
   function build(opts) {
     const floorDef = C.FLOORS[opts.floor];
@@ -8726,6 +9322,86 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       solids.add(p.x, p.z, 0.35, 0.35, 'pillar');
     }
 
+    /* --- the rooms inside the room ----------------------------------------
+
+       The floor is planned as a grid of cells and each one is built by a zone
+       -- a pit, an alcove, a bar, a cage, a lounge, a colonnade. Zones offer
+       the slots machines stand in, so a table ends up inside a rail or in a
+       recess because that is where the room says a table goes.
+
+       Everything a zone builds uses these materials and no others, which is
+       what keeps a floor of six rooms down to the same handful of draw calls
+       as a floor of none: mergeStatic buckets by material. */
+    const railMat = track(new THREE.MeshStandardMaterial({
+      color: new THREE.Color(theme.wall).multiplyScalar(2.6), roughness: 0.55, metalness: 0.25,
+    }));
+    const glassMat = track(new THREE.MeshStandardMaterial({
+      color: theme.neon, roughness: 0.25, metalness: 0.1,
+      emissive: new THREE.Color(theme.neon).multiplyScalar(0.35),
+    }));
+    const inlayMat = track(new THREE.MeshStandardMaterial({
+      color: theme.trim, roughness: 0.62, metalness: 0.5,
+    }));
+    const rugMat = track(new THREE.MeshStandardMaterial({
+      color: new THREE.Color(theme.carpet).multiplyScalar(0.55), roughness: 0.98,
+    }));
+
+    const zoneSlots = [];
+    const mason = {
+      mats: { wall: wallMat, trim: trimMat, panel: panelMat, rail: railMat, glass: glassMat },
+      slab,
+      // Something to look at, with no collision: most of a room by volume.
+      deco(x, z, w, d, h, y, mat) { return slab(x, z, w, d, h, y, mat, null); },
+      // A place a machine can stand, offered to the placer.
+      slot(x, z, rot) { zoneSlots.push({ x, z, rot }); },
+      light(x, z, distance, strength) {
+        sites.points.push({ at: new THREE.Vector3(x, WALL_H - 1.1, z),
+                            colour: theme.neon,
+                            intensity: 16 * (strength || 1), distance: distance || 8 });
+      },
+      // A lit band, for the back of an alcove or a bar shelf.
+      glow(x, z, w, d, y) {
+        const mesh = new THREE.Mesh(track(new THREE.BoxGeometry(w, 0.05, d)), glowMat);
+        mesh.position.set(x, y, z);
+        group.add(mesh);
+      },
+      // Brass set into the carpet, and a plainer strip for a walkway.
+      inlay(x, z, r) {
+        const ring = new THREE.Mesh(
+          track(new THREE.RingGeometry(r * 0.86, r, 40)), inlayMat
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(x, 0.016, z);
+        group.add(ring);
+      },
+      strip(x, z, w, d) {
+        const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(w, d)), inlayMat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(x, 0.014, z);
+        group.add(mesh);
+      },
+      rug(x, z, r) {
+        const mesh = new THREE.Mesh(track(new THREE.CircleGeometry(r, 34)), rugMat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(x, 0.015, z);
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      },
+      column(x, z) {
+        slab(x, z, 0.62, 0.62, WALL_H, 0, panelMat, 'column');
+        mason.deco(x, z, 0.8, 0.8, 0.16, 0, trimMat);
+        mason.deco(x, z, 0.8, 0.8, 0.16, WALL_H - 0.16, trimMat);
+      },
+      sign(text, x, y, z, rot) {
+        group.add(sign(text, x, y, z, theme.neon, 2.4, rot));
+      },
+    };
+
+    const layout = global.GWZones.plan({
+      w: W, d: D, rng, floorId: floorDef.id, lift,
+    });
+    for (const cell of layout.cells) global.GWZones.build(cell, mason);
+
     /* --- machine anchors -------------------------------------------------- */
 
     const PLAYER = 0.45;          // how much room a person needs to stand
@@ -8756,6 +9432,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
     }
     rng.shuffle(candidates);
+    /* The zones' own slots come first.
+
+       They are the places the rooms said a machine goes -- inside a pit's
+       rail, in an alcove's recess, in a colonnade's bay. The generic grid
+       stays behind them as a fallback, because a floor whose zones happen not
+       to offer enough slots for its hand must still stand all of it rather
+       than silently drop a machine. */
+    rng.shuffle(zoneSlots);
+    candidates.unshift(...zoneSlots);
 
     const anchors = [];
     /* Round-robin rather than all of one then all of the next, so a floor puts
@@ -8916,6 +9601,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
     return {
       group, solids, anchors, spawn, lift, theme, sites,
+      // What the floor was planned as, so a test can ask whether it got a bar.
+      zones: layout.cells,
       size: { w: W, d: D, height: WALL_H },
       name: floorDef.name,
       dispose() {
@@ -8936,15 +9623,27 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
      Only static, untextured, indexed geometry is folded: anything with a map
      (the carpet) keeps its own UVs, and anything added after the room is built
-     (the machines, the friends) is never seen by this. Merging is done by hand
-     because BufferGeometryUtils lives in three's examples and ships only as an
-     ES module, which the single-file build cannot import. */
+     (the friends) is never seen by this. Merging is done by hand because
+     BufferGeometryUtils lives in three's examples and ships only as an ES
+     module, which the single-file build cannot import.
+
+     Geometry is baked into `root`'s own space rather than the world's, so this
+     works on a group that still moves -- a wheel folds its wedges and pegs
+     into two meshes and goes on spinning. Where root sits at the origin, as
+     the room does, the two are the same thing. */
   function mergeStatic(root) {
     root.updateMatrixWorld(true);
+    const toLocal = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const local = new THREE.Matrix4();
     const byMaterial = new Map();
     const originals = [];
     root.traverse((o) => {
       if (!o.isMesh || o.userData.keepSeparate) return;
+      // An InstancedMesh is already one draw call for all its copies, and it
+      // reports isMesh -- folding it would keep one instance's geometry and
+      // throw the other ninety away. Skinned meshes are posed by their bones,
+      // so baking a matrix would freeze them.
+      if (o.isInstancedMesh || o.isSkinnedMesh) return;
       const geo = o.geometry;
       if (!geo || !geo.index || !geo.attributes.position || !geo.attributes.normal) return;
       if (o.material.map) return;
@@ -8971,10 +9670,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       for (const mesh of bucket.items) {
         const geo = mesh.geometry;
         const p = geo.attributes.position, n = geo.attributes.normal, ix = geo.index;
-        normalMatrix.getNormalMatrix(mesh.matrixWorld);
+        local.multiplyMatrices(toLocal, mesh.matrixWorld);
+        normalMatrix.getNormalMatrix(local);
         const base = v;
         for (let k = 0; k < p.count; k++, v++) {
-          vertex.fromBufferAttribute(p, k).applyMatrix4(mesh.matrixWorld);
+          vertex.fromBufferAttribute(p, k).applyMatrix4(local);
           position[v * 3] = vertex.x; position[v * 3 + 1] = vertex.y; position[v * 3 + 2] = vertex.z;
           vertex.fromBufferAttribute(n, k).applyMatrix3(normalMatrix).normalize();
           normal[v * 3] = vertex.x; normal[v * 3 + 1] = vertex.y; normal[v * 3 + 2] = vertex.z;
@@ -9058,21 +9758,43 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return mesh;
   }
 
-  /* The lobby.
+  /* The yard and the lobby.
 
-     Not a menu with a background: the place the run actually starts. The loan
-     shark's terminal, the shop, the shelf your purchases sit on and the doors
-     to the limo are all objects in a room you walk between -- which is the
-     whole point of the shop's rule that an item you bought but did not pick up
-     does not come with you.
+     Not a menu with a background: the place the run actually starts. Two rooms
+     rather than one, because they are two different places doing two different
+     jobs and lighting them the same made both worse.
 
-     It is built by hand rather than generated. There are five things in it and
+     West is the yard -- bare concrete, a chain-link run, stacked freight, the
+     crate you wake up in and the limo idling at the shutter. East, through a
+     doorway with a step up and a canopy over it, is the lobby: carpet, a
+     coffered ceiling, the shop's shelves, the collection window and the loan
+     shark behind his grille. You cross the threshold twice a day, and it is
+     the only place in the building where the floor material changes under
+     your feet.
+
+     It is built by hand rather than generated. There are six things in it and
      where each one is matters; randomising that would only make the hub harder
      to learn without making it more interesting. */
   function buildLobby(opts) {
-    const W = 34, D = 26;
+    const W = 46, D = 34;
     const halfW = W / 2, halfD = D / 2;
-    const theme = { carpet: '#8a6a2a', wall: 0x161010, trim: 0x9a7333, neon: 0xffc978, ceiling: 0x0b0807 };
+    /* Where the yard stops and the lobby starts. The partition runs the full
+       depth with a doorway in the middle of it, so from the crate you can see
+       lit carpet through a gap in a concrete wall -- which is the whole reason
+       to walk over there. */
+    const SPLIT = -5.0;
+    const DOOR_HALF = 3.2;          // half the width of the doorway
+    const theme = { carpet: '#8a6a2a', wall: 0x161010, trim: 0x9a7333,
+                    neon: 0xffc978, ceiling: 0x0b0807 };
+    /* The yard is lit by cold work lights and painted in concrete, not velvet.
+
+       Warm floods were the first try and they were wrong twice over: concrete
+       under amber light reads as brown cardboard, and the yard stopped being a
+       different place from the lobby. Mercury-vapour white makes the slab grey
+       and turns the lit doorway into the only warm thing in the room, which is
+       exactly where you are supposed to be walking. */
+    const yard = { floor: 0x39332e, wall: 0x272220, trim: 0x4a423b,
+                   lamp: 0xcfdcf0, sign: 0x9fd4ff };
 
     const group = new THREE.Group();
     const solids = new global.GWCollision.World();
@@ -9081,29 +9803,30 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const sites = { points: [], spots: [] };
     const track = (t) => { disposables.push(t); return t; };
 
-    const carpetTex = GWStage.carpetTexture(theme.carpet);
-    carpetTex.repeat.set(W / 3, D / 3);
-    const carpet = new THREE.Mesh(
-      track(new THREE.PlaneGeometry(W, D)),
-      track(new THREE.MeshStandardMaterial({ map: carpetTex, roughness: 0.97 }))
-    );
-    carpet.rotation.x = -Math.PI / 2;
-    carpet.receiveShadow = true;
-    group.add(carpet);
-
-    const ceiling = new THREE.Mesh(
-      track(new THREE.PlaneGeometry(W, D)),
-      track(new THREE.MeshStandardMaterial({ color: theme.ceiling, roughness: 0.95 }))
-    );
-    ceiling.rotation.x = Math.PI / 2;
-    ceiling.position.y = WALL_H;
-    group.add(ceiling);
+    /* --- materials, one set for each room -------------------------------- */
 
     const wallMat = track(new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 0.85 }));
     const trimMat = track(new THREE.MeshStandardMaterial({
       color: theme.trim, metalness: 0.8, roughness: 0.35,
     }));
     const glowMat = track(new THREE.MeshBasicMaterial({ color: theme.neon }));
+    const panelMat = track(new THREE.MeshStandardMaterial({
+      color: new THREE.Color(theme.wall).multiplyScalar(2.1), roughness: 0.68,
+    }));
+    // Concrete: rough, pale, and not metal. Everything structural in the yard
+    // is this, which is what makes the doorway read as a change of building.
+    const concrete = track(new THREE.MeshStandardMaterial({
+      color: yard.wall, roughness: 0.95, metalness: 0.0,
+    }));
+    const steelMat = track(new THREE.MeshStandardMaterial({
+      color: yard.trim, roughness: 0.55, metalness: 0.7,
+    }));
+    const crateMat = track(new THREE.MeshStandardMaterial({
+      color: 0x6b4a2a, roughness: 0.92,
+    }));
+    const hazardMat = track(new THREE.MeshStandardMaterial({
+      color: 0xc9922e, roughness: 0.7, metalness: 0.1,
+    }));
 
     function slab(x, z, w, d, h, y, mat, solid) {
       const mesh = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, d)), mat);
@@ -9115,41 +9838,129 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       return mesh;
     }
 
+    /* --- floors ----------------------------------------------------------- */
+
+    const carpetW = halfW - SPLIT;
+    const carpetTex = GWStage.carpetTexture(theme.carpet);
+    carpetTex.repeat.set(carpetW / 3, D / 3);
+    const carpet = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(carpetW, D)),
+      track(new THREE.MeshStandardMaterial({ map: carpetTex, roughness: 0.97 }))
+    );
+    carpet.rotation.x = -Math.PI / 2;
+    carpet.position.set((SPLIT + halfW) / 2, 0.004, 0);
+    carpet.receiveShadow = true;
+    group.add(carpet);
+
+    // Concrete under the yard. A plain plane rather than a texture: the yard
+    // is lit by two sodium floods and a slab reads as a slab under those.
+    const slabFloor = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(SPLIT + halfW, D)),
+      track(new THREE.MeshStandardMaterial({ color: yard.floor, roughness: 0.96 }))
+    );
+    slabFloor.rotation.x = -Math.PI / 2;
+    slabFloor.position.set((-halfW + SPLIT) / 2, 0.002, 0);
+    slabFloor.receiveShadow = true;
+    group.add(slabFloor);
+
+    // Painted bays on the concrete, the way a loading yard is marked out.
+    const paintMat = track(new THREE.MeshBasicMaterial({ color: 0x8d7a52 }));
+    for (const x of [-19, -14.5, -10]) {
+      const line = new THREE.Mesh(track(new THREE.PlaneGeometry(0.12, 9)), paintMat);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(x, 0.012, -halfD + 6.5);
+      group.add(line);
+    }
+
+    const ceiling = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(W, D)),
+      track(new THREE.MeshStandardMaterial({ color: theme.ceiling, roughness: 0.95 }))
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = WALL_H;
+    group.add(ceiling);
+
+    /* --- the shell -------------------------------------------------------- */
+
     slab(0, -halfD, W, 0.4, WALL_H, 0, wallMat, 'wall');
     slab(0, halfD, W, 0.4, WALL_H, 0, wallMat, 'wall');
-    slab(-halfW, 0, 0.4, D, WALL_H, 0, wallMat, 'wall');
+    slab(-halfW, 0, 0.4, D, WALL_H, 0, concrete, 'wall');
     slab(halfW, 0, 0.4, D, WALL_H, 0, wallMat, 'wall');
-    for (const [x, z, w, d] of [[0, -halfD + 0.22, W, 0.1], [0, halfD - 0.22, W, 0.1],
-                                [-halfW + 0.22, 0, 0.1, D], [halfW - 0.22, 0, 0.1, D]]) {
+    // The yard's own share of the long walls, in concrete over the top of the
+    // shell so the two halves do not share a skin.
+    for (const z of [-halfD, halfD]) {
+      slab((-halfW + SPLIT) / 2, z + (z < 0 ? 0.05 : -0.05), SPLIT + halfW, 0.32,
+           WALL_H, 0, concrete, null);
+    }
+
+    /* The partition, with a doorway in it.
+
+       Built as two returns and a lintel rather than a wall with a hole,
+       because collision here is axis-aligned boxes and a hole is not a box. */
+    const jamb = (halfD - DOOR_HALF) / 2;
+    for (const side of [-1, 1]) {
+      slab(SPLIT, side * (DOOR_HALF + jamb), 0.5, halfD - DOOR_HALF, WALL_H, 0,
+           concrete, 'wall');
+      // Steel edging down each jamb, so the opening has a frame.
+      slab(SPLIT, side * (DOOR_HALF + 0.09), 0.62, 0.18, 3.6, 0, steelMat, null);
+    }
+    slab(SPLIT, 0, 0.5, DOOR_HALF * 2, WALL_H - 3.6, 3.6, concrete, null);
+    slab(SPLIT, 0, 0.66, DOOR_HALF * 2 + 0.3, 0.22, 3.4, trimMat, null);
+    // A canopy on the lobby side, and a step up onto the carpet.
+    slab(SPLIT + 1.1, 0, 2.0, DOOR_HALF * 2 + 1.2, 0.18, 3.2, trimMat, null);
+    slab(SPLIT + 0.55, 0, 1.0, DOOR_HALF * 2, 0.045, 0, trimMat, null);
+    group.add(sign('LOBBY', SPLIT - 0.36, 4.3, 0, theme.neon, 1.9, -Math.PI / 2));
+    group.add(sign('THE YARD', SPLIT + 0.36, 4.3, 0, yard.sign, 2.1, Math.PI / 2));
+    // Warm, and only as far as the threshold: at 26 it bleached the partition
+    // and the doorway read as a hole cut in a lightbox.
+    sites.points.push({ at: new THREE.Vector3(SPLIT + 1.4, 2.8, 0),
+                        colour: theme.neon, intensity: 11, distance: 9 });
+
+    /* --- the lobby's own surfaces ---------------------------------------- */
+
+    for (const [x, z, w, d] of [[(SPLIT + halfW) / 2, -halfD + 0.22, carpetW, 0.1],
+                                [(SPLIT + halfW) / 2, halfD - 0.22, carpetW, 0.1],
+                                [halfW - 0.22, 0, 0.1, D]]) {
       slab(x, z, w, d, 0.09, 1.05, trimMat, null);
       slab(x, z, w, d, 0.16, 0, trimMat, null);
     }
-    for (const [x, z, w, d] of [[0, -halfD + 0.3, W, 0.08], [0, halfD - 0.3, W, 0.08],
-                                [-halfW + 0.3, 0, 0.08, D], [halfW - 0.3, 0, 0.08, D]]) {
+    for (const [x, z, w, d] of [[(SPLIT + halfW) / 2, -halfD + 0.3, carpetW, 0.08],
+                                [(SPLIT + halfW) / 2, halfD - 0.3, carpetW, 0.08],
+                                [halfW - 0.3, 0, 0.08, D]]) {
       const strip = new THREE.Mesh(track(new THREE.BoxGeometry(w, 0.06, d)), glowMat);
       strip.position.set(x, WALL_H - 0.16, z);
       group.add(strip);
     }
 
-    const panelMat = track(new THREE.MeshStandardMaterial({
-      color: new THREE.Color(theme.wall).multiplyScalar(2.1), roughness: 0.68,
-    }));
     const addPanel = (x, z, w, d, h, y, kind) =>
       slab(x, z, w, d, h, y, kind === 'rail' ? trimMat : panelMat, null);
-    panelRun(addPanel, { x1: -halfW + 1.5, z1: -halfD + 0.22, x2: halfW - 1.5, z2: -halfD + 0.22,
+    panelRun(addPanel, { x1: SPLIT + 1.5, z1: -halfD + 0.22, x2: halfW - 1.5, z2: -halfD + 0.22,
                          inward: { x: 0, z: 1 }, height: WALL_H - 1.8 });
-    panelRun(addPanel, { x1: -halfW + 0.22, z1: -halfD + 1.5, x2: -halfW + 0.22, z2: halfD - 1.5,
-                         inward: { x: 1, z: 0 }, height: WALL_H - 1.8 });
+    panelRun(addPanel, { x1: SPLIT + 1.5, z1: halfD - 0.22, x2: halfW - 1.5, z2: halfD - 0.22,
+                         inward: { x: 0, z: -1 }, height: WALL_H - 1.8 });
     panelRun(addPanel, { x1: halfW - 0.22, z1: -halfD + 1.5, x2: halfW - 0.22, z2: halfD - 1.5,
                          inward: { x: -1, z: 0 }, height: WALL_H - 1.8 });
 
-    for (const [x, z] of [[-6, -4], [6, -4], [-6, 4], [6, 4], [0, 0], [0, -6], [0, 6]]) {
-      sites.points.push({ at: new THREE.Vector3(x, WALL_H - 0.5, z),
-                          colour: theme.neon, intensity: 24, distance: 15 });
-      const panel = new THREE.Mesh(track(new THREE.PlaneGeometry(2.6, 0.4)), glowMat);
-      panel.rotation.x = Math.PI / 2;
-      panel.position.set(x, WALL_H - 0.03, z);
-      group.add(panel);
+    /* A coffered ceiling over the lobby. Four beams each way with a lit tray
+       between them: the old ceiling was one flat plane with seven glowing
+       rectangles stuck to it, which read as a car park. */
+    const beamMat = trimMat;
+    for (let i = 0; i <= 3; i++) {
+      const x = SPLIT + 1.5 + (carpetW - 3) * (i / 3);
+      slab(x, 0, 0.34, D - 1.2, 0.42, WALL_H - 0.42, beamMat, null);
+    }
+    for (const z of [-9.4, 0, 9.4]) {
+      slab((SPLIT + halfW) / 2 + 0.5, z, carpetW - 1.6, 0.34, 0.42, WALL_H - 0.42, beamMat, null);
+    }
+    for (const [x, z] of [[SPLIT + 5.5, -4.7], [SPLIT + 5.5, 4.7],
+                          [SPLIT + 13.5, -4.7], [SPLIT + 13.5, 4.7],
+                          [SPLIT + 21, -4.7], [SPLIT + 21, 4.7]]) {
+      const tray = new THREE.Mesh(track(new THREE.PlaneGeometry(6.4, 8.0)), glowMat);
+      tray.rotation.x = Math.PI / 2;
+      tray.position.set(x, WALL_H - 0.05, z);
+      group.add(tray);
+      sites.points.push({ at: new THREE.Vector3(x, WALL_H - 0.7, z),
+                          colour: theme.neon, intensity: 24, distance: 16 });
     }
 
     const anchors = [];
@@ -9200,41 +10011,290 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         // Look at the sign above the counter, not through the counter.
         focus: new THREE.Vector3(x - face.x * depth, 1.5, z - face.z * depth),
       });
+      return { face, depth, hw, hd };
     }
 
-    // The loan shark's terminal, the shop, the shelf your purchases sit on.
-    fixture({ x: 0, z: -halfD + 1.6, rot: Math.PI, w: 3.4, d: 1.2,
-              label: 'LOAN SHARK', action: 'shark', colour: 0xf0616d });
-    fixture({ x: -halfW + 1.6, z: -2.5, rot: -Math.PI / 2, w: 3.6, d: 1.2,
+    /* The shop: a counter with the stock behind it.
+
+       Twenty-seven items are chosen on a screen, but a shop with nothing on
+       its shelves is a vending machine with a story about it. Three shelves of
+       boxes stand behind the counter, in the same three tiers the screen sorts
+       the stock into, so what you read on the shelf matches what you read in
+       the list. */
+    const shopAt = { x: SPLIT + 7.5, z: -halfD + 2.0 };
+    fixture({ x: shopAt.x, z: shopAt.z, rot: Math.PI, w: 4.2, d: 1.3,
               label: 'SHOP', action: 'shop', colour: 0xe9b44c });
-    fixture({ x: -halfW + 1.6, z: 2.5, rot: -Math.PI / 2, w: 2.4, d: 1.2,
-              label: 'COLLECT', action: 'collect', colour: 0x5cd98c });
-
-    // The doors to the limo.
-    const doorW = 4.0;
-    slab(-doorW / 2 - 1.4, halfD - 0.6, 2.4, 0.6, WALL_H, 0, wallMat, 'wall');
-    slab(doorW / 2 + 1.4, halfD - 0.6, 2.4, 0.6, WALL_H, 0, wallMat, 'wall');
-    const doorMat = track(new THREE.MeshStandardMaterial({
-      color: 0x1d1512, metalness: 0.35, roughness: 0.42,
-    }));
-    for (const side of [-1, 1]) {
-      slab(side * (doorW / 4 + 0.03), halfD - 0.62, doorW / 2 - 0.06, 0.24, 3.0, 0, doorMat, null);
-      // A vertical band of trim down each leaf, and a handle.
-      slab(side * (doorW / 4 + 0.03), halfD - 0.74, doorW / 2 - 0.34, 0.04, 2.5, 0.25, trimMat, null);
-      slab(side * 0.22, halfD - 0.78, 0.07, 0.07, 0.5, 1.0, trimMat, null);
+    slab(shopAt.x, shopAt.z - 1.5, 5.4, 0.5, WALL_H - 1.6, 0, panelMat, 'wall');
+    const stockMat = [
+      track(new THREE.MeshStandardMaterial({ color: 0x7a4f2c, roughness: 0.8 })),
+      track(new THREE.MeshStandardMaterial({ color: 0x35566b, roughness: 0.7 })),
+      track(new THREE.MeshStandardMaterial({ color: 0x6b2f38, roughness: 0.7 })),
+    ];
+    for (let shelf = 0; shelf < 3; shelf++) {
+      const y = 1.35 + shelf * 0.85;
+      slab(shopAt.x, shopAt.z - 1.32, 5.0, 0.42, 0.07, y, trimMat, null);
+      // Stock, in a run of boxes of slightly different sizes. Every box on a
+      // shelf is the same material, so the three shelves fold to three meshes.
+      for (let i = 0; i < 7; i++) {
+        const bw = 0.34 + ((i * 7 + shelf * 3) % 3) * 0.09;
+        const bh = 0.30 + ((i * 5 + shelf) % 3) * 0.08;
+        slab(shopAt.x - 2.1 + i * 0.7, shopAt.z - 1.32, bw, 0.3, bh, y + 0.07,
+             stockMat[shelf], null);
+      }
+      sites.points.push({ at: new THREE.Vector3(shopAt.x, y + 0.5, shopAt.z - 0.9),
+                          colour: 0xffd9a0, intensity: 4, distance: 4 });
     }
-    slab(0, halfD - 0.62, doorW + 0.5, 0.34, 0.22, 3.0, trimMat, null);
-    group.add(sign('TO THE CASINO', 0, 3.9, halfD - 0.78, theme.neon, 4.6, Math.PI));
-    sites.points.push({ at: new THREE.Vector3(0, 4.4, halfD - 2.4),
-                        colour: theme.neon, intensity: 11, distance: 8 });
+
+    /* The collection window: a hatch with a shutter, and your purchases in a
+       tray under it. Bought-and-not-collected is a rule the game enforces, so
+       the place it happens should look like a place where a parcel waits. */
+    const collectAt = { x: SPLIT + 17.5, z: -halfD + 2.0 };
+    fixture({ x: collectAt.x, z: collectAt.z, rot: Math.PI, w: 2.8, d: 1.3,
+              label: 'COLLECT', action: 'collect', colour: 0x5cd98c });
+    slab(collectAt.x, collectAt.z - 1.5, 3.8, 0.5, WALL_H - 1.6, 0, panelMat, 'wall');
+    slab(collectAt.x, collectAt.z - 1.28, 3.0, 0.14, 1.5, 1.3, wallMat, null);
+    // The shutter, rolled two thirds of the way up.
+    for (let i = 0; i < 5; i++) {
+      slab(collectAt.x, collectAt.z - 1.18, 2.9, 0.07, 0.085, 2.32 + i * 0.1,
+           steelMat, null);
+    }
+    for (const dx of [-1.5, 1.5]) {
+      slab(collectAt.x + dx, collectAt.z - 1.2, 0.12, 0.2, 1.7, 1.3, steelMat, null);
+    }
+
+    /* The loan shark, behind a grille.
+
+       He is the only fixture that is a person rather than a machine, and the
+       one you least want to walk up to. A teller's cage set into the east wall
+       does that job: a window, bars across it, and a desk lamp behind them. */
+    const sharkAt = { x: halfW - 1.5, z: 3.0 };
+    fixture({ x: sharkAt.x, z: sharkAt.z, rot: -Math.PI / 2, w: 3.6, d: 1.2,
+              label: 'LOAN SHARK', action: 'shark', colour: 0xf0616d });
+    slab(sharkAt.x + 0.45, sharkAt.z, 0.7, 5.0, WALL_H - 1.4, 0, panelMat, null);
+    // The window, and the bars.
+    slab(sharkAt.x + 0.16, sharkAt.z, 0.1, 3.2, 1.5, 1.25,
+         track(new THREE.MeshStandardMaterial({ color: 0x0d0908, roughness: 0.6 })), null);
+    for (let i = 0; i < 9; i++) {
+      slab(sharkAt.x + 0.08, sharkAt.z - 1.5 + i * 0.375, 0.07, 0.06, 1.5, 1.25,
+           steelMat, null);
+    }
+    slab(sharkAt.x + 0.08, sharkAt.z, 0.14, 3.4, 0.1, 2.75, trimMat, null);
+    sites.points.push({ at: new THREE.Vector3(sharkAt.x - 0.2, 1.9, sharkAt.z),
+                        colour: 0xf0616d, intensity: 9, distance: 6 });
+
+    /* Somewhere to stand about while the others make their minds up. A rug, a
+       low table, three benches and a pair of columns marking the middle of the
+       room off from the walk-through. */
+    const lounge = { x: SPLIT + 12.5, z: 6.5 };
+    const rug = new THREE.Mesh(
+      track(new THREE.CircleGeometry(4.2, 44)),
+      track(new THREE.MeshStandardMaterial({ color: 0x3a2118, roughness: 0.98 }))
+    );
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set(lounge.x, 0.014, lounge.z);
+    rug.receiveShadow = true;
+    group.add(rug);
+    const ring = new THREE.Mesh(
+      track(new THREE.RingGeometry(4.2, 4.42, 48)), trimMat
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(lounge.x, 0.016, lounge.z);
+    group.add(ring);
+    slab(lounge.x, lounge.z, 1.9, 1.1, 0.45, 0, trimMat, 'table');
+    for (const [dx, dz, rw, rd] of [[-3.0, 0, 1.0, 2.6], [3.0, 0, 1.0, 2.6],
+                                    [0, 3.0, 2.6, 1.0]]) {
+      slab(lounge.x + dx, lounge.z + dz, rw, rd, 0.44, 0, wallMat, 'seat');
+      slab(lounge.x + dx, lounge.z + dz, rw * 1.06, rd * 1.06, 0.06, 0.44, trimMat, null);
+    }
+    for (const [cx, cz] of [[SPLIT + 5.0, -10.5], [SPLIT + 5.0, 10.5],
+                            [SPLIT + 17.0, -10.5], [SPLIT + 17.0, 10.5]]) {
+      slab(cx, cz, 0.7, 0.7, WALL_H, 0, panelMat, 'column');
+      slab(cx, cz, 0.9, 0.9, 0.18, 0, trimMat, null);
+      slab(cx, cz, 0.9, 0.9, 0.18, WALL_H - 0.18, trimMat, null);
+    }
+
+    /* A rope line from the threshold to the shark's window.
+
+       Nobody queues in it -- there is one player and three friends -- but it is
+       the thing that tells you which of the three counters is the one you have
+       to visit first, and it does that without a caption. Posts and rope share
+       two materials between twenty-odd meshes, so the whole run folds into
+       two. */
+    const ropeMat = track(new THREE.MeshStandardMaterial({
+      color: 0x4a1520, roughness: 0.9,
+    }));
+    const queue = [[SPLIT + 3.2, -1.6], [SPLIT + 7.4, -1.6], [SPLIT + 11.6, -1.6],
+                   [SPLIT + 15.8, -0.4], [SPLIT + 19.0, 1.4]];
+    for (let i = 0; i < queue.length; i++) {
+      const [qx, qz] = queue[i];
+      slab(qx, qz, 0.16, 0.16, 0.95, 0, trimMat, null);
+      slab(qx, qz, 0.34, 0.34, 0.05, 0, trimMat, null);
+      slab(qx, qz, 0.2, 0.2, 0.1, 0.95, trimMat, null);
+      if (i === 0) continue;
+      // The rope between this post and the last, as a box turned to face it
+      // and dipped a little in the middle.
+      const [px, pz] = queue[i - 1];
+      const len = Math.hypot(qx - px, qz - pz);
+      const rope = new THREE.Mesh(track(new THREE.BoxGeometry(len, 0.045, 0.045)), ropeMat);
+      rope.position.set((qx + px) / 2, 0.80, (qz + pz) / 2);
+      rope.rotation.y = -Math.atan2(qz - pz, qx - px);
+      group.add(rope);
+    }
+
+    /* Tonight's board. Four floors, what each is called, and the day the
+       building lets you up -- read off the same FLOORS array the lift panel
+       uses, so a floor renamed in config is renamed here too. */
+    const board = document.createElement('canvas');
+    board.width = 512; board.height = 384;
+    const bg = board.getContext('2d');
+    bg.fillStyle = '#120d0b';
+    bg.fillRect(0, 0, 512, 384);
+    bg.strokeStyle = '#9a7333';
+    bg.lineWidth = 6;
+    bg.strokeRect(10, 10, 492, 364);
+    bg.fillStyle = '#ffc978';
+    bg.font = '700 40px Inter, system-ui, sans-serif';
+    bg.textAlign = 'center';
+    bg.fillText('TONIGHT', 256, 66);
+    bg.textAlign = 'left';
+    const floors = (global.GWConfig && global.GWConfig.FLOORS) || [];
+    floors.forEach((f, i) => {
+      bg.fillStyle = '#f2ebe6';
+      bg.font = '600 30px Inter, system-ui, sans-serif';
+      bg.fillText(f.name, 46, 132 + i * 58);
+      bg.fillStyle = '#9a7333';
+      bg.font = '500 24px Inter, system-ui, sans-serif';
+      bg.textAlign = 'right';
+      bg.fillText(f.unlockDay > 1 ? 'from day ' + f.unlockDay : 'open', 466, 132 + i * 58);
+      bg.textAlign = 'left';
+    });
+    const boardTex = track(new THREE.CanvasTexture(board));
+    boardTex.colorSpace = THREE.SRGBColorSpace;
+    const boardMesh = new THREE.Mesh(
+      track(new THREE.PlaneGeometry(2.6, 1.95)),
+      track(new THREE.MeshBasicMaterial({ map: boardTex }))
+    );
+    boardMesh.position.set(SPLIT + 0.3, 2.2, -8.5);
+    boardMesh.rotation.y = Math.PI / 2;
+    group.add(boardMesh);
+    slab(SPLIT + 0.16, -8.5, 0.14, 2.9, 2.25, 1.05, trimMat, null);
+    sites.points.push({ at: new THREE.Vector3(SPLIT + 1.2, 2.6, -8.5),
+                        colour: theme.neon, intensity: 6, distance: 5 });
+
+    // A second place to stand about, at the far end, so the room does not run
+    // out of furniture halfway down it.
+    const rug2 = new THREE.Mesh(
+      track(new THREE.CircleGeometry(3.0, 36)),
+      track(new THREE.MeshStandardMaterial({ color: 0x33241c, roughness: 0.98 }))
+    );
+    rug2.rotation.x = -Math.PI / 2;
+    rug2.position.set(SPLIT + 20.5, 0.014, -9.5);
+    rug2.receiveShadow = true;
+    group.add(rug2);
+    for (const [dx, dz, rw, rd] of [[-2.2, 0, 0.9, 2.2], [2.2, 0, 0.9, 2.2]]) {
+      slab(SPLIT + 20.5 + dx, -9.5 + dz, rw, rd, 0.44, 0, wallMat, 'seat');
+      slab(SPLIT + 20.5 + dx, -9.5 + dz, rw * 1.06, rd * 1.06, 0.06, 0.44, trimMat, null);
+    }
+    slab(SPLIT + 20.5, -9.5, 1.2, 1.2, 0.5, 0, trimMat, 'table');
+
+    /* --- the yard --------------------------------------------------------- */
+
+    /* The shutter the limo waits behind.
+
+       In the yard, not the lobby: the car is parked outside a loading bay, and
+       walking out to it through a roller door is the last thing you do each
+       night. */
+    const doorW = 4.6;
+    const bay = { x: -halfW + 8.0, z: -halfD + 0.62 };
+    slab(bay.x - doorW / 2 - 1.6, bay.z, 2.6, 0.7, WALL_H, 0, concrete, 'wall');
+    slab(bay.x + doorW / 2 + 1.6, bay.z, 2.6, 0.7, WALL_H, 0, concrete, 'wall');
+    // Roller slats, most of the way up, and the box the roller lives in.
+    for (let i = 0; i < 6; i++) {
+      slab(bay.x, bay.z - 0.06, doorW, 0.09, 0.16, 3.35 + i * 0.19, steelMat, null);
+    }
+    slab(bay.x, bay.z - 0.1, doorW + 0.7, 0.5, 0.6, 4.5, steelMat, null);
+    // Hazard stripes down each side of the opening, and a lip on the ground.
+    for (const side of [-1, 1]) {
+      slab(bay.x + side * (doorW / 2 + 0.2), bay.z - 0.28, 0.26, 0.14, 3.3, 0,
+           hazardMat, null);
+    }
+    slab(bay.x, bay.z - 0.34, doorW + 0.5, 0.3, 0.08, 0, hazardMat, null);
+    /* Behind the opening: the car. Only its flank is ever visible through the
+       shutter, so it is a flank -- a long dark body, a roof and two wheels --
+       rather than a model of a car nobody gets to walk round. */
+    const limoMat = track(new THREE.MeshStandardMaterial({
+      color: 0x1a1a20, roughness: 0.22, metalness: 0.75,
+    }));
+    slab(bay.x + 0.4, bay.z - 1.9, 9.0, 2.1, 0.95, 0.28, limoMat, null);
+    slab(bay.x - 0.4, bay.z - 1.9, 5.2, 1.9, 0.62, 1.23, limoMat, null);
+    const glassMat = track(new THREE.MeshStandardMaterial({
+      color: 0x1b2530, roughness: 0.12, metalness: 0.4,
+    }));
+    slab(bay.x - 0.4, bay.z - 0.92, 4.6, 0.06, 0.5, 1.3, glassMat, null);
+    const tyreMat = track(new THREE.MeshStandardMaterial({ color: 0x141313, roughness: 0.95 }));
+    for (const dx of [-3.4, 3.4]) {
+      const tyre = new THREE.Mesh(track(new THREE.TorusGeometry(0.42, 0.16, 8, 18)), tyreMat);
+      tyre.position.set(bay.x + 0.4 + dx, 0.42, bay.z - 0.95);
+      group.add(tyre);
+    }
+    /* Two lights on the car, because through a four-metre opening it is the
+       only part of the yard you cannot walk up to and the first version left
+       it as a black rectangle in the doorway. One washes the flank so the
+       shape reads; one is the headlights bouncing back off the yard, which is
+       what makes it read as running rather than parked. */
+    sites.points.push({ at: new THREE.Vector3(bay.x, 1.9, bay.z - 1.0),
+                        colour: 0xfff0d8, intensity: 16, distance: 7 });
+    sites.points.push({ at: new THREE.Vector3(bay.x + 4.6, 0.7, bay.z - 1.6),
+                        colour: 0xfff0d8, intensity: 20, distance: 11 });
+    /* The sign goes on the pier beside the opening, not over it: over it is
+       where the roller box lives, and the first version put five metres of
+       lettering behind a steel drum. */
+    group.add(sign('TO THE CASINO', bay.x + doorW / 2 + 1.6, 2.8, bay.z + 0.36,
+                   theme.neon, 2.4, 0));
+    sites.points.push({ at: new THREE.Vector3(bay.x + doorW / 2 + 1.6, 2.8, bay.z + 1.4),
+                        colour: theme.neon, intensity: 7, distance: 6 });
     anchors.push({
       kind: 'fixture', action: 'limo', label: 'The limo',
-      position: new THREE.Vector3(0, 0, halfD - 0.62),
+      position: new THREE.Vector3(bay.x, 0, bay.z),
       rotationY: 0,
       half: { hw: doorW / 2, hd: 0.5 },
-      stand: new THREE.Vector3(0, 0, halfD - 2.4),   // within arm's reach of the doors
-      focus: new THREE.Vector3(0, 2.4, halfD - 0.62),
+      stand: new THREE.Vector3(bay.x, 0, bay.z + 2.0),
+      focus: new THREE.Vector3(bay.x, 2.4, bay.z),
     });
+
+    // Sodium floods on the yard's ceiling, in cage fittings.
+    for (const [x, z] of [[-18, -7], [-18, 7], [-10.5, -8], [-10.5, 8]]) {
+      slab(x, z, 0.9, 0.5, 0.24, WALL_H - 0.4, steelMat, null);
+      const lens = new THREE.Mesh(track(new THREE.PlaneGeometry(0.8, 0.42)),
+        track(new THREE.MeshBasicMaterial({ color: yard.lamp })));
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(x, WALL_H - 0.41, z);
+      group.add(lens);
+      sites.points.push({ at: new THREE.Vector3(x, WALL_H - 1.0, z),
+                          colour: yard.lamp, intensity: 30, distance: 17 });
+    }
+
+    /* A chain-link run down the back of the yard, with the freight behind it.
+       Posts and two rails rather than a mesh texture: a transparent map here
+       would be one more textured mesh that cannot fold, for a fence read at
+       ten metres. */
+    for (let x = -halfW + 2; x <= SPLIT - 2.5; x += 3.0) {
+      slab(x, halfD - 4.0, 0.16, 0.16, 2.5, 0, steelMat, null);
+    }
+    for (const y of [1.05, 2.35]) {
+      slab((-halfW + SPLIT) / 2, halfD - 4.0, SPLIT + halfW - 3.0, 0.09, 0.09, y,
+           steelMat, null);
+    }
+    // Stacked freight behind it -- scenery, and the reason the yard has a back
+    // wall you cannot walk up to.
+    for (const [x, z, w, d, h] of [[-19, halfD - 2.0, 2.4, 2.2, 2.6],
+                                   [-15.5, halfD - 2.2, 2.0, 1.9, 1.8],
+                                   [-11.5, halfD - 1.9, 2.6, 2.3, 3.1],
+                                   [-8.0, halfD - 2.3, 1.8, 1.8, 1.4]]) {
+      slab(x, z, w, d, h, 0, crateMat, 'freight');
+      slab(x, z, w + 0.1, d + 0.1, 0.06, h, steelMat, null);
+    }
+    solids.add((-halfW + SPLIT) / 2, halfD - 4.0, (SPLIT + halfW) / 2, 0.12, 'fence');
 
     /* The crate you wake up in.
 
@@ -9243,10 +10303,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        running. Its walls are solid and shin-high on the inside, so stepping
        out is a step rather than a puzzle -- a box you have to work out how to
        escape is a joke that stops being funny on day two. */
-    const crate = { x: -halfW + 4.2, z: halfD - 5.0, w: 1.9, d: 1.9, h: 0.62 };
-    const crateMat = track(new THREE.MeshStandardMaterial({
-      color: 0x6b4a2a, roughness: 0.92,
-    }));
+    const crate = { x: -halfW + 4.6, z: 8.5, w: 2.0, d: 2.0, h: 0.62 };
     /* Three sides and a fallen one.
 
        A crate with four walls is a box you cannot get out of: the controller
@@ -9256,45 +10313,54 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        way out and the reason the lid is off. */
     for (const [dx, dz, ww, dd] of [
       [-crate.w / 2, 0, 0.12, crate.d], [crate.w / 2, 0, 0.12, crate.d],
-      [0, -crate.d / 2, crate.w, 0.12]]) {
+      [0, crate.d / 2, crate.w, 0.12]]) {
       slab(crate.x + dx, crate.z + dz, ww, dd, crate.h, 0, crateMat, 'crate');
     }
     const fallen = new THREE.Mesh(
       track(new THREE.BoxGeometry(crate.w, 0.11, crate.d * 0.85)), crateMat
     );
-    fallen.position.set(crate.x, 0.055, crate.z + crate.d / 2 + crate.d * 0.42);
+    fallen.position.set(crate.x, 0.055, crate.z - crate.d / 2 - crate.d * 0.42);
     fallen.receiveShadow = true;
     group.add(fallen);
-    // The lid, thrown back against the side.
+    /* The lid, thrown back against the far side.
+
+       Against the near side it was two square metres of timber tilted up beside
+       the camera, and it filled a quarter of the first frame of every day with
+       a lit orange wedge. It leans on the side you wake up facing away from,
+       and it leans further over. */
     const lid = new THREE.Mesh(
       track(new THREE.BoxGeometry(crate.w, 0.09, crate.d)), crateMat
     );
-    lid.position.set(crate.x - crate.w * 0.62, crate.h + 0.5, crate.z);
-    lid.rotation.z = -1.15;
+    lid.position.set(crate.x - crate.w * 0.86, crate.h * 0.55, crate.z + 0.3);
+    lid.rotation.z = -0.72;
     lid.castShadow = true;
     group.add(lid);
-    group.add(sign('WAKE UP', crate.x, 1.55, crate.z - crate.d / 2 - 0.1,
-      theme.neon, 1.6, 0));
+    /* Where you can read it from: inside the box, looking out. The lettering
+       faces +z and you wake facing -z, so it goes in front of the open side
+       rather than behind you, which is where the first one was. */
+    group.add(sign('WAKE UP', crate.x - 0.2, 0.85, crate.z - 3.4, yard.sign, 0.8, 0));
+    sites.points.push({ at: new THREE.Vector3(crate.x, 2.6, crate.z - 1.4),
+                        colour: yard.lamp, intensity: 8, distance: 7 });
 
-    /* Something to climb on, on the way to the doors.
+    /* Something to climb on, between the crate and the doors.
 
        The movement grew a jump, a landing and air control that barely steers,
        and until now the only thing in the building to use them on was a flat
-       carpet. A run of crates and a beam across the yard is where you find out
-       what the controls do, and there is a ticket on the far end so that
-       finding out is worth doing rather than a thing to look at. */
+       carpet. A run of crates and a pallet stack across the yard is where you
+       find out what the controls do, and there is a ticket on the far end so
+       that finding out is worth doing rather than a thing to look at. */
     const jumps = [];
     const course = [
-      { x: -6.5, z: 6.0, w: 1.7, d: 1.7, h: 0.55 },
-      { x: -3.4, z: 5.2, w: 1.5, d: 1.5, h: 1.05 },
-      { x: -0.4, z: 6.4, w: 1.4, d: 1.4, h: 1.55 },
-      { x: 2.8, z: 5.4, w: 1.3, d: 1.3, h: 2.05 },
-      { x: 6.2, z: 6.2, w: 2.2, d: 1.2, h: 2.45 },
+      { x: -18.0, z: 2.0, w: 1.8, d: 1.8, h: 0.55 },
+      { x: -15.0, z: 0.4, w: 1.6, d: 1.6, h: 1.05 },
+      { x: -12.4, z: 2.2, w: 1.5, d: 1.5, h: 1.55 },
+      { x: -10.0, z: 0.2, w: 1.4, d: 1.4, h: 2.05 },
+      { x: -7.4, z: 2.4, w: 2.3, d: 1.4, h: 2.45 },
     ];
     for (const b of course) {
       slab(b.x, b.z, b.w, b.d, b.h, 0, crateMat, 'crate');
       // A lip of trim on the top edge, so the height reads before you jump.
-      slab(b.x, b.z, b.w + 0.1, b.d + 0.1, 0.05, b.h, trimMat, null);
+      slab(b.x, b.z, b.w + 0.1, b.d + 0.1, 0.05, b.h, hazardMat, null);
       jumps.push(b);
     }
     const top = course[course.length - 1];
@@ -9322,28 +10388,25 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     sites.points.push({ at: new THREE.Vector3(top.x, top.h + 1.0, top.z),
                         colour: 0xffd27a, intensity: 8, distance: 6 });
 
-    // Somewhere to stand about. A rug and a low table, so the middle of the
-    // room is not an empty square.
-    const rug = new THREE.Mesh(
-      track(new THREE.CircleGeometry(3.4, 40)),
-      track(new THREE.MeshStandardMaterial({ color: 0x3a2118, roughness: 0.98 }))
-    );
-    rug.rotation.x = -Math.PI / 2;
-    rug.position.set(2.5, 0.014, 1.5);
-    rug.receiveShadow = true;
-    group.add(rug);
-    slab(2.5, 1.5, 1.6, 1.0, 0.45, 0, trimMat, 'table');
-    for (const [dx, dz] of [[-2.4, 0], [2.4, 0], [0, 2.2]]) {
-      slab(2.5 + dx, 1.5 + dz, 1.5, 0.8, 0.45, 0, wallMat, 'seat');
+    // A skip and a stack of pallets, so the corner the parkour starts in is a
+    // yard rather than a floor with boxes on it.
+    slab(-20.5, -5.0, 3.0, 2.0, 1.3, 0, hazardMat, 'skip');
+    slab(-20.5, -5.0, 2.7, 1.7, 0.1, 1.3,
+         track(new THREE.MeshStandardMaterial({ color: 0x241a15, roughness: 0.95 })), null);
+    for (let i = 0; i < 5; i++) {
+      slab(-15.0, -6.5, 1.5, 1.2, 0.11, i * 0.17, crateMat, i === 0 ? 'pallets' : null);
     }
 
     mergeStatic(group);
 
     return {
       group, solids, anchors, theme, sites,
-      lift: { x: 0, z: halfD - 1.6, w: doorW, d: 1.6 },
-      // Inside the crate, looking out across the yard at the limo.
-      spawn: { x: -halfW + 4.2, z: halfD - 5.0, angle: Math.PI * 0.78 },
+      lift: { x: bay.x, z: bay.z, w: doorW, d: 1.6 },
+      /* Inside the crate, looking out across the yard. Turned a little off
+         straight so the first frame of the day holds three things at once: the
+         parkour ahead, the shutter with the car behind it, and the lit doorway
+         into the lobby off to the right. */
+      spawn: { x: crate.x, z: crate.z, angle: -0.35 },
       crate,
       jumps,
       size: { w: W, d: D, height: WALL_H },
@@ -10111,6 +11174,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
         mood: 0, moodLeft: 0, idleFor: 0, tilting: false, offering: false, anchor: null,
         lookAtPlayer: 0,
+        /* A gesture is a one-shot on top of the blend: a name, how long it has
+           left, and how long it started with, so the pose can be shaped over
+           its own life rather than switched on and off. `gestureAt` is what is
+           being pointed at, in world space. */
+        gesture: null, gestureLeft: 0, gestureFor: 1, gestureAt: null,
+        greeted: 0,
       };
       spawnAt(person);
       group.add(body.group);
@@ -10193,6 +11262,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
       person.blocked = 0;
       person.detour = 0;
+      /* Point at where they are off to.
+
+         A friend announcing a bet used to turn on the spot and set off, and
+         from across a hall that is indistinguishable from wandering. Pointing
+         at the table first says both that they have decided something and
+         which machine they decided it about. */
+      if (person.dest) doGesture(person, 'point', 1.4, person.dest);
       // Whether the bet should now wait for a body to get there. The caller
       // holds the money until it does; if this says no -- the table is on
       // another floor, or there is no room drawn at all -- the bet keeps its
@@ -10205,6 +11281,56 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (!person) return;
       person.mood = net > 0 ? 1 : net < 0 ? -1 : 0;
       person.moodLeft = 2.4;
+      // Winning is worth pointing at; losing is worth a shrug.
+      doGesture(person, net > 0 ? 'cheer' : 'shrug', net > 0 ? 1.5 : 1.2);
+    }
+
+    /* --- gestures -----------------------------------------------------------
+
+       A gesture is a short, deliberate movement laid over whatever the body is
+       already doing: a point, a wave, a shrug, a look at a watch. They exist
+       because the crew had exactly three things to say with their bodies --
+       walking, playing and how the last hand went -- and a room where nobody
+       ever acknowledges anybody is a room full of furniture that breathes.
+
+       Nothing here interrupts. A gesture is a weight that comes and goes, so a
+       friend who starts walking mid-wave finishes the wave while they walk. */
+    function doGesture(person, name, seconds, at) {
+      // A gesture already running is only replaced by a fresher one of at
+      // least equal standing: a wave must not stamp on a cheer.
+      const RANK = { check: 0, greet: 1, shrug: 2, point: 2, cheer: 3 };
+      if (person.gesture && person.gestureLeft > 0
+          && (RANK[person.gesture] || 0) > (RANK[name] || 0)) return;
+      person.gesture = name;
+      person.gestureFor = seconds;
+      person.gestureLeft = seconds;
+      person.gestureAt = at ? at.clone() : null;
+    }
+
+    /* What the crew does when something happens to *you*.
+
+       They bet their own money and reacted to their own results, and stood
+       there like fence posts while the player took the building apart. `kind`
+       is what happened; how loud the reaction is depends on how far away they
+       are, because three people cheering from across a hall at a two-dollar
+       win is worse than silence. */
+    function react(kind, at) {
+      for (const person of people) {
+        if (person.state === 'away') continue;
+        const near = at ? person.pos.distanceTo(at) : 0;
+        if (near > 14) continue;
+        if (kind === 'win') {
+          person.mood = 1; person.moodLeft = near < 7 ? 1.9 : 1.2;
+          doGesture(person, 'cheer', 1.5);
+        } else if (kind === 'loss') {
+          person.mood = -1; person.moodLeft = 1.6;
+          doGesture(person, 'shrug', 1.1);
+        } else if (kind === 'late') {
+          doGesture(person, 'check', 1.6);
+        } else if (kind === 'point' && at) {
+          doGesture(person, 'point', 1.8, at);
+        }
+      }
     }
 
     function speak(mateId, text) {
@@ -10389,6 +11515,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
          does; turning just the head, and only as far as a neck goes, is what a
          person does. Past that the body comes round with it. */
       person.lookAtPlayer = 0;
+      if (person.greeted > 0) person.greeted -= dt;
       if (playerPos) {
         const dx = playerPos.x - person.pos.x;
         const dz = playerPos.z - person.pos.z;
@@ -10398,6 +11525,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           while (off < -Math.PI) off += Math.PI * 2;
           if (Math.abs(off) < 1.9) {
             person.lookAtPlayer = Math.max(-0.85, Math.min(0.85, off));
+            /* And say hello, once. Walking up to somebody who looks at you and
+               does nothing else is worse than being ignored, and a wave every
+               time you passed would be a nervous tic -- so it fires inside two
+               and a half metres and then holds off for half a minute. */
+            if (Math.hypot(dx, dz) < 2.5 && person.greeted <= 0
+                && !person.dest && person.state !== 'play') {
+              person.greeted = 30;
+              doGesture(person, 'greet', 1.3);
+            }
           } else if (!person.dest) {
             // Behind them: they turn round rather than crane over a shoulder.
             person.wantYaw = Math.atan2(-dx, -dz);
@@ -10605,6 +11741,66 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       handOut += w.tilt * 0.14;
       browTilt += w.tilt * 0.85;
 
+      /* --- gestures, laid over the top -------------------------------------
+
+         Each one is shaped over its own life rather than switched on flat: `g`
+         rises and falls so a wave starts and ends with the arm down, and a
+         point settles rather than snapping out. Nothing here is exclusive with
+         the states above -- somebody can be walking, pleased with themselves
+         and checking the time at once, which is what people do. */
+      if (person.gestureLeft > 0) {
+        person.gestureLeft = Math.max(0, person.gestureLeft - dt);
+        const t = 1 - person.gestureLeft / person.gestureFor;
+        // In over the first fifth, out over the last quarter.
+        const g = Math.min(1, t / 0.2, (1 - t) / 0.25);
+        const beatFast = Math.sin(t * person.gestureFor * 9);
+
+        if (person.gesture === 'greet') {
+          // One hand up and waving, weight on the back foot.
+          handLift += g * 0.62;
+          handOut += g * (0.16 + beatFast * 0.07);
+          headTilt -= g * 0.10;
+          browTilt -= g * 0.3;
+          roll += g * beatFast * 0.035;
+        } else if (person.gesture === 'point') {
+          // Arms out towards it, and the head turned to follow -- pointing at
+          // something you are not looking at reads as a spasm.
+          handLift += g * 0.30;
+          handOut += g * 0.34;
+          lean -= g * 0.06;
+          if (person.gestureAt) {
+            const want = Math.atan2(-(person.gestureAt.x - person.pos.x),
+                                    -(person.gestureAt.z - person.pos.z));
+            let off = want - person.yaw;
+            while (off > Math.PI) off -= Math.PI * 2;
+            while (off < -Math.PI) off += Math.PI * 2;
+            headTurn += g * Math.max(-1.1, Math.min(1.1, off));
+          }
+        } else if (person.gesture === 'shrug') {
+          // Hands out and up a little, head down, brows up: the whole point of
+          // a shrug is that it is over before it is finished.
+          handOut += g * 0.26;
+          handLift += g * 0.16;
+          headTilt += g * 0.14;
+          browTilt -= g * 0.35;
+          squash += g * 0.03;
+        } else if (person.gesture === 'cheer') {
+          handLift += g * 0.66;
+          handOut += g * 0.14;
+          rise += g * Math.abs(Math.sin(t * 11)) * 0.10;
+          browTilt -= g * 0.5;
+          headTilt -= g * 0.18;
+        } else if (person.gesture === 'check') {
+          // A look at the wrist: one hand up and across, head down over it.
+          handLift += g * 0.34;
+          handOut -= g * 0.10;
+          headTilt += g * 0.30;
+          lean += g * 0.08;
+          browTilt += g * 0.25;
+        }
+        if (person.gestureLeft === 0) { person.gesture = null; person.gestureAt = null; }
+      }
+
       // Looking at whoever walked up beats looking around the room.
       if (person.lookAtPlayer) headTurn = person.lookAtPlayer;
 
@@ -10694,7 +11890,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
 
     return {
-      people, update, go, settled, speak, tilt, offer, dispose, group,
+      people, update, go, settled, speak, tilt, offer, react, dispose, group,
       /* What somebody is doing, for the crew rail. The rail used to read the
          game they had picked, which after a bet was announced but before they
          got there said "Roulette" about somebody standing by the lift. */
@@ -14129,6 +15325,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     wire();
     shell.store.on('say', renderTicker);
     shell.store.on('bank', () => { renderHud(); refreshPlayButton(); });
+    /* The room watches you play.
+
+       Every settlement in the building comes through `resolve`, the friends'
+       own bets included, so a hand that was not yours is skipped -- they
+       already react to their own through `settled`. What counts as worth
+       reacting to is the size of the swing against the stake, not against the
+       bank: doubling a hundred is a moment whichever night it happens on. */
+    shell.store.on('resolve', (r) => {
+      if (!shell.crew || !r || (r.detail && r.detail.by)) return;
+      if (!r.stake) return;
+      const swing = r.net / r.stake;
+      if (swing >= 1) shell.crew.react('win', shell.player.state.pos);
+      else if (swing <= -0.999) shell.crew.react('loss', shell.player.state.pos);
+    });
 
     GWScreens.init(shell);
     GWModMenu.init(shell);
@@ -14369,6 +15579,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           warned.add(mark.at);
           shell.store.say(mark.text, mark.tone);
           shell.audio.play(mark.at <= 10 ? 'alarm' : 'tick');
+          // The crew look at the time too. A line in the ticker is something
+          // you have to be reading; three people checking their watches is
+          // something you see out of the corner of an eye.
+          if (shell.crew) shell.crew.react('late', shell.player.state.pos);
         }
       }
 
@@ -14784,13 +15998,42 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      -- by the time a machine is dropped it has already faded into the wall
      colour. three.js frustum-culls what is behind you on its own; this is for
      what is in front of you and too far away to read. */
+  /* How far away a machine is still drawn.
+
+     Not the fog's distance. A slot cabinet is forty-odd symbol meshes and a
+     floor deals up to fifteen machines now; with the fog at thirty-four metres
+     you can stand at the lift on Velvet Hall and see all of them at once,
+     which measured 924 draw calls and a quarter of a million triangles. The
+     budget here is draw calls rather than metres, so the radius tightens as a
+     floor gets busier -- and it never exceeds the fog, so a machine has always
+     faded most of the way out before it is dropped. */
+  const MACHINE_CULL = 26;
+  /* And how many are drawn at once, whatever the distance.
+
+     A distance is the wrong budget. A slot cabinet is forty-odd symbol meshes
+     and a floor deals fifteen machines, so what a radius buys depends entirely
+     on which machines happen to be inside it -- measured, the same radius gave
+     143 draw calls on one seed and 438 on the next. The budget is draw calls,
+     so it is spent on the nearest few and the rest are switched off. Anything
+     dropped is already deep in fog at this range. */
+  const MACHINE_BUDGET = 10;
+  const byDistance = [];
   function cullDistantMachines() {
-    const far = shell.stage.fogFar;
+    const far = Math.min(shell.stage.fogFar, MACHINE_CULL);
     const eye = shell.player.state.pos;
+    byDistance.length = 0;
     for (const record of shell.anchors) {
       const p = record.anchor.position;
       const dx = p.x - eye.x, dz = p.z - eye.z;
-      record.holder.visible = (dx * dx + dz * dz) < far * far;
+      byDistance.push({ record, d2: dx * dx + dz * dz });
+    }
+    byDistance.sort((a, b) => a.d2 - b.d2);
+    let shown = 0;
+    for (const entry of byDistance) {
+      const record = entry.record;
+      const inRange = entry.d2 < far * far;
+      record.holder.visible = inRange && shown < MACHINE_BUDGET;
+      if (record.holder.visible) shown++;
       // The lamp over a table says how hot it is: warm white when nobody
       // cares, amber once they do, red when it is shut. It is the one signal
       // you can read from across the room without reading anything.

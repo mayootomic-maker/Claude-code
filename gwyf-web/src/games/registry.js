@@ -49,6 +49,18 @@
       get group() { return shell.stage.group; },
       model(name) { return GWModels.instance(shell.lib, name); },
 
+      /* Fold a part of a machine into one mesh per material.
+
+         A cabinet is built from slabs the way the rooms are, and a wheel is
+         two dozen wedges and two dozen pegs -- every one of them its own draw
+         call, standing on a floor that draws eight machines at once. Anything
+         that never moves relative to the group it is in can be folded, and the
+         group goes on moving: the wheel spins as one mesh. Call it once the
+         part is fully built and never on a group whose children animate
+         separately -- a mesh that has been folded away is gone, so a game that
+         still holds a reference to it would be moving nothing. */
+      fold(root) { return GWLevel.mergeStatic(root); },
+
       /* Run `fn(t, dt, elapsed)` for `seconds`, driven by the stage's own loop
          so animations pause with the renderer instead of racing on in a
          background tab. */
