@@ -626,6 +626,94 @@
     return out;
   }
 
+  /* Wallpaper.
+
+     A damask on the walls and a fine vertical stripe on the panelling: the two
+     patterns a room like this has, at a scale you read as material rather than
+     as pattern. Nothing here was possible until the fold learned to carry UVs
+     -- a textured wall could not be merged, and an unmerged wall is a draw call
+     per slab -- which is the whole reason every surface in the building was a
+     flat colour with the palette painted on it.
+
+     Deliberately low contrast. Wallpaper you can name from across a room is
+     wallpaper you notice instead of the casino, and the point of it is to stop
+     forty square metres of maroon reading as forty square metres of nothing.
+
+     Cached by colour and kind, because four floors share two patterns and a
+     canvas per wall is a canvas per wall. */
+  const paperCache = new Map();
+  function wallTexture(colour, kind) {
+    const key = colour + ':' + kind;
+    if (paperCache.has(key)) return paperCache.get(key);
+
+    const size = 256;
+    const c = global.document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const tint = new THREE.Color(colour);
+    g.fillStyle = '#' + tint.getHexString();
+    g.fillRect(0, 0, size, size);
+
+    // Lighter and darker than the ground, so the pattern reads at any exposure
+    // rather than only against a dark room.
+    const up = '#' + tint.clone().lerp(new THREE.Color(0xffffff), 0.16).getHexString();
+    const down = '#' + tint.clone().multiplyScalar(0.74).getHexString();
+
+    if (kind === 'stripe') {
+      // Panelling: a fine stripe, and a seam every quarter for the stile.
+      for (let x = 0; x < size; x += 8) {
+        g.fillStyle = (x / 8) % 2 ? up : down;
+        g.globalAlpha = 0.22;
+        g.fillRect(x, 0, 4, size);
+      }
+      g.globalAlpha = 0.5;
+      g.fillStyle = down;
+      for (let x = 0; x < size; x += 64) g.fillRect(x, 0, 3, size);
+    } else {
+      /* A damask: a lattice of four-lobed motifs, offset row to row. Drawn
+         rather than sampled, so it tiles by construction -- a motif that runs
+         off one edge is drawn again at the other. */
+      const motif = (cx, cy, scale) => {
+        g.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2;
+          g.ellipse(cx + Math.cos(a) * 17 * scale, cy + Math.sin(a) * 17 * scale,
+                    12 * scale, 6 * scale, a, 0, Math.PI * 2);
+        }
+        g.fill();
+      };
+      g.globalAlpha = 0.14;
+      g.fillStyle = up;
+      for (let row = -1; row <= 2; row++) {
+        for (let col = -1; col <= 2; col++) {
+          motif(col * 128 + (row % 2 ? 64 : 0), row * 128, 1);
+        }
+      }
+      g.globalAlpha = 0.10;
+      g.fillStyle = down;
+      for (let row = -1; row <= 2; row++) {
+        for (let col = -1; col <= 2; col++) {
+          motif(col * 128 + (row % 2 ? 0 : 64) + 64, row * 128 + 64, 0.55);
+        }
+      }
+    }
+
+    // Tooth. Without it a flat fill under a flat light is still a flat fill.
+    g.globalAlpha = 0.05;
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < 2600; i++) g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+    g.globalAlpha = 0.05;
+    g.fillStyle = '#000000';
+    for (let i = 0; i < 2600; i++) g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    paperCache.set(key, tex);
+    return tex;
+  }
+
   /* A felt table. The playing surface is y = 0 in every game, and the pedestal
      below it reaches the room's floor, so a table is a thing standing on the
      ground rather than a disc hanging in the air. */
@@ -715,5 +803,6 @@
     return mesh;
   }
 
-  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture, FLOOR_Y };
+  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture,
+                     wallTexture, FLOOR_Y };
 })(window);

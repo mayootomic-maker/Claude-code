@@ -4160,6 +4160,94 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return out;
   }
 
+  /* Wallpaper.
+
+     A damask on the walls and a fine vertical stripe on the panelling: the two
+     patterns a room like this has, at a scale you read as material rather than
+     as pattern. Nothing here was possible until the fold learned to carry UVs
+     -- a textured wall could not be merged, and an unmerged wall is a draw call
+     per slab -- which is the whole reason every surface in the building was a
+     flat colour with the palette painted on it.
+
+     Deliberately low contrast. Wallpaper you can name from across a room is
+     wallpaper you notice instead of the casino, and the point of it is to stop
+     forty square metres of maroon reading as forty square metres of nothing.
+
+     Cached by colour and kind, because four floors share two patterns and a
+     canvas per wall is a canvas per wall. */
+  const paperCache = new Map();
+  function wallTexture(colour, kind) {
+    const key = colour + ':' + kind;
+    if (paperCache.has(key)) return paperCache.get(key);
+
+    const size = 256;
+    const c = global.document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const tint = new THREE.Color(colour);
+    g.fillStyle = '#' + tint.getHexString();
+    g.fillRect(0, 0, size, size);
+
+    // Lighter and darker than the ground, so the pattern reads at any exposure
+    // rather than only against a dark room.
+    const up = '#' + tint.clone().lerp(new THREE.Color(0xffffff), 0.16).getHexString();
+    const down = '#' + tint.clone().multiplyScalar(0.74).getHexString();
+
+    if (kind === 'stripe') {
+      // Panelling: a fine stripe, and a seam every quarter for the stile.
+      for (let x = 0; x < size; x += 8) {
+        g.fillStyle = (x / 8) % 2 ? up : down;
+        g.globalAlpha = 0.22;
+        g.fillRect(x, 0, 4, size);
+      }
+      g.globalAlpha = 0.5;
+      g.fillStyle = down;
+      for (let x = 0; x < size; x += 64) g.fillRect(x, 0, 3, size);
+    } else {
+      /* A damask: a lattice of four-lobed motifs, offset row to row. Drawn
+         rather than sampled, so it tiles by construction -- a motif that runs
+         off one edge is drawn again at the other. */
+      const motif = (cx, cy, scale) => {
+        g.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2;
+          g.ellipse(cx + Math.cos(a) * 17 * scale, cy + Math.sin(a) * 17 * scale,
+                    12 * scale, 6 * scale, a, 0, Math.PI * 2);
+        }
+        g.fill();
+      };
+      g.globalAlpha = 0.14;
+      g.fillStyle = up;
+      for (let row = -1; row <= 2; row++) {
+        for (let col = -1; col <= 2; col++) {
+          motif(col * 128 + (row % 2 ? 64 : 0), row * 128, 1);
+        }
+      }
+      g.globalAlpha = 0.10;
+      g.fillStyle = down;
+      for (let row = -1; row <= 2; row++) {
+        for (let col = -1; col <= 2; col++) {
+          motif(col * 128 + (row % 2 ? 0 : 64) + 64, row * 128 + 64, 0.55);
+        }
+      }
+    }
+
+    // Tooth. Without it a flat fill under a flat light is still a flat fill.
+    g.globalAlpha = 0.05;
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < 2600; i++) g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+    g.globalAlpha = 0.05;
+    g.fillStyle = '#000000';
+    for (let i = 0; i < 2600; i++) g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    paperCache.set(key, tex);
+    return tex;
+  }
+
   /* A felt table. The playing surface is y = 0 in every game, and the pedestal
      below it reaches the room's floor, so a table is a thing standing on the
      ground rather than a disc hanging in the air. */
@@ -4249,7 +4337,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return mesh;
   }
 
-  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture, FLOOR_Y };
+  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture,
+                     wallTexture, FLOOR_Y };
 })(window);
 
 </script>
@@ -9494,7 +9583,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     ceiling.position.y = WALL_H;
     group.add(ceiling);
 
-    const wallMat = track(new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 0.82 }));
+    /* Papered rather than painted.
+
+       The map carries the pattern and the material keeps its colour at white,
+       because a tint on top of a tinted texture is the same colour twice.
+       `uvMetres` is how many metres one tile covers, read by the fold when it
+       projects world-space UVs. At two metres each motif came out a metre
+       across and read as a row of lozenges; at one and a bit it reads as a
+       wall, which is the point -- wallpaper you can name from across a room
+       is wallpaper you look at instead of the casino. */
+    const wallMat = track(new THREE.MeshStandardMaterial({
+      map: track(GWStage.wallTexture(theme.wall, 'damask')),
+      color: 0xffffff, roughness: 0.86,
+    }));
+    wallMat.userData.uvMetres = 1.15;
     const trimMat = track(new THREE.MeshStandardMaterial({
       color: theme.trim, metalness: 0.85, roughness: 0.32,
     }));
@@ -9683,9 +9785,19 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const inlayMat = track(new THREE.MeshStandardMaterial({
       color: theme.trim, roughness: 0.62, metalness: 0.5,
     }));
+    /* A rug, not a bald patch.
+
+       A plain flat circle laid on a patterned carpet reads as a hole in the
+       carpet, and on the paler floors it washed out to a grey ellipse that
+       looked like fog on the ground. It gets a pattern of its own now, in the
+       room's trim colour and at a tighter repeat than the walls, so it reads
+       as something laid down on top rather than something missing. */
     const rugMat = track(new THREE.MeshStandardMaterial({
-      color: new THREE.Color(theme.carpet).multiplyScalar(0.55), roughness: 0.98,
+      map: track(GWStage.wallTexture(
+        new THREE.Color(theme.carpet).multiplyScalar(0.42).getHex(), 'damask')),
+      color: 0xffffff, roughness: 0.98,
     }));
+    rugMat.userData.uvMetres = 0.85;
 
     const zoneSlots = [];
     const mason = {
@@ -10027,7 +10139,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (o.isInstancedMesh || o.isSkinnedMesh) return;
       const geo = o.geometry;
       if (!geo || !geo.index || !geo.attributes.position || !geo.attributes.normal) return;
-      if (o.material.map) return;
+      /* Textured surfaces fold too, now that UVs are carried across.
+
+         They used to be skipped, and that one line is why nothing in the whole
+         building had a pattern on it except the carpet: a wall with a map on
+         it could not be merged, an unmerged wall is a draw call per slab, and
+         a hall is a few hundred slabs. So every surface was a flat colour and
+         the rooms read as a grey-box with a palette applied. Boxes and planes
+         all carry a uv attribute; anything that somehow does not gets zeroes,
+         which is the corner of the texture and no worse than being left out. */
       const key = o.material.uuid;
       if (!byMaterial.has(key)) byMaterial.set(key, { material: o.material, items: [] });
       byMaterial.get(key).items.push(o);
@@ -10047,6 +10167,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const position = new Float32Array(verts * 3);
       const normal = new Float32Array(verts * 3);
       const shade = shadeHeight ? new Float32Array(verts * 3) : null;
+      const wantsUv = !!bucket.material.map;
+      const uv = wantsUv ? new Float32Array(verts * 2) : null;
+      // How many metres one tile of the texture covers, said by the material.
+      const uvMetres = bucket.material.userData.uvMetres || 2;
       const index = verts > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
       let v = 0, i = 0;
       for (const mesh of bucket.items) {
@@ -10068,6 +10192,25 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
             const lit = SHADE_LOW + (SHADE_HIGH - SHADE_LOW) * t + grain;
             shade[v * 3] = shade[v * 3 + 1] = shade[v * 3 + 2] = lit;
           }
+          if (uv) {
+            /* World-space UVs, not the box's own.
+
+               A BoxGeometry maps 0..1 across each face, so a shared texture
+               would tile once over a two-metre panel and once over a
+               fifty-six metre wall -- the same pattern at two wildly different
+               sizes, which reads worse than no pattern. Projecting from the
+               baked position onto whichever axis the face points along gives
+               every surface in the room the same texel density, and the
+               material says how many metres one tile covers. */
+            const nx = Math.abs(n.getX(k)), ny = Math.abs(n.getY(k)), nz = Math.abs(n.getZ(k));
+            const px = position[v * 3], py = position[v * 3 + 1], pz = position[v * 3 + 2];
+            let a, b;
+            if (ny > nx && ny > nz) { a = px; b = pz; }        // floors and ceilings
+            else if (nx > nz) { a = pz; b = py; }              // walls facing along x
+            else { a = px; b = py; }                           // walls facing along z
+            uv[v * 2] = a / uvMetres;
+            uv[v * 2 + 1] = b / uvMetres;
+          }
           vertex.fromBufferAttribute(n, k).applyMatrix3(normalMatrix).normalize();
           normal[v * 3] = vertex.x; normal[v * 3 + 1] = vertex.y; normal[v * 3 + 2] = vertex.z;
         }
@@ -10076,6 +10219,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
       geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+      if (uv) geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       geometry.setIndex(new THREE.BufferAttribute(index, 1));
       geometry.computeBoundingSphere();
       let material = bucket.material;
@@ -10214,8 +10358,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }));
     const glowMat = track(new THREE.MeshBasicMaterial({ color: theme.neon }));
     const panelMat = track(new THREE.MeshStandardMaterial({
-      color: new THREE.Color(theme.wall).multiplyScalar(2.1), roughness: 0.68,
+      map: track(GWStage.wallTexture(
+        new THREE.Color(theme.wall).multiplyScalar(2.1).getHex(), 'stripe')),
+      color: 0xffffff, roughness: 0.7,
     }));
+    panelMat.userData.uvMetres = 1.2;
     // Concrete: rough, pale, and not metal. Everything structural in the yard
     // is this, which is what makes the doorway read as a change of building.
     const concrete = track(new THREE.MeshStandardMaterial({
