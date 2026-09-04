@@ -14,7 +14,11 @@
     root = shell.el.screens;
   }
 
-  const isOpen = () => !!current;
+  /* Which screen is up, or null.
+     Returns the name rather than a bare boolean: every caller that only wanted
+     truthiness still works, and the ones that want to know which -- the
+     harnesses, mostly -- no longer have to reach into `current` to find out. */
+  const isOpen = () => (current ? current.name : null);
 
   /* The introduction, done by hand.
 

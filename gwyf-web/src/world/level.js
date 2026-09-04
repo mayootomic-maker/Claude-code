@@ -1250,7 +1250,14 @@
       position: new THREE.Vector3(bay.x, 0, bay.z),
       rotationY: 0,
       half: { hw: doorW / 2, hd: 0.5 },
-      stand: new THREE.Vector3(bay.x, 0, bay.z + 2.0),
+      /* Inside the prompt's own reach, with room to spare.
+
+         Reach is 1.9 m measured from the edge of a fixture's box, and this box
+         is half a metre deep, so a stand point two metres out sits 1.5 m from
+         the edge -- fine, until you stop half a metre short of it, which is
+         what anybody walking up to a shutter does. Then it is 2.08 m and the
+         limo does not offer itself while you are standing in front of it. */
+      stand: new THREE.Vector3(bay.x, 0, bay.z + 1.4),
       focus: new THREE.Vector3(bay.x, 2.4, bay.z),
     });
 
