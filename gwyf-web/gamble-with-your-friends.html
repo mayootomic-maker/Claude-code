@@ -2098,6 +2098,110 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   /* Tickets are the slow currency: they persist across a wipe, so a run that
      ends badly still moves the next one forward. */
+  /* Nibor Second Hand Store.
+
+     Researched against the game this follows: cosmetics are bought with the
+     same Tickets the sketchy items cost, two to six apiece, across seven
+     sections -- Hats, Hair, Mustache, Beard, Neck, Clothing, Facewear -- and
+     you wear one from each. They do nothing at all to the odds. That is the
+     point of them: the tickets you win on a good night buy a hat, and the hat
+     is the only thing in the game that survives the run.
+
+     Everything here is built out of primitives in world/crew.js rather than
+     modelled, because the character is a pin with two eyes and a brow bar and
+     a cone on top of it reads as a party hat from across a room. The four that
+     name a `model` are the ones the library already has.
+
+     `at` says which node it hangs off: the head, the face, the brow, or the
+     body. The builder needs nothing else. */
+  const COSMETIC_SECTIONS = [
+    { id: 'hat', name: 'Hats' },
+    { id: 'hair', name: 'Hair' },
+    { id: 'mustache', name: 'Mustache' },
+    { id: 'beard', name: 'Beard' },
+    { id: 'neck', name: 'Neck' },
+    { id: 'clothing', name: 'Clothing' },
+    { id: 'facewear', name: 'Facewear' },
+  ];
+
+  const COSMETICS = [
+    // Hats.
+    { id: 'tophat', section: 'hat', name: 'Top Hat', price: 5, model: 'pin_hat_top' },
+    { id: 'fez', section: 'hat', name: 'Fez', price: 4, model: 'pin_hat_fez' },
+    { id: 'boater', section: 'hat', name: 'Boater', price: 3, model: 'pin_hat_boater' },
+    { id: 'party', section: 'hat', name: 'Party Hat', price: 2, build: 'cone', colour: 0xe0556b },
+    { id: 'beanie', section: 'hat', name: 'Beanie', price: 2, build: 'dome', colour: 0x4a7fb5 },
+    { id: 'crown', section: 'hat', name: 'Paper Crown', price: 6, build: 'crown', colour: 0xd9a441 },
+    { id: 'bucket', section: 'hat', name: 'Bucket Hat', price: 3, build: 'bucket', colour: 0x7d8b5a },
+    { id: 'visor', section: 'hat', name: 'Dealer Visor', price: 4, build: 'visor', colour: 0x2f7d4f },
+    { id: 'halo', section: 'hat', name: 'Halo', price: 6, build: 'halo', colour: 0xffe08a },
+    // Hair.
+    { id: 'mop', section: 'hair', name: 'Mop', price: 2, build: 'mop', colour: 0x6b4a2a },
+    { id: 'bowl', section: 'hair', name: 'Bowl Cut', price: 2, build: 'dome', colour: 0x2f2320 },
+    { id: 'bun', section: 'hair', name: 'Top Bun', price: 3, build: 'bun', colour: 0x3a2a22 },
+    { id: 'ginger', section: 'hair', name: 'Ginger Mop', price: 3, build: 'mop', colour: 0xc4622a },
+    { id: 'silver', section: 'hair', name: 'Silver Bowl', price: 5, build: 'dome', colour: 0xc9c6c0 },
+    // Mustache.
+    { id: 'pencil', section: 'mustache', name: 'Pencil', price: 2, build: 'bar', colour: 0x2a1c16 },
+    { id: 'walrus', section: 'mustache', name: 'Walrus', price: 3, build: 'walrus', colour: 0x4a3a30 },
+    { id: 'handlebar', section: 'mustache', name: 'Handlebar', price: 4, build: 'handlebar', colour: 0x2a1c16 },
+    // Beard.
+    { id: 'stubble', section: 'beard', name: 'Stubble', price: 2, build: 'chin', colour: 0x4a4038 },
+    { id: 'goatee', section: 'beard', name: 'Goatee', price: 3, build: 'goatee', colour: 0x2a1c16 },
+    { id: 'fullbeard', section: 'beard', name: 'The Full Thing', price: 6, build: 'fullbeard', colour: 0x6b5545 },
+    // Neck.
+    { id: 'bowtie', section: 'neck', name: 'Bow Tie', price: 2, build: 'bowtie', colour: 0xb03040 },
+    { id: 'tie', section: 'neck', name: 'Tie', price: 3, build: 'tie', colour: 0x2f4f7d },
+    { id: 'scarf', section: 'neck', name: 'Scarf', price: 3, build: 'scarf', colour: 0xc4622a },
+    { id: 'chain', section: 'neck', name: 'Gold Chain', price: 6, build: 'chain', colour: 0xd9a441 },
+    // Clothing.
+    { id: 'sash', section: 'clothing', name: 'Sash', price: 2, build: 'sash', colour: 0xb03040 },
+    { id: 'waistcoat', section: 'clothing', name: 'Waistcoat', price: 4, build: 'waistcoat', colour: 0x2a2028 },
+    { id: 'apron', section: 'clothing', name: 'Dealer Apron', price: 3, build: 'apron', colour: 0xe4dcd0 },
+    { id: 'belt', section: 'clothing', name: 'Money Belt', price: 5, build: 'belt', colour: 0x6b4a2a },
+    // Facewear.
+    { id: 'monocle', section: 'facewear', name: 'Monocle', price: 5, model: 'pin_monocle' },
+    { id: 'shades', section: 'facewear', name: 'Shades', price: 3, build: 'shades', colour: 0x14100f },
+    { id: 'specs', section: 'facewear', name: 'Reading Glasses', price: 2, build: 'specs', colour: 0x9a7333 },
+    { id: 'patch', section: 'facewear', name: 'Eye Patch', price: 3, build: 'patch', colour: 0x14100f },
+  ];
+
+  /* The colours the bath will turn you.
+
+     Free, and as many times as you like -- it is a bath full of paint, not a
+     purchase. Kept well away from the six seat colours so that "who is that"
+     and "whose money was that" never answer each other wrongly. */
+  const PAINTS = [
+    0xd9a441, 0xc9a9d4, 0x6fcf97, 0x7fb3ec, 0xef6f79, 0xf2c14e,
+    0xa8b295, 0xcbb0a2, 0x8d8fa8, 0xe07a5f, 0x81b29a, 0xb56576,
+    0x5c6b73, 0xe8c46a, 0x9d8fb0, 0x4a7fb5,
+  ];
+
+  /* What the store has in tonight.
+
+     The real one re-randomises its stock every time you load into the lobby,
+     which is the whole reason to buy a thing the moment you see it. Drawn from
+     the day and the run seed so everyone at the same table is looking at the
+     same shelves. Always at least one from every section, so no section is
+     ever empty and unexplainable. */
+  function stockFor(day, seed) {
+    let x = ((seed >>> 0) ^ Math.imul(day + 3, 0x85ebca6b)) >>> 0 || 1;
+    const rand = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+    for (let i = 0; i < 8; i++) rand();
+    const out = [];
+    for (const sec of COSMETIC_SECTIONS) {
+      const pool = COSMETICS.filter((c) => c.section === sec.id);
+      const take = 1 + Math.floor(rand() * Math.min(3, pool.length));
+      const picks = pool.slice();
+      for (let i = picks.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        const t = picks[i]; picks[i] = picks[j]; picks[j] = t;
+      }
+      for (const c of picks.slice(0, take)) out.push(c.id);
+    }
+    return out;
+  }
+
   const TICKET_SHOP = [
     { id: 'seedmoney', name: 'Seed Money', cost: 3, repeat: true,
       desc: 'Start every run with another $500 in the account.' },
@@ -2270,7 +2374,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS,
+    COSMETICS, COSMETIC_SECTIONS, PAINTS, stockFor, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);
@@ -2320,6 +2425,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       // property of the person playing rather than of the run, and switching
       // one must never mark a run as modded.
       look: 1.0, invertY: false, smoothing: 0, headBob: true, fov: 72,
+      /* What you look like, which outlives everything else.
+
+         Cosmetics are bought with the same tickets the sketchy items cost and
+         they survive a wipe, which is the whole reason to chase tickets on a
+         night you already know is lost. `owned` is what you have ever bought,
+         `worn` is one id per section, and `paint` is your body colour -- free,
+         from the bath, and changeable as many times as you like. */
+      owned: {}, worn: {}, paint: 0xd9a441,
     }, meta || {});
   }
 
@@ -11247,8 +11360,342 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return {
       group, root, trunk, head, brow, hands, joints: J,
       browHome: brow.position.clone(),
-      dispose() { for (const m of owned) m.dispose(); },
+      setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
+      wearing: [], wornMats: [],
+      dispose() {
+        for (const m of owned) m.dispose();
+        for (const m of this.wornMats) m.dispose();
+      },
     };
+  }
+
+  /* --- cosmetics ------------------------------------------------------------
+
+     Thirty-odd things you can wear, built out of primitives rather than
+     modelled. The character is a pin with two enormous eyes and a heavy brow
+     bar; at the size anybody sees it, a cone on the crown reads as a party hat
+     and two dark discs over the eyes read as shades. Modelling each one in
+     Blender would be thirty exports to say what a cylinder already says.
+
+     Everything is authored around the head's own origin with the face at -Z,
+     which is the convention the models use: they are drawn facing Blender's +Y
+     and the exporter turns that into three.js's -Z. Getting that backwards is
+     how the monocle first ended up on the back of somebody's skull.
+
+     Each builder returns an Object3D and says nothing about where it goes; the
+     table below says which node it hangs from. */
+  const WEARABLE = {
+    /* Hats and hair, on the crown. */
+    cone(mat) {
+      const m = new THREE.Mesh(new THREE.ConeGeometry(0.20, 0.42, 16), mat);
+      m.position.y = 0.60;
+      return m;
+    },
+    dome(mat) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.265, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), mat);
+      m.position.y = 0.30;
+      return m;
+    },
+    bucket(mat) {
+      const g = new THREE.Group();
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.235, 0.20, 18), mat);
+      crown.position.y = 0.47;
+      g.add(crown);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.325, 0.045, 20), mat);
+      brim.position.y = 0.375;
+      g.add(brim);
+      return g;
+    },
+    crown(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.09, 18), mat);
+      band.position.y = 0.44;
+      g.add(band);
+      // Five points, which is what a crown is once you take the band away.
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 8), mat);
+        spike.position.set(Math.sin(a) * 0.20, 0.56, Math.cos(a) * 0.20);
+        g.add(spike);
+      }
+      return g;
+    },
+    visor(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.245, 0.075, 18), mat);
+      band.position.y = 0.40;
+      g.add(band);
+      const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.03, 18,
+        1, false, Math.PI * 0.72, Math.PI * 0.56), mat);
+      peak.position.set(0, 0.385, 0);
+      g.add(peak);
+      return g;
+    },
+    halo(mat) {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.026, 8, 20), mat);
+      m.position.y = 0.66;
+      m.rotation.x = Math.PI / 2;
+      return m;
+    },
+    mop(mat) {
+      const g = new THREE.Group();
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.272, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), mat);
+      cap.position.y = 0.315;
+      g.add(cap);
+      // A ring of tufts round the back and sides. None at the front: hair over
+      // the brow bar covers the only expression this face has.
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * 0.28 + (i / 8) * Math.PI * 1.44;
+        const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), mat);
+        tuft.position.set(Math.sin(a) * 0.245, 0.30, Math.cos(a) * 0.245);
+        g.add(tuft);
+      }
+      return g;
+    },
+    bun(mat) {
+      const g = new THREE.Group();
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.262, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.44), mat);
+      cap.position.y = 0.315;
+      g.add(cap);
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 10), mat);
+      knot.position.set(0, 0.60, 0.05);
+      g.add(knot);
+      return g;
+    },
+
+    /* Faces. The brow bar sits at about y = 0.35 on the head and the eyes just
+       under it, so anything worn on the face lives between 0.10 and 0.30. */
+    bar(mat) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.030, 0.035), mat);
+      m.position.set(0, 0.085, -0.245);
+      return m;
+    },
+    walrus(mat) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), mat);
+      body.scale.set(1.9, 0.5, 0.55);
+      body.position.set(0, 0.07, -0.238);
+      g.add(body);
+      return g;
+    },
+    handlebar(mat) {
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.028, 0.032), mat);
+      bar.position.set(0, 0.085, -0.245);
+      g.add(bar);
+      for (const side of [-1, 1]) {
+        const curl = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.016, 6, 12,
+          Math.PI * 1.4), mat);
+        curl.position.set(side * 0.095, 0.10, -0.243);
+        curl.rotation.y = Math.PI / 2;
+        curl.rotation.z = side < 0 ? Math.PI : 0;
+        g.add(curl);
+      }
+      return g;
+    },
+    chin(mat) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), mat);
+      m.scale.set(1.05, 0.55, 0.45);
+      m.position.set(0, -0.045, -0.185);
+      return m;
+    },
+    goatee(mat) {
+      const g = new THREE.Group();
+      const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.15, 8), mat);
+      tuft.position.set(0, -0.10, -0.215);
+      tuft.rotation.x = -0.25;
+      g.add(tuft);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.028, 0.03), mat);
+      strip.position.set(0, 0.075, -0.245);
+      g.add(strip);
+      return g;
+    },
+    fullbeard(mat) {
+      const g = new THREE.Group();
+      const mass = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12), mat);
+      mass.scale.set(1.0, 0.85, 0.62);
+      mass.position.set(0, -0.10, -0.145);
+      g.add(mass);
+      const tache = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.032, 0.035), mat);
+      tache.position.set(0, 0.085, -0.245);
+      g.add(tache);
+      return g;
+    },
+    shades(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.075, 0.022), mat);
+        lens.position.set(side * 0.085, 0.235, -0.242);
+        g.add(lens);
+      }
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.018, 0.02), mat);
+      bridge.position.set(0, 0.245, -0.242);
+      g.add(bridge);
+      return g;
+    },
+    specs(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.011, 6, 16), mat);
+        rim.position.set(side * 0.082, 0.235, -0.238);
+        g.add(rim);
+      }
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.014), mat);
+      bridge.position.set(0, 0.235, -0.238);
+      g.add(bridge);
+      return g;
+    },
+    patch(mat) {
+      const g = new THREE.Group();
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.10, 0.02), mat);
+      pad.position.set(-0.085, 0.235, -0.242);
+      g.add(pad);
+      const strap = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.010, 6, 24,
+        Math.PI * 1.1), mat);
+      strap.position.set(0, 0.255, 0);
+      strap.rotation.x = Math.PI / 2;
+      strap.rotation.z = 0.35;
+      g.add(strap);
+      return g;
+    },
+
+    /* Worn on the body, which is a tapered pin about 0.9 tall with its collar
+       around y = 0.78. */
+    bowtie(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.10, 4), mat);
+        wing.position.set(side * 0.055, 0.795, -0.20);
+        wing.rotation.z = side * Math.PI / 2;
+        g.add(wing);
+      }
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.045, 0.035), mat);
+      knot.position.set(0, 0.795, -0.20);
+      g.add(knot);
+      return g;
+    },
+    tie(mat) {
+      const g = new THREE.Group();
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.03), mat);
+      knot.position.set(0, 0.79, -0.205);
+      g.add(knot);
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.30, 4), mat);
+      blade.position.set(0, 0.62, -0.215);
+      blade.rotation.x = Math.PI;
+      g.add(blade);
+      return g;
+    },
+    scarf(mat) {
+      const g = new THREE.Group();
+      const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.055, 8, 18), mat);
+      wrap.position.y = 0.775;
+      wrap.rotation.x = Math.PI / 2;
+      g.add(wrap);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.28, 0.05), mat);
+      tail.position.set(0.09, 0.62, -0.16);
+      tail.rotation.z = 0.18;
+      g.add(tail);
+      return g;
+    },
+    chain(mat) {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.018, 8, 22), mat);
+      m.position.y = 0.735;
+      m.rotation.x = Math.PI / 2 - 0.22;
+      return m;
+    },
+    sash(mat) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.62, 0.36), mat);
+      m.position.set(0, 0.50, 0);
+      m.rotation.z = 0.55;
+      return m;
+    },
+    waistcoat(mat) {
+      const g = new THREE.Group();
+      const front = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.30, 0.44, 16,
+        1, true, Math.PI * 0.66, Math.PI * 0.68), mat);
+      front.position.y = 0.50;
+      g.add(front);
+      return g;
+    },
+    apron(mat) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.335, 0.50, 16,
+        1, true, Math.PI * 0.62, Math.PI * 0.76), mat);
+      m.position.y = 0.36;
+      return m;
+    },
+    belt(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.315, 0.325, 0.075, 18), mat);
+      band.position.y = 0.42;
+      g.add(band);
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.075, 0.04), mat);
+      buckle.position.set(0, 0.42, -0.315);
+      g.add(buckle);
+      return g;
+    },
+  };
+
+  // Which node a section hangs off. The head turns and tilts, so anything worn
+  // on the face has to travel with it; the body does not.
+  const WORN_ON = {
+    hat: 'head', hair: 'head', mustache: 'head', beard: 'head',
+    facewear: 'head', neck: 'root', clothing: 'root',
+  };
+
+  /* Put on what somebody is wearing.
+
+     Called on a fresh body and again whenever the wardrobe changes, so it
+     clears what was there first. Materials are tracked on the body so the one
+     dispose still frees everything -- a wardrobe you can change thirty times a
+     night is thirty leaked materials a night otherwise. */
+  function dressBody(lib, body, worn) {
+    if (body.wearing) {
+      for (const obj of body.wearing) if (obj.parent) obj.parent.remove(obj);
+      for (const m of body.wornMats) m.dispose();
+    }
+    body.wearing = [];
+    body.wornMats = [];
+    if (!worn) return;
+
+    for (const section of Object.keys(worn)) {
+      const id = worn[section];
+      if (!id) continue;
+      const def = (global.GWConfig.COSMETICS || []).find((c) => c.id === id);
+      if (!def) continue;
+      const parent = WORN_ON[def.section] === 'root' ? body.root : body.head;
+      let obj = null;
+      if (def.model) {
+        try {
+          obj = GWModels.instance(lib, def.model);
+          obj.traverse((o) => { if (o.isMesh) o.userData.shared = true; });
+          if (def.model === 'pin_monocle') {
+            obj.position.set(-0.120, 0.262, -0.232);
+            obj.rotation.x = Math.PI / 2;
+          } else {
+            obj.position.y = 0.395;
+          }
+        } catch (err) {
+          // A missing mesh loses a hat, not the person wearing it.
+          console.warn('[gwyf] no cosmetic mesh for ' + id, err);
+          obj = null;
+        }
+      } else if (WEARABLE[def.build]) {
+        const mat = new THREE.MeshStandardMaterial({
+          color: def.colour === undefined ? 0xcccccc : def.colour,
+          roughness: def.build === 'chain' || def.build === 'halo' ? 0.28 : 0.72,
+          metalness: def.build === 'chain' || def.build === 'halo' ? 0.85 : 0.05,
+        });
+        body.wornMats.push(mat);
+        obj = WEARABLE[def.build](mat);
+      }
+      if (!obj) continue;
+      obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      parent.add(obj);
+      body.wearing.push(obj);
+    }
   }
 
   /* A name that hangs over their head, and a bubble for what they just said.
@@ -12206,6 +12653,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     group.renderOrder = 10;
     return {
       group, hands,
+      /* Repainted rather than rebuilt.
+
+         The bath can be climbed into as often as you like, and your two hands
+         are in nearly every frame of the game -- tearing them down and building
+         them again for a colour change drops a frame every time somebody
+         fiddles with the palette. */
+      setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
       /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
          `fall` the vertical velocity so they drop when you do. */
       update(bob, speed, fall, crouch) {
@@ -12238,7 +12692,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           hands[i].rotation.x = -0.35 + lift * 2.0;
         }
       },
-      dispose() { for (const m of owned) m.dispose(); },
+      wearing: [], wornMats: [],
+      dispose() {
+        for (const m of owned) m.dispose();
+        for (const m of this.wornMats) m.dispose();
+      },
     };
   }
 
@@ -12352,7 +12810,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     };
   }
 
-  global.GWCrew = { create, createBoss, buildBody, buildHands, nameTag, LOOK, YOU };
+  global.GWCrew = { create, createBoss, buildBody, buildHands, dressBody, nameTag,
+                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE };
 })(window);
 
 </script>
@@ -12956,7 +13415,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const me = {
       id: link.id,
       name: (opts.name || 'Player').slice(0, 16),
-      colour: opts.colour || 0xd9a441,
+      colour: opts.colour === undefined ? 0xd9a441 : opts.colour,
+      worn: opts.worn || {},
       // Seat one until anybody else turns up to sort against.
       seat: C.SEATS[0].colour,
     };
@@ -12996,7 +13456,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
       if (info) {
         if (info.name) p.name = String(info.name).slice(0, 16);
-        if (info.colour !== undefined) p.colour = info.colour;
+        if (info.colour !== undefined && info.colour !== p.colour) {
+          p.colour = info.colour;
+          // Repaint rather than rebuild; a body already in the room keeps its
+          // hat and its position.
+          if (p.body && p.body.setColour) p.body.setColour(p.colour);
+        }
+        if (info.worn !== undefined) {
+          p.worn = info.worn || {};
+          if (p.body) GWCrew.dressBody(shell.lib, p.body, p.worn);
+        }
       }
       p.seen = performance.now();
       seatEveryone();
@@ -13233,7 +13702,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (!shell.level) return;
       try {
         p.body = GWCrew.buildBody(shell.lib, {
-          body: new THREE.Color(p.seat || '#9aa0a6').getHex(), hat: null,
+          /* Their paint, not their seat. The colour somebody climbed out of
+             the bath in is the one they chose and the one they expect to be;
+             the seat colour is what the rail is for, and it goes on the name
+             tag over their head so both questions get an answer. */
+          body: p.colour === undefined ? 0x9aa0a6 : p.colour, hat: null,
           height: 1.0, width: 1.0,
         });
       } catch (err) {
@@ -13241,6 +13714,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         return;
       }
       p.drawnSeat = p.seat;
+      GWCrew.dressBody(shell.lib, p.body, p.worn || {});
       p.tag = GWCrew.nameTag(p.name, p.seat || '#9aa0a6');
       if (p.tag) {
         p.tag.position.y = p.body.joints.height * 0.98;
@@ -13275,7 +13749,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
     const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
 
-    const greet = (to) => send('hello', { name: me.name, colour: me.colour }, to);
+    const greet = (to) => send('hello', {
+      name: me.name, colour: me.colour, worn: me.worn || null,
+    }, to);
 
     /* Say hello, and keep saying it until somebody says it back.
 
@@ -13303,8 +13779,17 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           id: p.id, name: p.name, colour: p.seat, won: nets.get(p.id) || 0,
         }));
       },
-      /* Your own seat, which the HUD and your hands are tinted with. */
+      /* Your own seat, which the rail and your name tag are drawn in. */
       get seat() { return me.seat; },
+      /* You came out of the bath a different colour, or put a hat on. Told to
+         everyone as a fresh hello, which is the message that already carries
+         what somebody looks like -- a second message saying the same thing in
+         a different shape is a second message to keep in step. */
+      setLook(colour, worn) {
+        me.colour = colour;
+        me.worn = worn;
+        greet();
+      },
       /* The two calls that move money. A guest routes them through the host; a
          host does them locally and tells everyone the new balance. */
       stake(amount) {
@@ -14257,11 +14742,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           + tabBtn('items', tab, 'Items — ' + money(s.bank))
           + tabBtn('tickets', tab, 'Tickets — ' + meta.tickets + '🎟')
           + tabBtn('parts', tab, 'The back room')
+          + '<button class="shoptab" data-goto="wardrobe">Nibor\u2019s \u2014 '
+          + meta.tickets + '\u{1F3AB}</button>'
           + '</div>' + body
           + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
         wire(sheet) {
           for (const b of sheet.querySelectorAll('[data-tab]')) {
             b.addEventListener('click', () => show('shop', { tab: b.dataset.tab, from }));
+          }
+          for (const b of sheet.querySelectorAll('[data-goto]')) {
+            b.addEventListener('click', () => show(b.dataset.goto, {}));
           }
           for (const b of sheet.querySelectorAll('[data-item]')) {
             b.addEventListener('click', () => { buyItem(b.dataset.item); show('shop', { tab: 'items', from }); });
@@ -14277,6 +14767,139 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           // nothing on screen to carry on with.
           sheet.querySelector('[data-close]').addEventListener('click',
             () => (from === 'report' ? show('report') : close()));
+        },
+      };
+    },
+
+    /* Nibor Second Hand Store, and the wardrobe you try things on in.
+
+       One screen for both, because the difference between the counter and the
+       wardrobe is which of two verbs a button offers and nothing else: the
+       stock re-randomises every time you load the lobby, so an item is either
+       on the shelf tonight, already yours, or neither, and the screen says
+       which. Splitting that into a shop screen and a wardrobe screen would be
+       two lists of the same thirty-one things.
+
+       Locked items show in red, which is how the real one does it, and a
+       section you are wearing nothing from says so rather than looking broken.
+
+       None of this touches the odds. It says so, once, at the top -- a shop in
+       a game about bending the odds that sells things which do not is worth
+       stating outright rather than leaving somebody to work out. */
+    wardrobe(data) {
+      const meta = shell.store.meta;
+      const s = shell.store.s;
+      const section = data.section || C.COSMETIC_SECTIONS[0].id;
+      const stock = new Set(C.stockFor(s.day, s.seed));
+      const secDef = C.COSMETIC_SECTIONS.find((x) => x.id === section)
+        || C.COSMETIC_SECTIONS[0];
+
+      const tabs = C.COSMETIC_SECTIONS.map((sec) => {
+        const worn = meta.worn[sec.id];
+        const on = sec.id === section;
+        return '<button class="shoptab' + (on ? ' is-on' : '') + '"'
+          + ' role="tab" aria-selected="' + on + '" data-section="' + sec.id + '">'
+          + esc(sec.name) + (worn ? ' <span class="shoptab__dot">•</span>' : '')
+          + '</button>';
+      }).join('');
+
+      const rows = C.COSMETICS.filter((c) => c.section === section).map((c) => {
+        const owned = !!meta.owned[c.id];
+        const worn = meta.worn[section] === c.id;
+        const here = stock.has(c.id);
+        const afford = meta.tickets >= c.price;
+        const state = worn ? 'Wearing' : owned ? 'Wear'
+          : here ? (afford ? 'Buy ' + c.price + '\u{1F3AB}' : c.price + '\u{1F3AB}')
+          : 'Not in tonight';
+        const can = worn || owned || (here && afford);
+        return '<button class="ware ware--wear' + (owned ? '' : ' is-locked')
+          + (worn ? ' is-on' : '') + '"' + (can ? '' : ' disabled')
+          + ' data-wear="' + c.id + '">'
+          + '<span class="ware__icon">' + (owned ? '\u{1F455}' : '\u{1F512}') + '</span>'
+          + '<span><span class="ware__name">' + esc(c.name)
+          + '<span class="ware__price">' + state + '</span></span>'
+          + '<span class="ware__desc">' + (owned
+            ? (worn ? 'On you now.' : 'Yours. Put it on.')
+            : here ? 'On the shelf tonight.'
+            : 'Nibor did not have this one in. Look again tomorrow.') + '</span></span></button>';
+      }).join('');
+
+      const wearingNow = meta.worn[section];
+      return {
+        title: 'Nibor Second Hand Store', width: 'wide',
+        html: '<p class="sheet__kicker">Nibor Second Hand Store</p>'
+          + '<h2 class="sheet__title">Second hand, second chances</h2>'
+          + '<p class="sheet__lead">Tickets buy these, the same tickets the sketchy '
+          + 'goods cost, and none of it does a thing to the odds. What is on the '
+          + 'shelves changes every time you come back. You have <b>'
+          + meta.tickets + '\u{1F3AB}</b>.</p>'
+          + '<div class="shoptabs" role="tablist">' + tabs + '</div>'
+          + '<div class="wares">' + rows + '</div>'
+          + (wearingNow
+            ? '<div class="sheet__actions"><button class="btn btn--ghost" data-bare>'
+              + 'Take off the ' + esc((C.COSMETICS.find((c) => c.id === wearingNow) || {}).name
+                || secDef.name) + '</button></div>'
+            : '<p class="odds__foot" style="margin-top:0.8rem">Wearing nothing from '
+              + esc(secDef.name.toLowerCase()) + '.</p>')
+          + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
+        wire(sheet) {
+          for (const b of sheet.querySelectorAll('[data-section]')) {
+            b.addEventListener('click', () => show('wardrobe', { section: b.dataset.section }));
+          }
+          for (const b of sheet.querySelectorAll('[data-wear]')) {
+            b.addEventListener('click', () => {
+              wearOrBuy(b.dataset.wear);
+              show('wardrobe', { section });
+            });
+          }
+          const bare = sheet.querySelector('[data-bare]');
+          if (bare) {
+            bare.addEventListener('click', () => {
+              meta.worn[section] = null;
+              shell.store.saveMeta();
+              shell.redress();
+              shell.audio.play('click');
+              show('wardrobe', { section });
+            });
+          }
+          sheet.querySelector('[data-close]').addEventListener('click', () => close());
+        },
+      };
+    },
+
+    /* The bath full of paint.
+
+       Free, and as many times as you like, which is exactly how the real one
+       works -- it is the one piece of customisation that is not a purchase. */
+    paint() {
+      const meta = shell.store.meta;
+      const swatches = C.PAINTS.map((hex) => {
+        const css = '#' + hex.toString(16).padStart(6, '0');
+        const on = meta.paint === hex;
+        return '<button class="paint' + (on ? ' is-on' : '') + '" data-paint="' + hex + '"'
+          + ' style="background:' + css + '" aria-label="' + css + '"'
+          + ' aria-pressed="' + on + '"></button>';
+      }).join('');
+      return {
+        title: 'The bath', width: 'wide',
+        html: '<p class="sheet__kicker">The bathroom</p>'
+          + '<h2 class="sheet__title">A bath full of paint</h2>'
+          + '<p class="sheet__lead">Pick a colour and get in. It costs nothing and '
+          + 'you can do it as often as you like — everyone else at the table sees '
+          + 'whichever one you climbed out in.</p>'
+          + '<div class="paints">' + swatches + '</div>'
+          + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
+        wire(sheet) {
+          for (const b of sheet.querySelectorAll('[data-paint]')) {
+            b.addEventListener('click', () => {
+              meta.paint = Number(b.dataset.paint);
+              shell.store.saveMeta();
+              shell.redress();
+              shell.audio.play('cash');
+              show('paint');
+            });
+          }
+          sheet.querySelector('[data-close]').addEventListener('click', () => close());
         },
       };
     },
@@ -14765,6 +15388,37 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
     shell.store.saveMeta();
     shell.store.save();
+    shell.renderHud();
+  }
+
+  /* One button, two verbs.
+
+     Owned means wear it; on the shelf and affordable means buy it, and then
+     wear it, because nobody buys a hat in order to leave it in the bag. Not
+     owned and not in tonight means the button was disabled and this should
+     never have been called -- it is checked again anyway, because a screen
+     that can be re-rendered between a click and its handler is a screen where
+     "disabled" is a suggestion. */
+  function wearOrBuy(id) {
+    const meta = shell.store.meta;
+    const def = C.COSMETICS.find((c) => c.id === id);
+    if (!def) return;
+    if (!meta.owned[id]) {
+      const s = shell.store.s;
+      const stock = C.stockFor(s.day, s.seed);
+      if (stock.indexOf(id) < 0 || meta.tickets < def.price) { shell.audio.play('deny'); return; }
+      meta.tickets -= def.price;
+      meta.owned[id] = 1;
+      shell.store.say('Nibor takes ' + def.price + ' tickets for the '
+        + def.name.toLowerCase() + ' and asks no questions.', 'good');
+      shell.audio.play('cash');
+    } else {
+      shell.audio.play('click');
+    }
+    // Wearing it is the point. One per section, so this replaces.
+    meta.worn[def.section] = (meta.worn[def.section] === id) ? null : id;
+    shell.store.saveMeta();
+    shell.redress();
     shell.renderHud();
   }
 
@@ -15347,7 +16001,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        The camera has to be in the scene for its children to be drawn -- a
        camera three.js is rendering from is not necessarily one it is walking,
        and hands hung off a camera outside the graph simply never appear. */
-    shell.hands = GWCrew.buildHands(shell.lib, undefined, shell.stage.camera);
+    shell.hands = GWCrew.buildHands(shell.lib, shell.store.meta.paint, shell.stage.camera);
     shell.stage.scene.add(shell.stage.camera);
     shell.stage.camera.add(shell.hands.group);
 
@@ -15847,7 +16501,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   function connect(how, opts) {
     disconnect();
     const name = (opts && opts.name) || 'Player';
-    const colour = (opts && opts.colour) !== undefined ? opts.colour : GWCrew.YOU.body;
+    // What you look like travels with you: the colour out of the bath and the
+    // wardrobe, not a per-session default nobody chose.
+    const colour = (opts && opts.colour) !== undefined
+      ? opts.colour : shell.store.meta.paint;
     let link;
     if (how === 'peer') {
       if (!GWLink.webrtcAvailable()) return null;
@@ -15874,7 +16531,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       link = GWLink.openBroadcast({});
     }
     shell.net = GWSession.create(shell, link, {
-      host: !!(opts && opts.host), name, colour,
+      host: !!(opts && opts.host), name, colour, worn: shell.store.meta.worn,
       onRoster: () => { syncRoster(); renderCrew(); GWScreens.refresh('table'); },
       /* Turned away because the table is full. Said, then let go of: a session
          that stays half-open looks to the player exactly like one that is
@@ -15895,6 +16552,25 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       : 'Joined. The account you are spending is theirs.', 'house');
     renderCrew();
     return link;
+  }
+
+  /* Put on what the wardrobe says.
+
+     Three places show what you look like and all three have to agree: your own
+     two hands in the corners of the screen, the body standing in the mirror at
+     Nibor's, and -- over the wire -- the body everyone else is looking at.
+     Called whenever the wardrobe or the bath changes anything. */
+  function redress() {
+    const meta = shell.store.meta;
+    if (shell.hands) shell.hands.setColour(meta.paint);
+    if (shell.mirror) {
+      GWCrew.dressBody(shell.lib, shell.mirror, meta.worn);
+      shell.mirror.setColour(meta.paint);
+    }
+    // Other players see the colour you climbed out of the bath in, not the
+    // colour of your seat: the seat is what the rail is for.
+    if (shell.net) shell.net.setLook(meta.paint, meta.worn);
+    shell.store.saveMeta();
   }
 
   /* Copy the table into the run.
@@ -17242,6 +17918,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     highlight() {},
     mountMachine,
     setMachineView,
+    redress,
     enterFloor,
     enterLobby,
     boardLimo,

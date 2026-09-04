@@ -200,6 +200,110 @@
 
   /* Tickets are the slow currency: they persist across a wipe, so a run that
      ends badly still moves the next one forward. */
+  /* Nibor Second Hand Store.
+
+     Researched against the game this follows: cosmetics are bought with the
+     same Tickets the sketchy items cost, two to six apiece, across seven
+     sections -- Hats, Hair, Mustache, Beard, Neck, Clothing, Facewear -- and
+     you wear one from each. They do nothing at all to the odds. That is the
+     point of them: the tickets you win on a good night buy a hat, and the hat
+     is the only thing in the game that survives the run.
+
+     Everything here is built out of primitives in world/crew.js rather than
+     modelled, because the character is a pin with two eyes and a brow bar and
+     a cone on top of it reads as a party hat from across a room. The four that
+     name a `model` are the ones the library already has.
+
+     `at` says which node it hangs off: the head, the face, the brow, or the
+     body. The builder needs nothing else. */
+  const COSMETIC_SECTIONS = [
+    { id: 'hat', name: 'Hats' },
+    { id: 'hair', name: 'Hair' },
+    { id: 'mustache', name: 'Mustache' },
+    { id: 'beard', name: 'Beard' },
+    { id: 'neck', name: 'Neck' },
+    { id: 'clothing', name: 'Clothing' },
+    { id: 'facewear', name: 'Facewear' },
+  ];
+
+  const COSMETICS = [
+    // Hats.
+    { id: 'tophat', section: 'hat', name: 'Top Hat', price: 5, model: 'pin_hat_top' },
+    { id: 'fez', section: 'hat', name: 'Fez', price: 4, model: 'pin_hat_fez' },
+    { id: 'boater', section: 'hat', name: 'Boater', price: 3, model: 'pin_hat_boater' },
+    { id: 'party', section: 'hat', name: 'Party Hat', price: 2, build: 'cone', colour: 0xe0556b },
+    { id: 'beanie', section: 'hat', name: 'Beanie', price: 2, build: 'dome', colour: 0x4a7fb5 },
+    { id: 'crown', section: 'hat', name: 'Paper Crown', price: 6, build: 'crown', colour: 0xd9a441 },
+    { id: 'bucket', section: 'hat', name: 'Bucket Hat', price: 3, build: 'bucket', colour: 0x7d8b5a },
+    { id: 'visor', section: 'hat', name: 'Dealer Visor', price: 4, build: 'visor', colour: 0x2f7d4f },
+    { id: 'halo', section: 'hat', name: 'Halo', price: 6, build: 'halo', colour: 0xffe08a },
+    // Hair.
+    { id: 'mop', section: 'hair', name: 'Mop', price: 2, build: 'mop', colour: 0x6b4a2a },
+    { id: 'bowl', section: 'hair', name: 'Bowl Cut', price: 2, build: 'dome', colour: 0x2f2320 },
+    { id: 'bun', section: 'hair', name: 'Top Bun', price: 3, build: 'bun', colour: 0x3a2a22 },
+    { id: 'ginger', section: 'hair', name: 'Ginger Mop', price: 3, build: 'mop', colour: 0xc4622a },
+    { id: 'silver', section: 'hair', name: 'Silver Bowl', price: 5, build: 'dome', colour: 0xc9c6c0 },
+    // Mustache.
+    { id: 'pencil', section: 'mustache', name: 'Pencil', price: 2, build: 'bar', colour: 0x2a1c16 },
+    { id: 'walrus', section: 'mustache', name: 'Walrus', price: 3, build: 'walrus', colour: 0x4a3a30 },
+    { id: 'handlebar', section: 'mustache', name: 'Handlebar', price: 4, build: 'handlebar', colour: 0x2a1c16 },
+    // Beard.
+    { id: 'stubble', section: 'beard', name: 'Stubble', price: 2, build: 'chin', colour: 0x4a4038 },
+    { id: 'goatee', section: 'beard', name: 'Goatee', price: 3, build: 'goatee', colour: 0x2a1c16 },
+    { id: 'fullbeard', section: 'beard', name: 'The Full Thing', price: 6, build: 'fullbeard', colour: 0x6b5545 },
+    // Neck.
+    { id: 'bowtie', section: 'neck', name: 'Bow Tie', price: 2, build: 'bowtie', colour: 0xb03040 },
+    { id: 'tie', section: 'neck', name: 'Tie', price: 3, build: 'tie', colour: 0x2f4f7d },
+    { id: 'scarf', section: 'neck', name: 'Scarf', price: 3, build: 'scarf', colour: 0xc4622a },
+    { id: 'chain', section: 'neck', name: 'Gold Chain', price: 6, build: 'chain', colour: 0xd9a441 },
+    // Clothing.
+    { id: 'sash', section: 'clothing', name: 'Sash', price: 2, build: 'sash', colour: 0xb03040 },
+    { id: 'waistcoat', section: 'clothing', name: 'Waistcoat', price: 4, build: 'waistcoat', colour: 0x2a2028 },
+    { id: 'apron', section: 'clothing', name: 'Dealer Apron', price: 3, build: 'apron', colour: 0xe4dcd0 },
+    { id: 'belt', section: 'clothing', name: 'Money Belt', price: 5, build: 'belt', colour: 0x6b4a2a },
+    // Facewear.
+    { id: 'monocle', section: 'facewear', name: 'Monocle', price: 5, model: 'pin_monocle' },
+    { id: 'shades', section: 'facewear', name: 'Shades', price: 3, build: 'shades', colour: 0x14100f },
+    { id: 'specs', section: 'facewear', name: 'Reading Glasses', price: 2, build: 'specs', colour: 0x9a7333 },
+    { id: 'patch', section: 'facewear', name: 'Eye Patch', price: 3, build: 'patch', colour: 0x14100f },
+  ];
+
+  /* The colours the bath will turn you.
+
+     Free, and as many times as you like -- it is a bath full of paint, not a
+     purchase. Kept well away from the six seat colours so that "who is that"
+     and "whose money was that" never answer each other wrongly. */
+  const PAINTS = [
+    0xd9a441, 0xc9a9d4, 0x6fcf97, 0x7fb3ec, 0xef6f79, 0xf2c14e,
+    0xa8b295, 0xcbb0a2, 0x8d8fa8, 0xe07a5f, 0x81b29a, 0xb56576,
+    0x5c6b73, 0xe8c46a, 0x9d8fb0, 0x4a7fb5,
+  ];
+
+  /* What the store has in tonight.
+
+     The real one re-randomises its stock every time you load into the lobby,
+     which is the whole reason to buy a thing the moment you see it. Drawn from
+     the day and the run seed so everyone at the same table is looking at the
+     same shelves. Always at least one from every section, so no section is
+     ever empty and unexplainable. */
+  function stockFor(day, seed) {
+    let x = ((seed >>> 0) ^ Math.imul(day + 3, 0x85ebca6b)) >>> 0 || 1;
+    const rand = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+    for (let i = 0; i < 8; i++) rand();
+    const out = [];
+    for (const sec of COSMETIC_SECTIONS) {
+      const pool = COSMETICS.filter((c) => c.section === sec.id);
+      const take = 1 + Math.floor(rand() * Math.min(3, pool.length));
+      const picks = pool.slice();
+      for (let i = picks.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        const t = picks[i]; picks[i] = picks[j]; picks[j] = t;
+      }
+      for (const c of picks.slice(0, take)) out.push(c.id);
+    }
+    return out;
+  }
+
   const TICKET_SHOP = [
     { id: 'seedmoney', name: 'Seed Money', cost: 3, repeat: true,
       desc: 'Start every run with another $500 in the account.' },
@@ -372,7 +476,8 @@
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS,
+    COSMETICS, COSMETIC_SECTIONS, PAINTS, stockFor, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);

@@ -166,8 +166,342 @@
     return {
       group, root, trunk, head, brow, hands, joints: J,
       browHome: brow.position.clone(),
-      dispose() { for (const m of owned) m.dispose(); },
+      setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
+      wearing: [], wornMats: [],
+      dispose() {
+        for (const m of owned) m.dispose();
+        for (const m of this.wornMats) m.dispose();
+      },
     };
+  }
+
+  /* --- cosmetics ------------------------------------------------------------
+
+     Thirty-odd things you can wear, built out of primitives rather than
+     modelled. The character is a pin with two enormous eyes and a heavy brow
+     bar; at the size anybody sees it, a cone on the crown reads as a party hat
+     and two dark discs over the eyes read as shades. Modelling each one in
+     Blender would be thirty exports to say what a cylinder already says.
+
+     Everything is authored around the head's own origin with the face at -Z,
+     which is the convention the models use: they are drawn facing Blender's +Y
+     and the exporter turns that into three.js's -Z. Getting that backwards is
+     how the monocle first ended up on the back of somebody's skull.
+
+     Each builder returns an Object3D and says nothing about where it goes; the
+     table below says which node it hangs from. */
+  const WEARABLE = {
+    /* Hats and hair, on the crown. */
+    cone(mat) {
+      const m = new THREE.Mesh(new THREE.ConeGeometry(0.20, 0.42, 16), mat);
+      m.position.y = 0.60;
+      return m;
+    },
+    dome(mat) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.265, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), mat);
+      m.position.y = 0.30;
+      return m;
+    },
+    bucket(mat) {
+      const g = new THREE.Group();
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.235, 0.20, 18), mat);
+      crown.position.y = 0.47;
+      g.add(crown);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.325, 0.045, 20), mat);
+      brim.position.y = 0.375;
+      g.add(brim);
+      return g;
+    },
+    crown(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.09, 18), mat);
+      band.position.y = 0.44;
+      g.add(band);
+      // Five points, which is what a crown is once you take the band away.
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 8), mat);
+        spike.position.set(Math.sin(a) * 0.20, 0.56, Math.cos(a) * 0.20);
+        g.add(spike);
+      }
+      return g;
+    },
+    visor(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.245, 0.075, 18), mat);
+      band.position.y = 0.40;
+      g.add(band);
+      const peak = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.03, 18,
+        1, false, Math.PI * 0.72, Math.PI * 0.56), mat);
+      peak.position.set(0, 0.385, 0);
+      g.add(peak);
+      return g;
+    },
+    halo(mat) {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.026, 8, 20), mat);
+      m.position.y = 0.66;
+      m.rotation.x = Math.PI / 2;
+      return m;
+    },
+    mop(mat) {
+      const g = new THREE.Group();
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.272, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.46), mat);
+      cap.position.y = 0.315;
+      g.add(cap);
+      // A ring of tufts round the back and sides. None at the front: hair over
+      // the brow bar covers the only expression this face has.
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * 0.28 + (i / 8) * Math.PI * 1.44;
+        const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), mat);
+        tuft.position.set(Math.sin(a) * 0.245, 0.30, Math.cos(a) * 0.245);
+        g.add(tuft);
+      }
+      return g;
+    },
+    bun(mat) {
+      const g = new THREE.Group();
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.262, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.44), mat);
+      cap.position.y = 0.315;
+      g.add(cap);
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 10), mat);
+      knot.position.set(0, 0.60, 0.05);
+      g.add(knot);
+      return g;
+    },
+
+    /* Faces. The brow bar sits at about y = 0.35 on the head and the eyes just
+       under it, so anything worn on the face lives between 0.10 and 0.30. */
+    bar(mat) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.030, 0.035), mat);
+      m.position.set(0, 0.085, -0.245);
+      return m;
+    },
+    walrus(mat) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 8), mat);
+      body.scale.set(1.9, 0.5, 0.55);
+      body.position.set(0, 0.07, -0.238);
+      g.add(body);
+      return g;
+    },
+    handlebar(mat) {
+      const g = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.028, 0.032), mat);
+      bar.position.set(0, 0.085, -0.245);
+      g.add(bar);
+      for (const side of [-1, 1]) {
+        const curl = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.016, 6, 12,
+          Math.PI * 1.4), mat);
+        curl.position.set(side * 0.095, 0.10, -0.243);
+        curl.rotation.y = Math.PI / 2;
+        curl.rotation.z = side < 0 ? Math.PI : 0;
+        g.add(curl);
+      }
+      return g;
+    },
+    chin(mat) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), mat);
+      m.scale.set(1.05, 0.55, 0.45);
+      m.position.set(0, -0.045, -0.185);
+      return m;
+    },
+    goatee(mat) {
+      const g = new THREE.Group();
+      const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.15, 8), mat);
+      tuft.position.set(0, -0.10, -0.215);
+      tuft.rotation.x = -0.25;
+      g.add(tuft);
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.028, 0.03), mat);
+      strip.position.set(0, 0.075, -0.245);
+      g.add(strip);
+      return g;
+    },
+    fullbeard(mat) {
+      const g = new THREE.Group();
+      const mass = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12), mat);
+      mass.scale.set(1.0, 0.85, 0.62);
+      mass.position.set(0, -0.10, -0.145);
+      g.add(mass);
+      const tache = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.032, 0.035), mat);
+      tache.position.set(0, 0.085, -0.245);
+      g.add(tache);
+      return g;
+    },
+    shades(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.075, 0.022), mat);
+        lens.position.set(side * 0.085, 0.235, -0.242);
+        g.add(lens);
+      }
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.018, 0.02), mat);
+      bridge.position.set(0, 0.245, -0.242);
+      g.add(bridge);
+      return g;
+    },
+    specs(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.011, 6, 16), mat);
+        rim.position.set(side * 0.082, 0.235, -0.238);
+        g.add(rim);
+      }
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.014), mat);
+      bridge.position.set(0, 0.235, -0.238);
+      g.add(bridge);
+      return g;
+    },
+    patch(mat) {
+      const g = new THREE.Group();
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.10, 0.02), mat);
+      pad.position.set(-0.085, 0.235, -0.242);
+      g.add(pad);
+      const strap = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.010, 6, 24,
+        Math.PI * 1.1), mat);
+      strap.position.set(0, 0.255, 0);
+      strap.rotation.x = Math.PI / 2;
+      strap.rotation.z = 0.35;
+      g.add(strap);
+      return g;
+    },
+
+    /* Worn on the body, which is a tapered pin about 0.9 tall with its collar
+       around y = 0.78. */
+    bowtie(mat) {
+      const g = new THREE.Group();
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.10, 4), mat);
+        wing.position.set(side * 0.055, 0.795, -0.20);
+        wing.rotation.z = side * Math.PI / 2;
+        g.add(wing);
+      }
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.045, 0.035), mat);
+      knot.position.set(0, 0.795, -0.20);
+      g.add(knot);
+      return g;
+    },
+    tie(mat) {
+      const g = new THREE.Group();
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.03), mat);
+      knot.position.set(0, 0.79, -0.205);
+      g.add(knot);
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.30, 4), mat);
+      blade.position.set(0, 0.62, -0.215);
+      blade.rotation.x = Math.PI;
+      g.add(blade);
+      return g;
+    },
+    scarf(mat) {
+      const g = new THREE.Group();
+      const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.055, 8, 18), mat);
+      wrap.position.y = 0.775;
+      wrap.rotation.x = Math.PI / 2;
+      g.add(wrap);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.28, 0.05), mat);
+      tail.position.set(0.09, 0.62, -0.16);
+      tail.rotation.z = 0.18;
+      g.add(tail);
+      return g;
+    },
+    chain(mat) {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.018, 8, 22), mat);
+      m.position.y = 0.735;
+      m.rotation.x = Math.PI / 2 - 0.22;
+      return m;
+    },
+    sash(mat) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.62, 0.36), mat);
+      m.position.set(0, 0.50, 0);
+      m.rotation.z = 0.55;
+      return m;
+    },
+    waistcoat(mat) {
+      const g = new THREE.Group();
+      const front = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.30, 0.44, 16,
+        1, true, Math.PI * 0.66, Math.PI * 0.68), mat);
+      front.position.y = 0.50;
+      g.add(front);
+      return g;
+    },
+    apron(mat) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.335, 0.50, 16,
+        1, true, Math.PI * 0.62, Math.PI * 0.76), mat);
+      m.position.y = 0.36;
+      return m;
+    },
+    belt(mat) {
+      const g = new THREE.Group();
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.315, 0.325, 0.075, 18), mat);
+      band.position.y = 0.42;
+      g.add(band);
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.075, 0.04), mat);
+      buckle.position.set(0, 0.42, -0.315);
+      g.add(buckle);
+      return g;
+    },
+  };
+
+  // Which node a section hangs off. The head turns and tilts, so anything worn
+  // on the face has to travel with it; the body does not.
+  const WORN_ON = {
+    hat: 'head', hair: 'head', mustache: 'head', beard: 'head',
+    facewear: 'head', neck: 'root', clothing: 'root',
+  };
+
+  /* Put on what somebody is wearing.
+
+     Called on a fresh body and again whenever the wardrobe changes, so it
+     clears what was there first. Materials are tracked on the body so the one
+     dispose still frees everything -- a wardrobe you can change thirty times a
+     night is thirty leaked materials a night otherwise. */
+  function dressBody(lib, body, worn) {
+    if (body.wearing) {
+      for (const obj of body.wearing) if (obj.parent) obj.parent.remove(obj);
+      for (const m of body.wornMats) m.dispose();
+    }
+    body.wearing = [];
+    body.wornMats = [];
+    if (!worn) return;
+
+    for (const section of Object.keys(worn)) {
+      const id = worn[section];
+      if (!id) continue;
+      const def = (global.GWConfig.COSMETICS || []).find((c) => c.id === id);
+      if (!def) continue;
+      const parent = WORN_ON[def.section] === 'root' ? body.root : body.head;
+      let obj = null;
+      if (def.model) {
+        try {
+          obj = GWModels.instance(lib, def.model);
+          obj.traverse((o) => { if (o.isMesh) o.userData.shared = true; });
+          if (def.model === 'pin_monocle') {
+            obj.position.set(-0.120, 0.262, -0.232);
+            obj.rotation.x = Math.PI / 2;
+          } else {
+            obj.position.y = 0.395;
+          }
+        } catch (err) {
+          // A missing mesh loses a hat, not the person wearing it.
+          console.warn('[gwyf] no cosmetic mesh for ' + id, err);
+          obj = null;
+        }
+      } else if (WEARABLE[def.build]) {
+        const mat = new THREE.MeshStandardMaterial({
+          color: def.colour === undefined ? 0xcccccc : def.colour,
+          roughness: def.build === 'chain' || def.build === 'halo' ? 0.28 : 0.72,
+          metalness: def.build === 'chain' || def.build === 'halo' ? 0.85 : 0.05,
+        });
+        body.wornMats.push(mat);
+        obj = WEARABLE[def.build](mat);
+      }
+      if (!obj) continue;
+      obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      parent.add(obj);
+      body.wearing.push(obj);
+    }
   }
 
   /* A name that hangs over their head, and a bubble for what they just said.
@@ -1125,6 +1459,13 @@
     group.renderOrder = 10;
     return {
       group, hands,
+      /* Repainted rather than rebuilt.
+
+         The bath can be climbed into as often as you like, and your two hands
+         are in nearly every frame of the game -- tearing them down and building
+         them again for a colour change drops a frame every time somebody
+         fiddles with the palette. */
+      setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
       /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
          `fall` the vertical velocity so they drop when you do. */
       update(bob, speed, fall, crouch) {
@@ -1157,7 +1498,11 @@
           hands[i].rotation.x = -0.35 + lift * 2.0;
         }
       },
-      dispose() { for (const m of owned) m.dispose(); },
+      wearing: [], wornMats: [],
+      dispose() {
+        for (const m of owned) m.dispose();
+        for (const m of this.wornMats) m.dispose();
+      },
     };
   }
 
@@ -1271,5 +1616,6 @@
     };
   }
 
-  global.GWCrew = { create, createBoss, buildBody, buildHands, nameTag, LOOK, YOU };
+  global.GWCrew = { create, createBoss, buildBody, buildHands, dressBody, nameTag,
+                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE };
 })(window);

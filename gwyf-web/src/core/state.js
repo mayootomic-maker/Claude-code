@@ -41,6 +41,14 @@
       // property of the person playing rather than of the run, and switching
       // one must never mark a run as modded.
       look: 1.0, invertY: false, smoothing: 0, headBob: true, fov: 72,
+      /* What you look like, which outlives everything else.
+
+         Cosmetics are bought with the same tickets the sketchy items cost and
+         they survive a wipe, which is the whole reason to chase tickets on a
+         night you already know is lost. `owned` is what you have ever bought,
+         `worn` is one id per section, and `paint` is your body colour -- free,
+         from the bath, and changeable as many times as you like. */
+      owned: {}, worn: {}, paint: 0xd9a441,
     }, meta || {});
   }
 

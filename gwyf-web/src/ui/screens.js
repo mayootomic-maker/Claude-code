@@ -516,11 +516,16 @@
           + tabBtn('items', tab, 'Items — ' + money(s.bank))
           + tabBtn('tickets', tab, 'Tickets — ' + meta.tickets + '🎟')
           + tabBtn('parts', tab, 'The back room')
+          + '<button class="shoptab" data-goto="wardrobe">Nibor\u2019s \u2014 '
+          + meta.tickets + '\u{1F3AB}</button>'
           + '</div>' + body
           + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
         wire(sheet) {
           for (const b of sheet.querySelectorAll('[data-tab]')) {
             b.addEventListener('click', () => show('shop', { tab: b.dataset.tab, from }));
+          }
+          for (const b of sheet.querySelectorAll('[data-goto]')) {
+            b.addEventListener('click', () => show(b.dataset.goto, {}));
           }
           for (const b of sheet.querySelectorAll('[data-item]')) {
             b.addEventListener('click', () => { buyItem(b.dataset.item); show('shop', { tab: 'items', from }); });
@@ -536,6 +541,139 @@
           // nothing on screen to carry on with.
           sheet.querySelector('[data-close]').addEventListener('click',
             () => (from === 'report' ? show('report') : close()));
+        },
+      };
+    },
+
+    /* Nibor Second Hand Store, and the wardrobe you try things on in.
+
+       One screen for both, because the difference between the counter and the
+       wardrobe is which of two verbs a button offers and nothing else: the
+       stock re-randomises every time you load the lobby, so an item is either
+       on the shelf tonight, already yours, or neither, and the screen says
+       which. Splitting that into a shop screen and a wardrobe screen would be
+       two lists of the same thirty-one things.
+
+       Locked items show in red, which is how the real one does it, and a
+       section you are wearing nothing from says so rather than looking broken.
+
+       None of this touches the odds. It says so, once, at the top -- a shop in
+       a game about bending the odds that sells things which do not is worth
+       stating outright rather than leaving somebody to work out. */
+    wardrobe(data) {
+      const meta = shell.store.meta;
+      const s = shell.store.s;
+      const section = data.section || C.COSMETIC_SECTIONS[0].id;
+      const stock = new Set(C.stockFor(s.day, s.seed));
+      const secDef = C.COSMETIC_SECTIONS.find((x) => x.id === section)
+        || C.COSMETIC_SECTIONS[0];
+
+      const tabs = C.COSMETIC_SECTIONS.map((sec) => {
+        const worn = meta.worn[sec.id];
+        const on = sec.id === section;
+        return '<button class="shoptab' + (on ? ' is-on' : '') + '"'
+          + ' role="tab" aria-selected="' + on + '" data-section="' + sec.id + '">'
+          + esc(sec.name) + (worn ? ' <span class="shoptab__dot">•</span>' : '')
+          + '</button>';
+      }).join('');
+
+      const rows = C.COSMETICS.filter((c) => c.section === section).map((c) => {
+        const owned = !!meta.owned[c.id];
+        const worn = meta.worn[section] === c.id;
+        const here = stock.has(c.id);
+        const afford = meta.tickets >= c.price;
+        const state = worn ? 'Wearing' : owned ? 'Wear'
+          : here ? (afford ? 'Buy ' + c.price + '\u{1F3AB}' : c.price + '\u{1F3AB}')
+          : 'Not in tonight';
+        const can = worn || owned || (here && afford);
+        return '<button class="ware ware--wear' + (owned ? '' : ' is-locked')
+          + (worn ? ' is-on' : '') + '"' + (can ? '' : ' disabled')
+          + ' data-wear="' + c.id + '">'
+          + '<span class="ware__icon">' + (owned ? '\u{1F455}' : '\u{1F512}') + '</span>'
+          + '<span><span class="ware__name">' + esc(c.name)
+          + '<span class="ware__price">' + state + '</span></span>'
+          + '<span class="ware__desc">' + (owned
+            ? (worn ? 'On you now.' : 'Yours. Put it on.')
+            : here ? 'On the shelf tonight.'
+            : 'Nibor did not have this one in. Look again tomorrow.') + '</span></span></button>';
+      }).join('');
+
+      const wearingNow = meta.worn[section];
+      return {
+        title: 'Nibor Second Hand Store', width: 'wide',
+        html: '<p class="sheet__kicker">Nibor Second Hand Store</p>'
+          + '<h2 class="sheet__title">Second hand, second chances</h2>'
+          + '<p class="sheet__lead">Tickets buy these, the same tickets the sketchy '
+          + 'goods cost, and none of it does a thing to the odds. What is on the '
+          + 'shelves changes every time you come back. You have <b>'
+          + meta.tickets + '\u{1F3AB}</b>.</p>'
+          + '<div class="shoptabs" role="tablist">' + tabs + '</div>'
+          + '<div class="wares">' + rows + '</div>'
+          + (wearingNow
+            ? '<div class="sheet__actions"><button class="btn btn--ghost" data-bare>'
+              + 'Take off the ' + esc((C.COSMETICS.find((c) => c.id === wearingNow) || {}).name
+                || secDef.name) + '</button></div>'
+            : '<p class="odds__foot" style="margin-top:0.8rem">Wearing nothing from '
+              + esc(secDef.name.toLowerCase()) + '.</p>')
+          + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
+        wire(sheet) {
+          for (const b of sheet.querySelectorAll('[data-section]')) {
+            b.addEventListener('click', () => show('wardrobe', { section: b.dataset.section }));
+          }
+          for (const b of sheet.querySelectorAll('[data-wear]')) {
+            b.addEventListener('click', () => {
+              wearOrBuy(b.dataset.wear);
+              show('wardrobe', { section });
+            });
+          }
+          const bare = sheet.querySelector('[data-bare]');
+          if (bare) {
+            bare.addEventListener('click', () => {
+              meta.worn[section] = null;
+              shell.store.saveMeta();
+              shell.redress();
+              shell.audio.play('click');
+              show('wardrobe', { section });
+            });
+          }
+          sheet.querySelector('[data-close]').addEventListener('click', () => close());
+        },
+      };
+    },
+
+    /* The bath full of paint.
+
+       Free, and as many times as you like, which is exactly how the real one
+       works -- it is the one piece of customisation that is not a purchase. */
+    paint() {
+      const meta = shell.store.meta;
+      const swatches = C.PAINTS.map((hex) => {
+        const css = '#' + hex.toString(16).padStart(6, '0');
+        const on = meta.paint === hex;
+        return '<button class="paint' + (on ? ' is-on' : '') + '" data-paint="' + hex + '"'
+          + ' style="background:' + css + '" aria-label="' + css + '"'
+          + ' aria-pressed="' + on + '"></button>';
+      }).join('');
+      return {
+        title: 'The bath', width: 'wide',
+        html: '<p class="sheet__kicker">The bathroom</p>'
+          + '<h2 class="sheet__title">A bath full of paint</h2>'
+          + '<p class="sheet__lead">Pick a colour and get in. It costs nothing and '
+          + 'you can do it as often as you like — everyone else at the table sees '
+          + 'whichever one you climbed out in.</p>'
+          + '<div class="paints">' + swatches + '</div>'
+          + '<div class="sheet__actions"><button class="btn" data-close>Done</button></div>',
+        wire(sheet) {
+          for (const b of sheet.querySelectorAll('[data-paint]')) {
+            b.addEventListener('click', () => {
+              meta.paint = Number(b.dataset.paint);
+              shell.store.saveMeta();
+              shell.redress();
+              shell.audio.play('cash');
+              show('paint');
+            });
+          }
+          sheet.querySelector('[data-close]').addEventListener('click', () => close());
         },
       };
     },
@@ -1024,6 +1162,37 @@
     }
     shell.store.saveMeta();
     shell.store.save();
+    shell.renderHud();
+  }
+
+  /* One button, two verbs.
+
+     Owned means wear it; on the shelf and affordable means buy it, and then
+     wear it, because nobody buys a hat in order to leave it in the bag. Not
+     owned and not in tonight means the button was disabled and this should
+     never have been called -- it is checked again anyway, because a screen
+     that can be re-rendered between a click and its handler is a screen where
+     "disabled" is a suggestion. */
+  function wearOrBuy(id) {
+    const meta = shell.store.meta;
+    const def = C.COSMETICS.find((c) => c.id === id);
+    if (!def) return;
+    if (!meta.owned[id]) {
+      const s = shell.store.s;
+      const stock = C.stockFor(s.day, s.seed);
+      if (stock.indexOf(id) < 0 || meta.tickets < def.price) { shell.audio.play('deny'); return; }
+      meta.tickets -= def.price;
+      meta.owned[id] = 1;
+      shell.store.say('Nibor takes ' + def.price + ' tickets for the '
+        + def.name.toLowerCase() + ' and asks no questions.', 'good');
+      shell.audio.play('cash');
+    } else {
+      shell.audio.play('click');
+    }
+    // Wearing it is the point. One per section, so this replaces.
+    meta.worn[def.section] = (meta.worn[def.section] === id) ? null : id;
+    shell.store.saveMeta();
+    shell.redress();
     shell.renderHud();
   }
 

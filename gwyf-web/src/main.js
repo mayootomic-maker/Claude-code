@@ -100,7 +100,7 @@
        The camera has to be in the scene for its children to be drawn -- a
        camera three.js is rendering from is not necessarily one it is walking,
        and hands hung off a camera outside the graph simply never appear. */
-    shell.hands = GWCrew.buildHands(shell.lib, undefined, shell.stage.camera);
+    shell.hands = GWCrew.buildHands(shell.lib, shell.store.meta.paint, shell.stage.camera);
     shell.stage.scene.add(shell.stage.camera);
     shell.stage.camera.add(shell.hands.group);
 
@@ -600,7 +600,10 @@
   function connect(how, opts) {
     disconnect();
     const name = (opts && opts.name) || 'Player';
-    const colour = (opts && opts.colour) !== undefined ? opts.colour : GWCrew.YOU.body;
+    // What you look like travels with you: the colour out of the bath and the
+    // wardrobe, not a per-session default nobody chose.
+    const colour = (opts && opts.colour) !== undefined
+      ? opts.colour : shell.store.meta.paint;
     let link;
     if (how === 'peer') {
       if (!GWLink.webrtcAvailable()) return null;
@@ -627,7 +630,7 @@
       link = GWLink.openBroadcast({});
     }
     shell.net = GWSession.create(shell, link, {
-      host: !!(opts && opts.host), name, colour,
+      host: !!(opts && opts.host), name, colour, worn: shell.store.meta.worn,
       onRoster: () => { syncRoster(); renderCrew(); GWScreens.refresh('table'); },
       /* Turned away because the table is full. Said, then let go of: a session
          that stays half-open looks to the player exactly like one that is
@@ -648,6 +651,25 @@
       : 'Joined. The account you are spending is theirs.', 'house');
     renderCrew();
     return link;
+  }
+
+  /* Put on what the wardrobe says.
+
+     Three places show what you look like and all three have to agree: your own
+     two hands in the corners of the screen, the body standing in the mirror at
+     Nibor's, and -- over the wire -- the body everyone else is looking at.
+     Called whenever the wardrobe or the bath changes anything. */
+  function redress() {
+    const meta = shell.store.meta;
+    if (shell.hands) shell.hands.setColour(meta.paint);
+    if (shell.mirror) {
+      GWCrew.dressBody(shell.lib, shell.mirror, meta.worn);
+      shell.mirror.setColour(meta.paint);
+    }
+    // Other players see the colour you climbed out of the bath in, not the
+    // colour of your seat: the seat is what the rail is for.
+    if (shell.net) shell.net.setLook(meta.paint, meta.worn);
+    shell.store.saveMeta();
   }
 
   /* Copy the table into the run.
@@ -1995,6 +2017,7 @@
     highlight() {},
     mountMachine,
     setMachineView,
+    redress,
     enterFloor,
     enterLobby,
     boardLimo,

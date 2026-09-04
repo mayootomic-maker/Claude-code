@@ -35,7 +35,8 @@
     const me = {
       id: link.id,
       name: (opts.name || 'Player').slice(0, 16),
-      colour: opts.colour || 0xd9a441,
+      colour: opts.colour === undefined ? 0xd9a441 : opts.colour,
+      worn: opts.worn || {},
       // Seat one until anybody else turns up to sort against.
       seat: C.SEATS[0].colour,
     };
@@ -75,7 +76,16 @@
       }
       if (info) {
         if (info.name) p.name = String(info.name).slice(0, 16);
-        if (info.colour !== undefined) p.colour = info.colour;
+        if (info.colour !== undefined && info.colour !== p.colour) {
+          p.colour = info.colour;
+          // Repaint rather than rebuild; a body already in the room keeps its
+          // hat and its position.
+          if (p.body && p.body.setColour) p.body.setColour(p.colour);
+        }
+        if (info.worn !== undefined) {
+          p.worn = info.worn || {};
+          if (p.body) GWCrew.dressBody(shell.lib, p.body, p.worn);
+        }
       }
       p.seen = performance.now();
       seatEveryone();
@@ -312,7 +322,11 @@
       if (!shell.level) return;
       try {
         p.body = GWCrew.buildBody(shell.lib, {
-          body: new THREE.Color(p.seat || '#9aa0a6').getHex(), hat: null,
+          /* Their paint, not their seat. The colour somebody climbed out of
+             the bath in is the one they chose and the one they expect to be;
+             the seat colour is what the rail is for, and it goes on the name
+             tag over their head so both questions get an answer. */
+          body: p.colour === undefined ? 0x9aa0a6 : p.colour, hat: null,
           height: 1.0, width: 1.0,
         });
       } catch (err) {
@@ -320,6 +334,7 @@
         return;
       }
       p.drawnSeat = p.seat;
+      GWCrew.dressBody(shell.lib, p.body, p.worn || {});
       p.tag = GWCrew.nameTag(p.name, p.seat || '#9aa0a6');
       if (p.tag) {
         p.tag.position.y = p.body.joints.height * 0.98;
@@ -354,7 +369,9 @@
 
     const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
 
-    const greet = (to) => send('hello', { name: me.name, colour: me.colour }, to);
+    const greet = (to) => send('hello', {
+      name: me.name, colour: me.colour, worn: me.worn || null,
+    }, to);
 
     /* Say hello, and keep saying it until somebody says it back.
 
@@ -382,8 +399,17 @@
           id: p.id, name: p.name, colour: p.seat, won: nets.get(p.id) || 0,
         }));
       },
-      /* Your own seat, which the HUD and your hands are tinted with. */
+      /* Your own seat, which the rail and your name tag are drawn in. */
       get seat() { return me.seat; },
+      /* You came out of the bath a different colour, or put a hat on. Told to
+         everyone as a fresh hello, which is the message that already carries
+         what somebody looks like -- a second message saying the same thing in
+         a different shape is a second message to keep in step. */
+      setLook(colour, worn) {
+        me.colour = colour;
+        me.worn = worn;
+        greet();
+      },
       /* The two calls that move money. A guest routes them through the host; a
          host does them locally and tells everyone the new balance. */
       stake(amount) {
