@@ -11441,8 +11441,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      palette rather than a list, because the point of a crowd is that you
      cannot tell one of them from another. */
   const STRANGER_BODIES = [
-    0xb9a48c, 0x8fa5b8, 0xc59a7a, 0x9d8fb0, 0xa8b295, 0xcbb0a2,
-    0x7f96a6, 0xb08a8a, 0x94a892, 0xc2b184, 0x8d8fa8, 0xaa9c7e,
+    0x8fd3c7, 0xf2b8a2, 0xc9a9e0, 0x8fb8e8, 0xf2dd9a, 0xf29fae,
+    0xa8d49a, 0xe8a9c9, 0x9ad0e0, 0xe0c08f, 0xb8a9e8, 0xf2c9a2,
   ];
   const STRANGER_HATS = [null, null, 'pin_hat_top', 'pin_hat_fez',
                          'pin_hat_boater', 'pin_monocle'];
@@ -12011,6 +12011,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         console.warn('[gwyf] no body for ' + mate.id, err);
         return null;
       }
+      /* A shadow where they meet the carpet.
+
+         The bodies are one flat colour with no occlusion anywhere on them, so
+         under a lit room they read as paper cut-outs standing in front of the
+         floor rather than on it. The shadow map does not help: it is cast from
+         one directional light across a thirty-metre hall, and at that scale a
+         pin's own shadow is a few pixels somewhere else. A soft blob under
+         each of them is what puts them in the room, and it is the same helper
+         every game already uses to ground a die. */
+      const shadow = GWStage.contactShadow(0.34 * look.width, 0.42);
+      shadow.position.y = 0.012;
+      shadow.renderOrder = -1;
+      body.group.add(shadow);
+
       let tag = null;
       if (named) {
         // Small. A label you can read at four metres is a billboard at two.
