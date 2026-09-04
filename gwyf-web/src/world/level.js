@@ -225,6 +225,31 @@
       group.add(strip);
     }
 
+    /* Beams across the ceiling.
+
+       The top quarter of every shot of every floor was an unbroken black plane
+       with a few lit rectangles stuck to it. A ceiling is the one surface a
+       first-person camera cannot avoid -- you are looking slightly up at it
+       from six feet down the whole time -- and leaving it flat is leaving a
+       quarter of the frame empty. Beams both ways, on the same grid the lights
+       already use, so the coffers land between the panels rather than across
+       them. They fold into the trim bucket and cost nothing. */
+    const beamMat = track(new THREE.MeshStandardMaterial({
+      // Not the trim's gold: eighteen beams of polished brass across the top of
+      // the frame took the room over, and a ceiling should be the thing you
+      // notice second. Same family, a third of the shine, and darker.
+      color: new THREE.Color(theme.trim).multiplyScalar(0.42),
+      metalness: 0.3, roughness: 0.62,
+    }));
+    for (let i = 0; i <= cols; i += 2) {
+      const x = -halfW + W * (i / cols);
+      slab(x, 0, 0.26, D, 0.26, WALL_H - 0.26, beamMat, null);
+    }
+    for (let j = 0; j <= rows; j += 2) {
+      const z = -halfD + D * (j / rows);
+      slab(0, z, W, 0.26, 0.26, WALL_H - 0.26, beamMat, null);
+    }
+
     /* --- the lift --------------------------------------------------------- */
 
     const liftW = 3.0, liftD = 2.2;
@@ -579,7 +604,7 @@
     // Just outside the lift, looking into the room.
     const spawn = { x: 0, z: lift.z + lift.d / 2 + 1.1, angle: Math.PI };
 
-    mergeStatic(group);
+    mergeStatic(group, WALL_H, disposables);
 
     return {
       group, solids, anchors, spawn, lift, theme, sites,
@@ -613,7 +638,25 @@
      works on a group that still moves -- a wheel folds its wedges and pegs
      into two meshes and goes on spinning. Where root sits at the origin, as
      the room does, the two are the same thing. */
-  function mergeStatic(root) {
+  /* How much darker the bottom of a wall is than the top, and how much grain
+     goes over it.
+
+     A flat colour on a flat surface is the single clearest tell that a room was
+     built rather than lit: every wall in the building was one value from
+     skirting to ceiling, and the panelling, the columns and the dado were all
+     invisible because they were the same colour as what they stood against. A
+     room reads as lit when its surfaces fall off towards the floor, which is
+     where the light is not.
+
+     Done as vertex colours rather than a texture for one reason: anything with
+     a map is skipped by the fold, and a room that cannot fold is four hundred
+     draw calls. This costs one more attribute on geometry that is being rebuilt
+     anyway. */
+  const SHADE_LOW = 0.58;      // at the skirting
+  const SHADE_HIGH = 1.14;     // at the ceiling
+  const SHADE_GRAIN = 0.05;    // per-vertex, so a big flat panel is not uniform
+
+  function mergeStatic(root, shadeHeight, owns) {
     root.updateMatrixWorld(true);
     const toLocal = new THREE.Matrix4().copy(root.matrixWorld).invert();
     const local = new THREE.Matrix4();
@@ -647,6 +690,7 @@
       }
       const position = new Float32Array(verts * 3);
       const normal = new Float32Array(verts * 3);
+      const shade = shadeHeight ? new Float32Array(verts * 3) : null;
       const index = verts > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
       let v = 0, i = 0;
       for (const mesh of bucket.items) {
@@ -658,6 +702,16 @@
         for (let k = 0; k < p.count; k++, v++) {
           vertex.fromBufferAttribute(p, k).applyMatrix4(local);
           position[v * 3] = vertex.x; position[v * 3 + 1] = vertex.y; position[v * 3 + 2] = vertex.z;
+          if (shade) {
+            /* Height, and a little noise off the position so a four-metre
+               panel is not one value. Hashed rather than random, because a
+               room rebuilt from the same seed has to come out the same. */
+            const t = Math.max(0, Math.min(1, position[v * 3 + 1] / shadeHeight));
+            const h = Math.sin(position[v * 3] * 12.9898 + position[v * 3 + 2] * 78.233) * 43758.5453;
+            const grain = (h - Math.floor(h) - 0.5) * SHADE_GRAIN;
+            const lit = SHADE_LOW + (SHADE_HIGH - SHADE_LOW) * t + grain;
+            shade[v * 3] = shade[v * 3 + 1] = shade[v * 3 + 2] = lit;
+          }
           vertex.fromBufferAttribute(n, k).applyMatrix3(normalMatrix).normalize();
           normal[v * 3] = vertex.x; normal[v * 3 + 1] = vertex.y; normal[v * 3 + 2] = vertex.z;
         }
@@ -668,7 +722,18 @@
       geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
       geometry.setIndex(new THREE.BufferAttribute(index, 1));
       geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, bucket.material);
+      let material = bucket.material;
+      if (shade) {
+        geometry.setAttribute('color', new THREE.BufferAttribute(shade, 3));
+        /* A clone, because the same material is also on meshes that were not
+           merged -- a single slab in its own bucket -- and switching vertex
+           colours on for those would tint them by an attribute they do not
+           have, which three.js reads as black. */
+        material = bucket.material.clone();
+        material.vertexColors = true;
+        if (owns) owns.push(material);
+      }
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       merged.push({ mesh, items: bucket.items });
@@ -1420,7 +1485,7 @@
       slab(-15.0, -6.5, 1.5, 1.2, 0.11, i * 0.17, crateMat, i === 0 ? 'pallets' : null);
     }
 
-    mergeStatic(group);
+    mergeStatic(group, WALL_H, disposables);
 
     return {
       group, solids, anchors, theme, sites,

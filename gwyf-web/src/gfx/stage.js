@@ -155,13 +155,32 @@
        and cutting this to zero to save a light left rooms that were black
        beyond the nearest few lamps. A room has to be visible first and cheap
        second. */
-    const ambient = new THREE.AmbientLight(0xffffff, 0.20);
+    /* Kept low on purpose. A flat term lifts the dark side of everything
+       equally, which is exactly what makes a room look unlit -- the hemisphere
+       above does the lifting instead, and it keeps the tops of things brighter
+       than their undersides while doing it. At 0.28 the characters, who are
+       one flat pale colour, came out brighter than the lamps. */
+    const ambient = new THREE.AmbientLight(0xffffff, 0.18);
 
-    // Sky-and-ground fill. A single ambient term flattens everything to the
-    // same value; a hemisphere keeps the tops of things lighter than their
-    // undersides, which is most of what makes a room read as lit at all.
-    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 0.76);
+    /* Sky-and-ground fill, in the colours of the room it is filling.
+
+       A single ambient term flattens everything to one value; a hemisphere
+       keeps the tops of things lighter than their undersides, which is most of
+       what makes a room read as lit at all. Both were fixed warm -- amber over
+       brown -- which meant the fill was the same on a magenta black-light floor
+       and a cool marble vault, and every one of the four deliberately different
+       palettes drifted back towards the same brown. It is set per floor now:
+       the sky takes the room's own neon and the ground takes its carpet, so
+       what bounces off the ceiling and up off the floor is what is actually in
+       the room. */
+    const sky = new THREE.HemisphereLight(0xffd9a8, 0x241713, 1.00);
     scene.add(sky);
+
+    function setRoomLight(skyHex, groundHex, strength) {
+      if (skyHex !== undefined && skyHex !== null) sky.color.set(skyHex);
+      if (groundHex !== undefined && groundHex !== null) sky.groundColor.set(groundHex);
+      sky.intensity = strength === undefined ? 1.00 : strength;
+    }
 
     /* The lamp over the table.
 
@@ -456,6 +475,7 @@
       },
       get fogFar() { return scene.fog.far; },
       setEnvironment, resize, frame, snap, start, stop, onTick, clear, setLampOver, setAccent,
+      setRoomLight,
       get envName() { return state.envName; },
       /* Pin the renderer where it is. Used by the mod menu's display page and
          by the screenshot harness, which wants a consistent frame rather than a

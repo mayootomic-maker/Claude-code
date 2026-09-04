@@ -739,6 +739,18 @@
       .lerp(new THREE.Color(shell.level.theme.neon), 0.26)
       .multiplyScalar(0.85);
     shell.stage.setFog(haze.getHex(), far * 0.34, far);
+
+    /* And the fill takes the room's own colours.
+
+       What bounces off a ceiling is the colour of the room, not a fixed amber:
+       with one warm hemisphere over all four floors, the black-light room and
+       the marble vault both drifted back towards the brown the Ground Floor is
+       painted. Sky from the neon, ground from the carpet. */
+    const theme = shell.level.theme;
+    shell.stage.setRoomLight(
+      new THREE.Color(theme.neon).lerp(new THREE.Color(0xffffff), 0.35).getHex(),
+      new THREE.Color(theme.carpet).multiplyScalar(0.55).getHex(),
+      1.05);
   }
 
   /* The man in the black suit.
