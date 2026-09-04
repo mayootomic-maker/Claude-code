@@ -149,7 +149,9 @@
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-      if (solid) solids.add(x, z, w / 2, d / 2, solid);
+      // The top of it, so a shin-high crate is something to stand on and a
+      // wall is still a wall.
+      if (solid) solids.add(x, z, w / 2, d / 2, solid, y + h);
       return mesh;
     }
 
@@ -814,7 +816,9 @@
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-      if (solid) solids.add(x, z, w / 2, d / 2, solid);
+      // The top of it, so a shin-high crate is something to stand on and a
+      // wall is still a wall.
+      if (solid) solids.add(x, z, w / 2, d / 2, solid, y + h);
       return mesh;
     }
 
@@ -1338,12 +1342,36 @@
        find out what the controls do, and there is a ticket on the far end so
        that finding out is worth doing rather than a thing to look at. */
     const jumps = [];
+    /* Steps you can actually make.
+
+       The first version rose in half-metre steps from 0.55 to 2.45, which
+       nothing in this game could climb: solids had no tops, so a crate was an
+       infinitely tall wall, and even once they had tops the jump's apex was
+       0.38 m -- less than the first crate. Now that both are fixed the rises
+       are checked against what a jump buys: about 0.95 m, less the 0.42 m lip
+       you walk up without one. Every step here is 0.40, which is a stride onto
+       the first and a hop onto the rest, and the gaps are inside a running
+       jump's reach. */
+    /* A climb, not a precision platformer.
+
+       Three numbers decide whether this is possible at all and they have to be
+       chosen against each other: you walk up anything below 0.42 without
+       jumping, a jump is worth about 0.9, and a running jump crosses a couple
+       of metres. Every rise here is 0.45 -- just past a stride, so the jump is
+       what the climb is for -- and the crates nearly touch, so it is a climb
+       up a stack rather than a run of leaps between islands: each crate's
+       footprint overlaps the one before it, so there is never a gap between
+       them to fall down.
+
+       The first version rose in half-metre steps from 0.55 to 2.45, which
+       nothing could climb: solids had no tops at all, and the jump's apex
+       measured 0.38, less than the first crate. */
     const course = [
-      { x: -18.0, z: 2.0, w: 1.8, d: 1.8, h: 0.55 },
-      { x: -15.0, z: 0.4, w: 1.6, d: 1.6, h: 1.05 },
-      { x: -12.4, z: 2.2, w: 1.5, d: 1.5, h: 1.55 },
-      { x: -10.0, z: 0.2, w: 1.4, d: 1.4, h: 2.05 },
-      { x: -7.4, z: 2.4, w: 2.3, d: 1.4, h: 2.45 },
+      { x: -18.4, z: 2.3, w: 2.1, d: 2.1, h: 0.45 },
+      { x: -16.8, z: 1.6, w: 2.0, d: 2.0, h: 0.90 },
+      { x: -15.2, z: 2.4, w: 2.0, d: 2.0, h: 1.35 },
+      { x: -13.6, z: 1.6, w: 2.0, d: 2.0, h: 1.80 },
+      { x: -11.9, z: 2.4, w: 2.4, d: 2.0, h: 2.25 },
     ];
     for (const b of course) {
       slab(b.x, b.z, b.w, b.d, b.h, 0, crateMat, 'crate');
@@ -1359,7 +1387,7 @@
       half: { hw: top.w / 2, hd: top.d / 2 },
       // Standing at the foot of the last box reaches it horizontally, which
       // would make the climb decorative. `needsY` is what makes it a climb.
-      needsY: top.h - 0.25,
+      needsY: top.h - 0.22,
       stand: new THREE.Vector3(top.x, top.h, top.z - top.d / 2 - 0.5),
       focus: new THREE.Vector3(top.x, top.h + 0.4, top.z),
     });

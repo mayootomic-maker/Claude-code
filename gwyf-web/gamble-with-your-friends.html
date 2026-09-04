@@ -8848,9 +8848,21 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   }
 
   /* A solid box, centred on (x, z), extending hw and hd. `tag` is carried back
-     out by `probe` so callers can tell a machine from a wall. */
-  World.prototype.add = function (x, z, hw, hd, tag) {
-    this.boxes.push({ x, z, hw, hd, tag: tag || null });
+     out by `probe` so callers can tell a machine from a wall.
+
+     `top` is how tall it is, and leaving it out means "as tall as the room" --
+     which is what every box in this world used to be, whether it was a wall or
+     a shin-high crate. The floor was a single plane at zero and nothing had a
+     surface, so the run of crates in the yard could be walked into and never
+     stood on: measured, six run-ups and jumps at the lowest one left the
+     player at y = 0, five metres further back than they started, and the
+     ticket on top of the last one was unreachable by playing. Every harness
+     passed, because they all set the player's height by hand. */
+  World.prototype.add = function (x, z, hw, hd, tag, top) {
+    this.boxes.push({
+      x, z, hw, hd, tag: tag || null,
+      top: (top === undefined || top === null) ? Infinity : top,
+    });
     return this;
   };
 
@@ -8868,11 +8880,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   World.prototype.clear = function () { this.boxes.length = 0; };
 
   /* Push a circle out of everything it overlaps. Mutates `p` (an object with x
-     and z) and returns true if it moved. */
-  World.prototype.resolve = function (p, radius) {
+     and z) and returns true if it moved.
+
+     `feet` is how high off the floor the circle is and `step` how big a lip it
+     can walk up without jumping. Anything whose top is at or below feet + step
+     is not in the way: you are above it, or about to be. Both default to zero,
+     which is the old behaviour -- everything solid, nothing climbable -- and
+     is what the crowd still uses, because a stranger who can climb the freight
+     is a stranger on the roof. */
+  World.prototype.resolve = function (p, radius, feet, step) {
+    const clears = (feet || 0) + (step || 0) + 1e-4;
     let moved = false;
     for (let pass = 0; pass < 2; pass++) {
       for (const b of this.boxes) {
+        if (b.top <= clears) continue;
         const dx = p.x - b.x;
         const dz = p.z - b.z;
         const px = b.hw + radius - Math.abs(dx);
@@ -8906,6 +8927,32 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   World.prototype.setBounds = function (minX, minZ, maxX, maxZ) {
     this.bounds = { minX, minZ, maxX, maxZ };
     return this;
+  };
+
+  /* The surface under a circle: the top of the highest box it is standing over
+     that is not above its head.
+
+     `ceiling` is as high as a surface may be and still count as something you
+     could be on -- the feet plus the step height while walking, or the feet
+     alone while falling, so a jump lands on a crate rather than snapping to
+     the top of the wall behind it. Nothing under it is the floor, at zero. */
+  World.prototype.groundAt = function (x, z, radius, ceiling) {
+    let best = 0;
+    const lip = ceiling === undefined ? Infinity : ceiling;
+    for (const b of this.boxes) {
+      if (b.top === Infinity || b.top <= best || b.top > lip) continue;
+      /* Supported while most of your feet are on it.
+
+         Measured to the box's own edge, a gap of a few centimetres between two
+         crates is a hole you fall down: at the middle of it you are over
+         neither, and the climb ends. Measured to a full circle round you, you
+         hover a third of a metre past every edge. Most of the circle is the
+         answer both ways. */
+      if (Math.abs(x - b.x) > b.hw + radius * 0.8) continue;
+      if (Math.abs(z - b.z) > b.hd + radius * 0.8) continue;
+      best = b.top;
+    }
+    return best;
   };
 
   /* Does this axis-aligned box touch anything already here?
@@ -9438,7 +9485,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-      if (solid) solids.add(x, z, w / 2, d / 2, solid);
+      // The top of it, so a shin-high crate is something to stand on and a
+      // wall is still a wall.
+      if (solid) solids.add(x, z, w / 2, d / 2, solid, y + h);
       return mesh;
     }
 
@@ -10103,7 +10152,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-      if (solid) solids.add(x, z, w / 2, d / 2, solid);
+      // The top of it, so a shin-high crate is something to stand on and a
+      // wall is still a wall.
+      if (solid) solids.add(x, z, w / 2, d / 2, solid, y + h);
       return mesh;
     }
 
@@ -10627,12 +10678,36 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        find out what the controls do, and there is a ticket on the far end so
        that finding out is worth doing rather than a thing to look at. */
     const jumps = [];
+    /* Steps you can actually make.
+
+       The first version rose in half-metre steps from 0.55 to 2.45, which
+       nothing in this game could climb: solids had no tops, so a crate was an
+       infinitely tall wall, and even once they had tops the jump's apex was
+       0.38 m -- less than the first crate. Now that both are fixed the rises
+       are checked against what a jump buys: about 0.95 m, less the 0.42 m lip
+       you walk up without one. Every step here is 0.40, which is a stride onto
+       the first and a hop onto the rest, and the gaps are inside a running
+       jump's reach. */
+    /* A climb, not a precision platformer.
+
+       Three numbers decide whether this is possible at all and they have to be
+       chosen against each other: you walk up anything below 0.42 without
+       jumping, a jump is worth about 0.9, and a running jump crosses a couple
+       of metres. Every rise here is 0.45 -- just past a stride, so the jump is
+       what the climb is for -- and the crates nearly touch, so it is a climb
+       up a stack rather than a run of leaps between islands: each crate's
+       footprint overlaps the one before it, so there is never a gap between
+       them to fall down.
+
+       The first version rose in half-metre steps from 0.55 to 2.45, which
+       nothing could climb: solids had no tops at all, and the jump's apex
+       measured 0.38, less than the first crate. */
     const course = [
-      { x: -18.0, z: 2.0, w: 1.8, d: 1.8, h: 0.55 },
-      { x: -15.0, z: 0.4, w: 1.6, d: 1.6, h: 1.05 },
-      { x: -12.4, z: 2.2, w: 1.5, d: 1.5, h: 1.55 },
-      { x: -10.0, z: 0.2, w: 1.4, d: 1.4, h: 2.05 },
-      { x: -7.4, z: 2.4, w: 2.3, d: 1.4, h: 2.45 },
+      { x: -18.4, z: 2.3, w: 2.1, d: 2.1, h: 0.45 },
+      { x: -16.8, z: 1.6, w: 2.0, d: 2.0, h: 0.90 },
+      { x: -15.2, z: 2.4, w: 2.0, d: 2.0, h: 1.35 },
+      { x: -13.6, z: 1.6, w: 2.0, d: 2.0, h: 1.80 },
+      { x: -11.9, z: 2.4, w: 2.4, d: 2.0, h: 2.25 },
     ];
     for (const b of course) {
       slab(b.x, b.z, b.w, b.d, b.h, 0, crateMat, 'crate');
@@ -10648,7 +10723,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       half: { hw: top.w / 2, hd: top.d / 2 },
       // Standing at the foot of the last box reaches it horizontally, which
       // would make the climb decorative. `needsY` is what makes it a climb.
-      needsY: top.h - 0.25,
+      needsY: top.h - 0.22,
       stand: new THREE.Vector3(top.x, top.h, top.z - top.d / 2 - 0.5),
       focus: new THREE.Vector3(top.x, top.h + 0.4, top.z),
     });
@@ -10732,6 +10807,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const EYE = 1.62;
   const CROUCH_EYE = 1.05;
   const RADIUS = 0.34;
+  /* How big a lip you walk up without jumping.
+
+     Knee height. Below this a crate edge, a step or a kerb is something you
+     stride over; above it, it is something to jump onto. The crate you wake in
+     has shin-high walls at 0.62 on purpose, so it stays a wall on three sides
+     and the fallen panel is still the way out. */
+  const STEP_UP = 0.42;
   const WALK = 3.1;
   const RUN = 5.0;
   const CROUCH_WALK = 1.5;
@@ -10753,8 +10835,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      first-person game, so this is more than double it and the impulse is set to
      match: a 0.62 m apex reached in a bit over a third of a second, which is
      the shape every shooter has converged on. */
+  /* Gravity and the jump, chosen together for a height rather than a feel.
+
+     v^2 / 2g is the apex, and at 5.2 against 22 that was 0.61 m in theory and
+     0.38 m measured -- less than the lowest crate in the yard's parkour, which
+     is 0.55. The climb the movement was built for could not be started. A jump
+     is worth about 0.95 m now, which clears a half-metre step comfortably and
+     still cannot be used to leave the room: the walls are 5.4. */
   const GRAVITY = 22;
-  const JUMP = 5.2;
+  const JUMP = 6.5;
   /* Press jump slightly before you land and it still fires. Every jump that
      "did not register" is this: the key went down two frames before the feet
      touched, and without a buffer those two frames eat the input. */
@@ -10919,7 +11008,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       state.viewYaw = state.yaw;
       state.viewPitch = state.pitch;
       state.vel.set(0, 0, 0);
-      state.y = 0; state.vy = 0; state.grounded = true;
+      state.y = level.solids.groundAt(level.spawn.x, level.spawn.z, RADIUS, Infinity);
+      state.vy = 0; state.grounded = true;
       state.crouching = false; state.height = EYE;
       state.bob = 0;
       state.nearest = null;
@@ -10998,16 +11088,35 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
       state.pos.x += state.vel.x * dt;
       state.pos.z += state.vel.z * dt;
-      state.level.solids.resolve(state.pos, RADIUS);
+      /* Anything shorter than the step is walked over, not into.
+
+         Going up, the lip has to be reachable from where the feet are; going
+         down, only what is already under them counts, or stepping off a crate
+         would snap you sideways onto the next one. */
+      state.level.solids.resolve(state.pos, RADIUS, state.y,
+        state.grounded ? STEP_UP : 0);
       state.level.solids.bound(state.pos, RADIUS);
 
-      /* Up and down. The floor is flat and the ceiling is well out of reach,
-         so the whole of it is one number falling under gravity until it hits
-         zero. Landing is announced, because a jump with no landing sound reads
-         as the world having no floor. */
+      /* Up and down.
+
+         There is a floor under you rather than *the* floor: whatever you are
+         stood over, at whatever height its top is. Everything in this world
+         used to be an infinitely tall wall over a single plane at zero, so a
+         crate could be walked into and never stood on and the run of them in
+         the yard was scenery with a ticket on it. Landing is announced,
+         because a jump with no landing sound reads as the world having no
+         floor. */
+      const under = state.level.solids.groundAt(state.pos.x, state.pos.z, RADIUS,
+        state.grounded ? state.y + STEP_UP : state.y + 0.02);
       state.vy -= GRAVITY * dt;
       state.y += state.vy * dt;
-      if (state.y <= 0) {
+      // Walking onto a low lip: taken as a step rather than a fall, so a kerb
+      // does not read as the ground dropping and coming back.
+      if (state.grounded && under > state.y && under - state.y <= STEP_UP) {
+        state.y = under;
+        state.vy = 0;
+      }
+      if (state.y <= under) {
         if (!state.grounded) {
           const impact = -state.vy;
           if (impact > 3) audio.play('step');
@@ -11015,9 +11124,12 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           // most of what tells you the jump had a landing rather than a stop.
           state.dip -= Math.min(0.10, impact * LAND_DIP);
         }
-        state.y = 0;
+        state.y = under;
         state.vy = 0;
         state.grounded = true;
+      } else if (state.grounded && state.y > under + 0.02) {
+        // Walked off the edge of something. Falling, not floating.
+        state.grounded = false;
       }
 
       // A buffered jump fires the moment the feet are down.

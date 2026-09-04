@@ -12,6 +12,13 @@
   const EYE = 1.62;
   const CROUCH_EYE = 1.05;
   const RADIUS = 0.34;
+  /* How big a lip you walk up without jumping.
+
+     Knee height. Below this a crate edge, a step or a kerb is something you
+     stride over; above it, it is something to jump onto. The crate you wake in
+     has shin-high walls at 0.62 on purpose, so it stays a wall on three sides
+     and the fallen panel is still the way out. */
+  const STEP_UP = 0.42;
   const WALK = 3.1;
   const RUN = 5.0;
   const CROUCH_WALK = 1.5;
@@ -33,8 +40,15 @@
      first-person game, so this is more than double it and the impulse is set to
      match: a 0.62 m apex reached in a bit over a third of a second, which is
      the shape every shooter has converged on. */
+  /* Gravity and the jump, chosen together for a height rather than a feel.
+
+     v^2 / 2g is the apex, and at 5.2 against 22 that was 0.61 m in theory and
+     0.38 m measured -- less than the lowest crate in the yard's parkour, which
+     is 0.55. The climb the movement was built for could not be started. A jump
+     is worth about 0.95 m now, which clears a half-metre step comfortably and
+     still cannot be used to leave the room: the walls are 5.4. */
   const GRAVITY = 22;
-  const JUMP = 5.2;
+  const JUMP = 6.5;
   /* Press jump slightly before you land and it still fires. Every jump that
      "did not register" is this: the key went down two frames before the feet
      touched, and without a buffer those two frames eat the input. */
@@ -199,7 +213,8 @@
       state.viewYaw = state.yaw;
       state.viewPitch = state.pitch;
       state.vel.set(0, 0, 0);
-      state.y = 0; state.vy = 0; state.grounded = true;
+      state.y = level.solids.groundAt(level.spawn.x, level.spawn.z, RADIUS, Infinity);
+      state.vy = 0; state.grounded = true;
       state.crouching = false; state.height = EYE;
       state.bob = 0;
       state.nearest = null;
@@ -278,16 +293,35 @@
 
       state.pos.x += state.vel.x * dt;
       state.pos.z += state.vel.z * dt;
-      state.level.solids.resolve(state.pos, RADIUS);
+      /* Anything shorter than the step is walked over, not into.
+
+         Going up, the lip has to be reachable from where the feet are; going
+         down, only what is already under them counts, or stepping off a crate
+         would snap you sideways onto the next one. */
+      state.level.solids.resolve(state.pos, RADIUS, state.y,
+        state.grounded ? STEP_UP : 0);
       state.level.solids.bound(state.pos, RADIUS);
 
-      /* Up and down. The floor is flat and the ceiling is well out of reach,
-         so the whole of it is one number falling under gravity until it hits
-         zero. Landing is announced, because a jump with no landing sound reads
-         as the world having no floor. */
+      /* Up and down.
+
+         There is a floor under you rather than *the* floor: whatever you are
+         stood over, at whatever height its top is. Everything in this world
+         used to be an infinitely tall wall over a single plane at zero, so a
+         crate could be walked into and never stood on and the run of them in
+         the yard was scenery with a ticket on it. Landing is announced,
+         because a jump with no landing sound reads as the world having no
+         floor. */
+      const under = state.level.solids.groundAt(state.pos.x, state.pos.z, RADIUS,
+        state.grounded ? state.y + STEP_UP : state.y + 0.02);
       state.vy -= GRAVITY * dt;
       state.y += state.vy * dt;
-      if (state.y <= 0) {
+      // Walking onto a low lip: taken as a step rather than a fall, so a kerb
+      // does not read as the ground dropping and coming back.
+      if (state.grounded && under > state.y && under - state.y <= STEP_UP) {
+        state.y = under;
+        state.vy = 0;
+      }
+      if (state.y <= under) {
         if (!state.grounded) {
           const impact = -state.vy;
           if (impact > 3) audio.play('step');
@@ -295,9 +329,12 @@
           // most of what tells you the jump had a landing rather than a stop.
           state.dip -= Math.min(0.10, impact * LAND_DIP);
         }
-        state.y = 0;
+        state.y = under;
         state.vy = 0;
         state.grounded = true;
+      } else if (state.grounded && state.y > under + 0.02) {
+        // Walked off the edge of something. Falling, not floating.
+        state.grounded = false;
       }
 
       // A buffered jump fires the moment the feet are down.

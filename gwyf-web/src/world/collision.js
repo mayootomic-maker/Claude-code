@@ -17,9 +17,21 @@
   }
 
   /* A solid box, centred on (x, z), extending hw and hd. `tag` is carried back
-     out by `probe` so callers can tell a machine from a wall. */
-  World.prototype.add = function (x, z, hw, hd, tag) {
-    this.boxes.push({ x, z, hw, hd, tag: tag || null });
+     out by `probe` so callers can tell a machine from a wall.
+
+     `top` is how tall it is, and leaving it out means "as tall as the room" --
+     which is what every box in this world used to be, whether it was a wall or
+     a shin-high crate. The floor was a single plane at zero and nothing had a
+     surface, so the run of crates in the yard could be walked into and never
+     stood on: measured, six run-ups and jumps at the lowest one left the
+     player at y = 0, five metres further back than they started, and the
+     ticket on top of the last one was unreachable by playing. Every harness
+     passed, because they all set the player's height by hand. */
+  World.prototype.add = function (x, z, hw, hd, tag, top) {
+    this.boxes.push({
+      x, z, hw, hd, tag: tag || null,
+      top: (top === undefined || top === null) ? Infinity : top,
+    });
     return this;
   };
 
@@ -37,11 +49,20 @@
   World.prototype.clear = function () { this.boxes.length = 0; };
 
   /* Push a circle out of everything it overlaps. Mutates `p` (an object with x
-     and z) and returns true if it moved. */
-  World.prototype.resolve = function (p, radius) {
+     and z) and returns true if it moved.
+
+     `feet` is how high off the floor the circle is and `step` how big a lip it
+     can walk up without jumping. Anything whose top is at or below feet + step
+     is not in the way: you are above it, or about to be. Both default to zero,
+     which is the old behaviour -- everything solid, nothing climbable -- and
+     is what the crowd still uses, because a stranger who can climb the freight
+     is a stranger on the roof. */
+  World.prototype.resolve = function (p, radius, feet, step) {
+    const clears = (feet || 0) + (step || 0) + 1e-4;
     let moved = false;
     for (let pass = 0; pass < 2; pass++) {
       for (const b of this.boxes) {
+        if (b.top <= clears) continue;
         const dx = p.x - b.x;
         const dz = p.z - b.z;
         const px = b.hw + radius - Math.abs(dx);
@@ -75,6 +96,32 @@
   World.prototype.setBounds = function (minX, minZ, maxX, maxZ) {
     this.bounds = { minX, minZ, maxX, maxZ };
     return this;
+  };
+
+  /* The surface under a circle: the top of the highest box it is standing over
+     that is not above its head.
+
+     `ceiling` is as high as a surface may be and still count as something you
+     could be on -- the feet plus the step height while walking, or the feet
+     alone while falling, so a jump lands on a crate rather than snapping to
+     the top of the wall behind it. Nothing under it is the floor, at zero. */
+  World.prototype.groundAt = function (x, z, radius, ceiling) {
+    let best = 0;
+    const lip = ceiling === undefined ? Infinity : ceiling;
+    for (const b of this.boxes) {
+      if (b.top === Infinity || b.top <= best || b.top > lip) continue;
+      /* Supported while most of your feet are on it.
+
+         Measured to the box's own edge, a gap of a few centimetres between two
+         crates is a hole you fall down: at the middle of it you are over
+         neither, and the climb ends. Measured to a full circle round you, you
+         hover a third of a metre past every edge. Most of the circle is the
+         answer both ways. */
+      if (Math.abs(x - b.x) > b.hw + radius * 0.8) continue;
+      if (Math.abs(z - b.z) > b.hd + radius * 0.8) continue;
+      best = b.top;
+    }
+    return best;
   };
 
   /* Does this axis-aligned box touch anything already here?

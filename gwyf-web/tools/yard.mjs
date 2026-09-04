@@ -89,63 +89,15 @@ const gotOut = await page.evaluate(async () => {
 });
 check('you can walk out of it', gotOut > 1.5, gotOut.toFixed(1) + ' m in three seconds');
 
-console.log('\nthe parkour has something on top of it');
-const climbed = await page.evaluate(() => {
-  const st = GWShell.player.state, lv = GWShell.level;
-  const top = lv.jumps[lv.jumps.length - 1];
-  // On top of it and a step back, which is the only place the ticket can be
-  // taken from -- standing at the foot of the last box must not be enough.
-  st.pos.set(top.x, st.pos.y, top.z - top.d / 2 - 0.5);
-  st.y = top.h;
-  const a = (lv.anchors || []).find((x) => x.action === 'prize');
-  if (!a) return null;
-  st.yaw = Math.atan2(-(a.position.x - st.pos.x), -(a.position.z - st.pos.z));
-  st.viewYaw = st.yaw;
-  return { tickets: GWShell.store.meta.tickets, height: top.h };
-});
-check('the top box is a real climb', climbed && climbed.height > 2,
-  climbed ? climbed.height + ' m' : 'no prize anchor');
-/* Wait to be standing on it, not a fixed number of milliseconds.
+/* The climb itself is not tested here any more.
 
-   Dropping the player onto the top box leaves them mid-air for a frame or
-   two, and the ticket is refused below the box's height -- which is the whole
-   point of it. A fixed wait raced that: the same run passed and failed on
-   alternate goes because sometimes the press landed while they were still
-   falling. */
-const landed = await page.waitForFunction((h) => {
-  const st = GWShell.player.state;
-  return st.grounded && st.y > h - 0.05;
-}, climbed.height, { timeout: 8000 }).then(() => true).catch(() => false);
-check('and you land on top of it', landed);
-// And wait for the frame to notice, the same way useFixture does: pressing E
-// before `nearest` has caught up is a keypress into an empty room.
-const inReach = await page.waitForFunction(() => {
-  const n = GWShell.player.nearest;
-  return !!(n && n.anchor && n.anchor.action === 'prize');
-}, null, { timeout: 8000 }).then(() => true).catch(() => false);
-check('and the ticket is in reach from up there', inReach);
-await page.keyboard.press('e');
-await page.waitForTimeout(500);
-const after = await page.evaluate(() => GWShell.store.meta.tickets);
-check('taking the ticket pays a ticket', after === climbed.tickets + 1,
-  climbed.tickets + ' -> ' + after);
-await page.keyboard.press('e');
-await page.waitForTimeout(400);
-const twice = await page.evaluate(() => GWShell.store.meta.tickets);
-check('and only once a day', twice === after, String(twice));
-
-const fromBelow = await page.evaluate(async () => {
-  const st = GWShell.player.state, lv = GWShell.level;
-  const top = lv.jumps[lv.jumps.length - 1];
-  GWShell.store.s.prizeTakenOn = -1;            // make it available again
-  const before = GWShell.store.meta.tickets;
-  st.pos.set(top.x, st.pos.y, top.z - top.d / 2 - 0.5);
-  st.y = 0;                                      // on the carpet, not the crate
-  GWShell.interact();
-  return { before, after: GWShell.store.meta.tickets };
-});
-check('and not from the floor below it', fromBelow.after === fromBelow.before,
-  fromBelow.before + ' -> ' + fromBelow.after);
+   It used to be: put the player on top of the last crate by setting their
+   height directly, then press E. That passed for months while nothing in the
+   world had a top and the jump could not clear the lowest crate -- a test that
+   arranges the state a feature produces instead of producing it proves only
+   that the state exists. tools/climb.mjs walks up the stack with the keys and
+   takes the ticket at the end of it, which is the only version of this worth
+   running. */
 
 console.log('\nthe limo takes you to the tower');
 await useFixture('shark');
