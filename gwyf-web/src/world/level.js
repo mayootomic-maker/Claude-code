@@ -54,15 +54,39 @@
      Dark shell, bright carpet: the room should recede and the lit tables should
      carry the eye. An earlier pass had walls only a little darker than the
      carpet and a floor came out as one smear with the machines lost in it. */
+  /* `carpet` is four colours, in this order: the ground, the two motif colours
+     that have to fight each other, and a light one for the pips. They are read
+     off the original's own screenshots -- every interior shot of it has a
+     four-or-more-colour carpet, and the giveaway is that the medallion colour
+     is never a tint of the ground. A ground with its own accent stroked over
+     it at low alpha is a texture; a carpet is several colours arguing. */
   const THEME = {
-    // Floor 0 -- the classic floor. Paisley red-and-gold carpet, maroon walls.
-    lobby: { carpet: '#b03a52', wall: 0x35131f, trim: 0xe0ad46, neon: 0xffbf6b, ceiling: 0x160810 },
-    // Floor 1 -- the black-light room. Magenta and cyan over purple concrete.
-    velvet: { carpet: '#5d2e79', wall: 0x2b0e42, trim: 0x2ee6ff, neon: 0xff3fd0, ceiling: 0x120520 },
-    // Floor 2 -- the marble atrium. Pale stone, glass, teal shadow, gold trim.
-    vault: { carpet: '#9fb6b2', wall: 0x16283c, trim: 0xdfcb94, neon: 0x8fe6ff, ceiling: 0x0c1524 },
-    // Floor 3 -- the gold rotunda. Red-and-gold mosaic under a gilt ceiling.
-    penthouse: { carpet: '#8a2731', wall: 0x2a1410, trim: 0xe0b060, neon: 0xffd98a, ceiling: 0x180b08 },
+    // Floor 0 -- the classic floor. Red and gold medallions over navy, which is
+    // the combination on nearly every real casino floor and on most of theirs.
+    lobby: {
+      carpet: ['#231430', '#c1452c', '#e0a039', '#f0d9a8'],
+      wall: 0x35131f, trim: 0xe0ad46, neon: 0xffbf6b, ceiling: 0x160810,
+    },
+    // Floor 1 -- the black-light room. Magenta and cyan over deep violet.
+    velvet: {
+      carpet: ['#2a1148', '#d040ad', '#2ec4de', '#ffcdf2'],
+      wall: 0x2b0e42, trim: 0x2ee6ff, neon: 0xff3fd0, ceiling: 0x120520,
+    },
+    // Floor 2 -- the marble atrium. Blue and stone, with the gold kept for the
+    // small stuff: this is the one floor that is not meant to shout.
+    vault: {
+      // The one floor that is not a medallion field: cards, dice and chips
+      // strewn on navy. Four floors of the same weave recoloured is how the
+      // first pass at this building came out reading as one room four times.
+      carpet: ['#141f38', '#c8365c', '#2fb5c4', '#eef2f6'], carpetKind: 'novelty',
+      wall: 0x16283c, trim: 0xdfcb94, neon: 0x8fe6ff, ceiling: 0x0c1524,
+    },
+    // Floor 3 -- the gold rotunda. Orange and gold over oxblood, one step
+    // hotter than the ground floor because it is the same room with money.
+    penthouse: {
+      carpet: ['#3a120f', '#d4632a', '#e8b04a', '#f6e2b0'],
+      wall: 0x2a1410, trim: 0xe0b060, neon: 0xffd98a, ceiling: 0x180b08,
+    },
   };
 
   /* Big enough for their machines with room to walk between them.
@@ -120,7 +144,7 @@
 
     /* --- shell ------------------------------------------------------------ */
 
-    const carpetTex = GWStage.carpetTexture(theme.carpet);
+    const carpetTex = GWStage.carpetTexture(theme.carpet, theme.carpetKind);
     carpetTex.repeat.set(W / 3, D / 3);
     const carpet = new THREE.Mesh(
       track(new THREE.PlaneGeometry(W, D)),
@@ -340,6 +364,36 @@
     const inlayMat = track(new THREE.MeshStandardMaterial({
       color: theme.trim, roughness: 0.62, metalness: 0.5,
     }));
+    /* A lit lampshade, and a leaf.
+
+       Two more material buckets, which is two more draw calls a floor, and
+       they buy the two props that are in every shot of the original and none
+       of this build's: a side table with a lamp on it, and a potted palm. The
+       lamps matter more than they sound -- what a room like this is actually
+       made of, between the tables, is a scatter of small warm pools on a loud
+       carpet, and a floor lit only from the ceiling has none of them.
+
+       The shade is emissive rather than lit, because a shade with a bulb in it
+       is brighter than anything falling on it; the pool underneath is a real
+       point light asked for at the same spot. */
+    const shadeMat = track(new THREE.MeshStandardMaterial({
+      color: theme.neon, roughness: 0.9,
+      emissive: new THREE.Color(theme.neon), emissiveIntensity: 0.75,
+    }));
+    const leafMat = track(new THREE.MeshStandardMaterial({
+      color: 0x3f7a4a, roughness: 0.85,
+    }));
+    const trunkMat = track(new THREE.MeshStandardMaterial({
+      color: 0x6b5636, roughness: 0.9,
+    }));
+    const soilMat = track(new THREE.MeshStandardMaterial({
+      color: 0x2b2118, roughness: 1.0,
+    }));
+    // The face of a machine's name board: near black, so the lettering on it
+    // is the brightest thing on the wall of the room rather than the dimmest.
+    const boardMat = track(new THREE.MeshStandardMaterial({
+      color: 0x120c0a, roughness: 0.6, metalness: 0.2,
+    }));
     /* A rug, not a bald patch.
 
        A plain flat circle laid on a patterned carpet reads as a hole in the
@@ -348,8 +402,10 @@
        room's trim colour and at a tighter repeat than the walls, so it reads
        as something laid down on top rather than something missing. */
     const rugMat = track(new THREE.MeshStandardMaterial({
-      map: track(GWStage.wallTexture(
-        new THREE.Color(theme.carpet).multiplyScalar(0.42).getHex(), 'damask')),
+      // The carpet's own ground colour, with the wallpaper's tooth on it and
+      // none of its medallions. A rug laid on a loud carpet has to be quieter
+      // than what it is laid on or it does not read as laid on anything.
+      map: track(GWStage.wallTexture(new THREE.Color(theme.carpet[0]).getHex(), 'damask')),
       color: 0xffffff, roughness: 0.98,
     }));
     rugMat.userData.uvMetres = 0.85;
@@ -403,12 +459,112 @@
       sign(text, x, y, z, rot) {
         group.add(sign(text, x, y, z, theme.neon, 2.4, rot));
       },
+
+      /* A side table with a lamp on it, and the pool of light it throws.
+
+         Modelled rather than faked with a sprite because you walk past these
+         at arm's length: a billboard turns to face you and gives the game
+         away at two metres. Four pieces -- top, stem, shade, and a light --
+         and every one of them folds into a bucket that already exists. */
+      lamp(x, z) {
+        slab(x, z, 0.76, 0.76, 0.5, 0, railMat, 'table');
+        mason.deco(x, z, 0.84, 0.84, 0.06, 0.5, trimMat);
+        mason.deco(x, z, 0.1, 0.1, 0.38, 0.56, trimMat);
+        const shade = new THREE.Mesh(
+          track(new THREE.CylinderGeometry(0.16, 0.3, 0.3, 12, 1, true)), shadeMat);
+        shade.position.set(x, 1.05, z);
+        group.add(shade);
+        // Short and weak: this is a pool on the carpet beside you, not another
+        // ceiling light. Ten of them at ceiling strength would flatten a floor.
+        sites.points.push({ at: new THREE.Vector3(x, 1.0, z),
+                            colour: theme.neon, intensity: 5, distance: 4.5 });
+      },
+
+      /* A potted palm on a plinth.
+
+         Fronds as six thin tapered boxes fanned out and tipped over, which at
+         a distance is a palm and up close is unmistakably a game's palm --
+         which is what the original's are too. */
+      palm(x, z) {
+        slab(x, z, 0.8, 0.8, 0.62, 0, trimMat, 'planter');
+        // Soil, not a lid. The first pass capped the pot in the wall panel's
+        // material and it read as a closed box with a stick coming out of it.
+        mason.deco(x, z, 0.7, 0.7, 0.1, 0.6, soilMat);
+        mason.deco(x, z, 0.16, 0.16, 1.1, 0.66, trunkMat);
+        /* Two tiers of fronds, seven and five, the lower one longer and
+           hanging further over. One ring of six came out as a green plus sign
+           from anywhere but directly underneath -- a palm is a canopy, and a
+           canopy needs a second row to have any depth from eye level. */
+        for (const tier of [{ n: 7, y: 1.6, len: 1.25, tip: 0.62, r: 0.42 },
+                            { n: 5, y: 1.82, len: 0.95, tip: 0.28, r: 0.3 }]) {
+          const frond = track(new THREE.BoxGeometry(0.14, 0.05, tier.len));
+          for (let i = 0; i < tier.n; i++) {
+            const a = (i / tier.n) * Math.PI * 2 + tier.y;
+            const leaf = new THREE.Mesh(frond, leafMat);
+            leaf.position.set(x + Math.sin(a) * tier.r, tier.y, z + Math.cos(a) * tier.r);
+            leaf.rotation.y = a;
+            leaf.rotation.x = tier.tip;    // tipped over, the way a frond hangs
+            group.add(leaf);
+          }
+        }
+      },
+
+      /* Framed art, hung flat on a wall.
+
+         The walls have a pattern on them now and nothing else, and a papered
+         wall with nothing hung on it reads as a corridor. `towards` is the
+         inward normal, so a frame on the north wall faces south without the
+         caller working out a rotation. */
+      art(x, y, z, w, h, towards) {
+        const rot = Math.atan2(towards.x, towards.z);
+        const back = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, 0.08)), trimMat);
+        back.position.set(x, y, z);
+        back.rotation.y = rot;
+        group.add(back);
+        const face = new THREE.Mesh(
+          track(new THREE.BoxGeometry(w - 0.16, h - 0.16, 0.1)), glassMat);
+        face.position.set(x + towards.x * 0.02, y, z + towards.z * 0.02);
+        face.rotation.y = rot;
+        group.add(face);
+      },
     };
 
     const layout = global.GWZones.plan({
       w: W, d: D, rng, floorId: floorDef.id, lift,
     });
     for (const cell of layout.cells) global.GWZones.build(cell, mason);
+
+    /* Something hung on the walls.
+
+       The walls are papered now and carry nothing else, and a papered wall
+       with nothing on it reads as a corridor whichever way you turn. Every
+       interior shot of the original has framed pictures and lit signs along
+       the walls between the machines; this hangs a frame on every third panel
+       of the run, which comes out at roughly one every nine metres.
+
+       Lit, deliberately: they use the same emissive glass the alcoves and the
+       bar shelves do, so a wall in the dark half of a room still has a bright
+       rectangle on it rather than a slightly different dark. */
+    const artRuns = [
+      { x1: -halfW + 1.5, z1: -halfD + skin, x2: halfW - 1.5, z2: -halfD + skin, to: { x: 0, z: 1 } },
+      { x1: -halfW + 1.5, z1: halfD - skin, x2: halfW - 1.5, z2: halfD - skin, to: { x: 0, z: -1 } },
+      { x1: -halfW + skin, z1: -halfD + 1.5, x2: -halfW + skin, z2: halfD - 1.5, to: { x: 1, z: 0 } },
+      { x1: halfW - skin, z1: -halfD + 1.5, x2: halfW - skin, z2: halfD - 1.5, to: { x: -1, z: 0 } },
+    ];
+    for (const run of artRuns) {
+      const along = Math.hypot(run.x2 - run.x1, run.z2 - run.z1);
+      const ux = (run.x2 - run.x1) / along, uz = (run.z2 - run.z1) / along;
+      const count = Math.max(1, Math.round(along / 3.0));
+      for (let i = 1; i < count; i += 3) {
+        const t = (i + 0.5) * (along / count);
+        const ax = run.x1 + ux * t + run.to.x * 0.14;
+        const az = run.z1 + uz * t + run.to.z * 0.14;
+        // Never over the lift doors: there is a sign there already, and two
+        // things fighting for the same wall is how the arrival shot got busy.
+        if (Math.abs(az - lift.z) < liftD && Math.abs(ax - lift.x) < liftW) continue;
+        mason.art(ax, 2.15, az, 1.5, 1.0, run.to);
+      }
+    }
 
     /* --- machine anchors -------------------------------------------------- */
 
@@ -500,6 +656,108 @@
         // half-depth along the direction it faces, plus room for a person.
         stand: standPoint(spot, box),
       });
+      marquee(gameId, spot, box);
+    }
+
+    /* The name board over a machine.
+
+       Every machine in the original wears its name in fat letters on a lit
+       header a metre wide, and it is doing two jobs at once: it is most of
+       what the machines look like, and it is how you decide where to walk. A
+       floor of unlabelled cabinets means crossing the room to find out what
+       something is, which is exactly the walk the five-minute clock cannot
+       afford.
+
+       Hung at 2.9 m -- over the tallest cabinet, under the ceiling beams --
+       and turned to face the way the machine does, so it reads from the side
+       of it you play from. The board and its light strip fold into buckets
+       that already exist; only the lettering costs a draw call, because every
+       one of them says something different. */
+    function marquee(gameId, spot, box) {
+      const def = global.GWGames.get(gameId);
+      if (!def || !def.name) return;
+      const wide = Math.min(3.4, Math.max(2.0, (Math.max(box.hw, box.hd) * 2) * 0.8));
+      const fx = -Math.sin(spot.rot), fz = -Math.cos(spot.rot);
+      const y = 2.9;
+      /* Dark board, bright letters.
+
+         The first version made the whole board out of the room's brass and
+         put the room's neon lettering on it, which is gold on gold: from six
+         metres away it read as a blank gold rectangle floating over the
+         table. Every marquee in the original is the other way round -- a dark
+         face with the name glowing off it -- and the brass belongs to the
+         frame around it. */
+      const backing = new THREE.Mesh(
+        track(new THREE.BoxGeometry(wide, 0.78, 0.16)), boardMat);
+      backing.position.set(spot.x, y, spot.z);
+      backing.rotation.y = spot.rot;
+      group.add(backing);
+      /* The frame is a border, not a backing plate.
+
+         A brass slab the size of the board and set a centimetre behind it is
+         invisible from the front and, from anywhere behind the machine, is a
+         cream rectangle the size of a door hanging in the room with nothing
+         written on it. Four bars round the edge instead: the same brass lip
+         from the front, and from behind you see the dark board. */
+      for (const bar of [{ w: wide + 0.16, h: 0.09, dy: 0.44, dx: 0 },
+                         { w: wide + 0.16, h: 0.09, dy: -0.44, dx: 0 },
+                         { w: 0.09, h: 0.98, dy: 0, dx: wide / 2 + 0.04 },
+                         { w: 0.09, h: 0.98, dy: 0, dx: -wide / 2 - 0.04 }]) {
+        const piece = new THREE.Mesh(
+          track(new THREE.BoxGeometry(bar.w, bar.h, 0.2)), trimMat);
+        piece.position.set(spot.x + Math.cos(spot.rot) * bar.dx, y + bar.dy,
+                           spot.z - Math.sin(spot.rot) * bar.dx);
+        piece.rotation.y = spot.rot;
+        group.add(piece);
+      }
+      // A lit lip under the lettering, which is what makes it a marquee rather
+      // than a notice: the letters are bright, the board under them is brass.
+      const lip = new THREE.Mesh(track(new THREE.BoxGeometry(wide * 0.96, 0.07, 0.2)), glowMat);
+      lip.position.set(spot.x, y - 0.44, spot.z);
+      lip.rotation.y = spot.rot;
+      group.add(lip);
+      /* Turned to face the way the machine does, which is `rot` plus half a
+         turn.
+
+         A machine at `rot` faces its own -Z; a plane at `rotation.y = rot`
+         faces +Z rotated by the same amount, which is exactly backwards. The
+         geometry is single sided, so the first version hung a board over every
+         table with the lettering pointed at the wall behind it -- and what you
+         saw from the floor was a blank rectangle, on all fourteen of them.
+         The board was gold on gold before that, which is why it took a second
+         look to see that the letters were not merely low-contrast: they were
+         not facing the room at all. */
+      /* Hung, not floating.
+
+         Two metres of air between a low table and its board reads as a sign
+         someone left suspended in the room. A pair of rods to the ceiling is
+         what every hung sign in the original has, and it costs nothing: they
+         fold into the trim bucket with the frame. */
+      for (const side of [-1, 1]) {
+        const rx = Math.cos(spot.rot) * side * wide * 0.4;
+        const rz = -Math.sin(spot.rot) * side * wide * 0.4;
+        const rod = new THREE.Mesh(
+          track(new THREE.BoxGeometry(0.06, WALL_H - y - 0.39, 0.06)), trimMat);
+        rod.position.set(spot.x + rx, (y + 0.39 + WALL_H) / 2, spot.z + rz);
+        group.add(rod);
+      }
+      /* Lettered on both faces.
+
+         It is hung from the ceiling over the middle of the room rather than
+         bolted to a cabinet, so half the people who see it are behind it --
+         and a hanging sign that is blank from one side is a sign you have to
+         walk round to read. The original's are legible from wherever you are
+         standing, which is the entire point of putting the name up there. */
+      for (const face of [1, -1]) {
+        group.add(sign(def.name.toUpperCase(),
+                       spot.x + fx * 0.12 * face, y, spot.z + fz * 0.12 * face,
+                       theme.neon, wide * 0.88,
+                       face > 0 ? spot.rot + Math.PI : spot.rot));
+      }
+      // And a light on it, so a board on the dark side of a room is legible
+      // from the middle of it rather than a slightly paler rectangle.
+      sites.points.push({ at: new THREE.Vector3(spot.x + fx * 0.9, y + 0.5, spot.z + fz * 0.9),
+                          colour: theme.neon, intensity: 6, distance: 5 });
     }
 
     function standPoint(spot, box) {
@@ -637,6 +895,11 @@
       name: floorDef.name,
       dispose() {
         for (const thing of disposables) if (thing.dispose) thing.dispose();
+        group.traverse((o) => {
+          if (o.userData && o.userData.owns) {
+            for (const thing of o.userData.owns) thing.dispose();
+          }
+        });
       },
     };
   }
@@ -675,7 +938,15 @@
      a map is skipped by the fold, and a room that cannot fold is four hundred
      draw calls. This costs one more attribute on geometry that is being rebuilt
      anyway. */
-  const SHADE_LOW = 0.58;      // at the skirting
+  /* 0.70 rather than 0.58 at the skirting.
+
+     The fold darkens a merged surface towards the floor so a four-metre panel
+     is not one flat value, and at 0.58 the bottom metre of every wall in the
+     building came out as good as black -- which is where most of the two
+     percent of pure black measured against the original's own screenshots was
+     sitting, against under one percent in theirs. The gradient is what the
+     shade is for; the darkest end of it being black is not. */
+  const SHADE_LOW = 0.70;      // at the skirting
   const SHADE_HIGH = 1.14;     // at the ceiling
   const SHADE_GRAIN = 0.05;    // per-vertex, so a big flat panel is not uniform
 
@@ -844,10 +1115,19 @@
     g.fillText(text, 256, 70);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(width, width * 0.25),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true })
-    );
+    const geo = new THREE.PlaneGeometry(width, width * 0.25);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    /* What this sign owns, so leaving the floor can give it back.
+
+       A sign is the one thing in the building that cannot share a material:
+       every one of them says something different, so every one is its own
+       canvas, texture, geometry and material. None of it was ever freed --
+       which cost a couple of megabytes a floor while there were six signs in a
+       room, and became worth caring about the moment every machine grew a name
+       board on both faces and the count went from six to thirty-odd. The level
+       sweeps for this on the way out. */
+    mesh.userData.owns = [tex, geo, mat];
     mesh.position.set(x, y, z);
     /* Point it at whoever reads it.
 
@@ -886,7 +1166,12 @@
        to walk over there. */
     const SPLIT = -5.0;
     const DOOR_HALF = 3.2;          // half the width of the doorway
-    const theme = { carpet: '#8a6a2a', wall: 0x161010, trim: 0x9a7333,
+    /* Brown and gold rather than the floors' reds: the lobby is the one room
+       you see from the yard, through a doorway, and it has to read as warm
+       from out there in the cold. Same four-colour set as the floors -- the
+       carpet is what says which room you are in before anything else does. */
+    const theme = { carpet: ['#2b1c10', '#a8762a', '#d9a94e', '#f0dcae'],
+                    wall: 0x161010, trim: 0x9a7333,
                     neon: 0xffc978, ceiling: 0x0b0807 };
     /* The yard is lit by cold work lights and painted in concrete, not velvet.
 
@@ -907,7 +1192,15 @@
 
     /* --- materials, one set for each room -------------------------------- */
 
-    const wallMat = track(new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 0.85 }));
+    /* Papered, the way the floors are. The lobby was the last flat-colour room
+       in the building and it is the one you see most: every day starts and
+       ends here, and twice a day you look at it through a doorway from the
+       yard, where a flat wall reads as the inside of a box. */
+    const wallMat = track(new THREE.MeshStandardMaterial({
+      map: track(GWStage.wallTexture(theme.wall, 'damask')),
+      color: 0xffffff, roughness: 0.85,
+    }));
+    wallMat.userData.uvMetres = 1.15;
     const trimMat = track(new THREE.MeshStandardMaterial({
       color: theme.trim, metalness: 0.8, roughness: 0.35,
     }));
@@ -1227,6 +1520,50 @@
       slab(cx, cz, 0.9, 0.9, 0.18, 0, trimMat, null);
       slab(cx, cz, 0.9, 0.9, 0.18, WALL_H - 0.18, trimMat, null);
     }
+
+    /* The chandelier.
+
+       The middle of the lobby was a rug, a table and three benches under a
+       ceiling with nothing on it, and the room read as a corridor with
+       furniture in the way. Every shot of the original's lobby is built around
+       one of these: a wide scalloped fitting hung low over the middle with the
+       lamps under it, so the room has a top as well as a floor and there is
+       somewhere obvious for the six of you to stand.
+
+       Hung at 3.6 m, which is above a jump's apex from the table below it and
+       comfortably over head height, so it is a thing you look at rather than a
+       thing you walk into. */
+    const chandelier = new THREE.Group();
+    chandelier.position.set(lounge.x, 0, lounge.z);
+    group.add(chandelier);
+    for (let ring = 0; ring < 3; ring++) {
+      const r = 2.1 - ring * 0.42;
+      const tier = new THREE.Mesh(
+        track(new THREE.CylinderGeometry(r, r * 0.94, 0.16, 24)), trimMat);
+      tier.position.y = 3.6 + ring * 0.22;
+      chandelier.add(tier);
+      const rim = new THREE.Mesh(
+        track(new THREE.TorusGeometry(r, 0.045, 6, 28)), glowMat);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.y = 3.6 + ring * 0.22 - 0.09;
+      chandelier.add(rim);
+    }
+    // The drops: six cones hanging under the bottom tier, and the stem up to
+    // the ceiling so it is hung rather than floating.
+    const dropGeo = track(new THREE.ConeGeometry(0.17, 0.62, 10));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const drop = new THREE.Mesh(dropGeo, glowMat);
+      drop.position.set(Math.cos(a) * 1.55, 3.22, Math.sin(a) * 1.55);
+      drop.rotation.x = Math.PI;      // point down, the way a bulb hangs
+      chandelier.add(drop);
+    }
+    const stem = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(0.09, 0.09, WALL_H - 4.0, 8)), trimMat);
+    stem.position.y = (WALL_H + 4.0) / 2;
+    chandelier.add(stem);
+    sites.points.push({ at: new THREE.Vector3(lounge.x, 3.3, lounge.z),
+                        colour: theme.neon, intensity: 34, distance: 16 });
 
     /* A rope line from the threshold to the shark's window.
 
@@ -1558,7 +1895,14 @@
       size: { w: W, d: D, height: WALL_H },
       name: 'The Yard',
       isLobby: true,
-      dispose() { for (const t of disposables) if (t.dispose) t.dispose(); },
+      dispose() {
+        for (const t of disposables) if (t.dispose) t.dispose();
+        group.traverse((o) => {
+          if (o.userData && o.userData.owns) {
+            for (const t of o.userData.owns) t.dispose();
+          }
+        });
+      },
     };
   }
 

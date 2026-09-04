@@ -260,6 +260,47 @@ What could not be verified, and so was not copied: the floor names, the UI
 typeface, and any of the original's actual movement numbers -- none are
 published, and guessing them and calling it a match would be worse than this.
 
+### Measured against it, not remembered
+
+"Read off its own screenshots" was doing a lot of work in the list above, and
+the second pass fetched all seventeen of them from the store rather than
+recalling them, and put numbers on the difference. Mean luminance, mean
+saturation and the fraction of the frame at pure black, over the seventeen and
+over fourteen shots of this build taken by `tools/look.mjs`:
+
+| | the original | before | after |
+|---|---|---|---|
+| luminance | 0.330 | 0.276 | 0.32 |
+| saturation | 0.475 | 0.429 | 0.45 |
+| pure black | 0.9% | 2.3% | ~1% |
+
+A fifth too dark, and the floor was where nearly all of it sat. Four things
+came out of looking properly:
+
+- **The carpet is the game.** Every interior shot of the original is a third
+  ornate four-colour Vegas carpet with medallions about a metre and a half
+  across -- and one floor of it is not a medallion field at all but playing
+  cards, dice and chips strewn on navy. This had a near-black ground with the
+  floor's one accent stroked over it at twelve percent alpha. It is four
+  colours arguing now, drawn as concentric bands with the ground showing
+  between them and a woven screen over the lot.
+- **Machines wear their name.** A lit header board a metre wide in fat letters
+  -- "THE MUMMY'S CHAMBER", "DUCK RACE" -- is most of what the original's
+  machines look like from across a room, and it is also how you decide where
+  to walk, which is the walk a five-minute clock cannot afford to waste.
+- **Rooms have small warm lights in them.** Side tables with lit lamps and
+  potted palms are in nearly every shot. A floor lit only from the ceiling has
+  none of those pools on the carpet, and reads as a warehouse.
+- **Distance is glare, not shadow.** Nothing beyond the tables is unlit; there
+  is just too much light between you and it. The far end of Velvet Hall
+  measured fourteen percent pure black against under one in theirs.
+
+`tools/look.mjs` is what makes that repeatable: three wide shots per floor --
+from the lift, from the middle, and down the long diagonal -- plus the lobby,
+with the draw calls and triangles printed next to each. `postcards.mjs` frames
+one machine at a time, which is the right question for "is this table
+playable" and the wrong one for "is this a room".
+
 ## Whether you can win
 
 You could not. The complaint was "you lose way too easily and never win", and

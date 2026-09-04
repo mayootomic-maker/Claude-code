@@ -130,12 +130,18 @@
       m.inlay(cell.x, cell.z, Math.min(cell.w, cell.d) * 0.42);
       m.light(cell.x, cell.z, 9, 1.35);
       const f = facing(cell.rot);
-      // A pair of planters, so the space reads as a foyer rather than a gap.
+      /* A pair of palms, and a lamp beside each.
+
+         These were two boxes with a lid on, described as planters and reading
+         as two boxes. A planter with nothing growing in it is scenery that
+         announces what it was meant to be; every foyer in the original has the
+         palm, and the lamp beside it is what puts a warm pool on the carpet at
+         the moment you step out of the lift. */
       for (const side of [-1, 1]) {
         const px = cell.x + f.rx * side * cell.w * 0.3;
         const pz = cell.z + f.rz * side * cell.d * 0.3;
-        m.slab(px, pz, 0.9, 0.9, 0.55, 0, m.mats.trim, 'planter');
-        m.deco(px, pz, 1.0, 1.0, 0.12, 0.55, m.mats.panel);
+        m.palm(px, pz);
+        m.lamp(px + f.fx * 1.6, pz + f.fz * 1.6);
       }
       m.sign('THE FLOOR', cell.x + f.fx * cell.d * 0.36, 2.5,
              cell.z + f.fz * cell.d * 0.36, cell.rot);
@@ -240,6 +246,12 @@
         m.slab(px, pz, 0.42, 0.42, 0.72, 0, m.mats.rail, 'stool');
         m.deco(px, pz, 0.5, 0.5, 0.09, 0.72, m.mats.trim);
       }
+      // A lamp at each end of the counter, which is where the original puts
+      // them and why its bars glow rather than sit in the ceiling's light.
+      for (const end of [-1, 1]) {
+        m.lamp(bx + f.rx * (len / 2 + 0.9) * end + f.fx * 0.2,
+               bz + f.rz * (len / 2 + 0.9) * end + f.fz * 0.2);
+      }
       m.sign('BAR', sx, 2.35, sz, cell.rot);
       // A cabinet at the end of the counter. Every casino puts one there, and
       // it stops a bar cell being a room with nothing in it to do.
@@ -288,6 +300,11 @@
       for (const side of [-1, 1]) {
         m.slab(cell.x + f.rx * side * 1.6 + f.fx * 0.5,
                cell.z + f.rz * side * 1.6 + f.fz * 0.5, 0.7, 0.7, 0.44, 0, m.mats.rail, 'chair');
+        // A lamp at each end of the bench. A lounge lit only from the ceiling
+        // is a waiting area; the pair of pools is what makes it somewhere to
+        // sit, and it is the lighting every lounge in the original has.
+        m.lamp(cell.x + f.rx * side * (cell.w * 0.24) - f.fx * cell.d * 0.2,
+               cell.z + f.rz * side * (cell.w * 0.24) - f.fz * cell.d * 0.2);
       }
       // Two cabinets on the open side. A lounge with one is a waiting room; a
       // small floor also needs the slots, or its hand ends up out on the
@@ -317,6 +334,11 @@
       }
       // An inlaid strip down the middle: the route reads from the floor.
       m.strip(cell.x, cell.z, across ? 2.0 : len, across ? len : 2.0);
+      // A palm at each end of the run, standing in the gap between the last
+      // pair of columns. A colonnade of bare columns is a car park.
+      for (const end of [-1, 1]) {
+        m.palm(cell.x + f.rx * len * end * 0.56, cell.z + f.rz * len * end * 0.56);
+      }
       // Machines in the bays, alternating sides.
       for (let i = 0; i < n - 1; i++) {
         const t = (i + 1) / n - 0.5;

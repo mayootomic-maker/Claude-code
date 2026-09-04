@@ -119,8 +119,23 @@
     }
     let sites = { points: [], spots: [] };
 
-    /* Deal the pool to the nearest sites. Distance is measured to the camera,
-       which in world mode is the player's head. */
+    /* Deal the pool to the sites that will actually light the frame.
+
+       Nearest-first was right while every site was a ceiling light of the same
+       strength. It stopped being right the moment the rooms grew table lamps
+       and machine name boards: those are deliberately weak and short ranged --
+       intensity five over four metres, against twenty-two over fourteen for
+       the ceiling -- and there are now three times as many of them. Stand at a
+       table and all six slots go to lamps you happen to be beside, the ceiling
+       grid loses every slot it had, and the room behind you goes out. Which is
+       a floor that gets darker the closer you walk to something lit.
+
+       So the key is what a site will contribute here rather than how close it
+       is: intensity over distance squared, the way a point light actually
+       falls off, and nothing beyond its own stated range counts at all. A lamp
+       at your elbow still wins -- it is genuinely the brightest thing near you
+       -- but a hall light twelve metres off now beats a lamp thirty metres
+       away whose light does not reach you. */
     const dealt = [];
     function dealLights() {
       for (const kind of ['points', 'spots']) {
@@ -128,14 +143,18 @@
         const slots = pool[kind];
         dealt.length = 0;
         for (const site of list) {
-          site._d = camera.position.distanceToSquared(site.at);
+          const d2 = camera.position.distanceToSquared(site.at);
+          const range = site.distance || 12;
+          site._d = d2 > range * range ? 0 : site.intensity / (d2 + 1);
           dealt.push(site);
         }
-        dealt.sort((a, b) => a._d - b._d);
+        dealt.sort((a, b) => b._d - a._d);
         for (let i = 0; i < slots.length; i++) {
           const slot = slots[i];
           const site = dealt[i];
-          if (!site) { slot.intensity = 0; continue; }
+          // A site out of its own range contributes nothing here, so the slot
+          // is better off dark than spent on a light you cannot see.
+          if (!site || site._d <= 0) { slot.intensity = 0; continue; }
           slot.position.copy(site.at);
           slot.color.set(site.colour);
           slot.intensity = site.intensity;
@@ -539,48 +558,282 @@
      is the one number that sets how the whole place feels to stand in. */
   const FLOOR_Y = -0.80;
 
-  function carpetTexture(accent) {
-    const size = 256;
+  /* The carpet.
+
+     This is the one surface the game is recognised by. Every interior shot of
+     the original has it filling the bottom third of the frame: an ornate,
+     high-contrast, four-colour Vegas carpet with medallions about a metre and
+     a half across -- the kind woven loud on purpose, because a pattern that
+     busy hides everything that gets spilled on it and gives a room with no
+     windows something to be.
+
+     What was here before was a near-black ground with the floor's accent
+     stroked over it at twelve percent. Measured against seventeen of the
+     original's own screenshots, this build came out a fifth darker overall,
+     and the floor was where nearly all of that sat: the largest surface in
+     every room was the emptiest.
+
+     Four colours, not one, because a single accent over a dark ground is a
+     texture and this needs to be a carpet: a ground, two motif colours that
+     have to fight each other, and a light for the small stuff. Drawn at 512
+     over a three-metre tile, so a medallion lands at roughly the size it does
+     in the original rather than as a lozenge you have to crouch to see. */
+  const carpetCache = new Map();
+  function carpetTexture(palette, kind) {
+    const p = Array.isArray(palette)
+      // One colour still works, for anything that has not been given a set:
+      // the ground goes dark, the motifs take the colour at two weights.
+      ? palette
+      : [shift(palette, 0.32), palette, shift(palette, 1.5), shift(palette, 2.2)];
+    const key = p.join('|') + '|' + (kind || 'medallion');
+    if (carpetCache.has(key)) return carpetCache.get(key);
+
+    const size = 512;
     const c = global.document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d');
-    g.fillStyle = '#140d0c';
+    g.fillStyle = p[0];
     g.fillRect(0, 0, size, size);
 
-    // A diamond lattice with a fleuron in each cell. Casino carpet is loud on
-    // purpose -- it hides everything that gets spilled on it -- and a plain
-    // dark plane reads as nothing at all.
-    g.strokeStyle = accent;
-    g.globalAlpha = 0.16;
-    g.lineWidth = 2;
-    for (let i = -1; i <= 2; i++) {
-      g.beginPath();
-      g.moveTo(i * size, 0); g.lineTo(i * size + size, size);
-      g.moveTo(i * size + size, 0); g.lineTo(i * size, size);
-      g.stroke();
+    /* A lobed rosette, drawn in polar coordinates.
+
+       Concentric rings whose radius wobbles with the angle, which is what
+       separates a carpet medallion from a gear: the lobe count differs per
+       ring so the edges never line up into spokes. */
+    if (kind === 'novelty') {
+      novelty(g, size, p);
+      return finish(c, key);
     }
-    g.globalAlpha = 0.12;
-    g.fillStyle = accent;
-    for (const [x, y] of [[size / 2, size / 2], [0, 0], [size, 0], [0, size], [size, size]]) {
+
+    /* Bands, not discs.
+
+       Filled discs largest-first was the first attempt and it came out as a
+       field of daisies: each medallion a solid blob, the lightest colour a
+       wide plate in the middle, and the ground nowhere to be seen. What the
+       original's carpets actually are is concentric *bands* with the dark
+       ground showing between them -- so the ground colour is dealt back in
+       every other ring, which is what makes a medallion instead of a stain,
+       and the lightest colour gets one thin band rather than the centre. */
+    const BANDS = [
+      { r: 1.00, c: 2 }, { r: 0.88, c: 0 }, { r: 0.80, c: 1 },
+      { r: 0.62, c: 0 }, { r: 0.54, c: 3 }, { r: 0.48, c: 1 },
+      { r: 0.30, c: 0 }, { r: 0.22, c: 2 },
+    ];
+    function rosette(cx, cy, r, p) {
+      BANDS.forEach((band, ring) => {
+        // A different lobe count per ring, so the scallops never line up into
+        // spokes -- which is the one thing that makes it read as a gear.
+        const lobes = 8 + ring * 3;
+        const wobble = 0.15 - ring * 0.013;
+        g.fillStyle = p[band.c];
+        g.beginPath();
+        for (let a = 0; a <= 96; a++) {
+          const t = (a / 96) * Math.PI * 2;
+          const rad = r * band.r * (1 + Math.sin(t * lobes) * wobble);
+          const x = cx + Math.cos(t) * rad, y = cy + Math.sin(t) * rad;
+          if (a === 0) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        g.closePath();
+        g.fill();
+      });
+    }
+
+    /* A paisley: a teardrop with a curled tail, which is the shape every one
+       of these carpets is built out of between the medallions. */
+    function paisley(cx, cy, r, turn, fill) {
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(turn);
+      g.fillStyle = fill;
       g.beginPath();
-      for (let k = 0; k < 4; k++) {
-        const a = (k / 4) * Math.PI * 2;
-        g.ellipse(x + Math.cos(a) * 26, y + Math.sin(a) * 26, 15, 8, a, 0, Math.PI * 2);
-      }
+      g.moveTo(0, -r);
+      g.bezierCurveTo(r * 0.9, -r * 0.7, r * 0.85, r * 0.35, 0, r);
+      g.bezierCurveTo(-r * 0.5, r * 0.55, -r * 0.62, -r * 0.2, 0, -r);
       g.fill();
+      g.restore();
     }
-    g.globalAlpha = 0.06;
-    g.fillStyle = '#ffffff';
-    for (let i = 0; i < 2400; i++) {
+
+    // The medallion at the middle, and quarters of one at every corner, so the
+    // tile joins into a continuous field rather than a grid of stamps.
+    rosette(size / 2, size / 2, size * 0.27, p);
+    for (const [x, y] of [[0, 0], [size, 0], [0, size], [size, size]]) {
+      rosette(x, y, size * 0.20, p);
+    }
+
+    // Paisleys on the diagonals between them, in pairs facing away from each
+    // other -- a single one reads as a smudge, two read as a pattern.
+    for (const [x, y] of [[size / 2, 0], [0, size / 2], [size, size / 2], [size / 2, size]]) {
+      for (const side of [-1, 1]) {
+        const turn = Math.atan2(size / 2 - y, size / 2 - x) + side * 0.9;
+        paisley(x + side * size * 0.075, y, size * 0.085, turn, p[2]);
+      }
+    }
+
+    // Scattered pips, on a fixed lattice rather than at random: a carpet is
+    // woven, and a random scatter reads as dirt.
+    g.fillStyle = p[3];
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        if ((i + j) % 2) continue;
+        const x = (i + 0.5) * size / 8, y = (j + 0.5) * size / 8;
+        const d = Math.hypot(x - size / 2, y - size / 2);
+        if (d < size * 0.30 || d > size * 0.44) continue;
+        g.beginPath();
+        g.arc(x, y, size * 0.012, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+
+    /* The pile.
+
+       Every one of these carpets is woven coarsely enough that the pattern is
+       visibly made of loops, and at a metre and a half a tile that reads. A
+       lattice of ground-coloured dots over everything breaks the solid bands
+       into a weave and takes about a fifth off the brightness at the same
+       time, which is most of why the first version came out shouting. */
+    g.globalAlpha = 0.4;
+    g.fillStyle = p[0];
+    for (let y = 0; y < size; y += 4) {
+      for (let x = (y / 4) % 2 ? 2 : 0; x < size; x += 4) g.fillRect(x, y, 2, 2);
+    }
+    g.globalAlpha = 1;
+
+    // And the nap, so the weave catches a lamp instead of reading as vinyl.
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = i % 2 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)';
       g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
     }
 
-    const tex = new THREE.CanvasTexture(c);
+    return finish(c, key);
+  }
+
+  function finish(canvas, key) {
+    const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(9, 9);
-    tex.anisotropy = 4;
+    tex.anisotropy = 8;
+    carpetCache.set(key, tex);
     return tex;
+  }
+
+  /* The novelty carpet.
+
+     Not every room in the original has a medallion field: one of them is a
+     navy floor strewn with oversized playing cards, dice and chips, at about
+     a third of a metre each. It reads instantly as this game rather than as a
+     hotel, and having a second kind is what stops four floors of medallions
+     reading as one carpet recoloured -- which is the mistake the first pass at
+     the whole building made.
+
+     Everything is drawn nine times, offset by a tile in each direction, so a
+     card that runs off one edge comes back on the other and the field is
+     continuous instead of gridded. */
+  function novelty(g, size, p) {
+    g.fillStyle = p[0];
+    g.fillRect(0, 0, size, size);
+
+    const wrapped = (x, y, draw) => {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          g.save();
+          g.translate(x + dx * size, y + dy * size);
+          draw();
+          g.restore();
+        }
+      }
+    };
+    // A fixed shuffle rather than Math.random: a floor rebuilt from the same
+    // seed has to come out the same carpet.
+    let seed = 0x9e3779b1;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+
+    const card = () => {
+      g.fillStyle = p[3];
+      round(g, -size * 0.055, -size * 0.078, size * 0.11, size * 0.156, size * 0.012);
+      g.fill();
+      g.fillStyle = p[1];
+      g.beginPath();
+      g.arc(0, 0, size * 0.026, 0, Math.PI * 2);
+      g.fill();
+    };
+    const die = () => {
+      g.fillStyle = p[1];
+      round(g, -size * 0.055, -size * 0.055, size * 0.11, size * 0.11, size * 0.02);
+      g.fill();
+      g.fillStyle = p[3];
+      for (const [ox, oy] of [[-0.03, -0.03], [0, 0], [0.03, 0.03]]) {
+        g.beginPath();
+        g.arc(ox * size, oy * size, size * 0.009, 0, Math.PI * 2);
+        g.fill();
+      }
+    };
+    const chip = () => {
+      g.fillStyle = p[2];
+      g.beginPath();
+      g.arc(0, 0, size * 0.058, 0, Math.PI * 2);
+      g.fill();
+      // The dashes round the rim, which is what makes a disc a chip.
+      g.strokeStyle = p[3];
+      g.lineWidth = size * 0.016;
+      for (let i = 0; i < 8; i++) {
+        g.beginPath();
+        g.arc(0, 0, size * 0.05, (i / 8) * Math.PI * 2, (i / 8) * Math.PI * 2 + 0.28);
+        g.stroke();
+      }
+    };
+
+    const shapes = [card, die, chip];
+    // A jittered five-by-five lattice: scattered enough to read as strewn,
+    // regular enough that no corner of the room comes out bare.
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 5; j++) {
+        const x = (i + 0.2 + rnd() * 0.6) * size / 5;
+        const y = (j + 0.2 + rnd() * 0.6) * size / 5;
+        const turn = rnd() * Math.PI * 2;
+        const draw = shapes[Math.floor(rnd() * 3) % 3];
+        wrapped(x, y, () => { g.rotate(turn); draw(); });
+      }
+    }
+
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = i % 2 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+      g.fillRect(Math.random() * size, Math.random() * size, 1, 1);
+    }
+  }
+
+  // A rounded rectangle, because a card with square corners is a domino.
+  function round(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  /* What a carpet bounces onto the ceiling.
+
+     The ground colour alone is too dark -- what comes back off a floor covered
+     in orange medallions is orange -- and the motif alone is too strong. Half
+     of each, which is roughly what the field averages to once the pattern is
+     counted. */
+  function carpetTint(palette) {
+    const p = Array.isArray(palette) ? palette : [palette, palette];
+    return new THREE.Color(p[0]).lerp(new THREE.Color(p[1]), 0.5);
+  }
+
+  // Same hue, a different weight of it. Used to make a set out of a floor that
+  // only handed over one colour.
+  function shift(hex, by) {
+    const c = new THREE.Color(hex);
+    const hsl = { h: 0, s: 0, l: 0 };
+    c.getHSL(hsl);
+    c.setHSL(hsl.h, Math.min(1, hsl.s * (by > 1 ? 1.1 : 0.9)), Math.min(0.92, hsl.l * by));
+    return '#' + c.getHexString();
   }
 
   /* Baize.
@@ -650,7 +903,21 @@
     const c = global.document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d');
+    /* Papered walls are the most saturated thing in the original's rooms, and
+       the palest thing here.
+
+       Measured against seventeen of its own screenshots, this build sits a
+       tenth under it on mean saturation with the brightness now matched --
+       and the walls are where that lives, because a floor's wall hex was
+       picked to sit quietly behind the tables and then got a texture drawn on
+       it in tints of itself. Pushed a third harder here rather than in the
+       four theme hexes, so the room light, the fog tint and everything else
+       reading `theme.wall` keeps the colour it was tuned against and only the
+       paper shouts. */
     const tint = new THREE.Color(colour);
+    const hsl = { h: 0, s: 0, l: 0 };
+    tint.getHSL(hsl);
+    tint.setHSL(hsl.h, Math.min(1, hsl.s * 1.35), hsl.l);
     g.fillStyle = '#' + tint.getHexString();
     g.fillRect(0, 0, size, size);
 
@@ -803,6 +1070,6 @@
     return mesh;
   }
 
-  global.GWStage = { create, table, contactShadow, carpetTexture, feltTexture,
-                     wallTexture, FLOOR_Y };
+  global.GWStage = { create, table, contactShadow, carpetTexture, carpetTint,
+                     feltTexture, wallTexture, FLOOR_Y };
 })(window);

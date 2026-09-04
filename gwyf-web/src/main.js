@@ -735,9 +735,30 @@
        muddy room four times. A casino at distance is the colour of what is lit
        in it, which is the neon. A quarter of the way there is enough to carry
        the floor's colour down the hall without washing the near field out. */
+    /* And bright enough to be haze rather than a wall of black.
+
+       At a quarter of the way to the neon and then darkened, the far end of
+       Velvet Hall measured twelve percent pure black -- against under one
+       percent across seventeen of the original's own screenshots, where the
+       far end of a room is always the lit far end of a room. Distance in a
+       casino is glare, not shadow: nothing beyond the tables is unlit, there
+       is just too much light between you and it to make anything out. Nearly
+       two fifths of the way to the neon now, and no darkening on top. */
     const haze = new THREE.Color(shell.level.theme.ceiling)
-      .lerp(new THREE.Color(shell.level.theme.neon), 0.26)
-      .multiplyScalar(0.85);
+      .lerp(new THREE.Color(shell.level.theme.neon), 0.38);
+    /* And held at a fixed value, whatever colour it came out.
+
+       Lerping towards the neon and stopping there is only safe on a floor
+       whose neon is dark. The Ground Floor's is pale amber, so nearly two
+       fifths of the way to it put the far wall of the room at cream -- the
+       wallpaper's colour gone, the whole end of the hall reading as bare
+       plaster. Setting the value here rather than the mix means the haze
+       carries the same weight on all four floors and only its hue changes,
+       which is the thing that was worth having: Velvet Hall's far end stops
+       being black without the Ground Floor's turning white. */
+    const HAZE_VALUE = 0.20;
+    const lum = 0.2126 * haze.r + 0.7152 * haze.g + 0.0722 * haze.b;
+    if (lum > 0.001) haze.multiplyScalar(HAZE_VALUE / lum);
     shell.stage.setFog(haze.getHex(), far * 0.34, far);
 
     /* And the fill takes the room's own colours.
@@ -749,7 +770,7 @@
     const theme = shell.level.theme;
     shell.stage.setRoomLight(
       new THREE.Color(theme.neon).lerp(new THREE.Color(0xffffff), 0.35).getHex(),
-      new THREE.Color(theme.carpet).multiplyScalar(0.55).getHex(),
+      GWStage.carpetTint(theme.carpet).multiplyScalar(0.62).getHex(),
       1.05);
   }
 
