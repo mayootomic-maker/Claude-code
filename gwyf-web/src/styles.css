@@ -259,6 +259,105 @@ button:disabled { cursor: not-allowed; }
 }
 @keyframes shoutIn { from { opacity: 0; transform: translateY(0.6rem); } }
 
+/* The touch action buttons: a column up the right-hand side, above the Use
+   button that was there on its own. Stacked rather than spread, because a thumb
+   on a phone reaches up the edge of the screen far more easily than across it,
+   and Use stays at the bottom where it has always been so nobody has to relearn
+   the one control they already know. */
+.touch__acts {
+  /* Above the Use button, which keeps its own place at the bottom right: it is
+     the one touch control anybody has already learnt and moving it to make
+     room for three new ones would be a poor trade. */
+  position: absolute; right: 1.25rem; bottom: 9.6rem;
+  display: grid; gap: 0.55rem; justify-items: stretch;
+}
+.touch__act {
+  pointer-events: auto;
+  touch-action: manipulation;
+  min-width: 5.5rem; min-height: 3rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgb(18 13 10 / 0.72);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.95rem;
+  backdrop-filter: blur(3px);
+}
+.touch__act:active { background: rgb(40 28 16 / 0.85); border-color: var(--accent); }
+
+/* --- the emote wheel ------------------------------------------------------
+
+   Over the game rather than in front of it: no backdrop, nothing dimmed, and
+   the pointer stays locked. You are meant to be able to wave at somebody who is
+   walking away from you, which you cannot do from a modal.
+
+   Eight wedges on a ring, positioned from custom properties the script sets, so
+   moving an emote in the vocabulary moves it here with no CSS to change. */
+
+.emotes {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  pointer-events: none;
+  z-index: 40;
+  animation: emotesIn 0.14s var(--ease);
+}
+/* The ring has to be big enough that eight wedges do not touch.
+
+   At 46vmin the wedges overlapped: the arc between two of them came out
+   narrower than a wedge is wide, so the ones at the diagonals sat under their
+   neighbours and could not be clicked at all -- the keyboard worked and the
+   mouse silently did not, on half the wheel. Caught by a harness clicking
+   Dance and being handed Clap. The radius is set against the wedge width now
+   rather than against the viewport alone. */
+.emotes__ring {
+  position: relative;
+  width: min(70vmin, 32rem); aspect-ratio: 1;
+}
+.emotes__pick {
+  position: absolute;
+  /* Placed with `left`/`top` rather than a percentage translate.
+
+     A percentage in `translate` resolves against the element's own size, not
+     its parent's -- so `35%` meant a third of a four-rem button, about a
+     centimetre, and all eight wedges sat in a heap in the middle of the ring
+     covering each other. Half of them could not be clicked at all: the
+     keyboard worked and the mouse silently did not. `left` and `top`
+     percentages resolve against the containing block, which is what was meant
+     all along, and the centring translate is then a plain -50%. */
+  left: calc(50% + var(--x)); top: calc(50% + var(--y));
+  translate: -50% -50%;
+  pointer-events: auto;
+  display: grid; justify-items: center; gap: 0.15rem;
+  width: 4.6rem;
+  padding: 0.4rem 0.3rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: rgb(16 11 9 / 0.86);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+}
+.emotes__pick:hover, .emotes__pick:focus-visible {
+  border-color: var(--accent); background: rgb(32 22 14 / 0.92);
+}
+.emotes__key {
+  display: grid; place-items: center;
+  width: 1.35rem; height: 1.35rem;
+  border-radius: 0.35rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-variant-numeric: tabular-nums; font-size: 0.78rem;
+}
+.emotes__label { opacity: 0.92; }
+.emotes__hint {
+  position: absolute; left: 50%; bottom: 14%;
+  translate: -50% 0;
+  margin: 0; color: var(--ink-dim); font-size: 0.82rem;
+}
+@keyframes emotesIn { from { opacity: 0; scale: 0.94; } }
+/* Transform and opacity only, so removing the animation moves nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .emotes { animation: none; }
+}
+
 /* --- rail ---------------------------------------------------------------- */
 
 .rail {

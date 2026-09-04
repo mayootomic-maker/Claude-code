@@ -271,6 +271,105 @@ button:disabled { cursor: not-allowed; }
 }
 @keyframes shoutIn { from { opacity: 0; transform: translateY(0.6rem); } }
 
+/* The touch action buttons: a column up the right-hand side, above the Use
+   button that was there on its own. Stacked rather than spread, because a thumb
+   on a phone reaches up the edge of the screen far more easily than across it,
+   and Use stays at the bottom where it has always been so nobody has to relearn
+   the one control they already know. */
+.touch__acts {
+  /* Above the Use button, which keeps its own place at the bottom right: it is
+     the one touch control anybody has already learnt and moving it to make
+     room for three new ones would be a poor trade. */
+  position: absolute; right: 1.25rem; bottom: 9.6rem;
+  display: grid; gap: 0.55rem; justify-items: stretch;
+}
+.touch__act {
+  pointer-events: auto;
+  touch-action: manipulation;
+  min-width: 5.5rem; min-height: 3rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgb(18 13 10 / 0.72);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.95rem;
+  backdrop-filter: blur(3px);
+}
+.touch__act:active { background: rgb(40 28 16 / 0.85); border-color: var(--accent); }
+
+/* --- the emote wheel ------------------------------------------------------
+
+   Over the game rather than in front of it: no backdrop, nothing dimmed, and
+   the pointer stays locked. You are meant to be able to wave at somebody who is
+   walking away from you, which you cannot do from a modal.
+
+   Eight wedges on a ring, positioned from custom properties the script sets, so
+   moving an emote in the vocabulary moves it here with no CSS to change. */
+
+.emotes {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  pointer-events: none;
+  z-index: 40;
+  animation: emotesIn 0.14s var(--ease);
+}
+/* The ring has to be big enough that eight wedges do not touch.
+
+   At 46vmin the wedges overlapped: the arc between two of them came out
+   narrower than a wedge is wide, so the ones at the diagonals sat under their
+   neighbours and could not be clicked at all -- the keyboard worked and the
+   mouse silently did not, on half the wheel. Caught by a harness clicking
+   Dance and being handed Clap. The radius is set against the wedge width now
+   rather than against the viewport alone. */
+.emotes__ring {
+  position: relative;
+  width: min(70vmin, 32rem); aspect-ratio: 1;
+}
+.emotes__pick {
+  position: absolute;
+  /* Placed with `left`/`top` rather than a percentage translate.
+
+     A percentage in `translate` resolves against the element's own size, not
+     its parent's -- so `35%` meant a third of a four-rem button, about a
+     centimetre, and all eight wedges sat in a heap in the middle of the ring
+     covering each other. Half of them could not be clicked at all: the
+     keyboard worked and the mouse silently did not. `left` and `top`
+     percentages resolve against the containing block, which is what was meant
+     all along, and the centring translate is then a plain -50%. */
+  left: calc(50% + var(--x)); top: calc(50% + var(--y));
+  translate: -50% -50%;
+  pointer-events: auto;
+  display: grid; justify-items: center; gap: 0.15rem;
+  width: 4.6rem;
+  padding: 0.4rem 0.3rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: rgb(16 11 9 / 0.86);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+}
+.emotes__pick:hover, .emotes__pick:focus-visible {
+  border-color: var(--accent); background: rgb(32 22 14 / 0.92);
+}
+.emotes__key {
+  display: grid; place-items: center;
+  width: 1.35rem; height: 1.35rem;
+  border-radius: 0.35rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-variant-numeric: tabular-nums; font-size: 0.78rem;
+}
+.emotes__label { opacity: 0.92; }
+.emotes__hint {
+  position: absolute; left: 50%; bottom: 14%;
+  translate: -50% 0;
+  margin: 0; color: var(--ink-dim); font-size: 0.82rem;
+}
+@keyframes emotesIn { from { opacity: 0; scale: 0.94; } }
+/* Transform and opacity only, so removing the animation moves nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .emotes { animation: none; }
+}
+
 /* --- rail ---------------------------------------------------------------- */
 
 .rail {
@@ -1679,6 +1778,11 @@ html:not(.is-touch) .app.is-unlocked .useprompt { display: none !important; }
         <span class="touch__ring"></span>
         <span class="touch__knob" id="touchKnob"></span>
       </div>
+      <div class="touch__acts">
+        <button class="touch__act" id="touchEmote" aria-label="Emotes">😀</button>
+        <button class="touch__act" id="touchCrouch" aria-label="Crouch">Duck</button>
+        <button class="touch__act" id="touchJump" aria-label="Jump">Jump</button>
+      </div>
       <button class="touch__use" id="touchUse">Use</button>
     </div>
 
@@ -2827,10 +2931,202 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
                      noise({ freq: 3000, decay: 0.05, gain: 0.10, q: 3 }); },
     };
 
+    /* --- the room ---------------------------------------------------------
+
+       Everything above is a one-shot: something happened, here is the noise it
+       made. A building made only of those is silent between events, and a
+       casino is the last place on earth that is ever silent -- the whole point
+       of the room is that it never stops. Four layers, all running
+       continuously and none of them a sample:
+
+       Air, because every large interior has a ventilation plant in it and you
+       stop hearing it the moment it goes away. Hum, two oscillators a few
+       cents apart so they beat slowly against each other, pitched per floor --
+       it is the only thing here you could call music and it is doing the work
+       of telling you which floor you are on with your eyes shut. Babble, which
+       is the crowd: noise through a wandering bandpass, gated at a syllable
+       rate and swelling over ten-second breaths, and set from how many people
+       are actually near you rather than from a constant. And the machines,
+       scattered chimes and payouts from somewhere else in the room, drenched
+       in the reverb so they read as far off.
+
+       It crossfades rather than cuts on a floor change: the lift doors open on
+       a different room, and a hard switch of a continuous bed is the one thing
+       that makes an ambient loop audible as a loop. */
+    let room = null;              // the graph that is currently playing
+    let wantRoom = null;          // asked for before the first gesture
+    let crowd = 0;                // 0..1, how loud the babble should be
+    let nextMachine = 3;          // seconds until the next distant payout
+    let noiseLoop = null;         // one buffer, shared by every layer
+    let probe = null, probeBuf = null;   // see level(), below
+
+    function loopBuffer() {
+      if (noiseLoop) return noiseLoop;
+      // Three seconds: long enough that the repeat is not a texture you can
+      // hear, short enough to build without a pause on a phone.
+      const len = ctx.sampleRate * 3;
+      noiseLoop = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = noiseLoop.getChannelData(0);
+      // Pink-ish rather than white. White noise is a hiss; the low end is what
+      // makes it a room.
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99765 * b0 + w * 0.0990460;
+        b1 = 0.96300 * b1 + w * 0.2965164;
+        b2 = 0.57000 * b2 + w * 1.0526913;
+        d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.16;
+      }
+      return noiseLoop;
+    }
+
+    function looping() {
+      const src = ctx.createBufferSource();
+      src.buffer = loopBuffer();
+      src.loop = true;
+      src.start();
+      return src;
+    }
+
+    // A slow oscillator wired into somebody else's parameter, which is how
+    // every wobble down here is made.
+    function lfo(rate, depth, target, type) {
+      const o = ctx.createOscillator();
+      o.type = type || 'sine';
+      o.frequency.value = rate;
+      const g = ctx.createGain();
+      g.gain.value = depth;
+      o.connect(g); g.connect(target);
+      o.start();
+      return { o, g };
+    }
+
+    function buildRoom(spec) {
+      const out = ctx.createGain();
+      out.gain.value = 0.0001;
+      out.connect(master);
+      const send = ctx.createGain();
+      send.gain.value = 0.4;
+      out.connect(send); send.connect(verb);
+      const parts = [];
+
+      // Air.
+      const airSrc = looping();
+      const airFilt = ctx.createBiquadFilter();
+      airFilt.type = 'lowpass';
+      airFilt.frequency.value = spec.air || 340;
+      airFilt.Q.value = 0.6;
+      const airGain = ctx.createGain();
+      airGain.gain.value = 0.16;
+      airSrc.connect(airFilt); airFilt.connect(airGain); airGain.connect(out);
+      parts.push(airSrc);
+
+      // Hum: two oscillators a few cents apart, so they beat rather than sit.
+      const humGain = ctx.createGain();
+      humGain.gain.value = 0.05;
+      humGain.connect(out);
+      for (const cents of [0, 4.5]) {
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = (spec.hum || 55) * Math.pow(2, cents / 1200);
+        o.connect(humGain);
+        o.start();
+        parts.push(o);
+      }
+
+      /* Babble. The bandpass wanders, the gate opens and shuts at roughly the
+         rate a person gets a syllable out, and the whole thing breathes over
+         about ten seconds. Three unrelated rates, so nothing in it lands on a
+         beat you could tap along to. */
+      const babSrc = looping();
+      const bab = ctx.createBiquadFilter();
+      bab.type = 'bandpass';
+      bab.frequency.value = spec.voice || 760;
+      bab.Q.value = 1.3;
+      const babTop = ctx.createBiquadFilter();
+      babTop.type = 'peaking';
+      babTop.frequency.value = 1750;      // roughly where a vowel's second
+      babTop.Q.value = 1.1;               // formant sits, which is what makes
+      babTop.gain.value = 6;              // noise read as people
+      const babGain = ctx.createGain();
+      babGain.gain.value = 0.0001;
+      babSrc.connect(bab); bab.connect(babTop); babTop.connect(babGain);
+      babGain.connect(out);
+      parts.push(babSrc);
+      parts.push(lfo(0.23, 260, bab.frequency).o);
+      parts.push(lfo(3.7, 0.35, babGain.gain).o);
+      parts.push(lfo(0.093, 0.22, babGain.gain).o);
+
+      return { out, parts, babGain, spec };
+    }
+
+    function stopRoom(r, at) {
+      if (!r) return;
+      r.out.gain.cancelScheduledValues(at);
+      r.out.gain.setValueAtTime(Math.max(r.out.gain.value, 0.0001), at);
+      r.out.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
+      for (const p of r.parts) { try { p.stop(at + 1.3); } catch (e) { /* already stopped */ } }
+      // Disconnect after the fade rather than now: a node cut off mid-ramp
+      // clicks, and a click is louder than anything it was playing.
+      global.setTimeout(() => { try { r.out.disconnect(); } catch (e) { /* gone */ } }, 1600);
+    }
+
     return {
       unlock() {
         if (!boot()) return;
         if (ctx.state === 'suspended') ctx.resume();
+        // A room asked for before the first gesture starts now, rather than
+        // being lost -- otherwise the floor you boot into is the one floor
+        // that never gets a room tone.
+        if (wantRoom && !room) { const w = wantRoom; wantRoom = null; this.setRoom(w); }
+      },
+
+      /* Play this room, fading out whatever was playing. Passing null is
+         leaving the building -- the title screen and the report are silent on
+         purpose, so the bed coming back is part of arriving somewhere. */
+      setRoom(spec) {
+        if (!ready) { wantRoom = spec; return; }
+        const t = ctx.currentTime;
+        if (room && spec && room.spec.id === spec.id) return;
+        stopRoom(room, t);
+        room = null;
+        if (!spec) return;
+        room = buildRoom(spec);
+        room.out.gain.setValueAtTime(0.0001, t);
+        room.out.gain.exponentialRampToValueAtTime(muted ? 0.0001 : 0.5, t + 1.4);
+        nextMachine = 2 + Math.random() * 4;
+      },
+
+      /* How many people are within earshot, which the room turns into how loud
+         the talking is. Not a count of the whole floor: a crowd you cannot see
+         should not be a crowd you can hear. */
+      setCrowd(n) { crowd = Math.max(0, Math.min(1, n / 6)); },
+
+      /* Called every frame. Two jobs: ease the babble towards the crowd it has
+         actually got, and every few seconds let a machine somewhere else in
+         the room pay somebody out. */
+      tick(dt) {
+        if (!ready || !room) return;
+        const want = muted ? 0.0001 : 0.02 + crowd * 0.16;
+        const g = room.babGain.gain;
+        // Eased rather than set, because walking past four people should sound
+        // like walking past four people, not like a fader being moved.
+        g.value += (want - g.value) * Math.min(1, dt * 1.6);
+        if (muted) return;
+        nextMachine -= dt;
+        if (nextMachine > 0) return;
+        nextMachine = 3.5 + Math.random() * 9;
+        // Quiet and almost entirely reverb, so it is unmistakably somebody
+        // else's win on the other side of the room.
+        const far = { gain: 0.035, send: 0.9 };
+        if (Math.random() < 0.45) {
+          tone(Object.assign({ type: 'triangle', from: 1400 + Math.random() * 700,
+                               to: 900, decay: 0.4 }, far));
+        } else {
+          [0, 0.09, 0.18].forEach((d, i) =>
+            tone(Object.assign({ type: 'square', from: 900 + i * 220, decay: 0.13,
+                                 delay: d }, far)));
+        }
       },
       play(name) {
         if (!ready || muted) return;
@@ -2840,6 +3136,34 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       setMuted(v) {
         muted = !!v;
         if (master) master.gain.value = muted ? 0 : 0.5;
+      },
+      get room() { return room ? room.spec.id : null; },
+      get crowd() { return crowd; },
+
+      /* Is anything actually coming out?
+
+         The whole point of an ambient bed is that you stop noticing it, which
+         makes "there is no ambient bed" and "the ambient bed is working" look
+         identical from anywhere except the speakers. A harness that asserts
+         `audio.room === 'velvet'` proves a string was assigned and nothing
+         else -- exactly the class of test that let a world where nothing had a
+         top pass for months.
+
+         So this taps the master and reports the RMS of what is on it. The
+         analyser is built on first ask and kept, because nothing but a test
+         ever asks and a test asks repeatedly. */
+      level() {
+        if (!ready) return 0;
+        if (!probe) {
+          probe = ctx.createAnalyser();
+          probe.fftSize = 2048;
+          probeBuf = new Float32Array(probe.fftSize);
+          master.connect(probe);
+        }
+        probe.getFloatTimeDomainData(probeBuf);
+        let sum = 0;
+        for (let i = 0; i < probeBuf.length; i++) sum += probeBuf[i] * probeBuf[i];
+        return Math.sqrt(sum / probeBuf.length);
       },
       get muted() { return muted; },
       get names() { return Object.keys(SOUNDS); },
@@ -10627,6 +10951,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       zones: layout.cells,
       size: { w: W, d: D, height: WALL_H },
       name: floorDef.name,
+      // Which room this is, for anything that keys off it -- the room tone
+      // picks its hum from here, the same way the fog picks its colour from
+      // `theme`. Said by the level rather than worked out again by the caller,
+      // because the caller already got that wrong once for the lobby.
+      roomId: floorDef.id,
       dispose() {
         for (const thing of disposables) if (thing.dispose) thing.dispose();
         group.traverse((o) => {
@@ -10900,6 +11229,11 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        to walk over there. */
     const SPLIT = -5.0;
     const DOOR_HALF = 3.2;          // half the width of the doorway
+    /* Nibor's, once it is built: where the mirror's reflection stands and
+       which way it faces, and the bath's material so the paint in it can be
+       the colour you last climbed out as. Filled in below and handed to
+       main.js, which is the only place that knows what you look like. */
+    let shopFront = null;
     /* Brown and gold rather than the floors' reds: the lobby is the one room
        you see from the yard, through a doorway, and it has to read as warm
        from out there in the cold. Same four-colour set as the floors -- the
@@ -11223,6 +11557,155 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     slab(sharkAt.x + 0.08, sharkAt.z, 0.14, 3.4, 0.1, 2.75, trimMat, null);
     sites.points.push({ at: new THREE.Vector3(sharkAt.x - 0.2, 1.9, sharkAt.z),
                         colour: 0xf0616d, intensity: 9, distance: 6 });
+
+    /* --- Nibor Second Hand Store ------------------------------------------
+
+       The cosmetics have existed for a while as two screens reachable from a
+       tab row in the back office, which is a menu with a shop's name on it. It
+       is meant to be a place: a shopfront in the corner of the lobby, a
+       counter downstairs, a mirror and a bath of paint up on the mezzanine.
+
+       Two floors because the stairs are the point. Nothing else in the lobby
+       is above the ground, the parkour taught the collision world how to have
+       tops, and a shop you go up into is the only room in the building that
+       uses it -- which also means the stairs have to be climbable rather than
+       decorative. Ten steps of 0.26 m against a 0.42 m step-up.
+
+       The south-east corner, and it uses the lobby's own south and east walls
+       as two of its four. That is not laziness: the first placement put it in
+       the middle of the east half and swallowed the lounge's rug and one of
+       the four columns, which nothing would have caught until somebody walked
+       through a bench that was inside a shop. Working outwards from two walls
+       that already exist leaves one number to get wrong instead of four. */
+    const NX0 = 13.5, NZ0 = 5.5;          // the two walls this builds
+    const NX1 = halfW, NZ1 = halfD;       // the two the lobby already has
+    const MEZZ = 2.6;                     // how high the upstairs floor sits
+    const nibor = { x: (NX0 + NX1) / 2, z: (NZ0 + NZ1) / 2 };
+    {
+      const DOOR = 2.4;                   // half the width of the way in
+
+      // The shopfront, with a gap to walk through and a lintel over it so the
+      // front is a front all the way up.
+      for (const side of [-1, 1]) {
+        const inner = nibor.x + side * DOOR;
+        const outer = side < 0 ? NX0 : NX1;
+        slab((inner + outer) / 2, NZ0, Math.abs(outer - inner), 0.4, WALL_H, 0,
+             panelMat, 'wall');
+      }
+      slab(nibor.x, NZ0, DOOR * 2, 0.4, WALL_H - 3.0, 3.0, panelMat, null);
+      slab(NX0, nibor.z, 0.4, NZ1 - NZ0, WALL_H, 0, panelMat, 'wall');
+
+      group.add(sign('NIBOR SECOND HAND', nibor.x, 3.9, NZ0 - 0.22,
+                     0xff8fd0, 4.6, Math.PI));
+      sites.points.push({ at: new THREE.Vector3(nibor.x, 3.3, NZ0 - 1.4),
+                          colour: 0xff8fd0, intensity: 12, distance: 9 });
+
+      /* The mezzanine over the back half, and the stairs up the west side.
+         `slab` gives every box a top, so all of this is stood on. */
+      const EDGE = 11.3;                  // where the upstairs floor starts
+      slab((NX0 + NX1) / 2 + 0.3, (EDGE + NZ1) / 2, NX1 - NX0 - 0.6, NZ1 - EDGE,
+           0.3, MEZZ - 0.3, trimMat, 'mezzanine');
+      const STEPS = 10, RISE = MEZZ / STEPS, RUN = 0.42;
+      for (let i = 0; i < STEPS; i++) {
+        // The last tread finishes level with the mezzanine's edge rather than
+        // short of it, or the top step is a gap you fall down.
+        slab(NX0 + 1.5, EDGE - (STEPS - i) * RUN + RUN / 2, 2.2, RUN,
+             RISE * (i + 1), 0, trimMat, 'stair');
+      }
+      // A rail along the open edge, with the head of the stairs left clear.
+      slab((NX0 + 3.4 + NX1) / 2, EDGE, NX1 - NX0 - 3.4, 0.14, 0.95, MEZZ,
+           panelMat, 'rail');
+      slab((NX0 + 3.4 + NX1) / 2, EDGE, NX1 - NX0 - 3.3, 0.24, 0.07,
+           MEZZ + 0.95, trimMat, null);
+
+      /* Downstairs: the counter. Set into the east wall facing west, the same
+         way the loan shark's window is, because a counter you approach along a
+         wall is a counter and one in the middle of the floor is a kiosk. */
+      const till = { x: NX1 - 1.4, z: 8.2 };
+      fixture({ x: till.x, z: till.z, rot: Math.PI / 2, w: 3.2, d: 1.2,
+                label: 'NIBOR’S', action: 'wardrobe', colour: 0xff8fd0 });
+      // Rails of other people's clothes, which is what a second-hand shop is.
+      const clothMat = [0x7a4f2c, 0x35566b, 0x6b2f38, 0x2f6b4a].map((c) =>
+        track(new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 })));
+      for (let r = 0; r < 2; r++) {
+        const rz = NZ0 + 2.2 + r * 1.7;
+        slab(NX0 + 3.2, rz, 4.6, 0.08, 0.08, 1.55, trimMat, null);
+        for (let i = 0; i < 7; i++) {
+          slab(NX0 + 1.1 + i * 0.65, rz, 0.5, 0.26, 0.85, 0.62,
+               clothMat[(i + r) % 4], null);
+        }
+      }
+
+      /* Upstairs: the mirror.
+
+         Not a render target -- a second pass over the whole room to fill one
+         panel is not something a floor already at two hundred draw calls can
+         pay for. It is one body in a lit niche in the back wall, and it is
+         worth being precise about what it does and does not reflect: it
+         mirrors your position along the wall and your facing, so stepping left
+         steps your reflection left and turning turns it, but its distance from
+         the glass is fixed. A true reflection would stand as far behind the
+         glass as you stand in front of it, which on a mezzanine five metres
+         deep means walking backwards puts it inside the lobby's outside wall,
+         where the wall hides it. Half a reflection that always works beats a
+         whole one that vanishes the moment you step back to look at yourself.
+
+         An opening rather than a pane, for the same reason: a sheet of glass
+         drawn in front of the body would occlude it. */
+      const mirrorZ = NZ1 - 0.45;
+      const mirrorX = NX0 + 3.4;
+      for (const bar of [{ x: 0, y: 2.5, w: 3.4, h: 0.18 },
+                         { x: 0, y: 0.05, w: 3.4, h: 0.14 },
+                         { x: -1.7, y: 1.3, w: 0.18, h: 2.5 },
+                         { x: 1.7, y: 1.3, w: 0.18, h: 2.5 }]) {
+        slab(mirrorX + bar.x, mirrorZ, bar.w, 0.22, bar.h,
+             MEZZ + bar.y - bar.h / 2, trimMat, null);
+      }
+      sites.points.push({ at: new THREE.Vector3(mirrorX, MEZZ + 2.1, mirrorZ - 1.3),
+                          colour: 0xffe6f4, intensity: 9, distance: 6 });
+      const mirror = {
+        at: new THREE.Vector3(mirrorX, MEZZ, mirrorZ - 0.55),
+        x: mirrorX, plane: mirrorZ, floor: MEZZ,
+      };
+
+      /* The bath, on the open side of the mezzanine. Full to the brim, and the
+         paint is the only thing in the building drawn in a colour the level did
+         not choose -- it is whatever you last climbed out as. */
+      const bath = { x: NX1 - 2.6, z: EDGE + 2.2 };
+      for (const [dx, dz, w, d] of [[0, -1.05, 2.4, 0.22], [0, 1.05, 2.4, 0.22],
+                                    [-1.2, 0, 0.22, 2.1], [1.2, 0, 0.22, 2.1]]) {
+        slab(bath.x + dx, bath.z + dz, w, d, 0.7, MEZZ, trimMat, 'bath');
+      }
+      const bathMat = track(new THREE.MeshStandardMaterial({
+        color: 0xd9a441, roughness: 0.35, metalness: 0.1, emissive: 0x2a1c08,
+      }));
+      const paint = new THREE.Mesh(track(new THREE.BoxGeometry(2.1, 0.08, 1.8)), bathMat);
+      paint.position.set(bath.x, MEZZ + 0.58, bath.z);
+      group.add(paint);
+      fixture({ x: bath.x, z: bath.z - 1.6, rot: 0, w: 2.0, d: 0.7,
+                label: 'PAINT', action: 'paint', colour: 0xd9a441 });
+      /* A fixture works out its own stand point on the ground, and this one is
+         up a flight of stairs. An anchor that says otherwise is one the
+         reachability check walks to at floor level, finds nothing at, and
+         reports as fine -- the same shape as the parkour that was scenery. */
+      for (const a of anchors) {
+        if (a.action !== 'paint') continue;
+        a.stand.y = MEZZ;
+        a.position.y = MEZZ;
+        a.focus.y = MEZZ + 1.2;
+      }
+
+      /* The way round it, said by the level rather than guessed by anything
+         that has to walk it. A harness working out where a doorway probably is
+         from a centre and a width is a harness that passes when the door moves
+         and the room does not. */
+      shopFront = {
+        at: nibor, mirror, bath: { mat: bathMat, at: bath, y: MEZZ },
+        door: { x: nibor.x, z: NZ0 },
+        stairs: { x: NX0 + 1.5, foot: EDGE - STEPS * RUN - 1.2, head: EDGE + 0.8 },
+        floor: MEZZ,
+      };
+    }
 
     /* Somewhere to stand about while the others make their minds up. A rug, a
        low table, three benches and a pair of columns marking the middle of the
@@ -11628,7 +12111,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       jumps,
       size: { w: W, d: D, height: WALL_H },
       name: 'The Yard',
+      roomId: 'hub',
       isLobby: true,
+      shopFront,
       dispose() {
         for (const t of disposables) if (t.dispose) t.dispose();
         group.traverse((o) => {
@@ -12123,6 +12608,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return {
       state,
       enter, update, lock, unlock, eye, forward, inLift,
+      /* Jump, for anything that is not the spacebar.
+
+         A touchscreen has no spacebar and the yard has a parkour with a ticket
+         on top of it, so a phone could reach every part of this game except
+         that one. Exposed as the same call the key makes -- buffer and all --
+         rather than as a flag somebody else sets, because the buffer is the
+         reason a press that lands just before your feet do still counts, and a
+         second way in that skipped it would jump differently. */
+      jump() { if (state.active) { state.jumpAt = JUMP_BUFFER; jump(); } },
       get active() { return state.active; },
       set active(v) {
         state.active = !!v;
@@ -12352,6 +12846,170 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       },
     };
   }
+
+  /* --- the gesture vocabulary ------------------------------------------------
+
+     Every deliberate movement a body can make, in one table, because there are
+     two entirely separate things that need to make them and a vocabulary that
+     lives in one of them is a vocabulary the other cannot use. The crowd on the
+     floor is animated by the full rig below -- states, springs, blending; the
+     other players in your lobby are animated by twenty lines in `net/session.js`
+     that interpolate a position and swing two hands. Both have to be able to
+     wave.
+
+     So a pose is a pure function of how far through it you are and returns
+     offsets, and the two animators add those offsets to whatever else they were
+     doing. Nothing here touches a body directly.
+
+       g  0 at the start, 1 in the middle, 0 at the end -- so a wave begins and
+          ends with the arm down instead of snapping to it
+       t  0 to 1 across the whole gesture, for anything that has to travel
+       d  how many seconds the whole thing lasts, for beats that should keep the
+          same tempo whether it runs for one second or three
+
+     `rank` is what a running gesture will not be interrupted by: cheering over
+     a shrug is fine, shrugging over a cheer is not. `emote` marks the ones a
+     player can ask for from the wheel, which is most but not all of them --
+     `check` is somebody looking at their watch because the clock is running
+     out, and nobody needs a button for that. */
+  const POSES = {
+    greet: {
+      rank: 1, emote: true, label: 'Wave', key: '1', seconds: 1.6, say: 'greet',
+      pose(g, t, d) {
+        const beat = Math.sin(t * d * 9);
+        return { handLift: g * 0.62, handOut: g * (0.16 + beat * 0.07),
+                 headTilt: -g * 0.10, browTilt: -g * 0.3, roll: g * beat * 0.035 };
+      },
+    },
+    point: {
+      // The head follows the arm; `turnToAt` is the flag that asks for it, and
+      // only the full rig knows where in the room the thing being pointed at is.
+      rank: 2, emote: true, label: 'Point', key: '2', seconds: 1.4,
+      pose(g) {
+        return { handLift: g * 0.30, handOut: g * 0.34, lean: -g * 0.06,
+                 turnToAt: true };
+      },
+    },
+    shrug: {
+      // The whole point of a shrug is that it is over before it is finished.
+      rank: 2, emote: true, label: 'Shrug', key: '3', seconds: 1.2,
+      pose(g) {
+        return { handOut: g * 0.26, handLift: g * 0.16, headTilt: g * 0.14,
+                 browTilt: -g * 0.35, squash: g * 0.03 };
+      },
+    },
+    cheer: {
+      rank: 3, emote: true, label: 'Cheer', key: '4', seconds: 1.5, say: 'cheer',
+      pose(g, t) {
+        return { handLift: g * 0.66, handOut: g * 0.14,
+                 rise: g * Math.abs(Math.sin(t * 11)) * 0.10,
+                 browTilt: -g * 0.5, headTilt: -g * 0.18 };
+      },
+    },
+    check: {
+      // A look at the wrist. Not an emote: this is what somebody does when the
+      // clock is nearly out, and it should mean that rather than being a button.
+      rank: 0, seconds: 1.6,
+      pose(g) {
+        return { handLift: g * 0.34, handOut: -g * 0.10, headTilt: g * 0.30,
+                 lean: g * 0.08, browTilt: g * 0.25 };
+      },
+    },
+
+    /* The ones added for the wheel. Bigger and longer than the reactions
+       above, because an emote is something you chose to do and stood there
+       doing -- a reaction that reads at a glance would be over before anybody
+       looked up. */
+    laugh: {
+      rank: 3, emote: true, label: 'Laugh', key: '5', seconds: 2.0, say: 'laugh',
+      pose(g, t, d) {
+        // Doubled over and shaking, from the waist rather than the shoulders.
+        const shake = Math.sin(t * d * 13);
+        return { lean: g * (0.34 + shake * 0.09), headTilt: g * 0.42,
+                 handLift: g * 0.22, handOut: -g * 0.06,
+                 browTilt: -g * 0.4, squash: g * 0.05,
+                 rise: -g * 0.04 + g * Math.abs(shake) * 0.03 };
+      },
+    },
+    dance: {
+      /* Two and a bit turns on the spot with the hands up, which is the only
+         emote here that moves the body's own yaw. It is also the longest, on
+         the grounds that a dance you can do in one second is a twitch. */
+      rank: 4, emote: true, label: 'Dance', key: '6', seconds: 3.4,
+      pose(g, t, d) {
+        const beat = Math.sin(t * d * 7.5);
+        return { spin: g * t * Math.PI * 4.4,
+                 handLift: g * (0.5 + beat * 0.18), handOut: g * 0.2,
+                 roll: g * beat * 0.16, rise: g * Math.abs(beat) * 0.09,
+                 headTilt: -g * 0.12, browTilt: -g * 0.35,
+                 squash: -g * Math.abs(beat) * 0.04 };
+      },
+    },
+    clap: {
+      rank: 2, emote: true, label: 'Clap', key: '7', seconds: 1.8,
+      pose(g, t, d) {
+        // The hands come together rather than apart, so `handOut` goes
+        // negative on the beat -- a clap where the hands never meet is a wave.
+        const beat = Math.abs(Math.sin(t * d * 8));
+        return { handLift: g * 0.34, handOut: -g * beat * 0.2,
+                 lean: g * 0.05, browTilt: -g * 0.25, headTilt: -g * 0.06 };
+      },
+    },
+    sulk: {
+      // For losing everything, which happens often enough to deserve a button.
+      rank: 1, emote: true, label: 'Sulk', key: '8', seconds: 2.2, say: 'sulk',
+      pose(g, t) {
+        const sway = Math.sin(t * 4);
+        return { headTilt: g * 0.5, lean: g * 0.16, handLift: -g * 0.16,
+                 browTilt: g * 0.55, squash: g * 0.07,
+                 rise: -g * 0.05, roll: g * sway * 0.03 };
+      },
+    },
+  };
+
+  /* Write a pose onto a body that has no rig behind it.
+
+     `net/session.js` animates the other players in your lobby with a position
+     lerp and a two-hand swing -- no states, no springs, no blending -- because
+     that is all a peer needs and a second copy of the rig would be a second
+     copy of the rig. This lets those bodies make the same gestures anyway.
+
+     Fields the simple animator writes itself every frame are added to; fields
+     nothing else touches are set outright, so calling this with a null pose is
+     how a body stops gesturing rather than staying stuck in one. */
+  function applyPose(body, o) {
+    const p = o || ZERO;
+    const J = body.joints;
+    body.root.rotation.x = -p.lean;
+    body.root.rotation.y = p.spin;
+    body.root.rotation.z += p.roll;
+    body.root.position.y += p.rise;
+    body.head.rotation.x = -p.headTilt;
+    body.brow.rotation.x = -p.browTilt * 0.42;
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      body.hands[i].position.x = side * (J.handX + p.handOut);
+      body.hands[i].position.y = J.hand + p.handLift;
+      body.hands[i].rotation.z = side * (0.10 + p.handLift * 0.5);
+    }
+  }
+
+  /* Work out a pose, safely. An unknown name gets nothing rather than throwing
+     -- an emote arriving over the network is a string somebody else's build
+     chose, and a peer on a newer version must not be able to crash yours. */
+  const ZERO = { handLift: 0, handOut: 0, headTilt: 0, browTilt: 0, roll: 0,
+                 lean: 0, rise: 0, squash: 0, spin: 0, turnToAt: false };
+  function POSE(name, g, t, seconds) {
+    const def = POSES[name];
+    if (!def) return null;
+    return Object.assign({}, ZERO, def.pose(g, t, seconds || def.seconds || 1));
+  }
+
+  // The ones a player can ask for, in the order the wheel shows them.
+  const EMOTES = Object.keys(POSES)
+    .filter((k) => POSES[k].emote)
+    .map((k) => ({ id: k, label: POSES[k].label, key: POSES[k].key,
+                   seconds: POSES[k].seconds, say: POSES[k].say || null }));
 
   /* --- cosmetics ------------------------------------------------------------
 
@@ -12974,9 +13632,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     function doGesture(person, name, seconds, at) {
       // A gesture already running is only replaced by a fresher one of at
       // least equal standing: a wave must not stamp on a cheer.
-      const RANK = { check: 0, greet: 1, shrug: 2, point: 2, cheer: 3 };
+      if (!POSES[name]) return;
+      const rank = (n) => (POSES[n] && POSES[n].rank) || 0;
       if (person.gesture && person.gestureLeft > 0
-          && (RANK[person.gesture] || 0) > (RANK[name] || 0)) return;
+          && rank(person.gesture) > rank(name)) return;
       person.gesture = name;
       person.gestureFor = seconds;
       person.gestureLeft = seconds;
@@ -13391,7 +14050,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const impact = Math.pow(Math.max(0, -Math.cos(rig.step * 2)), 2);
 
       /* --- targets, summed across the states -------------------------------- */
-      let lean = 0, roll = 0, rise = 0, squash = 0, bank = 0;
+      let lean = 0, roll = 0, rise = 0, squash = 0, bank = 0, spin = 0;
       let headTurn = 0, headTilt = 0, browTilt = 0, browDrop = 0;
       let handLift = 0, handOut = 0, handSwing = 0;
 
@@ -13467,22 +14126,18 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         const t = 1 - person.gestureLeft / person.gestureFor;
         // In over the first fifth, out over the last quarter.
         const g = Math.min(1, t / 0.2, (1 - t) / 0.25);
-        const beatFast = Math.sin(t * person.gestureFor * 9);
 
-        if (person.gesture === 'greet') {
-          // One hand up and waving, weight on the back foot.
-          handLift += g * 0.62;
-          handOut += g * (0.16 + beatFast * 0.07);
-          headTilt -= g * 0.10;
-          browTilt -= g * 0.3;
-          roll += g * beatFast * 0.035;
-        } else if (person.gesture === 'point') {
-          // Arms out towards it, and the head turned to follow -- pointing at
-          // something you are not looking at reads as a spasm.
-          handLift += g * 0.30;
-          handOut += g * 0.34;
-          lean -= g * 0.06;
-          if (person.gestureAt) {
+        const pose = POSE(person.gesture, g, t, person.gestureFor);
+        if (pose) {
+          handLift += pose.handLift; handOut += pose.handOut;
+          headTilt += pose.headTilt; browTilt += pose.browTilt;
+          roll += pose.roll; lean += pose.lean;
+          rise += pose.rise; squash += pose.squash;
+          spin += pose.spin;
+          // Pointing at something you are not looking at reads as a spasm, so
+          // the head follows the arm -- the one part of a pose that needs to
+          // know where in the room the thing is.
+          if (pose.turnToAt && person.gestureAt) {
             const want = Math.atan2(-(person.gestureAt.x - person.pos.x),
                                     -(person.gestureAt.z - person.pos.z));
             let off = want - person.yaw;
@@ -13490,27 +14145,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
             while (off < -Math.PI) off += Math.PI * 2;
             headTurn += g * Math.max(-1.1, Math.min(1.1, off));
           }
-        } else if (person.gesture === 'shrug') {
-          // Hands out and up a little, head down, brows up: the whole point of
-          // a shrug is that it is over before it is finished.
-          handOut += g * 0.26;
-          handLift += g * 0.16;
-          headTilt += g * 0.14;
-          browTilt -= g * 0.35;
-          squash += g * 0.03;
-        } else if (person.gesture === 'cheer') {
-          handLift += g * 0.66;
-          handOut += g * 0.14;
-          rise += g * Math.abs(Math.sin(t * 11)) * 0.10;
-          browTilt -= g * 0.5;
-          headTilt -= g * 0.18;
-        } else if (person.gesture === 'check') {
-          // A look at the wrist: one hand up and across, head down over it.
-          handLift += g * 0.34;
-          handOut -= g * 0.10;
-          headTilt += g * 0.30;
-          lean += g * 0.08;
-          browTilt += g * 0.25;
         }
         if (person.gestureLeft === 0) { person.gesture = null; person.gestureAt = null; }
       }
@@ -13554,6 +14188,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       /* --- write it out ------------------------------------------------------ */
       body.root.position.y = riseV;
       body.root.rotation.z = rollV;
+      // Turned on the spot, inside the group that carries their facing -- so a
+      // dance spins the body without the walker losing track of which way they
+      // are pointed once it finishes.
+      body.root.rotation.y = spin;
       /* Negated on the way out, so that everything above can read as "lean
          forward by this much".
 
@@ -13627,6 +14265,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     const owned = [];
     let skin = null;
     const hands = [];
+    let handEmote = null, handEmoteFor = 1, handEmoteLeft = 0;
     for (const side of [-1, 1]) {
       const hand = GWModels.instance(lib, 'pin_hand');
       hand.traverse((o) => {
@@ -13658,9 +14297,33 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
          them again for a colour change drops a frame every time somebody
          fiddles with the palette. */
       setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
+      /* Do an emote with your own two hands.
+
+         You cannot see yourself: the whole of you, from where you are stood,
+         is two mittens in the bottom corners of the frame. So pressing an
+         emote and having it happen only on everybody else's screen is a button
+         that appears to do nothing -- which is how the first pass of this felt
+         to play, and it is the one thing an emote must not be.
+
+         The hands are placed as a fraction of the frame rather than in metres
+         (see below), so the pose is applied in the same units: a wave lifts
+         them by a share of the visible height, not by half a metre. */
+      emote(name) {
+        const def = POSES[name];
+        if (!def) return false;
+        handEmote = name;
+        handEmoteFor = def.seconds;
+        handEmoteLeft = def.seconds;
+        return true;
+      },
+      get emoting() { return handEmoteLeft > 0 ? handEmote : null; },
+
       /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
-         `fall` the vertical velocity so they drop when you do. */
-      update(bob, speed, fall, crouch) {
+         `fall` the vertical velocity so they drop when you do. `dt` advances
+         whatever emote is running -- passed in rather than measured here,
+         because the clock this game runs on lives in `lib/time.js`'s caller
+         and a second one would drift against it. */
+      update(bob, speed, fall, crouch, dt) {
         // Half the visible frame at the distance the hands are held, from the
         // camera's live field of view rather than a number written down once.
         const Z = -0.52;
@@ -13669,6 +14332,22 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         const sway = Math.sin(bob) * Math.min(0.035, speed * 0.012);
         const lift = Math.abs(Math.cos(bob)) * Math.min(0.03, speed * 0.010);
         const drop = Math.max(-0.10, Math.min(0.10, -fall * 0.016));
+
+        // Whatever you are doing on purpose, over the top of all that.
+        let e = null;
+        if (handEmoteLeft > 0) {
+          handEmoteLeft = Math.max(0, handEmoteLeft - (dt || 0));
+          const et = 1 - handEmoteLeft / handEmoteFor;
+          const g = Math.min(1, et / 0.2, (1 - et) / 0.25);
+          e = POSE(handEmote, g, et, handEmoteFor);
+          if (handEmoteLeft === 0) handEmote = null;
+        }
+        // Into the frame and towards the middle, so a wave is a wave rather
+        // than a mitten twitching in the corner where you cannot see it.
+        const eLift = e ? e.handLift * 1.5 : 0;
+        const eIn = e ? e.handOut * 0.9 : 0;
+        const eRoll = e ? e.roll * 3 : 0;
+
         for (let i = 0; i < 2; i++) {
           const side = i === 0 ? -1 : 1;
           /* Placed as a fraction of the frame, not in metres.
@@ -13681,13 +14360,13 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
              view, aspect ratio or window size, and keeps them the same
              apparent size while it is being eased between the two. */
           hands[i].position.set(
-            side * halfW * (0.66 - crouch * 0.03) + sway * side,
-            -halfH * (0.80 + crouch * 0.05) + lift - drop,
+            side * halfW * (0.66 - crouch * 0.03 - eIn) + sway * side,
+            -halfH * (0.80 + crouch * 0.05 - eLift) + lift - drop,
             Z + Math.abs(sway) * 0.4
           );
           hands[i].scale.setScalar(halfH * 1.06);
-          hands[i].rotation.z = side * (0.35 + sway * 2.0);
-          hands[i].rotation.x = -0.35 + lift * 2.0;
+          hands[i].rotation.z = side * (0.35 + sway * 2.0) + eRoll;
+          hands[i].rotation.x = -0.35 + lift * 2.0 - (e ? e.headTilt * 0.6 : 0);
         }
       },
       wearing: [], wornMats: [],
@@ -13809,7 +14488,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   }
 
   global.GWCrew = { create, createBoss, buildBody, buildHands, dressBody, nameTag,
-                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE };
+                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE,
+                    POSES, POSE, EMOTES, applyPose };
 })(window);
 
 </script>
@@ -14641,6 +15321,23 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
     listen('say', (d) => { if (d && d.text) store.say(d.text, d.tone || 'flat'); });
 
+    /* An emote somebody else did.
+
+       Trusted about as far as it goes: the id is looked up in this build's own
+       vocabulary and dropped if it is not there, so a peer on a newer version
+       with more emotes than you have makes your copy do nothing rather than
+       throw. The clock is this machine's, not theirs -- a peer cannot ask for a
+       gesture that runs for an hour. */
+    listen('emote', (d, from) => {
+      if (!d || !d.id) return;
+      const def = GWCrew.POSES[d.id];
+      if (!def || !def.emote) return;
+      const p = seePeer(from, null);
+      p.emote = d.id;
+      p.emoteFor = def.seconds;
+      p.emoteLeft = def.seconds;
+    });
+
     function broadcast(t, d) { send(t, d); }
 
     /* --- the frame ----------------------------------------------------------- */
@@ -14687,9 +15384,20 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         p.body.root.rotation.z = p.moving ? s * 0.12 : s * 0.02;
         p.body.root.position.y = p.moving ? Math.abs(Math.cos(p.cycle)) * 0.035 : 0;
         for (let i = 0; i < 2; i++) {
-          const side = i === 0 ? -1 : 1;
           p.body.hands[i].position.z = 0.06 + (i === 0 ? s : -s) * (p.moving ? 0.16 : 0.02);
-          p.body.hands[i].rotation.z = side * 0.1;
+        }
+        /* And whatever they are doing with their hands.
+           Called every frame including when there is nothing to play, because
+           that is what puts a body back to rest -- a pose applied once and
+           never cleared leaves somebody waving for the rest of the night. */
+        if (p.emoteLeft > 0) {
+          p.emoteLeft = Math.max(0, p.emoteLeft - dt);
+          const et = 1 - p.emoteLeft / p.emoteFor;
+          const g = Math.min(1, et / 0.2, (1 - et) / 0.25);
+          GWCrew.applyPose(p.body, GWCrew.POSE(p.emote, g, et, p.emoteFor));
+          if (p.emoteLeft === 0) p.emote = null;
+        } else {
+          GWCrew.applyPose(p.body, null);
         }
       }
     }
@@ -14811,6 +15519,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         return { game, stake: amount, multiplier, net: gross - amount, gross, detail: null };
       },
       announce(text, tone) { send('say', { text, tone }); },
+      /* Tell the table what you just did. Nothing comes back and nothing is
+         retried: an emote that arrives after the moment has passed is worse
+         than one that never arrives. */
+      emote(id) { send('emote', { id }); },
       dispose() {
         disposed = true;
         send('bye', null);
@@ -14936,7 +15648,18 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
    There is no pointer lock on iOS and none worth having on Android, so the
    first-person controls need a second set of inputs rather than a smaller
    version of the first: a thumbstick for walking, a drag anywhere else for
-   looking, and a button for the thing the keyboard spends E on.
+   looking, and buttons for the things the keyboard has keys for.
+
+   That last list has grown twice since this was written and neither time did
+   anybody come back here. The yard got a parkour with a ticket on the last
+   crate -- which is to say the game grew a thing you cannot get to without
+   jumping, and there was no jump button, so on a phone that ticket was
+   unreachable. Nibor's has a mezzanine you walk up to, which is fine, but the
+   crates are not. Crouch was exposed on the keyboard and in the accessibility
+   settings and nowhere on a touchscreen. And the emote wheel opens on G.
+
+   Four buttons rather than one, stacked up the right-hand side where a thumb
+   already is.
 
    The controller in world/player.js was written with `stick` and `lookDelta`
    fields for exactly this, so nothing here reaches into the movement code --
@@ -15047,6 +15770,27 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       onInteract();
     });
 
+    /* Jump, crouch and the emote wheel.
+
+       Jump is a tap that sets the same flag a spacebar sets and clears it on
+       the next frame, because the solver reads it as an edge rather than as a
+       held key. Crouch is the opposite: held for as long as your thumb is on
+       it, so ducking under something is one continuous gesture rather than a
+       toggle you have to remember the state of. */
+    el.touchJump.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      player.jump();
+    });
+    const duck = (on) => (e) => { e.preventDefault(); player.state.crouching = on; };
+    el.touchCrouch.addEventListener('pointerdown', duck(true));
+    el.touchCrouch.addEventListener('pointerup', duck(false));
+    el.touchCrouch.addEventListener('pointercancel', duck(false));
+    el.touchCrouch.addEventListener('pointerleave', duck(false));
+    el.touchEmote.addEventListener('click', (e) => {
+      e.preventDefault();
+      global.GWEmotes.toggle();
+    });
+
     return {
       /* Shown while walking, hidden at a table -- where the rail's own buttons
          are the controls and a thumbstick would only sit on top of them. */
@@ -15056,6 +15800,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           player.state.stick.x = 0;
           player.state.stick.y = 0;
           player.state.sprinting = false;
+          player.state.crouching = false;
           stickId = null;
           lookId = null;
         }
@@ -15218,6 +15963,93 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
 
   global.GWTitle = { init, show, hide, render, get isOpen() { return open; } };
+})(window);
+
+</script>
+<script>
+/* The emote wheel.
+
+   Eight things you can do on purpose. The wheel is not how you use them -- the
+   number row is, and that is what anybody who plays for ten minutes will use --
+   the wheel is how you find out that Dance is on 6. So it opens on G, closes on
+   anything, and never blocks the game underneath: you can walk while it is up,
+   and pressing the number is the same press whether it is showing or not.
+
+   Every wedge comes out of `GWCrew.EMOTES`, which is the same table the keys and
+   the animation read. A wheel with its own hard-coded list is a wheel that says
+   Dance is on 6 after somebody moves Dance to 7. */
+
+(function (global) {
+  'use strict';
+
+  let root = null, open = false, shell = null;
+
+  function build() {
+    if (root) return root;
+    root = global.document.createElement('div');
+    root.className = 'emotes';
+    root.id = 'emoteWheel';
+    root.hidden = true;
+    /* Not a dialog and not focus-trapping. The whole point is that the game
+       carries on underneath -- you emote at somebody who is walking away --
+       so it announces itself and gets out of the way. */
+    root.setAttribute('role', 'group');
+    root.setAttribute('aria-label', 'Emotes');
+
+    const ring = global.document.createElement('div');
+    ring.className = 'emotes__ring';
+    const list = GWCrew.EMOTES;
+    list.forEach((m, i) => {
+      const a = (i / list.length) * Math.PI * 2 - Math.PI / 2;
+      const b = global.document.createElement('button');
+      b.type = 'button';
+      b.className = 'emotes__pick';
+      b.dataset.emote = m.id;
+      // Placed round the ring in CSS custom properties rather than in a style
+      // string, so the stylesheet owns how far out they sit.
+      b.style.setProperty('--x', (Math.cos(a) * 50).toFixed(2) + '%');
+      b.style.setProperty('--y', (Math.sin(a) * 50).toFixed(2) + '%');
+      b.innerHTML = '<span class="emotes__key">' + m.key + '</span>'
+                  + '<span class="emotes__label">' + m.label + '</span>';
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (shell && shell.emote) shell.emote(m.id);
+        close();
+      });
+      ring.appendChild(b);
+    });
+    root.appendChild(ring);
+
+    const hint = global.document.createElement('p');
+    hint.className = 'emotes__hint';
+    hint.textContent = 'Press a number, or G to close';
+    root.appendChild(hint);
+
+    global.document.body.appendChild(root);
+    return root;
+  }
+
+  function show() {
+    if (!shell || shell.mode !== 'world') return false;
+    build();
+    root.hidden = false;
+    open = true;
+    return true;
+  }
+
+  function close() {
+    if (!open) return false;
+    root.hidden = true;
+    open = false;
+    return true;
+  }
+
+  global.GWEmotes = {
+    attach(s) { shell = s; },
+    toggle() { return open ? close() : show(); },
+    show, close,
+    isOpen() { return open; },
+  };
 })(window);
 
 </script>
@@ -16945,7 +17777,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'btnTable', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
-      'touchUse', 'guide', 'guideArrow', 'guideText',
+      'touchUse', 'touchJump', 'touchCrouch', 'touchEmote',
+      'guide', 'guideArrow', 'guideText',
       'title', 'titleMenu', 'titleTickets', 'btnTitle',
       'challengeCard', 'challengeName', 'challengeReward', 'challengeNote',
       'heatWrap', 'heatFill', 'heatLabel', 'banner', 'bannerText', 'bannerClock']) {
@@ -17026,6 +17859,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     });
 
     GWScreens.init(shell);
+    GWEmotes.attach(shell);
     GWModMenu.init(shell);
     GWTitle.init(shell);
 
@@ -17171,6 +18005,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         e.preventDefault(); playHand(); return;
       }
       if (e.key === 'q' || e.key === 'Q') { if (!el.shoutBar.hidden) el.btnShout.click(); }
+      /* Emotes on the number row, and the wheel on G for anybody who has not
+         learnt which is which. Both, rather than one: a wheel is how you find
+         out that Dance is on 6, and pressing 6 is how you use it after that. */
+      if (e.key === 'g' || e.key === 'G') { GWEmotes.toggle(); return; }
+      if (shell.mode === 'world' && e.key >= '1' && e.key <= '9') {
+        const pick = shell.emotes.find((m) => m.key === e.key);
+        if (pick && doEmote(pick.id)) { GWEmotes.close(); e.preventDefault(); }
+      }
     });
 
     window.addEventListener('beforeunload', () => shell.store.save());
@@ -17222,7 +18064,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         updateReticle();
         const ps = shell.player.state;
         shell.hands.update(ps.bob, Math.hypot(ps.vel.x, ps.vel.z), ps.vy,
-                           (GWPlayer.EYE - ps.height) / 0.57);
+                           (GWPlayer.EYE - ps.height) / 0.57, dt);
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
@@ -17241,6 +18083,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       if (shell.crew && !GWLoading.isOpen()) {
         shell.crew.update(Math.min(dt, 0.1), shell.player.state.pos);
       }
+      updateRoomTone(dt);
+      if (shell.mode === 'world') updateMirror();
 
       if (s.phase !== 'floor' || GWLoading.isOpen()) return;
       if (s.mods.freezeClock) return;
@@ -17358,6 +18202,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.stage.setAccent(shell.level.theme.neon);
     fogForRoom();
     shell.crew = makeCrew();
+    buildMirror();
+    redress();
     GWLoading.step('Opening the shop');
     await frame();
 
@@ -17556,6 +18402,78 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return link;
   }
 
+  /* --- the mirror at Nibor's -------------------------------------------------
+
+     The one place in the game you can see yourself. It is not a render target:
+     a second pass over the whole room to fill one panel is not something a
+     floor already at two hundred draw calls can pay for, and it would be a
+     second pass that exists for a mirror. It is one body, stood behind the
+     glass, mirrored through the plane of it -- which is what a reflection is,
+     and at the size a two-metre panel occupies it is indistinguishable from
+     one until you look for the seam.
+
+     Only your reflection. Everybody else's is missing, which is a lie the room
+     tells and the honest alternative -- six bodies drawn twice -- is one this
+     cannot afford. The mirror is for the wardrobe, and the wardrobe is yours. */
+  function buildMirror() {
+    dropMirror();
+    const front = shell.level && shell.level.shopFront;
+    if (!front || !front.mirror) return;
+    shell.mirror = GWCrew.buildBody(shell.lib, {
+      body: shell.store.meta.paint, hat: null, height: 1.0, width: 1.0,
+    });
+    GWCrew.dressBody(shell.lib, shell.mirror, shell.store.meta.worn);
+    shell.mirror.group.position.copy(front.mirror.at);
+    shell.stage.group.add(shell.mirror.group);
+  }
+
+  function dropMirror() {
+    if (!shell.mirror) return;
+    if (shell.mirror.group.parent) shell.mirror.group.parent.remove(shell.mirror.group);
+    shell.mirror.dispose();
+    shell.mirror = null;
+  }
+
+  /* Stand the reflection where the reflection of you would be.
+
+     Reflected through the plane of the glass, which for a mirror flat on the
+     z axis means the distance in front of it is the distance behind it and the
+     facing is negated. Only while you are close enough to be in it: a body
+     following you round the whole lobby from behind a panel you cannot see is
+     a body being animated for nobody. */
+  const MIRROR_RANGE = 5.5;
+  function updateMirror() {
+    if (!shell.mirror) return;
+    const front = shell.level.shopFront.mirror;
+    const me = shell.player.state.pos;
+    /* In front of the glass, not behind it, and at a fixed depth.
+
+       A true reflection stands as far behind the pane as you stand in front of
+       it, and on a mezzanine five metres deep that means stepping back to look
+       at yourself puts your reflection inside the lobby's outside wall, which
+       hides it. So the depth is fixed and everything else is mirrored: your
+       position along the wall, and your facing. Step left and it steps left;
+       turn and it turns. Half a reflection that always works beats a whole one
+       that disappears exactly when you use it. */
+    const near = Math.abs(me.x - front.x) < MIRROR_RANGE
+              && me.z < front.plane
+              && front.plane - me.z < MIRROR_RANGE
+              && shell.player.state.y > front.floor - 0.4;
+    shell.mirror.group.visible = near;
+    if (!near) return;
+    shell.mirror.group.position.set(me.x, front.floor, front.at.z);
+    // Facing you, which is your own facing turned through the glass.
+    shell.mirror.group.rotation.y = Math.PI - shell.player.state.yaw;
+    // Crouching is the one thing about you a mirror would obviously show.
+    const crouch = (GWPlayer.EYE - shell.player.state.height) / 0.57;
+    shell.mirror.trunk.scale.y = 1 - crouch * 0.28;
+    shell.mirror.head.position.y = shell.mirror.joints.neck * (1 - crouch * 0.28);
+    // And whatever you are doing with your hands, which is the reason anybody
+    // stands in front of it twice.
+    GWCrew.applyPose(shell.mirror, shell.hands && shell.hands.emoting
+      ? GWCrew.POSE(shell.hands.emoting, 1, 0.5) : null);
+  }
+
   /* Put on what the wardrobe says.
 
      Three places show what you look like and all three have to agree: your own
@@ -17572,6 +18490,10 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     // Other players see the colour you climbed out of the bath in, not the
     // colour of your seat: the seat is what the rail is for.
     if (shell.net) shell.net.setLook(meta.paint, meta.worn);
+    // And the paint in the bath, which is the only thing in the building drawn
+    // in a colour the level did not choose.
+    const front = shell.level && shell.level.shopFront;
+    if (front && front.bath) front.bath.mat.color.set(meta.paint);
     shell.store.saveMeta();
   }
 
@@ -17670,11 +18592,118 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        with one warm hemisphere over all four floors, the black-light room and
        the marble vault both drifted back towards the brown the Ground Floor is
        painted. Sky from the neon, ground from the carpet. */
+    /* And the room tone, which is the same decision for the ears.
+
+       Set here rather than at each of the three places a room is built,
+       because that is three places to forget: the lobby did not get a fog
+       colour of its own for a fortnight for exactly that reason. */
+    shell.audio.setRoom(ROOM_TONE[shell.level.roomId] || ROOM_TONE.hub);
+
     const theme = shell.level.theme;
     shell.stage.setRoomLight(
       new THREE.Color(theme.neon).lerp(new THREE.Color(0xffffff), 0.35).getHex(),
       GWStage.carpetTint(theme.carpet).multiplyScalar(0.62).getHex(),
       1.05);
+  }
+
+  /* --- emotes ---------------------------------------------------------------
+
+     Eight things you can do on purpose, which is the whole of it. There is no
+     progression attached, nothing to unlock and nothing that touches the odds:
+     this is a co-op game about six people sharing one bank account, and half of
+     playing it is reacting to what just happened to somebody else's money.
+
+     One emote goes three places. Your own hands do it, because from where you
+     are stood the whole of you is two mittens in the corners of the frame and
+     a button that only works on other people's screens is a button that appears
+     to be broken. It goes out over the wire, so the others see your body do it.
+     And the strangers on the floor near you answer it, which is the difference
+     between an emote and an animation. */
+  const EMOTE_REPLY = { greet: 'greet', cheer: 'cheer', clap: 'cheer',
+                        laugh: 'cheer', sulk: 'shrug', shrug: 'shrug' };
+  function doEmote(id) {
+    const def = GWCrew.POSES[id];
+    if (!def || !def.emote) return false;
+    // Not while a screen is up: the number keys are stake buttons in there.
+    if (GWScreens.isOpen() || GWLoading.isOpen()) return false;
+    if (!shell.hands || !shell.hands.emote(id)) return false;
+    if (shell.net) shell.net.emote(id);
+    if (def.say) shell.audio.play(def.say === 'cheer' ? 'win'
+                                : def.say === 'sulk' ? 'lose' : 'click');
+    else shell.audio.play('click');
+
+    /* And the room answers. Only the people who can actually see you: waving
+       at a wall and having somebody wave back from the far side of the floor
+       is worse than nobody waving at all. */
+    const reply = EMOTE_REPLY[id];
+    if (reply && shell.crew) {
+      const me = shell.player.state.pos;
+      for (const person of shell.crew.people) {
+        if (!person.pos) continue;
+        if (Math.hypot(person.pos.x - me.x, person.pos.z - me.z) > 7) continue;
+        // Not everyone, and not instantly. A room that answers in unison is a
+        // chorus line.
+        if (Math.random() > 0.55) continue;
+        shell.crew.react(reply === 'cheer' ? 'win' : reply === 'shrug' ? 'loss' : 'greet',
+                         me);
+        break;
+      }
+    }
+    return true;
+  }
+  shell.emote = doEmote;
+  shell.emotes = GWCrew.EMOTES;
+
+  /* --- what the room sounds like -------------------------------------------
+
+     The visual half of this is `fogForRoom` above: the room's own colours,
+     dealt to the fog and the fill light. This is the same idea for the ears,
+     and the reason it is worth having is that `audio.js` was a hundred and
+     fifty lines of one-shots -- a building that made a noise when something
+     happened and was silent the rest of the time, which is the one thing a
+     casino never is.
+
+     The hum is pitched per floor, low and slow, so the four rooms are four
+     different rooms with your eyes shut. Nothing here is a sample. */
+  const ROOM_TONE = {
+    // Deep and warm, the way a big low-ceilinged room with carpet everywhere
+    // sounds. The air is the loudest of the four because the Ground Floor is
+    // the largest space in the building.
+    lobby: { id: 'lobby', hum: 51.9, air: 360, voice: 720 },
+    // A fifth up and brighter: the black-light room is smaller, harder and
+    // has a sound system in it somewhere.
+    velvet: { id: 'velvet', hum: 77.8, air: 520, voice: 880 },
+    // Marble. Almost no air handling you can hear and a hum you feel more than
+    // hear, which is what makes the Vault feel like it is underground.
+    vault: { id: 'vault', hum: 41.2, air: 240, voice: 640 },
+    // An octave over the Ground Floor's, because the Penthouse is the same
+    // room with money and should sound like it is above everything else.
+    penthouse: { id: 'penthouse', hum: 103.8, air: 420, voice: 800 },
+    // The hub, which is two rooms: a warm one and a cold one. Split the
+    // difference low, because you hear it through a doorway half the time.
+    hub: { id: 'hub', hum: 46.2, air: 300, voice: 560 },
+  };
+
+  /* How many people are close enough to hear.
+
+     Counted, not assumed: a floor with a crowd on the far side of it should
+     not sound like a crowd until you walk over to it. Sixteen metres is about
+     where a room's worth of talking stops being individual voices and starts
+     being the noise a room makes, which is exactly what the babble layer is. */
+  const EARSHOT = 16;
+  function updateRoomTone(dt) {
+    if (!shell.audio.tick) return;
+    if (shell.crew && shell.mode !== 'title') {
+      const me = shell.player.state.pos;
+      let near = 0;
+      for (const person of shell.crew.people) {
+        if (!person.body || !person.pos) continue;
+        const d = Math.hypot(person.pos.x - me.x, person.pos.z - me.z);
+        if (d < EARSHOT) near += 1 - d / EARSHOT;
+      }
+      shell.audio.setCrowd(near);
+    }
+    shell.audio.tick(dt);
   }
 
   /* The man in the black suit.
@@ -17905,6 +18934,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
     shell.anchors = [];
     if (shell.boss) { shell.boss.dispose(); shell.boss = null; }
+    dropMirror();
     if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
@@ -18066,6 +19096,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     shell.audio.play('click');
     if (action === 'shark') { GWScreens.show('shark'); return; }
     if (action === 'shop') { GWScreens.show('shop'); return; }
+    if (action === 'wardrobe') { GWScreens.show('wardrobe'); return; }
+    if (action === 'paint') { GWScreens.show('paint'); return; }
     if (action === 'collect') { collectItems(); return; }
     if (action === 'limo') { boardLimo(); return; }
     if (action === 'prize') { takePrize(); }

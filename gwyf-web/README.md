@@ -13,8 +13,9 @@ quota every night, a debt that grows 8% while you sleep, and three ways it ends.
 **WASD** to walk, **Shift** to run, **Space** to jump, **Ctrl** to crouch, mouse
 to look, **E** or a click to use whatever you are stood in front of, **Esc** to
 let the pointer go. Look sensitivity, invert, camera smoothing and head bob are
-in the menu behind the gear. On a phone it is a thumbstick, a drag to look, and
-a Use button.
+in the menu behind the gear. Emotes are on the number row, with a wheel on
+**G**. On a phone it is a thumbstick, a drag to look, and Jump, Duck, emotes and
+Use up the right-hand edge.
 
 ---
 
@@ -209,6 +210,92 @@ The trust model is deliberate, and it is the game's own: anyone at the table can
 empty the account. A guest who lied about a payout would be doing by hand
 exactly what the game invites its friends to do anyway. This connects people who
 passed a code to each other, not strangers.
+
+## What the building sounds like
+
+`core/audio.js` synthesises everything -- no audio files, because they would be
+the largest thing in the bundle by an order of magnitude and a casino's noises
+are what an oscillator and a noise burst do well. For a long time it was a
+hundred and fifty lines of one-shots: the building made a noise when something
+happened and was silent the rest of the time, which is the one thing a casino
+never is.
+
+There is a room now, running continuously, in four layers and none of them a
+sample. **Air**, because every large interior has a ventilation plant you stop
+hearing the moment it stops. **Hum**, two oscillators a few cents apart so they
+beat slowly against each other, pitched per floor -- the Vault sits at 41 Hz and
+the Penthouse an octave over the Ground Floor, so with your eyes shut the four
+rooms are four rooms. **Babble**, which is the crowd: pink noise through a
+wandering bandpass with a peak at the second formant, gated at a syllable rate
+and breathing over ten seconds, and set from how many people are actually within
+sixteen metres of you rather than from a constant. And **the machines**, chimes
+and payouts from elsewhere in the room, drenched in the reverb so they read as
+far off. It crossfades on a floor change; a hard cut is what makes a continuous
+bed audible as a loop.
+
+`tools/sound.mjs` is the reason this is not decorative. An ambient bed that
+works and one that is missing look identical from everywhere except the
+speakers -- the same shape of mistake as a world where nothing had a top -- so
+nothing in it asserts that a string was assigned. It taps the master bus through
+an analyser and measures what is on it: silent before the first gesture, audible
+after, a different room on each of four floors, quieter when the crowd walks
+away (0.183 to 0.000), and properly silent when muted.
+
+## Emotes
+
+Eight things you can do on purpose, on the number row, with a wheel on **G** for
+finding out which is which. Nothing is unlocked and nothing touches the odds:
+this is a co-op game about six people sharing one bank account, and half of
+playing it is reacting to what just happened to somebody else's money.
+
+One emote goes three places, and the awkward one is your own screen. From where
+you are stood the whole of you is two mittens in the bottom corners, so an emote
+that only played on other people's screens would be a button that appears to be
+broken -- your hands do it too. It goes out over the wire so the others see your
+body do it, and the strangers standing near you answer it, which is the
+difference between an emote and an animation.
+
+The vocabulary is one table in `world/crew.js`. That matters because two
+completely separate things animate bodies here: the crowd runs on the full rig
+with states, springs and blending, and the other players in your lobby run on
+twenty lines in `net/session.js` that interpolate a position and swing two hands.
+A pose is a pure function of how far through it you are, returning offsets both
+animators add to whatever else they were doing -- so both can wave, the wheel
+lists what the keys actually do, and moving Dance from 6 to 7 moves it
+everywhere.
+
+`tools/emotes.mjs` opens two windows on the local transport, drives the first
+with the keyboard, and asks the second what it saw by measuring where the other
+player's hands ended up. It found the wheel's wedges stacked on top of each
+other: a percentage in `translate` resolves against the element's own size, not
+its parent's, so all eight sat in a heap in the middle covering each other and
+half of them could not be clicked at all -- the keyboard worked and the mouse
+silently did not.
+
+## Nibor Second Hand Store
+
+The cosmetics were two screens behind a tab row in the back office, which is a
+menu with a shop's name on it. It is a place now: a shopfront in the south-east
+corner of the lobby with a lit sign over the door, rails of other people's
+clothes, a counter you buy at, and a flight of stairs.
+
+The stairs are the point. Nothing else in the building is above the ground, and
+the collision world only learnt how to have tops when the parkour went in -- so
+this is the one room that uses it. Ten steps at 0.26 m against a 0.42 m step-up,
+which means they are walked rather than jumped.
+
+Upstairs is the **mirror** and the **bath**. The mirror is not a render target:
+a second pass over the whole room to fill one panel is not something a floor
+already at two hundred draw calls can pay for. It is one body stood behind the
+glass and reflected through its plane, wearing what you are wearing, crouching
+when you crouch and doing whatever your hands are doing -- which is what a
+reflection is, and at the size a two-metre panel occupies it is
+indistinguishable from one until you look for the seam. Only yours: six bodies
+drawn twice is the honest version and it is not affordable.
+
+`tools/nibor.mjs` walks in, buys something, climbs the stairs and checks the
+mirror -- all with keys, nothing setting a position or a height, because the
+worst bug in this project passed every harness for months by being reached past.
 
 ## How they move
 
@@ -566,10 +653,21 @@ worth knowing about:
 
 - **There is no pointer lock on a phone**, so the touch build is a second set of
   inputs rather than a smaller version of the first: a thumbstick that recentres
-  wherever your thumb lands, a drag anywhere else to look, and a Use button. It
-  appears only on a device with a touchscreen and no mouse — a laptop with a
-  touchscreen keeps the keyboard, because a thumbstick pinned over the corner of
-  a desktop window is a bug.
+  wherever your thumb lands, a drag anywhere else to look, and Jump, Duck, an
+  emote button and Use stacked up the right-hand edge. It appears only on a
+  device with a touchscreen and no mouse — a laptop with a touchscreen keeps the
+  keyboard, because a thumbstick pinned over the corner of a desktop window is a
+  bug.
+
+  That button list is longer than it was, and the reason is worth writing down.
+  The verbs grew twice — the yard got a parkour with a ticket on the last crate,
+  and crouch went into the accessibility settings — and nobody came back to the
+  touch build either time. So on a phone the game was complete except for that
+  ticket, which sat on top of a run of crates with no way to leave the ground.
+  `tools/phone.mjs` drives a real touchscreen context now: it pushes the stick
+  with a finger rather than writing to the stick's fields, taps each button, and
+  checks that none of them is off the screen, under 40 px, or underneath another
+  one — because a button you cannot land on is a button that does not exist.
 - **WebGL 2 is required.** There is no 2D fallback, because there is no version
   of this that is not 3D. If the context is refused the page says so plainly.
 - **The web fonts are the one network request.** They come from Google Fonts and

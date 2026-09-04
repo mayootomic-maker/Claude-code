@@ -893,6 +893,11 @@
       zones: layout.cells,
       size: { w: W, d: D, height: WALL_H },
       name: floorDef.name,
+      // Which room this is, for anything that keys off it -- the room tone
+      // picks its hum from here, the same way the fog picks its colour from
+      // `theme`. Said by the level rather than worked out again by the caller,
+      // because the caller already got that wrong once for the lobby.
+      roomId: floorDef.id,
       dispose() {
         for (const thing of disposables) if (thing.dispose) thing.dispose();
         group.traverse((o) => {
@@ -1166,6 +1171,11 @@
        to walk over there. */
     const SPLIT = -5.0;
     const DOOR_HALF = 3.2;          // half the width of the doorway
+    /* Nibor's, once it is built: where the mirror's reflection stands and
+       which way it faces, and the bath's material so the paint in it can be
+       the colour you last climbed out as. Filled in below and handed to
+       main.js, which is the only place that knows what you look like. */
+    let shopFront = null;
     /* Brown and gold rather than the floors' reds: the lobby is the one room
        you see from the yard, through a doorway, and it has to read as warm
        from out there in the cold. Same four-colour set as the floors -- the
@@ -1489,6 +1499,155 @@
     slab(sharkAt.x + 0.08, sharkAt.z, 0.14, 3.4, 0.1, 2.75, trimMat, null);
     sites.points.push({ at: new THREE.Vector3(sharkAt.x - 0.2, 1.9, sharkAt.z),
                         colour: 0xf0616d, intensity: 9, distance: 6 });
+
+    /* --- Nibor Second Hand Store ------------------------------------------
+
+       The cosmetics have existed for a while as two screens reachable from a
+       tab row in the back office, which is a menu with a shop's name on it. It
+       is meant to be a place: a shopfront in the corner of the lobby, a
+       counter downstairs, a mirror and a bath of paint up on the mezzanine.
+
+       Two floors because the stairs are the point. Nothing else in the lobby
+       is above the ground, the parkour taught the collision world how to have
+       tops, and a shop you go up into is the only room in the building that
+       uses it -- which also means the stairs have to be climbable rather than
+       decorative. Ten steps of 0.26 m against a 0.42 m step-up.
+
+       The south-east corner, and it uses the lobby's own south and east walls
+       as two of its four. That is not laziness: the first placement put it in
+       the middle of the east half and swallowed the lounge's rug and one of
+       the four columns, which nothing would have caught until somebody walked
+       through a bench that was inside a shop. Working outwards from two walls
+       that already exist leaves one number to get wrong instead of four. */
+    const NX0 = 13.5, NZ0 = 5.5;          // the two walls this builds
+    const NX1 = halfW, NZ1 = halfD;       // the two the lobby already has
+    const MEZZ = 2.6;                     // how high the upstairs floor sits
+    const nibor = { x: (NX0 + NX1) / 2, z: (NZ0 + NZ1) / 2 };
+    {
+      const DOOR = 2.4;                   // half the width of the way in
+
+      // The shopfront, with a gap to walk through and a lintel over it so the
+      // front is a front all the way up.
+      for (const side of [-1, 1]) {
+        const inner = nibor.x + side * DOOR;
+        const outer = side < 0 ? NX0 : NX1;
+        slab((inner + outer) / 2, NZ0, Math.abs(outer - inner), 0.4, WALL_H, 0,
+             panelMat, 'wall');
+      }
+      slab(nibor.x, NZ0, DOOR * 2, 0.4, WALL_H - 3.0, 3.0, panelMat, null);
+      slab(NX0, nibor.z, 0.4, NZ1 - NZ0, WALL_H, 0, panelMat, 'wall');
+
+      group.add(sign('NIBOR SECOND HAND', nibor.x, 3.9, NZ0 - 0.22,
+                     0xff8fd0, 4.6, Math.PI));
+      sites.points.push({ at: new THREE.Vector3(nibor.x, 3.3, NZ0 - 1.4),
+                          colour: 0xff8fd0, intensity: 12, distance: 9 });
+
+      /* The mezzanine over the back half, and the stairs up the west side.
+         `slab` gives every box a top, so all of this is stood on. */
+      const EDGE = 11.3;                  // where the upstairs floor starts
+      slab((NX0 + NX1) / 2 + 0.3, (EDGE + NZ1) / 2, NX1 - NX0 - 0.6, NZ1 - EDGE,
+           0.3, MEZZ - 0.3, trimMat, 'mezzanine');
+      const STEPS = 10, RISE = MEZZ / STEPS, RUN = 0.42;
+      for (let i = 0; i < STEPS; i++) {
+        // The last tread finishes level with the mezzanine's edge rather than
+        // short of it, or the top step is a gap you fall down.
+        slab(NX0 + 1.5, EDGE - (STEPS - i) * RUN + RUN / 2, 2.2, RUN,
+             RISE * (i + 1), 0, trimMat, 'stair');
+      }
+      // A rail along the open edge, with the head of the stairs left clear.
+      slab((NX0 + 3.4 + NX1) / 2, EDGE, NX1 - NX0 - 3.4, 0.14, 0.95, MEZZ,
+           panelMat, 'rail');
+      slab((NX0 + 3.4 + NX1) / 2, EDGE, NX1 - NX0 - 3.3, 0.24, 0.07,
+           MEZZ + 0.95, trimMat, null);
+
+      /* Downstairs: the counter. Set into the east wall facing west, the same
+         way the loan shark's window is, because a counter you approach along a
+         wall is a counter and one in the middle of the floor is a kiosk. */
+      const till = { x: NX1 - 1.4, z: 8.2 };
+      fixture({ x: till.x, z: till.z, rot: Math.PI / 2, w: 3.2, d: 1.2,
+                label: 'NIBOR’S', action: 'wardrobe', colour: 0xff8fd0 });
+      // Rails of other people's clothes, which is what a second-hand shop is.
+      const clothMat = [0x7a4f2c, 0x35566b, 0x6b2f38, 0x2f6b4a].map((c) =>
+        track(new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 })));
+      for (let r = 0; r < 2; r++) {
+        const rz = NZ0 + 2.2 + r * 1.7;
+        slab(NX0 + 3.2, rz, 4.6, 0.08, 0.08, 1.55, trimMat, null);
+        for (let i = 0; i < 7; i++) {
+          slab(NX0 + 1.1 + i * 0.65, rz, 0.5, 0.26, 0.85, 0.62,
+               clothMat[(i + r) % 4], null);
+        }
+      }
+
+      /* Upstairs: the mirror.
+
+         Not a render target -- a second pass over the whole room to fill one
+         panel is not something a floor already at two hundred draw calls can
+         pay for. It is one body in a lit niche in the back wall, and it is
+         worth being precise about what it does and does not reflect: it
+         mirrors your position along the wall and your facing, so stepping left
+         steps your reflection left and turning turns it, but its distance from
+         the glass is fixed. A true reflection would stand as far behind the
+         glass as you stand in front of it, which on a mezzanine five metres
+         deep means walking backwards puts it inside the lobby's outside wall,
+         where the wall hides it. Half a reflection that always works beats a
+         whole one that vanishes the moment you step back to look at yourself.
+
+         An opening rather than a pane, for the same reason: a sheet of glass
+         drawn in front of the body would occlude it. */
+      const mirrorZ = NZ1 - 0.45;
+      const mirrorX = NX0 + 3.4;
+      for (const bar of [{ x: 0, y: 2.5, w: 3.4, h: 0.18 },
+                         { x: 0, y: 0.05, w: 3.4, h: 0.14 },
+                         { x: -1.7, y: 1.3, w: 0.18, h: 2.5 },
+                         { x: 1.7, y: 1.3, w: 0.18, h: 2.5 }]) {
+        slab(mirrorX + bar.x, mirrorZ, bar.w, 0.22, bar.h,
+             MEZZ + bar.y - bar.h / 2, trimMat, null);
+      }
+      sites.points.push({ at: new THREE.Vector3(mirrorX, MEZZ + 2.1, mirrorZ - 1.3),
+                          colour: 0xffe6f4, intensity: 9, distance: 6 });
+      const mirror = {
+        at: new THREE.Vector3(mirrorX, MEZZ, mirrorZ - 0.55),
+        x: mirrorX, plane: mirrorZ, floor: MEZZ,
+      };
+
+      /* The bath, on the open side of the mezzanine. Full to the brim, and the
+         paint is the only thing in the building drawn in a colour the level did
+         not choose -- it is whatever you last climbed out as. */
+      const bath = { x: NX1 - 2.6, z: EDGE + 2.2 };
+      for (const [dx, dz, w, d] of [[0, -1.05, 2.4, 0.22], [0, 1.05, 2.4, 0.22],
+                                    [-1.2, 0, 0.22, 2.1], [1.2, 0, 0.22, 2.1]]) {
+        slab(bath.x + dx, bath.z + dz, w, d, 0.7, MEZZ, trimMat, 'bath');
+      }
+      const bathMat = track(new THREE.MeshStandardMaterial({
+        color: 0xd9a441, roughness: 0.35, metalness: 0.1, emissive: 0x2a1c08,
+      }));
+      const paint = new THREE.Mesh(track(new THREE.BoxGeometry(2.1, 0.08, 1.8)), bathMat);
+      paint.position.set(bath.x, MEZZ + 0.58, bath.z);
+      group.add(paint);
+      fixture({ x: bath.x, z: bath.z - 1.6, rot: 0, w: 2.0, d: 0.7,
+                label: 'PAINT', action: 'paint', colour: 0xd9a441 });
+      /* A fixture works out its own stand point on the ground, and this one is
+         up a flight of stairs. An anchor that says otherwise is one the
+         reachability check walks to at floor level, finds nothing at, and
+         reports as fine -- the same shape as the parkour that was scenery. */
+      for (const a of anchors) {
+        if (a.action !== 'paint') continue;
+        a.stand.y = MEZZ;
+        a.position.y = MEZZ;
+        a.focus.y = MEZZ + 1.2;
+      }
+
+      /* The way round it, said by the level rather than guessed by anything
+         that has to walk it. A harness working out where a doorway probably is
+         from a centre and a width is a harness that passes when the door moves
+         and the room does not. */
+      shopFront = {
+        at: nibor, mirror, bath: { mat: bathMat, at: bath, y: MEZZ },
+        door: { x: nibor.x, z: NZ0 },
+        stairs: { x: NX0 + 1.5, foot: EDGE - STEPS * RUN - 1.2, head: EDGE + 0.8 },
+        floor: MEZZ,
+      };
+    }
 
     /* Somewhere to stand about while the others make their minds up. A rug, a
        low table, three benches and a pair of columns marking the middle of the
@@ -1894,7 +2053,9 @@
       jumps,
       size: { w: W, d: D, height: WALL_H },
       name: 'The Yard',
+      roomId: 'hub',
       isLobby: true,
+      shopFront,
       dispose() {
         for (const t of disposables) if (t.dispose) t.dispose();
         group.traverse((o) => {

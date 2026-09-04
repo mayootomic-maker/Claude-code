@@ -263,6 +263,23 @@
 
     listen('say', (d) => { if (d && d.text) store.say(d.text, d.tone || 'flat'); });
 
+    /* An emote somebody else did.
+
+       Trusted about as far as it goes: the id is looked up in this build's own
+       vocabulary and dropped if it is not there, so a peer on a newer version
+       with more emotes than you have makes your copy do nothing rather than
+       throw. The clock is this machine's, not theirs -- a peer cannot ask for a
+       gesture that runs for an hour. */
+    listen('emote', (d, from) => {
+      if (!d || !d.id) return;
+      const def = GWCrew.POSES[d.id];
+      if (!def || !def.emote) return;
+      const p = seePeer(from, null);
+      p.emote = d.id;
+      p.emoteFor = def.seconds;
+      p.emoteLeft = def.seconds;
+    });
+
     function broadcast(t, d) { send(t, d); }
 
     /* --- the frame ----------------------------------------------------------- */
@@ -309,9 +326,20 @@
         p.body.root.rotation.z = p.moving ? s * 0.12 : s * 0.02;
         p.body.root.position.y = p.moving ? Math.abs(Math.cos(p.cycle)) * 0.035 : 0;
         for (let i = 0; i < 2; i++) {
-          const side = i === 0 ? -1 : 1;
           p.body.hands[i].position.z = 0.06 + (i === 0 ? s : -s) * (p.moving ? 0.16 : 0.02);
-          p.body.hands[i].rotation.z = side * 0.1;
+        }
+        /* And whatever they are doing with their hands.
+           Called every frame including when there is nothing to play, because
+           that is what puts a body back to rest -- a pose applied once and
+           never cleared leaves somebody waving for the rest of the night. */
+        if (p.emoteLeft > 0) {
+          p.emoteLeft = Math.max(0, p.emoteLeft - dt);
+          const et = 1 - p.emoteLeft / p.emoteFor;
+          const g = Math.min(1, et / 0.2, (1 - et) / 0.25);
+          GWCrew.applyPose(p.body, GWCrew.POSE(p.emote, g, et, p.emoteFor));
+          if (p.emoteLeft === 0) p.emote = null;
+        } else {
+          GWCrew.applyPose(p.body, null);
         }
       }
     }
@@ -433,6 +461,10 @@
         return { game, stake: amount, multiplier, net: gross - amount, gross, detail: null };
       },
       announce(text, tone) { send('say', { text, tone }); },
+      /* Tell the table what you just did. Nothing comes back and nothing is
+         retried: an emote that arrives after the moment has passed is worse
+         than one that never arrives. */
+      emote(id) { send('emote', { id }); },
       dispose() {
         disposed = true;
         send('bye', null);

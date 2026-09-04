@@ -3,7 +3,18 @@
    There is no pointer lock on iOS and none worth having on Android, so the
    first-person controls need a second set of inputs rather than a smaller
    version of the first: a thumbstick for walking, a drag anywhere else for
-   looking, and a button for the thing the keyboard spends E on.
+   looking, and buttons for the things the keyboard has keys for.
+
+   That last list has grown twice since this was written and neither time did
+   anybody come back here. The yard got a parkour with a ticket on the last
+   crate -- which is to say the game grew a thing you cannot get to without
+   jumping, and there was no jump button, so on a phone that ticket was
+   unreachable. Nibor's has a mezzanine you walk up to, which is fine, but the
+   crates are not. Crouch was exposed on the keyboard and in the accessibility
+   settings and nowhere on a touchscreen. And the emote wheel opens on G.
+
+   Four buttons rather than one, stacked up the right-hand side where a thumb
+   already is.
 
    The controller in world/player.js was written with `stick` and `lookDelta`
    fields for exactly this, so nothing here reaches into the movement code --
@@ -114,6 +125,27 @@
       onInteract();
     });
 
+    /* Jump, crouch and the emote wheel.
+
+       Jump is a tap that sets the same flag a spacebar sets and clears it on
+       the next frame, because the solver reads it as an edge rather than as a
+       held key. Crouch is the opposite: held for as long as your thumb is on
+       it, so ducking under something is one continuous gesture rather than a
+       toggle you have to remember the state of. */
+    el.touchJump.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      player.jump();
+    });
+    const duck = (on) => (e) => { e.preventDefault(); player.state.crouching = on; };
+    el.touchCrouch.addEventListener('pointerdown', duck(true));
+    el.touchCrouch.addEventListener('pointerup', duck(false));
+    el.touchCrouch.addEventListener('pointercancel', duck(false));
+    el.touchCrouch.addEventListener('pointerleave', duck(false));
+    el.touchEmote.addEventListener('click', (e) => {
+      e.preventDefault();
+      global.GWEmotes.toggle();
+    });
+
     return {
       /* Shown while walking, hidden at a table -- where the rail's own buttons
          are the controls and a thumbstick would only sit on top of them. */
@@ -123,6 +155,7 @@
           player.state.stick.x = 0;
           player.state.stick.y = 0;
           player.state.sprinting = false;
+          player.state.crouching = false;
           stickId = null;
           lookId = null;
         }

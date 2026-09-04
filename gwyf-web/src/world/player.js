@@ -456,6 +456,15 @@
     return {
       state,
       enter, update, lock, unlock, eye, forward, inLift,
+      /* Jump, for anything that is not the spacebar.
+
+         A touchscreen has no spacebar and the yard has a parkour with a ticket
+         on top of it, so a phone could reach every part of this game except
+         that one. Exposed as the same call the key makes -- buffer and all --
+         rather than as a flag somebody else sets, because the buffer is the
+         reason a press that lands just before your feet do still counts, and a
+         second way in that skipped it would jump differently. */
+      jump() { if (state.active) { state.jumpAt = JUMP_BUFFER; jump(); } },
       get active() { return state.active; },
       set active(v) {
         state.active = !!v;

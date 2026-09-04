@@ -175,6 +175,170 @@
     };
   }
 
+  /* --- the gesture vocabulary ------------------------------------------------
+
+     Every deliberate movement a body can make, in one table, because there are
+     two entirely separate things that need to make them and a vocabulary that
+     lives in one of them is a vocabulary the other cannot use. The crowd on the
+     floor is animated by the full rig below -- states, springs, blending; the
+     other players in your lobby are animated by twenty lines in `net/session.js`
+     that interpolate a position and swing two hands. Both have to be able to
+     wave.
+
+     So a pose is a pure function of how far through it you are and returns
+     offsets, and the two animators add those offsets to whatever else they were
+     doing. Nothing here touches a body directly.
+
+       g  0 at the start, 1 in the middle, 0 at the end -- so a wave begins and
+          ends with the arm down instead of snapping to it
+       t  0 to 1 across the whole gesture, for anything that has to travel
+       d  how many seconds the whole thing lasts, for beats that should keep the
+          same tempo whether it runs for one second or three
+
+     `rank` is what a running gesture will not be interrupted by: cheering over
+     a shrug is fine, shrugging over a cheer is not. `emote` marks the ones a
+     player can ask for from the wheel, which is most but not all of them --
+     `check` is somebody looking at their watch because the clock is running
+     out, and nobody needs a button for that. */
+  const POSES = {
+    greet: {
+      rank: 1, emote: true, label: 'Wave', key: '1', seconds: 1.6, say: 'greet',
+      pose(g, t, d) {
+        const beat = Math.sin(t * d * 9);
+        return { handLift: g * 0.62, handOut: g * (0.16 + beat * 0.07),
+                 headTilt: -g * 0.10, browTilt: -g * 0.3, roll: g * beat * 0.035 };
+      },
+    },
+    point: {
+      // The head follows the arm; `turnToAt` is the flag that asks for it, and
+      // only the full rig knows where in the room the thing being pointed at is.
+      rank: 2, emote: true, label: 'Point', key: '2', seconds: 1.4,
+      pose(g) {
+        return { handLift: g * 0.30, handOut: g * 0.34, lean: -g * 0.06,
+                 turnToAt: true };
+      },
+    },
+    shrug: {
+      // The whole point of a shrug is that it is over before it is finished.
+      rank: 2, emote: true, label: 'Shrug', key: '3', seconds: 1.2,
+      pose(g) {
+        return { handOut: g * 0.26, handLift: g * 0.16, headTilt: g * 0.14,
+                 browTilt: -g * 0.35, squash: g * 0.03 };
+      },
+    },
+    cheer: {
+      rank: 3, emote: true, label: 'Cheer', key: '4', seconds: 1.5, say: 'cheer',
+      pose(g, t) {
+        return { handLift: g * 0.66, handOut: g * 0.14,
+                 rise: g * Math.abs(Math.sin(t * 11)) * 0.10,
+                 browTilt: -g * 0.5, headTilt: -g * 0.18 };
+      },
+    },
+    check: {
+      // A look at the wrist. Not an emote: this is what somebody does when the
+      // clock is nearly out, and it should mean that rather than being a button.
+      rank: 0, seconds: 1.6,
+      pose(g) {
+        return { handLift: g * 0.34, handOut: -g * 0.10, headTilt: g * 0.30,
+                 lean: g * 0.08, browTilt: g * 0.25 };
+      },
+    },
+
+    /* The ones added for the wheel. Bigger and longer than the reactions
+       above, because an emote is something you chose to do and stood there
+       doing -- a reaction that reads at a glance would be over before anybody
+       looked up. */
+    laugh: {
+      rank: 3, emote: true, label: 'Laugh', key: '5', seconds: 2.0, say: 'laugh',
+      pose(g, t, d) {
+        // Doubled over and shaking, from the waist rather than the shoulders.
+        const shake = Math.sin(t * d * 13);
+        return { lean: g * (0.34 + shake * 0.09), headTilt: g * 0.42,
+                 handLift: g * 0.22, handOut: -g * 0.06,
+                 browTilt: -g * 0.4, squash: g * 0.05,
+                 rise: -g * 0.04 + g * Math.abs(shake) * 0.03 };
+      },
+    },
+    dance: {
+      /* Two and a bit turns on the spot with the hands up, which is the only
+         emote here that moves the body's own yaw. It is also the longest, on
+         the grounds that a dance you can do in one second is a twitch. */
+      rank: 4, emote: true, label: 'Dance', key: '6', seconds: 3.4,
+      pose(g, t, d) {
+        const beat = Math.sin(t * d * 7.5);
+        return { spin: g * t * Math.PI * 4.4,
+                 handLift: g * (0.5 + beat * 0.18), handOut: g * 0.2,
+                 roll: g * beat * 0.16, rise: g * Math.abs(beat) * 0.09,
+                 headTilt: -g * 0.12, browTilt: -g * 0.35,
+                 squash: -g * Math.abs(beat) * 0.04 };
+      },
+    },
+    clap: {
+      rank: 2, emote: true, label: 'Clap', key: '7', seconds: 1.8,
+      pose(g, t, d) {
+        // The hands come together rather than apart, so `handOut` goes
+        // negative on the beat -- a clap where the hands never meet is a wave.
+        const beat = Math.abs(Math.sin(t * d * 8));
+        return { handLift: g * 0.34, handOut: -g * beat * 0.2,
+                 lean: g * 0.05, browTilt: -g * 0.25, headTilt: -g * 0.06 };
+      },
+    },
+    sulk: {
+      // For losing everything, which happens often enough to deserve a button.
+      rank: 1, emote: true, label: 'Sulk', key: '8', seconds: 2.2, say: 'sulk',
+      pose(g, t) {
+        const sway = Math.sin(t * 4);
+        return { headTilt: g * 0.5, lean: g * 0.16, handLift: -g * 0.16,
+                 browTilt: g * 0.55, squash: g * 0.07,
+                 rise: -g * 0.05, roll: g * sway * 0.03 };
+      },
+    },
+  };
+
+  /* Write a pose onto a body that has no rig behind it.
+
+     `net/session.js` animates the other players in your lobby with a position
+     lerp and a two-hand swing -- no states, no springs, no blending -- because
+     that is all a peer needs and a second copy of the rig would be a second
+     copy of the rig. This lets those bodies make the same gestures anyway.
+
+     Fields the simple animator writes itself every frame are added to; fields
+     nothing else touches are set outright, so calling this with a null pose is
+     how a body stops gesturing rather than staying stuck in one. */
+  function applyPose(body, o) {
+    const p = o || ZERO;
+    const J = body.joints;
+    body.root.rotation.x = -p.lean;
+    body.root.rotation.y = p.spin;
+    body.root.rotation.z += p.roll;
+    body.root.position.y += p.rise;
+    body.head.rotation.x = -p.headTilt;
+    body.brow.rotation.x = -p.browTilt * 0.42;
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      body.hands[i].position.x = side * (J.handX + p.handOut);
+      body.hands[i].position.y = J.hand + p.handLift;
+      body.hands[i].rotation.z = side * (0.10 + p.handLift * 0.5);
+    }
+  }
+
+  /* Work out a pose, safely. An unknown name gets nothing rather than throwing
+     -- an emote arriving over the network is a string somebody else's build
+     chose, and a peer on a newer version must not be able to crash yours. */
+  const ZERO = { handLift: 0, handOut: 0, headTilt: 0, browTilt: 0, roll: 0,
+                 lean: 0, rise: 0, squash: 0, spin: 0, turnToAt: false };
+  function POSE(name, g, t, seconds) {
+    const def = POSES[name];
+    if (!def) return null;
+    return Object.assign({}, ZERO, def.pose(g, t, seconds || def.seconds || 1));
+  }
+
+  // The ones a player can ask for, in the order the wheel shows them.
+  const EMOTES = Object.keys(POSES)
+    .filter((k) => POSES[k].emote)
+    .map((k) => ({ id: k, label: POSES[k].label, key: POSES[k].key,
+                   seconds: POSES[k].seconds, say: POSES[k].say || null }));
+
   /* --- cosmetics ------------------------------------------------------------
 
      Thirty-odd things you can wear, built out of primitives rather than
@@ -796,9 +960,10 @@
     function doGesture(person, name, seconds, at) {
       // A gesture already running is only replaced by a fresher one of at
       // least equal standing: a wave must not stamp on a cheer.
-      const RANK = { check: 0, greet: 1, shrug: 2, point: 2, cheer: 3 };
+      if (!POSES[name]) return;
+      const rank = (n) => (POSES[n] && POSES[n].rank) || 0;
       if (person.gesture && person.gestureLeft > 0
-          && (RANK[person.gesture] || 0) > (RANK[name] || 0)) return;
+          && rank(person.gesture) > rank(name)) return;
       person.gesture = name;
       person.gestureFor = seconds;
       person.gestureLeft = seconds;
@@ -1213,7 +1378,7 @@
       const impact = Math.pow(Math.max(0, -Math.cos(rig.step * 2)), 2);
 
       /* --- targets, summed across the states -------------------------------- */
-      let lean = 0, roll = 0, rise = 0, squash = 0, bank = 0;
+      let lean = 0, roll = 0, rise = 0, squash = 0, bank = 0, spin = 0;
       let headTurn = 0, headTilt = 0, browTilt = 0, browDrop = 0;
       let handLift = 0, handOut = 0, handSwing = 0;
 
@@ -1289,22 +1454,18 @@
         const t = 1 - person.gestureLeft / person.gestureFor;
         // In over the first fifth, out over the last quarter.
         const g = Math.min(1, t / 0.2, (1 - t) / 0.25);
-        const beatFast = Math.sin(t * person.gestureFor * 9);
 
-        if (person.gesture === 'greet') {
-          // One hand up and waving, weight on the back foot.
-          handLift += g * 0.62;
-          handOut += g * (0.16 + beatFast * 0.07);
-          headTilt -= g * 0.10;
-          browTilt -= g * 0.3;
-          roll += g * beatFast * 0.035;
-        } else if (person.gesture === 'point') {
-          // Arms out towards it, and the head turned to follow -- pointing at
-          // something you are not looking at reads as a spasm.
-          handLift += g * 0.30;
-          handOut += g * 0.34;
-          lean -= g * 0.06;
-          if (person.gestureAt) {
+        const pose = POSE(person.gesture, g, t, person.gestureFor);
+        if (pose) {
+          handLift += pose.handLift; handOut += pose.handOut;
+          headTilt += pose.headTilt; browTilt += pose.browTilt;
+          roll += pose.roll; lean += pose.lean;
+          rise += pose.rise; squash += pose.squash;
+          spin += pose.spin;
+          // Pointing at something you are not looking at reads as a spasm, so
+          // the head follows the arm -- the one part of a pose that needs to
+          // know where in the room the thing is.
+          if (pose.turnToAt && person.gestureAt) {
             const want = Math.atan2(-(person.gestureAt.x - person.pos.x),
                                     -(person.gestureAt.z - person.pos.z));
             let off = want - person.yaw;
@@ -1312,27 +1473,6 @@
             while (off < -Math.PI) off += Math.PI * 2;
             headTurn += g * Math.max(-1.1, Math.min(1.1, off));
           }
-        } else if (person.gesture === 'shrug') {
-          // Hands out and up a little, head down, brows up: the whole point of
-          // a shrug is that it is over before it is finished.
-          handOut += g * 0.26;
-          handLift += g * 0.16;
-          headTilt += g * 0.14;
-          browTilt -= g * 0.35;
-          squash += g * 0.03;
-        } else if (person.gesture === 'cheer') {
-          handLift += g * 0.66;
-          handOut += g * 0.14;
-          rise += g * Math.abs(Math.sin(t * 11)) * 0.10;
-          browTilt -= g * 0.5;
-          headTilt -= g * 0.18;
-        } else if (person.gesture === 'check') {
-          // A look at the wrist: one hand up and across, head down over it.
-          handLift += g * 0.34;
-          handOut -= g * 0.10;
-          headTilt += g * 0.30;
-          lean += g * 0.08;
-          browTilt += g * 0.25;
         }
         if (person.gestureLeft === 0) { person.gesture = null; person.gestureAt = null; }
       }
@@ -1376,6 +1516,10 @@
       /* --- write it out ------------------------------------------------------ */
       body.root.position.y = riseV;
       body.root.rotation.z = rollV;
+      // Turned on the spot, inside the group that carries their facing -- so a
+      // dance spins the body without the walker losing track of which way they
+      // are pointed once it finishes.
+      body.root.rotation.y = spin;
       /* Negated on the way out, so that everything above can read as "lean
          forward by this much".
 
@@ -1449,6 +1593,7 @@
     const owned = [];
     let skin = null;
     const hands = [];
+    let handEmote = null, handEmoteFor = 1, handEmoteLeft = 0;
     for (const side of [-1, 1]) {
       const hand = GWModels.instance(lib, 'pin_hand');
       hand.traverse((o) => {
@@ -1480,9 +1625,33 @@
          them again for a colour change drops a frame every time somebody
          fiddles with the palette. */
       setColour(colour) { if (skin && colour !== undefined) skin.color.set(colour); },
+      /* Do an emote with your own two hands.
+
+         You cannot see yourself: the whole of you, from where you are stood,
+         is two mittens in the bottom corners of the frame. So pressing an
+         emote and having it happen only on everybody else's screen is a button
+         that appears to do nothing -- which is how the first pass of this felt
+         to play, and it is the one thing an emote must not be.
+
+         The hands are placed as a fraction of the frame rather than in metres
+         (see below), so the pose is applied in the same units: a wave lifts
+         them by a share of the visible height, not by half a metre. */
+      emote(name) {
+        const def = POSES[name];
+        if (!def) return false;
+        handEmote = name;
+        handEmoteFor = def.seconds;
+        handEmoteLeft = def.seconds;
+        return true;
+      },
+      get emoting() { return handEmoteLeft > 0 ? handEmote : null; },
+
       /* Place them for this frame. `bob` is the walk phase, `speed` how fast,
-         `fall` the vertical velocity so they drop when you do. */
-      update(bob, speed, fall, crouch) {
+         `fall` the vertical velocity so they drop when you do. `dt` advances
+         whatever emote is running -- passed in rather than measured here,
+         because the clock this game runs on lives in `lib/time.js`'s caller
+         and a second one would drift against it. */
+      update(bob, speed, fall, crouch, dt) {
         // Half the visible frame at the distance the hands are held, from the
         // camera's live field of view rather than a number written down once.
         const Z = -0.52;
@@ -1491,6 +1660,22 @@
         const sway = Math.sin(bob) * Math.min(0.035, speed * 0.012);
         const lift = Math.abs(Math.cos(bob)) * Math.min(0.03, speed * 0.010);
         const drop = Math.max(-0.10, Math.min(0.10, -fall * 0.016));
+
+        // Whatever you are doing on purpose, over the top of all that.
+        let e = null;
+        if (handEmoteLeft > 0) {
+          handEmoteLeft = Math.max(0, handEmoteLeft - (dt || 0));
+          const et = 1 - handEmoteLeft / handEmoteFor;
+          const g = Math.min(1, et / 0.2, (1 - et) / 0.25);
+          e = POSE(handEmote, g, et, handEmoteFor);
+          if (handEmoteLeft === 0) handEmote = null;
+        }
+        // Into the frame and towards the middle, so a wave is a wave rather
+        // than a mitten twitching in the corner where you cannot see it.
+        const eLift = e ? e.handLift * 1.5 : 0;
+        const eIn = e ? e.handOut * 0.9 : 0;
+        const eRoll = e ? e.roll * 3 : 0;
+
         for (let i = 0; i < 2; i++) {
           const side = i === 0 ? -1 : 1;
           /* Placed as a fraction of the frame, not in metres.
@@ -1503,13 +1688,13 @@
              view, aspect ratio or window size, and keeps them the same
              apparent size while it is being eased between the two. */
           hands[i].position.set(
-            side * halfW * (0.66 - crouch * 0.03) + sway * side,
-            -halfH * (0.80 + crouch * 0.05) + lift - drop,
+            side * halfW * (0.66 - crouch * 0.03 - eIn) + sway * side,
+            -halfH * (0.80 + crouch * 0.05 - eLift) + lift - drop,
             Z + Math.abs(sway) * 0.4
           );
           hands[i].scale.setScalar(halfH * 1.06);
-          hands[i].rotation.z = side * (0.35 + sway * 2.0);
-          hands[i].rotation.x = -0.35 + lift * 2.0;
+          hands[i].rotation.z = side * (0.35 + sway * 2.0) + eRoll;
+          hands[i].rotation.x = -0.35 + lift * 2.0 - (e ? e.headTilt * 0.6 : 0);
         }
       },
       wearing: [], wornMats: [],
@@ -1631,5 +1816,6 @@
   }
 
   global.GWCrew = { create, createBoss, buildBody, buildHands, dressBody, nameTag,
-                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE };
+                    LOOK, YOU, COSMETIC_PREVIEW: WEARABLE,
+                    POSES, POSE, EMOTES, applyPose };
 })(window);

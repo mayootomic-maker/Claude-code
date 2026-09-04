@@ -42,7 +42,8 @@
       'btnTower', 'btnShop', 'btnSound', 'btnMenu', 'btnTable', 'shoutBar', 'btnShout',
       'shoutCount', 'rail', 'hud', 'reticle', 'floorTag', 'usePrompt', 'useLabel',
       'useNote', 'resumeBtn', 'leaveBtn', 'touchLayer', 'touchStick', 'touchKnob',
-      'touchUse', 'guide', 'guideArrow', 'guideText',
+      'touchUse', 'touchJump', 'touchCrouch', 'touchEmote',
+      'guide', 'guideArrow', 'guideText',
       'title', 'titleMenu', 'titleTickets', 'btnTitle',
       'challengeCard', 'challengeName', 'challengeReward', 'challengeNote',
       'heatWrap', 'heatFill', 'heatLabel', 'banner', 'bannerText', 'bannerClock']) {
@@ -123,6 +124,7 @@
     });
 
     GWScreens.init(shell);
+    GWEmotes.attach(shell);
     GWModMenu.init(shell);
     GWTitle.init(shell);
 
@@ -268,6 +270,14 @@
         e.preventDefault(); playHand(); return;
       }
       if (e.key === 'q' || e.key === 'Q') { if (!el.shoutBar.hidden) el.btnShout.click(); }
+      /* Emotes on the number row, and the wheel on G for anybody who has not
+         learnt which is which. Both, rather than one: a wheel is how you find
+         out that Dance is on 6, and pressing 6 is how you use it after that. */
+      if (e.key === 'g' || e.key === 'G') { GWEmotes.toggle(); return; }
+      if (shell.mode === 'world' && e.key >= '1' && e.key <= '9') {
+        const pick = shell.emotes.find((m) => m.key === e.key);
+        if (pick && doEmote(pick.id)) { GWEmotes.close(); e.preventDefault(); }
+      }
     });
 
     window.addEventListener('beforeunload', () => shell.store.save());
@@ -319,7 +329,7 @@
         updateReticle();
         const ps = shell.player.state;
         shell.hands.update(ps.bob, Math.hypot(ps.vel.x, ps.vel.z), ps.vy,
-                           (GWPlayer.EYE - ps.height) / 0.57);
+                           (GWPlayer.EYE - ps.height) / 0.57, dt);
       }
 
       if (shell.mode === 'world') { cullDistantMachines(); updateGuide(); }
@@ -338,6 +348,8 @@
       if (shell.crew && !GWLoading.isOpen()) {
         shell.crew.update(Math.min(dt, 0.1), shell.player.state.pos);
       }
+      updateRoomTone(dt);
+      if (shell.mode === 'world') updateMirror();
 
       if (s.phase !== 'floor' || GWLoading.isOpen()) return;
       if (s.mods.freezeClock) return;
@@ -455,6 +467,8 @@
     shell.stage.setAccent(shell.level.theme.neon);
     fogForRoom();
     shell.crew = makeCrew();
+    buildMirror();
+    redress();
     GWLoading.step('Opening the shop');
     await frame();
 
@@ -653,6 +667,78 @@
     return link;
   }
 
+  /* --- the mirror at Nibor's -------------------------------------------------
+
+     The one place in the game you can see yourself. It is not a render target:
+     a second pass over the whole room to fill one panel is not something a
+     floor already at two hundred draw calls can pay for, and it would be a
+     second pass that exists for a mirror. It is one body, stood behind the
+     glass, mirrored through the plane of it -- which is what a reflection is,
+     and at the size a two-metre panel occupies it is indistinguishable from
+     one until you look for the seam.
+
+     Only your reflection. Everybody else's is missing, which is a lie the room
+     tells and the honest alternative -- six bodies drawn twice -- is one this
+     cannot afford. The mirror is for the wardrobe, and the wardrobe is yours. */
+  function buildMirror() {
+    dropMirror();
+    const front = shell.level && shell.level.shopFront;
+    if (!front || !front.mirror) return;
+    shell.mirror = GWCrew.buildBody(shell.lib, {
+      body: shell.store.meta.paint, hat: null, height: 1.0, width: 1.0,
+    });
+    GWCrew.dressBody(shell.lib, shell.mirror, shell.store.meta.worn);
+    shell.mirror.group.position.copy(front.mirror.at);
+    shell.stage.group.add(shell.mirror.group);
+  }
+
+  function dropMirror() {
+    if (!shell.mirror) return;
+    if (shell.mirror.group.parent) shell.mirror.group.parent.remove(shell.mirror.group);
+    shell.mirror.dispose();
+    shell.mirror = null;
+  }
+
+  /* Stand the reflection where the reflection of you would be.
+
+     Reflected through the plane of the glass, which for a mirror flat on the
+     z axis means the distance in front of it is the distance behind it and the
+     facing is negated. Only while you are close enough to be in it: a body
+     following you round the whole lobby from behind a panel you cannot see is
+     a body being animated for nobody. */
+  const MIRROR_RANGE = 5.5;
+  function updateMirror() {
+    if (!shell.mirror) return;
+    const front = shell.level.shopFront.mirror;
+    const me = shell.player.state.pos;
+    /* In front of the glass, not behind it, and at a fixed depth.
+
+       A true reflection stands as far behind the pane as you stand in front of
+       it, and on a mezzanine five metres deep that means stepping back to look
+       at yourself puts your reflection inside the lobby's outside wall, which
+       hides it. So the depth is fixed and everything else is mirrored: your
+       position along the wall, and your facing. Step left and it steps left;
+       turn and it turns. Half a reflection that always works beats a whole one
+       that disappears exactly when you use it. */
+    const near = Math.abs(me.x - front.x) < MIRROR_RANGE
+              && me.z < front.plane
+              && front.plane - me.z < MIRROR_RANGE
+              && shell.player.state.y > front.floor - 0.4;
+    shell.mirror.group.visible = near;
+    if (!near) return;
+    shell.mirror.group.position.set(me.x, front.floor, front.at.z);
+    // Facing you, which is your own facing turned through the glass.
+    shell.mirror.group.rotation.y = Math.PI - shell.player.state.yaw;
+    // Crouching is the one thing about you a mirror would obviously show.
+    const crouch = (GWPlayer.EYE - shell.player.state.height) / 0.57;
+    shell.mirror.trunk.scale.y = 1 - crouch * 0.28;
+    shell.mirror.head.position.y = shell.mirror.joints.neck * (1 - crouch * 0.28);
+    // And whatever you are doing with your hands, which is the reason anybody
+    // stands in front of it twice.
+    GWCrew.applyPose(shell.mirror, shell.hands && shell.hands.emoting
+      ? GWCrew.POSE(shell.hands.emoting, 1, 0.5) : null);
+  }
+
   /* Put on what the wardrobe says.
 
      Three places show what you look like and all three have to agree: your own
@@ -669,6 +755,10 @@
     // Other players see the colour you climbed out of the bath in, not the
     // colour of your seat: the seat is what the rail is for.
     if (shell.net) shell.net.setLook(meta.paint, meta.worn);
+    // And the paint in the bath, which is the only thing in the building drawn
+    // in a colour the level did not choose.
+    const front = shell.level && shell.level.shopFront;
+    if (front && front.bath) front.bath.mat.color.set(meta.paint);
     shell.store.saveMeta();
   }
 
@@ -767,11 +857,118 @@
        with one warm hemisphere over all four floors, the black-light room and
        the marble vault both drifted back towards the brown the Ground Floor is
        painted. Sky from the neon, ground from the carpet. */
+    /* And the room tone, which is the same decision for the ears.
+
+       Set here rather than at each of the three places a room is built,
+       because that is three places to forget: the lobby did not get a fog
+       colour of its own for a fortnight for exactly that reason. */
+    shell.audio.setRoom(ROOM_TONE[shell.level.roomId] || ROOM_TONE.hub);
+
     const theme = shell.level.theme;
     shell.stage.setRoomLight(
       new THREE.Color(theme.neon).lerp(new THREE.Color(0xffffff), 0.35).getHex(),
       GWStage.carpetTint(theme.carpet).multiplyScalar(0.62).getHex(),
       1.05);
+  }
+
+  /* --- emotes ---------------------------------------------------------------
+
+     Eight things you can do on purpose, which is the whole of it. There is no
+     progression attached, nothing to unlock and nothing that touches the odds:
+     this is a co-op game about six people sharing one bank account, and half of
+     playing it is reacting to what just happened to somebody else's money.
+
+     One emote goes three places. Your own hands do it, because from where you
+     are stood the whole of you is two mittens in the corners of the frame and
+     a button that only works on other people's screens is a button that appears
+     to be broken. It goes out over the wire, so the others see your body do it.
+     And the strangers on the floor near you answer it, which is the difference
+     between an emote and an animation. */
+  const EMOTE_REPLY = { greet: 'greet', cheer: 'cheer', clap: 'cheer',
+                        laugh: 'cheer', sulk: 'shrug', shrug: 'shrug' };
+  function doEmote(id) {
+    const def = GWCrew.POSES[id];
+    if (!def || !def.emote) return false;
+    // Not while a screen is up: the number keys are stake buttons in there.
+    if (GWScreens.isOpen() || GWLoading.isOpen()) return false;
+    if (!shell.hands || !shell.hands.emote(id)) return false;
+    if (shell.net) shell.net.emote(id);
+    if (def.say) shell.audio.play(def.say === 'cheer' ? 'win'
+                                : def.say === 'sulk' ? 'lose' : 'click');
+    else shell.audio.play('click');
+
+    /* And the room answers. Only the people who can actually see you: waving
+       at a wall and having somebody wave back from the far side of the floor
+       is worse than nobody waving at all. */
+    const reply = EMOTE_REPLY[id];
+    if (reply && shell.crew) {
+      const me = shell.player.state.pos;
+      for (const person of shell.crew.people) {
+        if (!person.pos) continue;
+        if (Math.hypot(person.pos.x - me.x, person.pos.z - me.z) > 7) continue;
+        // Not everyone, and not instantly. A room that answers in unison is a
+        // chorus line.
+        if (Math.random() > 0.55) continue;
+        shell.crew.react(reply === 'cheer' ? 'win' : reply === 'shrug' ? 'loss' : 'greet',
+                         me);
+        break;
+      }
+    }
+    return true;
+  }
+  shell.emote = doEmote;
+  shell.emotes = GWCrew.EMOTES;
+
+  /* --- what the room sounds like -------------------------------------------
+
+     The visual half of this is `fogForRoom` above: the room's own colours,
+     dealt to the fog and the fill light. This is the same idea for the ears,
+     and the reason it is worth having is that `audio.js` was a hundred and
+     fifty lines of one-shots -- a building that made a noise when something
+     happened and was silent the rest of the time, which is the one thing a
+     casino never is.
+
+     The hum is pitched per floor, low and slow, so the four rooms are four
+     different rooms with your eyes shut. Nothing here is a sample. */
+  const ROOM_TONE = {
+    // Deep and warm, the way a big low-ceilinged room with carpet everywhere
+    // sounds. The air is the loudest of the four because the Ground Floor is
+    // the largest space in the building.
+    lobby: { id: 'lobby', hum: 51.9, air: 360, voice: 720 },
+    // A fifth up and brighter: the black-light room is smaller, harder and
+    // has a sound system in it somewhere.
+    velvet: { id: 'velvet', hum: 77.8, air: 520, voice: 880 },
+    // Marble. Almost no air handling you can hear and a hum you feel more than
+    // hear, which is what makes the Vault feel like it is underground.
+    vault: { id: 'vault', hum: 41.2, air: 240, voice: 640 },
+    // An octave over the Ground Floor's, because the Penthouse is the same
+    // room with money and should sound like it is above everything else.
+    penthouse: { id: 'penthouse', hum: 103.8, air: 420, voice: 800 },
+    // The hub, which is two rooms: a warm one and a cold one. Split the
+    // difference low, because you hear it through a doorway half the time.
+    hub: { id: 'hub', hum: 46.2, air: 300, voice: 560 },
+  };
+
+  /* How many people are close enough to hear.
+
+     Counted, not assumed: a floor with a crowd on the far side of it should
+     not sound like a crowd until you walk over to it. Sixteen metres is about
+     where a room's worth of talking stops being individual voices and starts
+     being the noise a room makes, which is exactly what the babble layer is. */
+  const EARSHOT = 16;
+  function updateRoomTone(dt) {
+    if (!shell.audio.tick) return;
+    if (shell.crew && shell.mode !== 'title') {
+      const me = shell.player.state.pos;
+      let near = 0;
+      for (const person of shell.crew.people) {
+        if (!person.body || !person.pos) continue;
+        const d = Math.hypot(person.pos.x - me.x, person.pos.z - me.z);
+        if (d < EARSHOT) near += 1 - d / EARSHOT;
+      }
+      shell.audio.setCrowd(near);
+    }
+    shell.audio.tick(dt);
   }
 
   /* The man in the black suit.
@@ -1002,6 +1199,7 @@
     }
     shell.anchors = [];
     if (shell.boss) { shell.boss.dispose(); shell.boss = null; }
+    dropMirror();
     if (shell.net) shell.net.levelChanged();
     if (shell.crew) {
       shell.crew.dispose();
@@ -1163,6 +1361,8 @@
     shell.audio.play('click');
     if (action === 'shark') { GWScreens.show('shark'); return; }
     if (action === 'shop') { GWScreens.show('shop'); return; }
+    if (action === 'wardrobe') { GWScreens.show('wardrobe'); return; }
+    if (action === 'paint') { GWScreens.show('paint'); return; }
     if (action === 'collect') { collectItems(); return; }
     if (action === 'limo') { boardLimo(); return; }
     if (action === 'prize') { takePrize(); }
