@@ -2,12 +2,17 @@
 
    Usage: node gwyf-web/tools/reach.mjs [seeds]
 
-   walk.mjs answers a harder question -- can a player *get* there -- with a
-   deliberately dumb pathfinder, so one miss in twelve tells you very little.
-   This answers the invariant underneath it: standing where the level says to
-   stand and looking where it says to look, does the machine offer itself? A
-   failure here is a floor with a table on it that cannot be used, which is the
-   one placement bug worth failing a build over.
+   Standing where the level says to stand and looking where it says to look,
+   does the machine offer itself? A failure here is a floor with a table on it
+   that cannot be used, which is the one placement bug worth failing a build
+   over.
+
+   Whether you can *walk* to that spot is a different question with a different
+   failure mode, and it has its own tool: paths.mjs. Keeping them apart is not
+   tidiness -- the first version bolted the walk check into this one's evaluate,
+   after the loop that teleports the player to every stand point in turn, and it
+   reported four machines walled off that a standalone probe of the same seed
+   found perfectly connected.
 
    Run across many seeds, because layout is drawn from the run's RNG and the
    pillar that buries an approach only appears on some of them. */
@@ -101,9 +106,10 @@ for (let seed = 0; seed < SEEDS; seed++) {
     });
     for (const row of report.rows) {
       total++;
-      if (row.ok) continue;
-      missing++;
-      console.log(`  seed ${seed} floor ${floor}: ${row.id} does not respond from its own stand point`);
+      if (!row.ok) {
+        missing++;
+        console.log(`  seed ${seed} floor ${floor}: ${row.id} does not respond from its own stand point`);
+      }
     }
     for (const id of report.absent) {
       unplaced.push(`seed ${seed} floor ${floor}: ${id} was never placed`);

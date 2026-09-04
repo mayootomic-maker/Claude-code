@@ -77,6 +77,19 @@
     return this;
   };
 
+  /* Does this axis-aligned box touch anything already here?
+
+     `clearAt` asks the same question of a circle, which is the right shape for
+     a person and the wrong one for a five-metre dice table: a circle big
+     enough to contain the table rejects half the room, and one small enough to
+     fit inside it misses the bench at the corner. */
+  World.prototype.overlaps = function (x, z, hw, hd) {
+    for (const b of this.boxes) {
+      if (Math.abs(x - b.x) < b.hw + hw && Math.abs(z - b.z) < b.hd + hd) return true;
+    }
+    return false;
+  };
+
   /* Is this circle clear of everything? Used to place things without burying
      them in a wall. */
   World.prototype.clearAt = function (x, z, radius) {

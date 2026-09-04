@@ -8782,6 +8782,19 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     return this;
   };
 
+  /* Does this axis-aligned box touch anything already here?
+
+     `clearAt` asks the same question of a circle, which is the right shape for
+     a person and the wrong one for a five-metre dice table: a circle big
+     enough to contain the table rejects half the room, and one small enough to
+     fit inside it misses the bench at the corner. */
+  World.prototype.overlaps = function (x, z, hw, hd) {
+    for (const b of this.boxes) {
+      if (Math.abs(x - b.x) < b.hw + hw && Math.abs(z - b.z) < b.hd + hd) return true;
+    }
+    return false;
+  };
+
   /* Is this circle clear of everything? Used to place things without burying
      them in a wall. */
   World.prototype.clearAt = function (x, z, radius) {
@@ -9223,7 +9236,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      room has to be sized for what stands in it. */
   const SIZE = {
     lobby: { w: 56, d: 40 }, velvet: { w: 52, d: 38 },
-    vault: { w: 44, d: 32 }, penthouse: { w: 30, d: 26 },
+    vault: { w: 44, d: 32 }, penthouse: { w: 36, d: 28 },
   };
 
   /* How many of each machine a floor puts out.
@@ -9235,7 +9248,14 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
      it matters in the right way -- you walk. The count comes down as you climb,
      because the top of the building is meant to feel like fewer, larger,
      worse decisions. */
-  const COPIES = { lobby: 3, velvet: 3, vault: 3, penthouse: 1 };
+  /* Two of each on the top floor, not one.
+
+     Measured across six seeds once the placer started consulting the collision
+     world: the Penthouse stood exactly three machines, every time, in a room
+     you cross in five seconds. The floor you spend the whole run trying to
+     reach was the emptiest one in the building. Two copies of three games in a
+     slightly bigger room is six, which is a floor. */
+  const COPIES = { lobby: 3, velvet: 3, vault: 3, penthouse: 2 };
 
   function build(opts) {
     const floorDef = C.FLOORS[opts.floor];
@@ -9629,6 +9649,28 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const stand = standPoint(spot, box);
       if (Math.abs(stand.x) > halfW - PLAYER - 0.3) return false;
       if (Math.abs(stand.z) > halfD - PLAYER - 0.3) return false;
+
+      /* Ask the collision world, not a list of pillars.
+
+         When a floor was a rectangle with columns on it, checking `pillars`
+         was checking everything there was. The zones put benches, tables,
+         chairs, bar counters, rails and cage walls in before a single machine
+         is placed, and none of it was consulted -- so the generic wall grid
+         cheerfully stood a blackjack table on top of a lounge's bench and
+         dropped the spot you play it from inside a coffee table. Measured by
+         tools/paths.mjs across six seeds: four machines you could not walk to.
+
+         Three questions, because they fail differently. Does the machine sit
+         on top of something. Can you stand where you have to stand. And is
+         there anything behind you when you get there -- a spot walled in by a
+         bench in front and a cabinet behind is clear at its own centre and
+         still somewhere you can never arrive. */
+      if (solids.overlaps(box.x, box.z, box.hw + 0.35, box.hd + 0.35)) return false;
+      if (!solids.clearAt(stand.x, stand.z, PLAYER + 0.15)) return false;
+      const backX = stand.x - Math.sin(spot.rot) * 1.25;
+      const backZ = stand.z - Math.cos(spot.rot) * 1.25;
+      if (!solids.clearAt(backX, backZ, PLAYER + 0.15)) return false;
+
       for (const p of pillars) {
         if (Math.abs(stand.x - p.x) < 0.35 + PLAYER + 0.25
           && Math.abs(stand.z - p.z) < 0.35 + PLAYER + 0.25) return false;
@@ -10168,8 +10210,16 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
        He is the only fixture that is a person rather than a machine, and the
        one you least want to walk up to. A teller's cage set into the east wall
        does that job: a window, bars across it, and a desk lamp behind them. */
+    /* Turned to face west, into the room.
+
+       At -PI/2 it faced east, into the wall it is set into, which put the spot
+       you have to stand on to use it 0.9 m inside the brickwork. Every harness
+       passed: they teleport to the stand point, and standing inside a wall
+       still finds the counter. tools/paths.mjs, which floods the room and asks
+       whether you could walk there, is what caught it -- the loan shark is the
+       first thing you do every day and there was no way to reach him on foot. */
     const sharkAt = { x: halfW - 1.5, z: 3.0 };
-    fixture({ x: sharkAt.x, z: sharkAt.z, rot: -Math.PI / 2, w: 3.6, d: 1.2,
+    fixture({ x: sharkAt.x, z: sharkAt.z, rot: Math.PI / 2, w: 3.6, d: 1.2,
               label: 'LOAN SHARK', action: 'shark', colour: 0xf0616d });
     slab(sharkAt.x + 0.45, sharkAt.z, 0.7, 5.0, WALL_H - 1.4, 0, panelMat, null);
     // The window, and the bars.

@@ -95,7 +95,11 @@ for (let seed = 0; seed < SEEDS; seed++) {
     if ((r.counts.cage || 0) > 1) {
       check(label + ' has at most one cage', false, String(r.counts.cage));
     }
-    if (r.machines && r.inRooms / r.machines < 0.7) {
+    /* A ratio alone is too brittle on a small floor: the Penthouse stands six
+       machines, so one of them out on the generic grid is already 83% and two
+       is 67%. Both a low ratio and more than two strays are needed before this
+       counts as the zones having failed to offer the room. */
+    if (r.machines && r.inRooms / r.machines < 0.7 && r.machines - r.inRooms > 2) {
       check(label + ' stands its machines in the rooms', false,
         r.inRooms + ' of ' + r.machines);
     }
