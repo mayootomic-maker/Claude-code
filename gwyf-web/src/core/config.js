@@ -234,16 +234,27 @@
       cost: 'One fewer shout per day.' },
   ];
 
-  const FRIENDS = [
-    { id: 'mo', name: 'Mo', colour: '#e9b44c', greed: 0.72, discipline: 0.30,
-      voice: 'all-in merchant', blurb: 'Believes in streaks. Has never seen one end.' },
-    { id: 'petra', name: 'Petra', colour: '#5cd98c', greed: 0.34, discipline: 0.78,
-      voice: 'the careful one', blurb: 'Counts. Quietly disapproves. Usually right.' },
-    { id: 'kez', name: 'Kez', colour: '#6fa8dc', greed: 0.55, discipline: 0.48,
-      voice: 'agent of chaos', blurb: 'Plays whatever is nearest and loudest.' },
-    { id: 'den', name: 'Den', colour: '#f0616d', greed: 0.88, discipline: 0.16,
-      voice: 'a problem', blurb: 'Should not be here. Was not invited. Has the account number.' },
+  /* The six seats at the table.
+
+     Not characters any more: slots for real people. The game this follows is
+     one to six players and has no AI companions at all -- "solo play is
+     possible, but not advised" -- and for a long time this had four named
+     personalities betting out of your account, which is a different game
+     wearing the same title. What is left of them is what a lobby actually
+     needs: six names to fall back on and six colours far enough apart that you
+     can tell whose money just went, from across a hall, at a glance.
+
+     The colours are the six the HUD, the crew rail, the name tags and the
+     end-of-night report all read from. Nothing else picks a player colour. */
+  const SEATS = [
+    { id: 'seat1', name: 'Gold', colour: '#e9b44c' },
+    { id: 'seat2', name: 'Green', colour: '#5cd98c' },
+    { id: 'seat3', name: 'Blue', colour: '#6fa8dc' },
+    { id: 'seat4', name: 'Red', colour: '#f0616d' },
+    { id: 'seat5', name: 'Violet', colour: '#b48ce0' },
+    { id: 'seat6', name: 'Amber', colour: '#f2914e' },
   ];
+  const MAX_PLAYERS = SEATS.length;
 
   const SHOUTS_PER_DAY = 3;
 
@@ -361,7 +372,7 @@
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);

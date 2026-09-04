@@ -78,31 +78,6 @@
       onBanner: renderBanner,
       onFriendOffer: (id) => { if (shell.crew) shell.crew.offer(id); },
     });
-    shell.friends = GWFriends.create(shell.store, {
-      onTilt(pending) {
-        showShout();
-        if (shell.crew) shell.crew.tilt(pending.mate.id, true);
-      },
-      onTiltResolved() {
-        hideShout();
-        if (shell.crew) for (const mate of shell.store.s.friends) shell.crew.tilt(mate.id, false);
-      },
-      // The three hooks the bodies in the room run on: where somebody is going,
-      // what they said on the way, and what the table did to them.
-      // Returning true is what tells friends.js to hold the bet until the body
-      // gets there. Dropping the return -- as the first version did -- settles
-      // every bet on a two-second timer while the walk is still going on, and
-      // the friend is then reassigned mid-stride.
-      onGo(mate, gameId, floorIndex) {
-        return !!(shell.crew && shell.crew.go(mate.id, gameId, floorIndex));
-      },
-      onSay(mate, quote) {
-        if (shell.crew) shell.crew.speak(mate.id, quote);
-      },
-      onSettled(mate, net) {
-        if (shell.crew) shell.crew.settled(mate.id, net);
-      },
-    });
     shell.player = GWPlayer.create({
       stage: shell.stage,
       audio: shell.audio,
@@ -279,11 +254,6 @@
       el.btnSound.setAttribute('aria-pressed', 'false');
     }
 
-    el.btnShout.addEventListener('click', () => {
-      if (shell.friends.shout()) { shell.audio.play('shout'); hideShout(); renderHud(); }
-      else shell.audio.play('deny');
-    });
-
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key === 'F1') { e.preventDefault(); GWModMenu.toggle(); return; }
@@ -370,10 +340,9 @@
       }
 
       if (s.phase !== 'floor' || GWLoading.isOpen()) return;
-      if (s.mods.freezeClock) { shell.friends.tick(dt); return; }
+      if (s.mods.freezeClock) return;
 
       s.timeLeft -= dt;
-      shell.friends.tick(dt);
 
       carry += dt;
       if (carry >= 0.25) { carry = 0; renderClock(); renderCrew(); }
@@ -417,7 +386,6 @@
     if (s.phase !== 'floor') return;
     s.phase = 'closing';
     warned.clear();
-    shell.friends.reset();
     hideShout();
     shell.audio.play('alarm');
     shell.store.say('The doors close. Everyone out to the car.', 'warn');
@@ -874,7 +842,6 @@
       return GWCrew.create({
         store: shell.store, level: shell.level, lib: shell.lib,
         // The bet lands when the body gets there, however long the walk was.
-        onArrive: (mateId) => shell.friends.arrive(mateId),
       });
     } catch (err) {
       // The floor is still playable with nobody on it, and saying so beats a
@@ -1113,18 +1080,7 @@
         return;
       }
     }
-    const pending = shell.friends.state.pending;
-    if (!pending || pending.mate.id !== mateId) {
-      shell.audio.play('deny');
-      return;
-    }
-    if (shell.friends.shout()) {
-      shell.audio.play('shout');
-      hideShout();
-      renderHud();
-    } else {
-      shell.audio.play('deny');
-    }
+    shell.audio.play('deny');
   }
 
   function useFixture(action) {
@@ -1619,21 +1575,27 @@
     el.oddsPanel.innerHTML = html;
   }
 
+  /* The rail of everyone else at the table.
+
+     Real players only. It used to list three AI characters and their running
+     totals, which is the part of this that was not the game it is copying --
+     one to six people share the account and nobody else can reach it. Solo,
+     the rail is empty and hidden, because a scoreboard with one name on it is
+     just your own bank written twice. */
   function renderCrew() {
     const s = shell.store.s;
-    const pending = shell.friends.state.pending;
     el.crewList.innerHTML = '';
+    el.crewList.hidden = !s.friends.length;
     for (const mate of s.friends) {
-      const hot = pending && pending.mate.id === mate.id;
       const li = document.createElement('li');
-      li.className = 'ledger__row' + (hot ? ' is-hot' : '');
+      li.className = 'ledger__row';
       li.innerHTML = '<span class="ledger__net"></span><span class="ledger__name"></span>';
       const net = li.querySelector('.ledger__net');
-      net.textContent = (mate.won >= 0 ? '+' : '\u2212') + short(Math.abs(mate.won));
-      net.style.color = mate.won >= 0 ? 'var(--success)' : 'var(--danger)';
+      net.textContent = (mate.won >= 0 ? '+' : '\u2212') + short(Math.abs(mate.won || 0));
+      net.style.color = (mate.won || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
       const name = li.querySelector('.ledger__name');
-      name.textContent = hot ? mate.name + ' \u2014 about to' : mate.name;
-      name.style.color = hot ? '' : mate.colour;
+      name.textContent = mate.name;
+      name.style.color = mate.colour;
       li.title = whatTheyAreDoing(mate);
       el.crewList.appendChild(li);
     }

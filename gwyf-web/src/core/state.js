@@ -50,12 +50,6 @@
 
   function newRun(meta, seed) {
     const perks = meta.perks || {};
-    const friends = C.FRIENDS.slice(0, perks.fourthfriend ? 4 : 3).map((f) => ({
-      id: f.id, name: f.name, colour: f.colour, greed: f.greed, discipline: f.discipline,
-      // Patience drains as they lose. At zero they stop asking and just bet.
-      patience: 1, mood: 0, spent: 0, won: 0, at: null, cooldown: 4 + Math.random() * 4,
-      pending: null, blurb: f.blurb, voice: f.voice,
-    }));
     return {
       version: 2,
       seed: seed >>> 0,
@@ -89,7 +83,15 @@
       shouts: C.SHOUTS_PER_DAY + (perks.extrashout || 0),
       dailyUsed: {},
       biggestLossToday: 0,
-      friends,
+      /* Who else is in the run: real players, and nobody else.
+
+         This used to be three or four AI characters who bet out of the shared
+         account. The game this follows has no AI companions -- one to six real
+         people, and solo means alone -- so the list starts empty and fills as
+         people join. Everything downstream already reads it as a list, so an
+         empty one is a run with nobody else in it rather than a special
+         case. */
+      friends: [],
       // Bought but not yet collected from the shop's shelf. Getting in the limo
       // without picking them up leaves them behind, which is the shop's rule in
       // the game this follows.

@@ -209,30 +209,41 @@
       const s = shell.store.s;
       const meta = shell.store.meta;
       const first = s.day === 1 && !meta.seenIntro;
+      /* Who is actually coming in with you: real players, and nobody else.
+
+         There is no AI crew any more, so on a solo run this list is empty and
+         the whole section goes with it rather than leaving a heading over
+         nothing. */
       const crew = s.friends.map((f) =>
         '<li class="mate"><span class="mate__dot" style="background:' + f.colour + ';color:' + f.colour + '"></span>'
         + '<span><span class="mate__name">' + esc(f.name) + '</span>'
-        + '<span class="mate__where">' + esc(f.blurb) + '</span></span><span></span></li>').join('');
+        + '<span class="mate__where">at the table with you</span></span><span></span></li>').join('');
+      const alone = !s.friends.length;
 
       return {
         sticky: true, title: 'Day ' + s.day,
         html: '<p class="sheet__kicker">' + (first ? 'The arrangement' : 'Day ' + s.day) + '</p>'
           + '<h2 class="sheet__title">' + (first ? 'Gamble With Your Friends' : 'Five more minutes') + '</h2>'
           + (first
-            ? '<p class="sheet__lede">One bank account between the four of you and a debt with '
-              + 'someone who does not do paperwork. Five minutes inside the tower each day, and a '
-              + 'quota to hit before the doors close.</p>'
-              + '<p class="sheet__lede">Your friends can spend the account too. That is not a bug.</p>'
-            : '<p class="sheet__lede">The doors open for five minutes. Everything in the account is '
-              + 'everybody’s, including theirs.</p>')
+            ? '<p class="sheet__lede">One bank account and a debt with someone who does not do '
+              + 'paperwork. Five minutes inside the tower each day, and a quota to hit before the '
+              + 'doors close.</p>'
+              + '<p class="sheet__lede">' + (alone
+                ? 'Nobody is coming with you. That is allowed, and it is not advised.'
+                : 'Everything in the account is everybody’s. Anyone at the table can spend it, '
+                  + 'and that is not a bug.') + '</p>'
+            : '<p class="sheet__lede">The doors open for five minutes. ' + (alone
+              ? 'Just you.'
+              : 'Everything in the account is everybody’s, including theirs.') + '</p>')
           + '<div class="report">'
           + row('In the account', money(s.bank))
           + row('Tonight’s quota', money(s.quota), s.bank >= s.quota ? 'good' : 'bad')
           + row('Owed to the shark', money(s.debt), 'bad')
           + (s.strikes ? row('Missed quotas', s.strikes + ' of ' + C.MAX_STRIKES, 'bad') : '')
           + '</div>'
-          + '<h3 class="rail__label" style="margin-top:1rem">Who is coming in with you</h3>'
-          + '<ul class="crew">' + crew + '</ul>'
+          + (alone ? ''
+            : '<h3 class="rail__label" style="margin-top:1rem">Who is coming in with you</h3>'
+              + '<ul class="crew">' + crew + '</ul>')
           + '<div class="sheet__actions">'
           + '<button class="btn btn--primary" data-go>Into the lobby</button>'
           + (first ? '<button class="btn btn--ghost" data-how>How this works</button>' : '')

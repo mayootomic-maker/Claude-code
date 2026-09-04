@@ -2132,16 +2132,27 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       cost: 'One fewer shout per day.' },
   ];
 
-  const FRIENDS = [
-    { id: 'mo', name: 'Mo', colour: '#e9b44c', greed: 0.72, discipline: 0.30,
-      voice: 'all-in merchant', blurb: 'Believes in streaks. Has never seen one end.' },
-    { id: 'petra', name: 'Petra', colour: '#5cd98c', greed: 0.34, discipline: 0.78,
-      voice: 'the careful one', blurb: 'Counts. Quietly disapproves. Usually right.' },
-    { id: 'kez', name: 'Kez', colour: '#6fa8dc', greed: 0.55, discipline: 0.48,
-      voice: 'agent of chaos', blurb: 'Plays whatever is nearest and loudest.' },
-    { id: 'den', name: 'Den', colour: '#f0616d', greed: 0.88, discipline: 0.16,
-      voice: 'a problem', blurb: 'Should not be here. Was not invited. Has the account number.' },
+  /* The six seats at the table.
+
+     Not characters any more: slots for real people. The game this follows is
+     one to six players and has no AI companions at all -- "solo play is
+     possible, but not advised" -- and for a long time this had four named
+     personalities betting out of your account, which is a different game
+     wearing the same title. What is left of them is what a lobby actually
+     needs: six names to fall back on and six colours far enough apart that you
+     can tell whose money just went, from across a hall, at a glance.
+
+     The colours are the six the HUD, the crew rail, the name tags and the
+     end-of-night report all read from. Nothing else picks a player colour. */
+  const SEATS = [
+    { id: 'seat1', name: 'Gold', colour: '#e9b44c' },
+    { id: 'seat2', name: 'Green', colour: '#5cd98c' },
+    { id: 'seat3', name: 'Blue', colour: '#6fa8dc' },
+    { id: 'seat4', name: 'Red', colour: '#f0616d' },
+    { id: 'seat5', name: 'Violet', colour: '#b48ce0' },
+    { id: 'seat6', name: 'Amber', colour: '#f2914e' },
   ];
+  const MAX_PLAYERS = SEATS.length;
 
   const SHOUTS_PER_DAY = 3;
 
@@ -2259,7 +2270,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   global.GWConfig = {
     DAY_SECONDS, START_DEBT, START_BANK, INTEREST, MAX_STRIKES, SHOUTS_PER_DAY,
-    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, FRIENDS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
+    quotaFor, FLOORS, ITEMS, TICKET_SHOP, BODY_PARTS, SEATS, MAX_PLAYERS, edgeFor, COMPS, compsFor, STAKE_FLOOR, STAKE_FLOOR_QUOTA, FRONT_MARKUP, gamesOn,
     TOTAL_DAYS, CHALLENGES, floorsOpenOn,
   };
 })(window);
@@ -2318,12 +2329,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
   function newRun(meta, seed) {
     const perks = meta.perks || {};
-    const friends = C.FRIENDS.slice(0, perks.fourthfriend ? 4 : 3).map((f) => ({
-      id: f.id, name: f.name, colour: f.colour, greed: f.greed, discipline: f.discipline,
-      // Patience drains as they lose. At zero they stop asking and just bet.
-      patience: 1, mood: 0, spent: 0, won: 0, at: null, cooldown: 4 + Math.random() * 4,
-      pending: null, blurb: f.blurb, voice: f.voice,
-    }));
     return {
       version: 2,
       seed: seed >>> 0,
@@ -2357,7 +2362,15 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       shouts: C.SHOUTS_PER_DAY + (perks.extrashout || 0),
       dailyUsed: {},
       biggestLossToday: 0,
-      friends,
+      /* Who else is in the run: real players, and nobody else.
+
+         This used to be three or four AI characters who bet out of the shared
+         account. The game this follows has no AI companions -- one to six real
+         people, and solo means alone -- so the list starts empty and fills as
+         people join. Everything downstream already reads it as a list, so an
+         empty one is a run with nobody else in it rather than a special
+         case. */
+      friends: [],
       // Bought but not yet collected from the shop's shelf. Getting in the limo
       // without picking them up leaves them behind, which is the shop's rule in
       // the game this follows.
@@ -11098,6 +11111,37 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
   };
   const FALLBACK = { body: 0xc9a9d4, hat: null, height: 1, width: 1 };
 
+  /* Everybody else in the building.
+
+     The four named characters used to be your teammates, betting out of your
+     account, and that is not the game this follows: it is one to six real
+     people and no AI companions at all. So the room needs strangers instead --
+     punters who are here for their own evening, playing with their own money,
+     who happen to be standing at the machine you wanted.
+
+     They are the same body and the same rig. What they do not have is a name
+     tag, a colour you recognise, or any way to reach your bank. Drawn from a
+     palette rather than a list, because the point of a crowd is that you
+     cannot tell one of them from another. */
+  const STRANGER_BODIES = [
+    0xb9a48c, 0x8fa5b8, 0xc59a7a, 0x9d8fb0, 0xa8b295, 0xcbb0a2,
+    0x7f96a6, 0xb08a8a, 0x94a892, 0xc2b184, 0x8d8fa8, 0xaa9c7e,
+  ];
+  const STRANGER_HATS = [null, null, 'pin_hat_top', 'pin_hat_fez',
+                         'pin_hat_boater', 'pin_monocle'];
+
+  /* How many are on a floor, by how big it is.
+
+     Roughly one per hundred and sixty square metres, which puts eight in the
+     Ground Floor's fifty-six by forty and four in the Penthouse. More than
+     that and a hall reads as a crush; fewer and it reads as a showroom after
+     closing. */
+  function crowdFor(level) {
+    if (level.isLobby) return 3;
+    const area = level.size.w * level.size.d;
+    return Math.max(3, Math.min(9, Math.round(area / 160)));
+  }
+
   /* The body is one flat colour, so there is exactly one material to tint --
      which is the point of the design. Eyes, brow, mouth and hats are shared. */
   const TINT = { pin_body: 'body' };
@@ -11301,25 +11345,32 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     group.traverse((o) => { o.userData.person = true; });
     level.group.add(group);
 
-    for (const mate of store.s.friends) {
-      const look = Object.assign({}, FALLBACK, LOOK[mate.id] || {});
+    /* One body, named or not.
+
+       A name tag is the whole difference between somebody at the table with
+       you and somebody who happens to be at the same table. Real players get
+       one in their own colour; the crowd gets none, because a room where every
+       stranger is captioned is a scoreboard with a casino behind it. */
+    function addPerson(mate, look, named) {
       let body;
       try {
         body = buildBody(lib, look);
       } catch (err) {
-        // A missing person mesh must not take the floor down with it. The
-        // friends still bet; you just cannot see them do it.
+        // A missing person mesh must not take the floor down with it.
         console.warn('[gwyf] no body for ' + mate.id, err);
-        continue;
+        return null;
       }
-      // Small. A label you can read at four metres is a billboard at two, and
-      // three of them turn a room into a scoreboard with a casino behind it.
-      const tag = makeTag(mate.name, mate.colour, { size: 0.155, font: 30 });
-      tag.position.y = body.joints.height * 0.98;
-      body.group.add(tag);
+      let tag = null;
+      if (named) {
+        // Small. A label you can read at four metres is a billboard at two.
+        tag = makeTag(mate.name, mate.colour, { size: 0.155, font: 30 });
+        tag.position.y = body.joints.height * 0.98;
+        body.group.add(tag);
+      }
 
       const person = {
         mate, look, body, tag, bubble: null, bubbleLeft: 0,
+        stranger: !named,
         pos: new THREE.Vector3(), yaw: 0, wantYaw: 0,
         dest: null, at: null, state: 'idle',
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
@@ -11331,10 +11382,38 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
            being pointed at, in world space. */
         gesture: null, gestureLeft: 0, gestureFor: 1, gestureAt: null,
         greeted: 0,
+        // How long a stranger stays at a machine before drifting off, and how
+        // long they wander before picking another one.
+        stay: 0,
       };
       spawnAt(person);
       group.add(body.group);
       people.push(person);
+      return person;
+    }
+
+    for (const mate of store.s.friends) {
+      addPerson(mate, Object.assign({}, FALLBACK, LOOK[mate.id] || {}), true);
+    }
+
+    /* The crowd.
+
+       Deliberately after the named ones, so a stranger never takes the spawn
+       spot a player was going to get, and deliberately built from Math.random
+       rather than the run's stream: who is wearing a boater is not something a
+       reload has to reproduce, and pouring draws into the seeded stream would
+       stop it reproducing the things that matter. */
+    for (let i = 0; i < crowdFor(level); i++) {
+      const look = {
+        body: STRANGER_BODIES[Math.floor(rand() * STRANGER_BODIES.length)],
+        hat: STRANGER_HATS[Math.floor(rand() * STRANGER_HATS.length)],
+        height: 0.9 + rand() * 0.22,
+        width: 0.9 + rand() * 0.26,
+      };
+      const person = addPerson({ id: 'stranger' + i, name: null, colour: look.body },
+                               look, false);
+      // Staggered, or the whole crowd sets off for a table on the same frame.
+      if (person) person.stay = rand() * 6;
     }
 
     /* Somewhere in the room that is not inside anything. Tried a fixed number
@@ -11363,7 +11442,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     }
 
     const find = (id) => people.find((p) => p.mate.id === id) || null;
-    const tagHalf = (person) => person.tag.scale.y / 2;
+    // A stranger has no tag, so a speech bubble sits where the tag would be.
+    const tagHalf = (person) => (person.tag ? person.tag.scale.y / 2 : 0.08);
 
     /* One pace to the side of where the player stands at a machine, on
        whichever side is clear. */
@@ -11612,7 +11692,8 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
           person.state = person.at ? 'play' : 'idle';
           person.idleFor = 0;
           // The money moves now, not on a timer that guessed how far this was.
-          if (wasWalkingToTable) onArrive(person.mate.id);
+          // Strangers have no money in this game and never call it.
+          if (wasWalkingToTable && !person.stranger) onArrive(person.mate.id);
         } else {
           toDest.divideScalar(dist);
           let dirX = toDest.x, dirZ = toDest.z;
@@ -11649,11 +11730,48 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         // Stand at the table facing it.
         const focus = person.at.focus || person.at.position;
         person.wantYaw = Math.atan2(-(focus.x - person.pos.x), -(focus.z - person.pos.z));
+        if (person.stranger) {
+          person.stay -= dt;
+          if (person.stay <= 0) {
+            // Somebody's evening ends the way everybody's does.
+            const net = rand() < 0.42 ? 1 : -1;
+            person.mood = net; person.moodLeft = 1.6;
+            doGesture(person, net > 0 ? 'cheer' : 'shrug', net > 0 ? 1.4 : 1.1);
+            person.at = null;
+            person.state = 'idle';
+            person.idleFor = 0;
+            person.stay = 3 + rand() * 7;
+          }
+        }
       } else {
         person.idleFor += dt;
+        if (person.stranger) {
+          /* A stranger with nothing to do finds a machine.
+
+             They are not betting anything of yours -- there is no money in
+             this at all, and it never touches the bank -- they are here for
+             their own evening and the point of them is that the machine you
+             wanted has somebody at it. Held off for a few seconds after
+             arriving so the whole crowd does not converge on one table on the
+             frame the floor loads. */
+          person.stay -= dt;
+          if (person.stay <= 0) {
+            const free = (level.anchors || []).filter((a) => a.kind === 'machine'
+              && !people.some((q) => q !== person && q.at === a));
+            if (free.length) {
+              person.at = free[Math.floor(rand() * free.length)];
+              person.dest = besideStand(person.at);
+              person.state = 'walk';
+              // How long they will stand there once they get there.
+              person.stay = 8 + rand() * 18;
+            } else {
+              person.stay = 4 + rand() * 6;
+            }
+          }
+        }
         // Loiter. Standing perfectly still for five minutes is what makes a
         // character read as a prop.
-        if (person.idleFor > 6 + rand() * 8) {
+        if (!person.dest && person.idleFor > 6 + rand() * 8) {
           person.idleFor = 0;
           person.dest = freeSpot(person.pos);
           person.state = 'idle';
@@ -12033,7 +12151,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       for (const person of people) {
         if (person.anchor) tilt(person.mate.id, false);
         if (person.bubble) person.bubble.userData.dispose();
-        person.tag.userData.dispose();
+        if (person.tag) person.tag.userData.dispose();
         person.body.dispose();
       }
       people.length = 0;
@@ -13114,344 +13232,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
 
 </script>
 <script>
-/* The friends.
-
-   This is the game. Everything else is a casino; what makes it Gamble With
-   Your Friends is that the account is shared and three other people can reach
-   it. They wander the tower on their own clock, pick tables, and stake real
-   money out of the same balance you are trying to build.
-
-   Their bets are settled through the same store.resolve as yours and use the
-   game's own published probability, so a friend playing roulette is playing the
-   roulette in this building and not a simplified version of it. What they do
-   not do is play it in physics: three simultaneous simulations for tables
-   nobody is looking at would cost more than the whole rest of the frame.
-
-   They do walk. Deciding on a table and settling it in the same frame is what
-   this used to do, and it made the bodies in world/crew.js liars -- the ticker
-   said Mo had taken four thousand off the roulette while Mo was still stood by
-   the lift. A turn is now: pick a table, say so, spend `TRAVEL` seconds getting
-   to it, then bet. The money moves when the body arrives.
-
-   Patience is the pressure. It falls when they lose and when the quota is close
-   and unmet. Low patience means a bigger fraction of the bank on each bet, and
-   under a threshold they go for the whole thing -- which is when the shout
-   button appears and you have a few seconds to stop them. */
-
-(function (global) {
-  'use strict';
-
-  const C = global.GWConfig;
-
-  const LINES = {
-    arrive: {
-      mo: ['I have a feeling about {game}.', 'Right. {game}. This is the one.',
-           "Don't look at me like that, {game} owes me."],
-      petra: ['Taking a small one on {game}.', '{game}. Small. Sensible.',
-              'I have done the arithmetic on {game}. It is bad. Playing anyway.'],
-      kez: ['{game}!! {game} {game} {game}', 'oh what does this one do', 'ooh, {game}'],
-      den: ['{game}. Big.', "I'm on {game}. Nobody talk to me.",
-            'Found the {game}. Found the account too.'],
-    },
-    win: {
-      mo: ['SEE. I SAID.', "That's the system working.", 'Told you. Told all of you.'],
-      petra: ['Good. Stopping there.', 'That will do.', 'Banked.'],
-      kez: ['WHAT', 'i have no idea what just happened', 'lmao'],
-      den: ['More.', "That's a start.", 'Again.'],
-    },
-    lose: {
-      mo: ["That's variance.", 'One more and it comes back.', 'Rigged. Obviously rigged.'],
-      petra: ['As expected. Walking away.', 'Mm. Yes. That was the likely outcome.',
-              'I would like it noted that I predicted this.'],
-      kez: ['oops', 'was that ours', 'i think i broke it'],
-      den: ["Doesn't matter.", 'Double it.', 'Nobody panic.'],
-    },
-    tilt: {
-      mo: ['Right. Everything on this one.', "I'm going to fix this in one go.",
-           'Hear me out. All of it.'],
-      petra: ['I am going to do something stupid and I want that recorded.',
-              'The maths says no. I am doing it anyway.'],
-      kez: ['ALL OF IT', 'what happens if i press this with all the money',
-            'im pressing it'],
-      den: ['Taking the lot.', 'This is the one. All in.', "It's fine. I've done this before."],
-    },
-    stopped: {
-      mo: ['...fine. FINE.', 'You are lucky I like you.', 'I had it. I had it.'],
-      petra: ['Thank you. I mean it.', 'Good shout. Genuinely.'],
-      kez: ['ok ok ok putting it down', 'fine!! rude'],
-      den: ['You get one of those.', 'Hm.'],
-    },
-  };
-
-  /* How long a friend spends getting from wherever they were to the table they
-     just announced, when nobody is watching them do it -- the table is upstairs,
-     or there is no room drawn. When a body really is walking there, the walk
-     itself is the timer and this is only the floor under it.
-
-     `STRANDED` is the backstop for that case. A body that never arrives -- a
-     table that went away under it, a route that cannot be walked -- must not
-     hold a stake in limbo for the rest of the day. */
-  const TRAVEL = 2.6;
-  const STRANDED = 26;
-
-  function create(store, hooks) {
-    const rng = store.rng;
-    const state = { pending: null, walking: [], elapsed: 0 };
-    const say = (mate, quote) => { if (hooks.onSay) hooks.onSay(mate, quote); };
-
-    function pick(kind, id) {
-      const set = (LINES[kind] && LINES[kind][id]) || LINES[kind].kez;
-      return set[Math.floor(rng.next() * set.length)];
-    }
-
-    /* Which tables they can reach: everything on floors the bank has opened,
-       not just the floor the player is standing on. They roam.
-
-       `weight` leans them towards wherever you are. They can play anywhere, and
-       a friend upstairs still spends the account -- but the game is called
-       Gamble With Your Friends, and a crew that scatters across four floors is
-       one you only ever meet in the ticker. Two thirds of their turns happen in
-       the room you are standing in. */
-    function availableGames() {
-      const open = store.unlockedFloors().filter((f) => f.open);
-      const out = [];
-      for (const entry of open) {
-        for (const id of C.gamesOn(entry.index, store.s.seed)) {
-          const def = GWGames.get(id);
-          if (def) out.push({ def, floor: entry.floor, index: entry.index, weight: entry.index === store.s.floor ? 6 : 1 });
-        }
-      }
-      return out;
-    }
-
-    function stakeFor(mate, floor) {
-      const bank = store.s.bank;
-      // Greed sets the appetite, patience scales it up as it drains.
-      const base = 0.04 + mate.greed * 0.09;
-      const desperation = 1 + (1 - mate.patience) * 2.4;
-      let amount = bank * base * desperation;
-      amount = Math.max(floor.minBet, Math.min(amount, floor.maxBet, bank));
-      return Math.round(amount / 25) * 25;
-    }
-
-    function chooseBet(def, mate) {
-      const bets = def.bets;
-      if (bets.length === 1) return bets[0];
-      // The disciplined take the short prices; the greedy chase the long ones.
-      const weights = bets.map((b) => {
-        const longshot = 1 / Math.max(b.prob, 0.01);
-        return Math.pow(longshot, mate.greed * 1.4) * (mate.discipline > 0.6 ? b.prob * 2 : 1);
-      });
-      return bets[rng.weighted(weights)];
-    }
-
-    /* Settle a friend's bet without animating it. Uses the game's own declared
-       probability and payout, so their luck is the same luck as yours. */
-    function settle(mate, entry, bet, amount) {
-      if (!store.stake(amount)) {
-        store.say(mate.name + ' finds the account empty and stares at it.', 'bad', mate.id);
-        return null;
-      }
-      mate.spent += amount;
-      if (store.has('skimmer')) store.credit(25, null);
-
-      let multiplier;
-      if (bet.prob >= 1) {
-        // A game whose single "bet" is its whole return -- slots, crash, mines.
-        // Give them a spread around it rather than the mean every time, or the
-        // ticker reads like a spreadsheet.
-        const luck = rng.next();
-        multiplier = luck < 0.42 ? 0 : (bet.pays / 0.58) * (0.4 + rng.next() * 1.6);
-      } else {
-        multiplier = rng.chance(bet.prob) ? bet.pays : 0;
-      }
-      const result = store.resolve(entry.def.id, amount, multiplier, { by: mate.id });
-      mate.won += result.net;
-      mate.patience = Math.max(0, Math.min(1, mate.patience + (result.net > 0 ? 0.28 : -0.20)));
-      mate.mood = result.net > 0 ? 1 : -1;
-
-      if (hooks.onSettled) hooks.onSettled(mate, result.net);
-      const money = fmt(Math.abs(result.net));
-      const quote = pick(result.net > 0 ? 'win' : 'lose', mate.id);
-      say(mate, quote);
-      if (result.net > 0) {
-        store.say(mate.name + ' takes ' + money + ' off the ' + entry.def.name + '. ' + quote,
-                  'good', mate.id);
-      } else {
-        store.say(mate.name + ' drops ' + money + ' on the ' + entry.def.name + '. ' + quote,
-                  'bad', mate.id);
-      }
-      return result;
-    }
-
-    /* Put a walked-to bet through. Split out because it happens from two
-       places now -- the body arriving, and the clock running out on a body that
-       never will. */
-    function land(job) {
-      const amount = Math.min(job.amount, store.s.bank);
-      if (amount <= 0) {
-        store.say(job.mate.name + ' gets to the ' + job.entry.def.name
-          + ' and finds the account empty.', 'bad', job.mate.id);
-        return;
-      }
-      settle(job.mate, job.entry, job.bet, amount);
-      // Set here rather than when they set off: the walk can take twenty
-      // seconds across a floor, and a cooldown started at the far wall has
-      // already expired by the time they reach the table.
-      job.mate.cooldown = 4 + rng.next() * 6 + job.mate.discipline * 6;
-    }
-
-    function beginTurn(mate) {
-      const games = availableGames();
-      if (!games.length) return;
-      const entry = games[rng.weighted(games.map((g) => g.weight))];
-      const bet = chooseBet(entry.def, mate);
-      let amount = stakeFor(mate, entry.floor);
-      if (amount <= 0) return;
-
-      // Teeth sold means they stop listening sooner, so the tilt threshold
-      // moves against you. The body part has a real cost and this is it.
-      const threshold = store.sold('teeth') ? 0.42 : 0.28;
-      const goingBig = !store.s.mods.calmFriends
-        && mate.patience < threshold && store.s.bank > entry.floor.minBet * 2;
-
-      mate.at = entry.def.id;
-      const wait = !!(hooks.onGo && hooks.onGo(mate, entry.def.id, entry.index));
-
-      if (goingBig) {
-        amount = Math.max(amount, Math.floor(store.s.bank * 0.85 / 25) * 25);
-        amount = Math.min(amount, store.s.bank);
-        state.pending = { mate, entry, bet, amount, left: 5.5 };
-        const tilted = pick('tilt', mate.id);
-        say(mate, tilted);
-        store.say(mate.name + ': ' + tilted, 'warn', mate.id);
-        store.say(mate.name + ' is about to put ' + fmt(amount) + ' on ' + entry.def.name
-                  + ' — ' + bet.label + '.', 'warn', mate.id);
-        if (hooks.onTilt) hooks.onTilt(state.pending);
-        return;
-      }
-
-      const said = pick('arrive', mate.id).replace('{game}', entry.def.name);
-      say(mate, said);
-      if (store.has('coldread')) {
-        store.say(mate.name + ': ' + said + ' (' + fmt(amount) + ' on ' + bet.label + ')', 'flat', mate.id);
-      } else {
-        store.say(mate.name + ': ' + said, 'flat', mate.id);
-      }
-      /* The bet lands when they get there, not when they decide.
-
-         The cooldown covers the walk as well as the rest, so nobody starts a
-         second turn while the first one is still crossing the floor. */
-      const travel = TRAVEL * (0.8 + rng.next() * 0.6);
-      state.walking.push({ mate, entry, bet, amount, left: travel, cap: STRANDED, wait });
-      // The walk itself is what holds them; this is only so an abandoned job
-      // cannot leave somebody standing about for the rest of the day.
-      mate.cooldown = STRANDED + 4;
-    }
-
-    return {
-      state,
-
-      /* Stop the pending all-in. Costs a shout. */
-      /* The body got to the table. Settle the bet it walked over to make. */
-      arrive(mateId) {
-        const i = state.walking.findIndex((job) => job.mate.id === mateId);
-        if (i < 0) return;
-        const job = state.walking[i];
-        state.walking.splice(i, 1);
-        land(job);
-      },
-
-      /* Wipe whatever was in flight. Called when the day ends: a tilt left
-         counting down across the bell settles the next day against a bank and a
-         quota that have both moved, and a friend halfway to a table on a floor
-         that no longer exists never arrives at all. */
-      reset() {
-        if (state.pending && hooks.onTiltResolved) hooks.onTiltResolved();
-        state.pending = null;
-        state.walking.length = 0;
-        for (const mate of store.s.friends) mate.at = null;
-      },
-
-      shout() {
-        const p = state.pending;
-        if (!p) return false;
-        if (store.s.shouts <= 0) {
-          store.say('You shout. Nothing comes out. You are out of shouts.', 'bad');
-          return false;
-        }
-        store.s.shouts--;
-        p.mate.patience = Math.min(1, p.mate.patience + 0.55);
-        p.mate.cooldown = 12 + rng.next() * 8;
-        const relented = pick('stopped', p.mate.id);
-        say(p.mate, relented);
-        store.say(p.mate.name + ': ' + relented, 'good', p.mate.id);
-        state.pending = null;
-        if (hooks.onTiltResolved) hooks.onTiltResolved();
-        return true;
-      },
-
-      tick(dt) {
-        const s = store.s;
-        if (s.phase !== 'floor') return;
-
-        // Arrivals first, and outside the one-crisis-at-a-time gate below: a
-        // friend already walking has committed, and freezing them mid-stride
-        // for the length of somebody else's tilt strands them in the carpet.
-        for (let i = state.walking.length - 1; i >= 0; i--) {
-          const job = state.walking[i];
-          job.left -= dt;
-          job.cap -= dt;
-          if (job.wait ? job.cap > 0 : job.left > 0) continue;
-          state.walking.splice(i, 1);
-          land(job);
-        }
-
-        if (state.pending) {
-          state.pending.left -= dt;
-          if (state.pending.left <= 0) {
-            const p = state.pending;
-            state.pending = null;
-            if (hooks.onTiltResolved) hooks.onTiltResolved();
-            store.say('Nobody stops ' + p.mate.name + '.', 'warn', p.mate.id);
-            settle(p.mate, p.entry, p.bet, Math.min(p.amount, s.bank));
-            p.mate.cooldown = 14 + rng.next() * 8;
-          }
-          return;   // one crisis at a time
-        }
-
-        if (s.mods.quietFriends) return;
-
-        // Everyone gets impatient as the quota deadline closes in on a shortfall.
-        const shortfall = Math.max(0, s.quota - s.bank);
-        const pressure = shortfall > 0 && s.timeLeft < 90 ? dt * 0.035 : 0;
-
-        for (const mate of s.friends) {
-          mate.patience = Math.max(0, mate.patience - pressure);
-          // Somebody still crossing the floor does not start a second turn.
-          if (state.walking.some((job) => job.mate === mate)) { mate.cooldown = 1.5; continue; }
-          mate.cooldown -= dt;
-          if (mate.cooldown <= 0) {
-            mate.cooldown = 6 + rng.next() * 8;
-            if (s.bank <= 0) {
-              store.say(mate.name + ' checks the balance and goes quiet.', 'bad', mate.id);
-              continue;
-            }
-            beginTurn(mate);
-            break;    // at most one friend acts per frame
-          }
-        }
-      },
-    };
-  }
-
-  const fmt = (n) => '$' + Math.round(n).toLocaleString('en-US');
-
-  global.GWFriends = { create, LINES };
-})(window);
-
-</script>
-<script>
 /* Loading screens.
 
    Two jobs. The obvious one is covering the second or two it takes to build a
@@ -14058,30 +13838,41 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       const s = shell.store.s;
       const meta = shell.store.meta;
       const first = s.day === 1 && !meta.seenIntro;
+      /* Who is actually coming in with you: real players, and nobody else.
+
+         There is no AI crew any more, so on a solo run this list is empty and
+         the whole section goes with it rather than leaving a heading over
+         nothing. */
       const crew = s.friends.map((f) =>
         '<li class="mate"><span class="mate__dot" style="background:' + f.colour + ';color:' + f.colour + '"></span>'
         + '<span><span class="mate__name">' + esc(f.name) + '</span>'
-        + '<span class="mate__where">' + esc(f.blurb) + '</span></span><span></span></li>').join('');
+        + '<span class="mate__where">at the table with you</span></span><span></span></li>').join('');
+      const alone = !s.friends.length;
 
       return {
         sticky: true, title: 'Day ' + s.day,
         html: '<p class="sheet__kicker">' + (first ? 'The arrangement' : 'Day ' + s.day) + '</p>'
           + '<h2 class="sheet__title">' + (first ? 'Gamble With Your Friends' : 'Five more minutes') + '</h2>'
           + (first
-            ? '<p class="sheet__lede">One bank account between the four of you and a debt with '
-              + 'someone who does not do paperwork. Five minutes inside the tower each day, and a '
-              + 'quota to hit before the doors close.</p>'
-              + '<p class="sheet__lede">Your friends can spend the account too. That is not a bug.</p>'
-            : '<p class="sheet__lede">The doors open for five minutes. Everything in the account is '
-              + 'everybody’s, including theirs.</p>')
+            ? '<p class="sheet__lede">One bank account and a debt with someone who does not do '
+              + 'paperwork. Five minutes inside the tower each day, and a quota to hit before the '
+              + 'doors close.</p>'
+              + '<p class="sheet__lede">' + (alone
+                ? 'Nobody is coming with you. That is allowed, and it is not advised.'
+                : 'Everything in the account is everybody’s. Anyone at the table can spend it, '
+                  + 'and that is not a bug.') + '</p>'
+            : '<p class="sheet__lede">The doors open for five minutes. ' + (alone
+              ? 'Just you.'
+              : 'Everything in the account is everybody’s, including theirs.') + '</p>')
           + '<div class="report">'
           + row('In the account', money(s.bank))
           + row('Tonight’s quota', money(s.quota), s.bank >= s.quota ? 'good' : 'bad')
           + row('Owed to the shark', money(s.debt), 'bad')
           + (s.strikes ? row('Missed quotas', s.strikes + ' of ' + C.MAX_STRIKES, 'bad') : '')
           + '</div>'
-          + '<h3 class="rail__label" style="margin-top:1rem">Who is coming in with you</h3>'
-          + '<ul class="crew">' + crew + '</ul>'
+          + (alone ? ''
+            : '<h3 class="rail__label" style="margin-top:1rem">Who is coming in with you</h3>'
+              + '<ul class="crew">' + crew + '</ul>')
           + '<div class="sheet__actions">'
           + '<button class="btn btn--primary" data-go>Into the lobby</button>'
           + (first ? '<button class="btn btn--ghost" data-how>How this works</button>' : '')
@@ -15422,31 +15213,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       onBanner: renderBanner,
       onFriendOffer: (id) => { if (shell.crew) shell.crew.offer(id); },
     });
-    shell.friends = GWFriends.create(shell.store, {
-      onTilt(pending) {
-        showShout();
-        if (shell.crew) shell.crew.tilt(pending.mate.id, true);
-      },
-      onTiltResolved() {
-        hideShout();
-        if (shell.crew) for (const mate of shell.store.s.friends) shell.crew.tilt(mate.id, false);
-      },
-      // The three hooks the bodies in the room run on: where somebody is going,
-      // what they said on the way, and what the table did to them.
-      // Returning true is what tells friends.js to hold the bet until the body
-      // gets there. Dropping the return -- as the first version did -- settles
-      // every bet on a two-second timer while the walk is still going on, and
-      // the friend is then reassigned mid-stride.
-      onGo(mate, gameId, floorIndex) {
-        return !!(shell.crew && shell.crew.go(mate.id, gameId, floorIndex));
-      },
-      onSay(mate, quote) {
-        if (shell.crew) shell.crew.speak(mate.id, quote);
-      },
-      onSettled(mate, net) {
-        if (shell.crew) shell.crew.settled(mate.id, net);
-      },
-    });
     shell.player = GWPlayer.create({
       stage: shell.stage,
       audio: shell.audio,
@@ -15623,11 +15389,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       el.btnSound.setAttribute('aria-pressed', 'false');
     }
 
-    el.btnShout.addEventListener('click', () => {
-      if (shell.friends.shout()) { shell.audio.play('shout'); hideShout(); renderHud(); }
-      else shell.audio.play('deny');
-    });
-
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key === 'F1') { e.preventDefault(); GWModMenu.toggle(); return; }
@@ -15714,10 +15475,9 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       }
 
       if (s.phase !== 'floor' || GWLoading.isOpen()) return;
-      if (s.mods.freezeClock) { shell.friends.tick(dt); return; }
+      if (s.mods.freezeClock) return;
 
       s.timeLeft -= dt;
-      shell.friends.tick(dt);
 
       carry += dt;
       if (carry >= 0.25) { carry = 0; renderClock(); renderCrew(); }
@@ -15761,7 +15521,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     if (s.phase !== 'floor') return;
     s.phase = 'closing';
     warned.clear();
-    shell.friends.reset();
     hideShout();
     shell.audio.play('alarm');
     shell.store.say('The doors close. Everyone out to the car.', 'warn');
@@ -16218,7 +15977,6 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
       return GWCrew.create({
         store: shell.store, level: shell.level, lib: shell.lib,
         // The bet lands when the body gets there, however long the walk was.
-        onArrive: (mateId) => shell.friends.arrive(mateId),
       });
     } catch (err) {
       // The floor is still playable with nobody on it, and saying so beats a
@@ -16457,18 +16215,7 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
         return;
       }
     }
-    const pending = shell.friends.state.pending;
-    if (!pending || pending.mate.id !== mateId) {
-      shell.audio.play('deny');
-      return;
-    }
-    if (shell.friends.shout()) {
-      shell.audio.play('shout');
-      hideShout();
-      renderHud();
-    } else {
-      shell.audio.play('deny');
-    }
+    shell.audio.play('deny');
   }
 
   function useFixture(action) {
@@ -16963,21 +16710,27 @@ T>=2*U&&(x._wakeUpAfterNarrowphase=!0)}if(R.allowSleep&&R.type===c.DYNAMIC&&R.sl
     el.oddsPanel.innerHTML = html;
   }
 
+  /* The rail of everyone else at the table.
+
+     Real players only. It used to list three AI characters and their running
+     totals, which is the part of this that was not the game it is copying --
+     one to six people share the account and nobody else can reach it. Solo,
+     the rail is empty and hidden, because a scoreboard with one name on it is
+     just your own bank written twice. */
   function renderCrew() {
     const s = shell.store.s;
-    const pending = shell.friends.state.pending;
     el.crewList.innerHTML = '';
+    el.crewList.hidden = !s.friends.length;
     for (const mate of s.friends) {
-      const hot = pending && pending.mate.id === mate.id;
       const li = document.createElement('li');
-      li.className = 'ledger__row' + (hot ? ' is-hot' : '');
+      li.className = 'ledger__row';
       li.innerHTML = '<span class="ledger__net"></span><span class="ledger__name"></span>';
       const net = li.querySelector('.ledger__net');
-      net.textContent = (mate.won >= 0 ? '+' : '\u2212') + short(Math.abs(mate.won));
-      net.style.color = mate.won >= 0 ? 'var(--success)' : 'var(--danger)';
+      net.textContent = (mate.won >= 0 ? '+' : '\u2212') + short(Math.abs(mate.won || 0));
+      net.style.color = (mate.won || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
       const name = li.querySelector('.ledger__name');
-      name.textContent = hot ? mate.name + ' \u2014 about to' : mate.name;
-      name.style.color = hot ? '' : mate.colour;
+      name.textContent = mate.name;
+      name.style.color = mate.colour;
       li.title = whatTheyAreDoing(mate);
       el.crewList.appendChild(li);
     }

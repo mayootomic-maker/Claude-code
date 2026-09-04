@@ -30,6 +30,37 @@
   };
   const FALLBACK = { body: 0xc9a9d4, hat: null, height: 1, width: 1 };
 
+  /* Everybody else in the building.
+
+     The four named characters used to be your teammates, betting out of your
+     account, and that is not the game this follows: it is one to six real
+     people and no AI companions at all. So the room needs strangers instead --
+     punters who are here for their own evening, playing with their own money,
+     who happen to be standing at the machine you wanted.
+
+     They are the same body and the same rig. What they do not have is a name
+     tag, a colour you recognise, or any way to reach your bank. Drawn from a
+     palette rather than a list, because the point of a crowd is that you
+     cannot tell one of them from another. */
+  const STRANGER_BODIES = [
+    0xb9a48c, 0x8fa5b8, 0xc59a7a, 0x9d8fb0, 0xa8b295, 0xcbb0a2,
+    0x7f96a6, 0xb08a8a, 0x94a892, 0xc2b184, 0x8d8fa8, 0xaa9c7e,
+  ];
+  const STRANGER_HATS = [null, null, 'pin_hat_top', 'pin_hat_fez',
+                         'pin_hat_boater', 'pin_monocle'];
+
+  /* How many are on a floor, by how big it is.
+
+     Roughly one per hundred and sixty square metres, which puts eight in the
+     Ground Floor's fifty-six by forty and four in the Penthouse. More than
+     that and a hall reads as a crush; fewer and it reads as a showroom after
+     closing. */
+  function crowdFor(level) {
+    if (level.isLobby) return 3;
+    const area = level.size.w * level.size.d;
+    return Math.max(3, Math.min(9, Math.round(area / 160)));
+  }
+
   /* The body is one flat colour, so there is exactly one material to tint --
      which is the point of the design. Eyes, brow, mouth and hats are shared. */
   const TINT = { pin_body: 'body' };
@@ -233,25 +264,32 @@
     group.traverse((o) => { o.userData.person = true; });
     level.group.add(group);
 
-    for (const mate of store.s.friends) {
-      const look = Object.assign({}, FALLBACK, LOOK[mate.id] || {});
+    /* One body, named or not.
+
+       A name tag is the whole difference between somebody at the table with
+       you and somebody who happens to be at the same table. Real players get
+       one in their own colour; the crowd gets none, because a room where every
+       stranger is captioned is a scoreboard with a casino behind it. */
+    function addPerson(mate, look, named) {
       let body;
       try {
         body = buildBody(lib, look);
       } catch (err) {
-        // A missing person mesh must not take the floor down with it. The
-        // friends still bet; you just cannot see them do it.
+        // A missing person mesh must not take the floor down with it.
         console.warn('[gwyf] no body for ' + mate.id, err);
-        continue;
+        return null;
       }
-      // Small. A label you can read at four metres is a billboard at two, and
-      // three of them turn a room into a scoreboard with a casino behind it.
-      const tag = makeTag(mate.name, mate.colour, { size: 0.155, font: 30 });
-      tag.position.y = body.joints.height * 0.98;
-      body.group.add(tag);
+      let tag = null;
+      if (named) {
+        // Small. A label you can read at four metres is a billboard at two.
+        tag = makeTag(mate.name, mate.colour, { size: 0.155, font: 30 });
+        tag.position.y = body.joints.height * 0.98;
+        body.group.add(tag);
+      }
 
       const person = {
         mate, look, body, tag, bubble: null, bubbleLeft: 0,
+        stranger: !named,
         pos: new THREE.Vector3(), yaw: 0, wantYaw: 0,
         dest: null, at: null, state: 'idle',
         cycle: 0, blocked: 0, detour: 0, detourSign: 1,
@@ -263,10 +301,38 @@
            being pointed at, in world space. */
         gesture: null, gestureLeft: 0, gestureFor: 1, gestureAt: null,
         greeted: 0,
+        // How long a stranger stays at a machine before drifting off, and how
+        // long they wander before picking another one.
+        stay: 0,
       };
       spawnAt(person);
       group.add(body.group);
       people.push(person);
+      return person;
+    }
+
+    for (const mate of store.s.friends) {
+      addPerson(mate, Object.assign({}, FALLBACK, LOOK[mate.id] || {}), true);
+    }
+
+    /* The crowd.
+
+       Deliberately after the named ones, so a stranger never takes the spawn
+       spot a player was going to get, and deliberately built from Math.random
+       rather than the run's stream: who is wearing a boater is not something a
+       reload has to reproduce, and pouring draws into the seeded stream would
+       stop it reproducing the things that matter. */
+    for (let i = 0; i < crowdFor(level); i++) {
+      const look = {
+        body: STRANGER_BODIES[Math.floor(rand() * STRANGER_BODIES.length)],
+        hat: STRANGER_HATS[Math.floor(rand() * STRANGER_HATS.length)],
+        height: 0.9 + rand() * 0.22,
+        width: 0.9 + rand() * 0.26,
+      };
+      const person = addPerson({ id: 'stranger' + i, name: null, colour: look.body },
+                               look, false);
+      // Staggered, or the whole crowd sets off for a table on the same frame.
+      if (person) person.stay = rand() * 6;
     }
 
     /* Somewhere in the room that is not inside anything. Tried a fixed number
@@ -295,7 +361,8 @@
     }
 
     const find = (id) => people.find((p) => p.mate.id === id) || null;
-    const tagHalf = (person) => person.tag.scale.y / 2;
+    // A stranger has no tag, so a speech bubble sits where the tag would be.
+    const tagHalf = (person) => (person.tag ? person.tag.scale.y / 2 : 0.08);
 
     /* One pace to the side of where the player stands at a machine, on
        whichever side is clear. */
@@ -544,7 +611,8 @@
           person.state = person.at ? 'play' : 'idle';
           person.idleFor = 0;
           // The money moves now, not on a timer that guessed how far this was.
-          if (wasWalkingToTable) onArrive(person.mate.id);
+          // Strangers have no money in this game and never call it.
+          if (wasWalkingToTable && !person.stranger) onArrive(person.mate.id);
         } else {
           toDest.divideScalar(dist);
           let dirX = toDest.x, dirZ = toDest.z;
@@ -581,11 +649,48 @@
         // Stand at the table facing it.
         const focus = person.at.focus || person.at.position;
         person.wantYaw = Math.atan2(-(focus.x - person.pos.x), -(focus.z - person.pos.z));
+        if (person.stranger) {
+          person.stay -= dt;
+          if (person.stay <= 0) {
+            // Somebody's evening ends the way everybody's does.
+            const net = rand() < 0.42 ? 1 : -1;
+            person.mood = net; person.moodLeft = 1.6;
+            doGesture(person, net > 0 ? 'cheer' : 'shrug', net > 0 ? 1.4 : 1.1);
+            person.at = null;
+            person.state = 'idle';
+            person.idleFor = 0;
+            person.stay = 3 + rand() * 7;
+          }
+        }
       } else {
         person.idleFor += dt;
+        if (person.stranger) {
+          /* A stranger with nothing to do finds a machine.
+
+             They are not betting anything of yours -- there is no money in
+             this at all, and it never touches the bank -- they are here for
+             their own evening and the point of them is that the machine you
+             wanted has somebody at it. Held off for a few seconds after
+             arriving so the whole crowd does not converge on one table on the
+             frame the floor loads. */
+          person.stay -= dt;
+          if (person.stay <= 0) {
+            const free = (level.anchors || []).filter((a) => a.kind === 'machine'
+              && !people.some((q) => q !== person && q.at === a));
+            if (free.length) {
+              person.at = free[Math.floor(rand() * free.length)];
+              person.dest = besideStand(person.at);
+              person.state = 'walk';
+              // How long they will stand there once they get there.
+              person.stay = 8 + rand() * 18;
+            } else {
+              person.stay = 4 + rand() * 6;
+            }
+          }
+        }
         // Loiter. Standing perfectly still for five minutes is what makes a
         // character read as a prop.
-        if (person.idleFor > 6 + rand() * 8) {
+        if (!person.dest && person.idleFor > 6 + rand() * 8) {
           person.idleFor = 0;
           person.dest = freeSpot(person.pos);
           person.state = 'idle';
@@ -965,7 +1070,7 @@
       for (const person of people) {
         if (person.anchor) tilt(person.mate.id, false);
         if (person.bubble) person.bubble.userData.dispose();
-        person.tag.userData.dispose();
+        if (person.tag) person.tag.userData.dispose();
         person.body.dispose();
       }
       people.length = 0;
