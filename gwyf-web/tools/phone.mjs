@@ -120,13 +120,21 @@ async function push(dx, dy, ms) {
   }, [cx, cy, dx, dy, ms]);
 }
 
+/* How far a thumb gets you.
+
+   Not measured against a walking speed in metres per second: `dt` is clamped
+   at a tenth of a second so a stalled tab cannot teleport anybody, and a phone
+   profile on a software rasteriser renders at a few frames a second, so a
+   second and a half of holding the stick is a fraction of a second of
+   simulated walking. The question this can honestly answer is whether pushing
+   the stick moves you at all and in the direction you pushed. */
 console.log('\nthe stick walks you');
 const before = await at();
 await push(0, -70, 1600);
 await page.waitForTimeout(300);
 const after = await at();
 const moved = Math.hypot(after.x - before.x, after.z - before.z);
-check('pushing it forward moves you', moved > 1.5, moved.toFixed(2) + ' m');
+check('pushing it forward moves you', moved > 0.6, moved.toFixed(2) + ' m');
 
 console.log('\nand the buttons do what they say');
 const duckR = boxes.boxes.touchCrouch;
@@ -155,14 +163,20 @@ const groundY = (await at()).y;
 const jumpR = boxes.boxes.touchJump;
 await page.touchscreen.tap(jumpR.x + jumpR.w / 2, jumpR.y + jumpR.h / 2);
 let apex = groundY;
-for (let i = 0; i < 14; i++) {
+for (let i = 0; i < 20; i++) {
   apex = Math.max(apex, (await at()).y);
   await page.waitForTimeout(55);
 }
 check('a tap gets you off the floor', apex > groundY + 0.25,
   apex.toFixed(2) + ' m at the apex');
-await page.waitForTimeout(900);
-check('and you land again', Math.abs((await at()).y - groundY) < 0.2);
+// Waited for rather than timed, for the same reason the walk is not measured
+// in metres per second: the arc runs on the frame clock, and at four frames a
+// second it takes several seconds of wall clock to come down.
+const landed = await page.waitForFunction((g) => {
+  const st = GWShell.player.state;
+  return st.grounded && Math.abs(st.y - g) < 0.2;
+}, groundY, { timeout: 25000 }).then(() => true).catch(() => false);
+check('and you land again', landed, (await at()).y.toFixed(2) + ' m');
 
 console.log('\nand the emote wheel opens from a thumb');
 const emR = boxes.boxes.touchEmote;

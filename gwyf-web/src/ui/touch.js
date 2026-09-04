@@ -59,7 +59,17 @@
       if (stickId !== null) return;
       stickId = e.pointerId;
       stickOrigin = { x: e.clientX, y: e.clientY };
-      pad.setPointerCapture(e.pointerId);
+      /* Capture is an optimisation, not a requirement.
+
+         `setPointerCapture` throws if the pointer is no longer active by the
+         time the handler runs -- a finger lifted between the event being
+         queued and dispatched, which a loaded frame makes perfectly possible.
+         Uncaught, that throw happens inside a pointerdown handler and takes
+         the rest of it with it, so the stick never registers and the thumb
+         that was going to walk you somewhere does nothing for the rest of the
+         session. Without capture the stick still works; it just stops tracking
+         if the finger leaves the pad. */
+      try { pad.setPointerCapture(e.pointerId); } catch (err) { /* not held */ }
       pad.classList.add('is-held');
       e.preventDefault();
     }
