@@ -63,6 +63,9 @@ namespace GambleMenu.Core
                 }
 
                 sb.AppendLine();
+                DescribeSaveData(sb);
+
+                sb.AppendLine();
                 DescribeMachines(sb);
 
                 Directory.CreateDirectory(ConfigStore.Root);
@@ -74,6 +77,52 @@ namespace GambleMenu.Core
                 // A diagnostic that takes the plugin down with it would be worse than none.
                 Log.Error($"could not write the startup report: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Every field on SaveData, with its type.
+        ///
+        /// This is the section that costs nothing and saves a fortnight. Every binding here is
+        /// a name written down by somebody who had the game open; anything nobody has looked at
+        /// -- tickets, the wardrobe, whatever the next build adds -- has to be either guessed
+        /// or asked about, and a guess that greys out is indistinguishable from a game that
+        /// does not have the feature.
+        ///
+        /// One run of the game now answers it. The two cosmetics bindings find their fields by
+        /// shape and print what they settled on; this prints everything they had to choose
+        /// between, so a wrong choice can be corrected into a real name rather than argued
+        /// about.
+        /// </summary>
+        private static void DescribeSaveData(StringBuilder sb)
+        {
+            sb.AppendLine("save data");
+
+            if (!GameBridge.TSaveData.Ok)
+            {
+                sb.AppendLine("  SaveData did not resolve — no run or save mod can work on this build.");
+                return;
+            }
+
+            var fields = Reflect.Fields(GameBridge.TSaveData.Type)
+                .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            sb.AppendLine($"  {GameBridge.TSaveData.Type.FullName} — {fields.Count} field(s)");
+
+            object live = null;
+            try { live = RunState.Live; } catch { }
+
+            foreach (var f in fields)
+            {
+                string value = "";
+                if (live != null)
+                {
+                    try { value = "  = " + Reflect.Describe(f.GetValue(live)); }
+                    catch (Exception ex) { value = "  = <threw: " + ex.GetType().Name + ">"; }
+                }
+                sb.AppendLine($"    {f.FieldType.Name,-24} {f.Name}{value}");
+            }
+            if (live == null)
+                sb.AppendLine("  (no run loaded, so values are not shown — re-run this from inside a game for those)");
         }
 
         /// <summary>

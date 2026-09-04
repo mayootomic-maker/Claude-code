@@ -1,6 +1,6 @@
 # GambleMenu
 
-An in-game mod menu for **Gamble With Your Friends** — 50 mods across eleven categories, 161
+An in-game mod menu for **Gamble With Your Friends** — 52 mods across eleven categories, 162
 configurable settings, named profiles, per-mod hotkeys, five themes, and a set of discovery
 tools for reaching the parts of the game this menu does not already know about.
 
@@ -229,10 +229,28 @@ previously did, which was a guess, and which would have appeared to work while c
 **Day length** (seconds per run in the casino) · **Freeze the day clock** (hold the countdown,
 either where it is or at a set time) · **Game speed** (0.1×–5× simulation speed).
 
-### Progression — 3
+### Progression — 5
 **Floor access** (jump to any floor, or clear the quota gating the next one — the real
 ceiling is read from the game's own floor table, not guessed) · **Hold current floor** ·
 **Days survived**.
+
+**Tickets** and **Unlock cosmetics** cover the one part of this game that outlives a run.
+Tickets are earned by finishing a night in profit and spent at the second-hand store on
+cosmetics — seven sections, one worn from each, two to six tickets apiece — and none of it
+touches the odds. That is why they are worth having: every other mod here changes what happens
+to your money, and these change only what you look like while it happens.
+
+Both read fields nobody here has ever seen, so they are found by **shape** rather than by a
+name written down and hoped for: a number whose name mentions tickets, a collection whose name
+mentions cosmetics. Each card prints the field it settled on, so a wrong guess is visible
+rather than silent. Unlock refuses to invent ids — it reads them from the game's own catalogue
+and says so if it cannot find one, because a list of made-up ids unlocks nothing and cannot be
+told apart from one that works — and it remembers the set it found so "put it back" means
+something.
+
+**The startup report now lists every field on `SaveData`**, with its type and, inside a run,
+its value. That is the section that turns a guess into a name: one launch answers what these
+two had to infer, and the bindings can then say what they mean.
 
 ### Saves — 2
 **Save file editor** writes money, quota and floor straight into a slot on disk — permanent,

@@ -38,6 +38,8 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new FloorAccess());
             ModRegistry.Add(new HoldFloor());
             ModRegistry.Add(new SurvivedDays());
+            ModRegistry.Add(new Tickets());
+            ModRegistry.Add(new UnlockCosmetics());
 
             // Saves — the same numbers, but on disk and permanent.
             ModRegistry.Add(new SaveEditor());

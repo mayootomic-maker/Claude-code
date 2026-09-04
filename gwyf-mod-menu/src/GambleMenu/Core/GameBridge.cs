@@ -88,6 +88,82 @@ namespace GambleMenu.Core
         }
     }
 
+    /// <summary>
+    /// A field found by what it looks like rather than by a name written down here.
+    ///
+    /// Every other binding names its member, which is right when the name is known: it is
+    /// exact, and a miss is unambiguous. It is useless for the parts of the game nobody here
+    /// has ever seen. Tickets and the cosmetics you spend them on are the case in point --
+    /// the field could be <c>tickets</c>, <c>ticketCount</c>, <c>numTickets</c> or
+    /// <c>_tickets</c>, and picking one of the four is a mod that greys out on three builds
+    /// in four for no reason a player could act on.
+    ///
+    /// So this takes the words the name should contain and the shape the field should have,
+    /// and reports which field it settled on. When the exact name is later known it should be
+    /// replaced by a plain FieldBinding: a guess that works is still a guess.
+    /// </summary>
+    internal sealed class FieldByShape : Binding
+    {
+        public FieldInfo Field;
+        private readonly TypeBinding _owner;
+        private readonly string[] _words;
+        private readonly Func<Type, bool> _shape;
+        private readonly string _shapeName;
+
+        public FieldByShape(TypeBinding owner, string id, string[] words,
+                            Func<Type, bool> shape, string shapeName, string purpose)
+        {
+            _owner = owner; _words = words; _shape = shape; _shapeName = shapeName;
+            Id = $"{owner.Id}.~{id}"; Purpose = purpose;
+        }
+
+        public void Resolve()
+        {
+            if (!_owner.Ok) { State = BindingState.TypeMissing; Detail = $"owner type '{_owner.Id}' missing"; return; }
+
+            FieldInfo best = null;
+            int bestScore = int.MaxValue;
+            foreach (var f in Reflect.Fields(_owner.Type))
+            {
+                if (!_shape(f.FieldType)) continue;
+                var name = f.Name.ToLowerInvariant();
+                bool hit = false;
+                foreach (var w in _words) if (name.Contains(w)) { hit = true; break; }
+                if (!hit) continue;
+                // The shortest matching name wins: `tickets` over `ticketsSpentLifetime`,
+                // which is the one that is actually the count.
+                if (f.Name.Length >= bestScore) continue;
+                bestScore = f.Name.Length;
+                best = f;
+            }
+
+            if (best == null)
+            {
+                State = BindingState.MemberMissing;
+                Detail = $"no {_shapeName} field on {_owner.Type.Name} named like "
+                       + string.Join("/", _words);
+                return;
+            }
+            Field = best;
+            State = BindingState.Resolved;
+            Detail = $"{Field.FieldType.Name} {Field.Name}  (found by shape)";
+        }
+
+        public object Get(object instance)
+        {
+            if (!Ok) return null;
+            try { return Field.GetValue(instance); }
+            catch (Exception ex) { Log.Warn($"read {Id} failed: {ex.Message}"); return null; }
+        }
+
+        public bool Set(object instance, object value)
+        {
+            if (!Ok) return false;
+            try { Field.SetValue(instance, value); return true; }
+            catch (Exception ex) { Log.Warn($"write {Id} failed: {ex.Message}"); return false; }
+        }
+    }
+
     internal sealed class MethodBinding : Binding
     {
         public MethodInfo Method;
@@ -175,6 +251,18 @@ namespace GambleMenu.Core
         public static FieldBinding SdRequiredQuotaToNextFloor;
         public static FieldBinding SdSuccessfulQuota;
 
+        /* Tickets, and the cosmetics they buy.
+
+           Found by shape rather than by name, because nothing here has ever seen this part of
+           the game. Tickets are the currency the second-hand store takes, earned by finishing
+           a night in profit, and the wardrobe is a set of ids you have unlocked -- so one is a
+           number with "ticket" in its name and the other is a collection with "cosmetic",
+           "unlock" or "owned" in its name. Both report which field they settled on, and the
+           startup report lists every field on SaveData so the guess can be replaced with the
+           real name. */
+        public static FieldByShape SdTickets;
+        public static FieldByShape SdCosmetics;
+
         /// <summary>The day countdown. Named from SandboxMode's note that clients read it as
         /// a synced SyncVar, so the host is the only place writing it means anything.</summary>
         public static FieldBinding DayTimer;
@@ -229,6 +317,14 @@ namespace GambleMenu.Core
             SdRequiredQuotaToNextFloor = AddMember(new FieldBinding(TSaveData, "requiredQuotaToNextFloor", typeof(long), "gate to the next floor"));
             SdSuccessfulQuota          = AddMember(new FieldBinding(TSaveData, "successfulQuota", null, "days survived"));
 
+            SdTickets = AddMember(new FieldByShape(TSaveData, "tickets",
+                new[] { "ticket" }, Reflect.IsNumeric, "numeric",
+                "tickets, which is what the second-hand store takes"));
+            SdCosmetics = AddMember(new FieldByShape(TSaveData, "cosmetics",
+                new[] { "cosmetic", "unlocked", "owned", "wardrobe", "outfit" },
+                t => typeof(IEnumerable).IsAssignableFrom(t) && t != typeof(string), "collection",
+                "the cosmetics you have unlocked"));
+
             DayTimer = AddMember(new FieldBinding(TGameManager, "_timer", null, "the day countdown, in seconds"));
 
             GbGameName     = AddMember(new FieldBinding(TGameBase, "gameName", typeof(string), "the machine's name"));
@@ -272,6 +368,7 @@ namespace GambleMenu.Core
             switch (b)
             {
                 case FieldBinding f: f.Resolve(); break;
+                case FieldByShape s: s.Resolve(); break;
                 case MethodBinding m: m.Resolve(); break;
             }
             All.Add(b);
