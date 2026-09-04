@@ -25,6 +25,7 @@
 (function (global) {
   'use strict';
 
+  const C = global.GWConfig;
   const TICK = 1000 / 12;         // how often a position goes out
   const GONE = 6000;              // silence after which somebody has left
 
@@ -35,9 +36,21 @@
       id: link.id,
       name: (opts.name || 'Player').slice(0, 16),
       colour: opts.colour || 0xd9a441,
+      // Seat one until anybody else turns up to sort against.
+      seat: C.SEATS[0].colour,
     };
     const peers = new Map();
+    /* What each seat is up or down tonight, keyed by player id.
+
+       The rail used to show three AI characters' running totals. Real players
+       need the same thing and it cannot be worked out locally: your copy of
+       the game never sees anybody else's hands, only the bank moving. So the
+       host keeps the tally -- every settlement in the building goes through
+       one funnel and carries who caused it -- and ships it with the snapshot
+       it already broadcasts after every resolve. */
+    const nets = new Map();
     let lastSent = 0;
+    let turnedAway = false;
     const pendingGreet = new Set();
     let disposed = false;
     const off = [];
@@ -65,11 +78,42 @@
         if (info.colour !== undefined) p.colour = info.colour;
       }
       p.seen = performance.now();
+      seatEveryone();
       return p;
+    }
+
+    /* Hand out the six seat colours.
+
+       Sorted by id and indexed into the config's six seats, so every copy of
+       the game arrives at the same colour for the same person without a word
+       of negotiation over the wire -- which is the only way this can be done
+       without a round trip that a late joiner would miss. Before this,
+       everybody defaulted to the same gold and the only way to tell whose
+       money had just gone was to ask them. */
+    function seatEveryone() {
+      const order = [me.id].concat(Array.from(peers.keys())).sort();
+      me.seat = C.SEATS[order.indexOf(me.id) % C.SEATS.length].colour;
+      for (const p of peers.values()) {
+        p.seat = C.SEATS[order.indexOf(p.id) % C.SEATS.length].colour;
+        // A body already in the room keeps its own colour until it is rebuilt,
+        // so drop it and let the next frame draw it in the right one.
+        if (p.body && p.drawnSeat !== p.seat) hideBody(p);
+      }
     }
 
     listen('hello', (d, from) => {
       const known = peers.has(from);
+      /* Six seats, and the host is the one who says the table is full.
+
+         The game this follows is one to six: a host and up to five invited.
+         Nothing enforced that here, so a lobby could take as many as found it,
+         and the seventh player's colour was somebody else's. Only the host
+         turns anyone away -- a client counting its own peers would refuse the
+         sixth arrival while the host was still seating the fifth. */
+      if (!known && isHost && peers.size + 1 >= C.MAX_PLAYERS) {
+        send('full', { seats: C.MAX_PLAYERS }, from);
+        return;
+      }
       const p = seePeer(from, d);
       pendingGreet.delete(from);
       // Answer somebody new so a late arrival learns about everyone already
@@ -77,17 +121,37 @@
       // would bounce hellos back and forth for the rest of the night.
       if (!known) greet(from);
       if (isHost) {
-        send('run', runSnapshot(), from);
         store.say(p.name + ' sat down at the table.', 'house');
+        // Everyone, not just the newcomer: the seat list has changed and the
+        // others have to hear about it or they will keep drawing somebody the
+        // host has never seated.
+        broadcast('run', runSnapshot());
       }
       if (opts.onRoster) opts.onRoster();
     });
+
+    /* Turned away. Said out loud rather than left as a connection that never
+       finishes: a lobby that silently ignores you looks exactly like a lobby
+       that is broken. */
+    listen('full', (d) => {
+      store.say('That table is full \u2014 ' + ((d && d.seats) || C.MAX_PLAYERS)
+        + ' is as many as it seats.', 'bad');
+      if (opts.onFull) opts.onFull();
+    });
+
+    /* A hello that was refused must also stop broadcasting.
+
+       Otherwise the refused player carries on sending positions, everybody
+       else seats them off those, and the cap holds only in the one place it
+       was written down. */
+    listen('full', () => { turnedAway = true; });
 
     listen('bye', (d, from) => {
       const p = peers.get(from);
       if (p) {
         store.say(p.name + ' left the table.', 'flat');
         dropPeer(from);
+        if (isHost) broadcast('run', runSnapshot());
       }
     });
 
@@ -133,10 +197,31 @@
     /* The host's word on the run. Guests take the numbers and do not argue. */
     function runSnapshot() {
       const s = store.s;
+      const tally = {};
+      for (const [id, n] of nets) tally[id] = n;
       return {
         seed: s.seed, day: s.day, bank: s.bank, debt: s.debt, quota: s.quota,
-        timeLeft: s.timeLeft, phase: s.phase, floor: s.floor,
+        timeLeft: s.timeLeft, phase: s.phase, floor: s.floor, nets: tally,
+        /* Who is actually seated, as the host sees it.
+
+           Refusing the seventh hello is not enough on a transport where every
+           window hears every packet: their position updates seated them again
+           on all six of the others, and on themselves. The host says who is at
+           the table and everybody else takes its word, which is the same rule
+           the money already follows. */
+        seats: [me.id].concat(Array.from(peers.keys())),
       };
+    }
+
+    /* Who a settlement belongs to. Everything routed from a guest is tagged
+       with their id on the way in; anything else is the person sitting here. */
+    if (isHost) {
+      off.push(store.on('resolve', (r) => {
+        if (!r) return;
+        const by = r.detail && r.detail.by;
+        const id = (typeof by === 'string' && by.indexOf('net:') === 0) ? by.slice(4) : me.id;
+        nets.set(id, (nets.get(id) || 0) + r.net);
+      }));
     }
 
     listen('run', (d) => {
@@ -145,6 +230,23 @@
       const wasSeed = s.seed;
       s.seed = d.seed; s.day = d.day; s.bank = d.bank; s.debt = d.debt;
       s.quota = d.quota; s.timeLeft = d.timeLeft;
+      if (d.nets) {
+        nets.clear();
+        for (const id of Object.keys(d.nets)) nets.set(id, d.nets[id]);
+        if (opts.onRoster) opts.onRoster();
+      }
+      if (Array.isArray(d.seats)) {
+        const seated = new Set(d.seats);
+        let changed = false;
+        for (const id of Array.from(peers.keys())) {
+          if (seated.has(id)) continue;
+          dropPeer(id);
+          changed = true;
+        }
+        // Not seated yourself: the table filled up before your hello landed.
+        if (!seated.has(me.id) && opts.onFull) opts.onFull();
+        if (changed && opts.onRoster) opts.onRoster();
+      }
       if (wasSeed !== d.seed && opts.onSeed) opts.onSeed();
       shell.renderHud();
     });
@@ -156,7 +258,7 @@
     /* --- the frame ----------------------------------------------------------- */
 
     function tick(dt, now) {
-      if (disposed) return;
+      if (disposed || turnedAway) return;
       if (now - lastSent > TICK) {
         lastSent = now;
         const st = shell.player.state;
@@ -210,13 +312,15 @@
       if (!shell.level) return;
       try {
         p.body = GWCrew.buildBody(shell.lib, {
-          body: p.colour, hat: null, height: 1.0, width: 1.0,
+          body: new THREE.Color(p.seat || '#9aa0a6').getHex(), hat: null,
+          height: 1.0, width: 1.0,
         });
       } catch (err) {
         console.warn('[gwyf] could not draw ' + p.name, err);
         return;
       }
-      p.tag = GWCrew.nameTag(p.name, '#' + new THREE.Color(p.colour).getHexString());
+      p.drawnSeat = p.seat;
+      p.tag = GWCrew.nameTag(p.name, p.seat || '#9aa0a6');
       if (p.tag) {
         p.tag.position.y = p.body.joints.height * 0.98;
         p.body.group.add(p.tag);
@@ -238,6 +342,7 @@
       if (!p) return;
       hideBody(p);
       peers.delete(id);
+      seatEveryone();
       if (opts.onRoster) opts.onRoster();
     }
 
@@ -269,9 +374,16 @@
          confused is why an earlier version showed you at a table before there
          was one. */
       get ready() { return !!link.ready; },
+      /* Everyone else at the table, with their seat colour and what they are
+         up or down tonight. You are not in it: the rail sits next to your own
+         balance and listing yourself twice is not a scoreboard. */
       roster() {
-        return Array.from(peers.values()).map((p) => ({ id: p.id, name: p.name, colour: p.colour }));
+        return Array.from(peers.values()).map((p) => ({
+          id: p.id, name: p.name, colour: p.seat, won: nets.get(p.id) || 0,
+        }));
       },
+      /* Your own seat, which the HUD and your hands are tinted with. */
+      get seat() { return me.seat; },
       /* The two calls that move money. A guest routes them through the host; a
          host does them locally and tells everyone the new balance. */
       stake(amount) {

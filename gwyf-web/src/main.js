@@ -616,7 +616,10 @@
         name,
         onStatus: opts && opts.onStatus,
         onError: opts && opts.onError,
-        countPeers: () => (shell.net ? shell.net.roster().length : 0),
+        // Peers, not the roster: the roster is everyone else at the table and
+        // the listing counts the host as well, so `1 + roster` was right only
+        // by accident and stopped being right when roster changed shape.
+        countPeers: () => (shell.net ? shell.net.peers.size : 0),
         day: () => shell.store.s.day || 1,
       });
     } else {
@@ -625,7 +628,11 @@
     }
     shell.net = GWSession.create(shell, link, {
       host: !!(opts && opts.host), name, colour,
-      onRoster: () => { renderCrew(); GWScreens.refresh('table'); },
+      onRoster: () => { syncRoster(); renderCrew(); GWScreens.refresh('table'); },
+      /* Turned away because the table is full. Said, then let go of: a session
+         that stays half-open looks to the player exactly like one that is
+         broken, and the ticker line explaining it scrolls away. */
+      onFull: () => { setTimeout(() => disconnect(), 50); },
       /* The host's seed arrived, so every room this run generates has to be
          rebuilt from it -- otherwise the two of you are stood in floors that
          only look like each other. */
@@ -643,10 +650,24 @@
     return link;
   }
 
+  /* Copy the table into the run.
+
+     `s.friends` is the one list the briefing, the crew rail, the report and
+     the floor events all read, and it holds real players now. The session owns
+     who is connected; this keeps the run's copy in step with it, so nothing
+     downstream has to know whether there is a wire at all. */
+  function syncRoster() {
+    const s = shell.store.s;
+    s.friends = shell.net ? shell.net.roster().map((p) => ({
+      id: p.id, name: p.name, colour: p.colour, won: p.won || 0, at: null,
+    })) : [];
+  }
+
   function disconnect() {
     if (!shell.net) return;
     shell.net.dispose();
     shell.net = null;
+    syncRoster();
     renderCrew();
     shell.store.say('You are on your own again.', 'flat');
   }
@@ -1601,16 +1622,21 @@
     }
   }
 
-  /* The long version, for the row's tooltip and the ticker. The ledger itself
-     shows a name and a number, because that is what you glance at. */
+  /* The long version, for the row's tooltip. The ledger itself shows a name
+     and a number, because that is what you glance at.
+
+     Read off the session rather than off the bodies in the room: the people on
+     this rail are real players, and the only thing this copy of the game knows
+     about where they are is the floor number in their last position packet.
+     It used to ask the crew rig, which knows about the strangers and has never
+     heard of them. */
   function whatTheyAreDoing(mate) {
-    const game = mate.at ? GWGames.get(mate.at) : null;
-    const doing = shell.crew ? shell.crew.stateOf(mate.id) : null;
-    if (doing === 'walk') return 'Heading for the ' + (game ? game.name : 'floor');
-    if (doing === 'leaving') return 'Taking the lift';
-    if (doing === 'away') return 'On another floor';
-    if (doing === 'idle') return 'Wandering';
-    return game ? 'At the ' + game.name : 'Wandering';
+    const peer = shell.net && shell.net.peers.get(mate.id);
+    if (!peer) return 'Somewhere in the building';
+    if (peer.floor === null || peer.floor === undefined) return 'In the yard';
+    if (peer.floor === shell.store.s.floor) return 'On this floor';
+    const def = C.FLOORS[peer.floor];
+    return def ? 'On ' + def.name : 'On another floor';
   }
 
   function renderTicker(line) {
