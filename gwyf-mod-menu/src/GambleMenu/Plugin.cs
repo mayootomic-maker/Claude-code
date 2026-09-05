@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using BepInEx;
 using GambleMenu.Core;
 using GambleMenu.Mods;
@@ -76,7 +77,26 @@ namespace GambleMenu
             {
                 _sceneDiscoveryDone = true;
                 Discovery.WriteAll(Version);
+                StartCoroutine(RewriteDiscoveryOncePopulated());
             }
+        }
+
+        /// <summary>
+        /// Takes the dump a second time once the floor has filled in.
+        ///
+        /// A scene finishes loading before the things worth describing exist: machines and
+        /// players are spawned over the network a moment later, and the interface is built
+        /// after that. The dump written at sceneLoaded can therefore describe an empty room.
+        ///
+        /// The menu has a button for taking another, which is the answer when the menu opens.
+        /// It is no answer at all when it does not — which is the report this was written for —
+        /// so the second pass happens whether anyone asks for it or not.
+        /// </summary>
+        private IEnumerator RewriteDiscoveryOncePopulated()
+        {
+            // Unscaled: the game may well be paused behind a loading screen for some of this.
+            yield return new WaitForSecondsRealtime(25f);
+            Discovery.WriteAll(Version);
         }
 
         private void OnDestroy()
