@@ -5,3 +5,6 @@ lib/*.dll
 .cache/
 installer/*/resources/*.zip
 installer/*/resources/*.dll
+
+# Bootstrapped compiler (scripts/toolchain.sh)
+.toolchain/
