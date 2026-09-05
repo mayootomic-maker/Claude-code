@@ -1,0 +1,44 @@
+name: GambleMenu
+
+# The only workflow in this repository built an unrelated project, so the plugin's C# had
+# never been compiled anywhere we could see. This builds it, runs its tests, and publishes
+# the installer as a downloadable artifact — which is also how a player gets a build that
+# includes a fix without anyone having to hand them a file.
+
+on:
+  push:
+    branches: ['**']
+    paths: ['gwyf-mod-menu/**', '.github/workflows/gwyf-mod-menu.yml']
+  pull_request:
+    paths: ['gwyf-mod-menu/**', '.github/workflows/gwyf-mod-menu.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Plugin and installer
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gwyf-mod-menu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Fetches the BepInEx reference assemblies, runs the tests, builds the plugin and the
+      # installer, and assembles dist/.
+      - run: ./scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GambleMenu-Installer
+          path: gwyf-mod-menu/dist/GambleMenu-Installer.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GambleMenu-plugin
+          path: gwyf-mod-menu/dist/GambleMenu.zip
+          if-no-files-found: error
