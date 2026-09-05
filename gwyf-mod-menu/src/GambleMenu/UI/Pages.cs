@@ -676,6 +676,36 @@ namespace GambleMenu.UI
                 Application.OpenURL("file://" + ConfigStore.Root);
             y += report.height + 10f;
 
+            // The report above says which of this plugin's assumptions failed. This one says
+            // what the game actually calls things, which is what turns a MISS into a fix.
+            // Worth writing from inside a run: on the main menu there is no floor to describe.
+            var disco = new Rect(r.x, y, r.width - 6f, 74f);
+            Draw.Card(disco, p.Surface, p.Border, CardRadius);
+            Draw.Label(new Rect(disco.x + 17f, disco.y + 9f, disco.width - 34f, 16f),
+                       "DISCOVERY", Styles.Caption, p.TextFaint);
+            Draw.Label(new Rect(disco.x + 17f, disco.y + 27f, disco.width - 150f, 18f),
+                       "Every type, enum and member this game defines, plus its fonts and colours.",
+                       Styles.Small, p.TextMuted);
+            Draw.Label(new Rect(disco.x + 17f, disco.y + 45f, disco.width - 150f, 18f),
+                       Discovery.LastError != null
+                           ? "Last attempt failed: " + Discovery.LastError
+                           : (Discovery.Written
+                                 ? "Written. Send GambleMenu-discovery.zip to fix anything listed as NOT FOUND."
+                                 : "Not written yet."),
+                       Styles.Tiny, Discovery.LastError != null ? p.Danger : p.TextFaint);
+
+            if (Widgets.Button(new Rect(disco.xMax - 250f, disco.y + 24f, 112f, 26f), "Write it now",
+                               ButtonKind.Normal, true, Discovery.Folder, "compat.discover"))
+            {
+                Discovery.WriteAll(Plugin.Version);
+                if (Discovery.LastError == null) Notifier.Info("Discovery written — see the plugin's config folder.");
+                else Notifier.Error("Discovery failed — see the BepInEx log.");
+            }
+            if (Widgets.Button(new Rect(disco.xMax - 128f, disco.y + 24f, 112f, 26f), "Open folder",
+                               ButtonKind.Normal, Discovery.Written, Discovery.Folder, "compat.discover.open"))
+                Application.OpenURL("file://" + ConfigStore.Root);
+            y += disco.height + 10f;
+
             Draw.Label(new Rect(r.x + 4f, y, r.width, 20f), "INPUT", Styles.Caption, p.TextFaint);
             y += 22f;
             var inputRow = new Rect(r.x, y, r.width - 6f, 32f);

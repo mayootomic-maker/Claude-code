@@ -440,7 +440,14 @@ namespace GambleMenu.Core
             return found;
         }
 
-        public static void InvalidateInstances() => _singletons.Clear();
+        public static void InvalidateInstances()
+        {
+            _singletons.Clear();
+            _localPlayer = null;
+        }
+
+        /// <summary>Held between frames rather than looked up per call; see LocalPlayer.</summary>
+        private static GameObject _localPlayer;
 
         /// <summary>
         /// The shared GameSettings asset. It is a ScriptableObject loaded from Resources, so
@@ -465,6 +472,15 @@ namespace GambleMenu.Core
         public static GameObject LocalPlayer()
         {
             if (!TNetworkBehav.Ok || _isLocalPlayer == null) return null;
+
+            // Seven mods call this, several of them from OnUpdate, and the scan below walks
+            // every NetworkBehaviour in the scene reading a field off each by reflection. Left
+            // uncached that is a handful of full-scene sweeps per frame on a populated floor,
+            // which is felt as the game stuttering rather than as any mod misbehaving.
+            // The player outlives everything except a scene change, and that already clears
+            // this cache through InvalidateInstances.
+            if (_localPlayer != null) return _localPlayer;
+
             try
             {
                 var behaviours = Object.FindObjectsOfType(TNetworkBehav.Type);
@@ -476,15 +492,18 @@ namespace GambleMenu.Core
                     // Prefer a body that actually moves: the local player owns several
                     // NetworkBehaviours and only one of them carries the controller.
                     if (mb.GetComponent<CharacterController>() != null || mb.GetComponent<Rigidbody>() != null)
-                        return mb.gameObject;
+                        return _localPlayer = mb.gameObject;
                 }
                 foreach (var b in behaviours)
                 {
                     if (!(bool)_isLocalPlayer.GetValue(b)) continue;
-                    if (b is MonoBehaviour mb) return mb.gameObject;
+                    if (b is MonoBehaviour mb) return _localPlayer = mb.gameObject;
                 }
             }
             catch (Exception ex) { Log.Warn($"LocalPlayer lookup failed: {ex.Message}"); }
+
+            // Deliberately not cached: before the player spawns this is null every frame, and
+            // caching a null would mean never finding them once they do.
             return null;
         }
     }

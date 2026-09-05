@@ -53,6 +53,21 @@ see of them — including each machine's own fields. If something does not work,
 thing to look at (or send), because "it works" and "it does not" are otherwise indistinguishable
 from outside the game. There is a button for it on the Compatibility page.
 
+**And a discovery dump, which is the file to send.** The report above says which of this
+plugin's assumptions about the game were wrong. It cannot say what the right answers were,
+because it only knows the names it went looking for — and those names were written without
+the game to check them against, which is why a fresh install can open its menu and still do
+nothing useful.
+
+`BepInEx/config/GambleMenu/GambleMenu-discovery.zip` answers the other half: every type the
+game defines with its fields, methods and enum values, which networking library it actually
+uses, what is in the live scene, and the fonts, colours and materials it draws itself with.
+It is written on launch and again on the first scene load, so **play for ten seconds before
+quitting** — on the main menu there is no casino floor to describe. The Compatibility page
+has a "Write it now" button for doing it again from anywhere.
+
+Nothing in it is personal: it is a list of names and colours out of the game's own code.
+
 Either way, launch the game — a **"GambleMenu loaded"** banner appears for a few seconds.
 That banner is the diagnostic: if you see it, the plugin is running and only the keybind
 could be wrong. If you do not, BepInEx never loaded it — check `BepInEx/LogOutput.log`.

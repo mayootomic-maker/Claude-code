@@ -22,6 +22,7 @@ namespace GambleMenu
         public const string Version = "1.2.0";
 
         private GameObject _host;
+        private bool _sceneDiscoveryDone;
 
         private void Awake()
         {
@@ -49,6 +50,10 @@ namespace GambleMenu
                 // identical from outside the game, and this is the one file that separates them.
                 Diagnostics.WriteStartupReport(Version);
 
+                // The startup report says which of this plugin's guesses failed. This says what
+                // the right answers were, which is the only way the guessing ends.
+                Discovery.WriteAll(Version);
+
                 Log.Info($"ready — {ModRegistry.All.Count} mods registered, press {Settings.MenuKey.Value} to open");
             }
             catch (Exception ex)
@@ -63,6 +68,15 @@ namespace GambleMenu
         {
             GameBridge.InvalidateInstances();
             if (Settings.VerboseLog.Value) Log.Info($"scene '{scene.name}' loaded — instance cache dropped");
+
+            // The dump written in Awake catches the type map but an empty scene: no floor, no
+            // machines, no interface to read colours off. The first scene the game loads has
+            // all three, so it is worth the one repeat — during a loading screen, once.
+            if (!_sceneDiscoveryDone)
+            {
+                _sceneDiscoveryDone = true;
+                Discovery.WriteAll(Version);
+            }
         }
 
         private void OnDestroy()
