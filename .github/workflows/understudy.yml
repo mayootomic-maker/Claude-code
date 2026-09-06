@@ -130,51 +130,42 @@ jobs:
         run: ./gradlew --no-daemon build
 
       # When the compile fails, print the API the game and Fabric actually
-      # publish for the classes this mod touches. 26.x ships unobfuscated, so the
-      # real names are in the jar and there is no reason to guess them one CI
-      # round trip at a time — which is exactly what the mapping-era workflow
-      # forced. Runs only on failure, so a green build pays nothing for it.
+      # publish for whatever the compiler could not find. 26.x ships
+      # unobfuscated, so the real names are in the jars and there is no reason to
+      # guess them one CI round trip at a time.
+      #
+      # Every lookup is capped. An uncapped javap of Options ran to ninety lines
+      # of private fields and pushed the answers being looked for out of the log.
       - name: What the API actually looks like
         if: failure()
         continue-on-error: true
         run: |
-          pick() {  # first jar containing the given class entry
-            find ~/.gradle/caches .gradle -name '*.jar' 2>/dev/null | while read -r j; do
-              if unzip -l "$j" 2>/dev/null | grep -q "$1"; then echo "$j"; return; fi
-            done | head -1
+          cp=$(./gradlew --no-daemon -q printCompileClasspath 2>/dev/null | tail -1)
+          echo "classpath entries: $(echo "$cp" | tr ':' '\n' | wc -l)"
+
+          # Public members only, capped: enough to see the shape, never enough to
+          # bury the next answer.
+          show() {
+            echo; echo "===== $1 ====="
+            javap -cp "$cp" "$1" 2>&1 | head -"${2:-22}" | sed 's/^/  /'
           }
-          server=$(pick 'net/minecraft/core/BlockPos.class')
-          client=$(pick 'net/minecraft/client/Minecraft.class')
-          echo "server jar: ${server:-NOT FOUND}"
-          echo "client jar: ${client:-NOT FOUND}"
+          show net.minecraft.world.inventory.ContainerInput 30
+          show net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement
+          show net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
+          show net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements 14
+          show net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
+          show net.fabricmc.fabric.api.client.command.v2.ClientCommands
+          show net.minecraft.client.gui.Hud 30
 
-          fabjars=$(find ~/.gradle/caches -name 'fabric-*.jar' 2>/dev/null | tr '\n' ':')
-          cp="$server:$client:$fabjars"
-
-          # Full members, because these are the classes whose shape is unknown:
-          # what replaced ClickType, how a HUD element is registered now, and
-          # what a client command builder is called.
-          for cls in net.minecraft.world.inventory.ContainerInput \
-                     net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement \
-                     net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry \
-                     net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements \
-                     net.fabricmc.fabric.api.client.command.v2.ClientCommandManager; do
-            echo; echo "===== $cls ====="
-            javap -p -cp "$cp" "$cls" 2>&1 | head -45
+          # hideGui is in none of Options' fields, so it moved. Ask which class
+          # still declares something by that name.
+          echo; echo "===== who declares hideGui ====="
+          for c in net.minecraft.client.Options net.minecraft.client.Minecraft \
+                   net.minecraft.client.gui.Gui net.minecraft.client.gui.Hud; do
+            hit=$(javap -p -cp "$cp" "$c" 2>/dev/null | grep -i 'hidegui' | head -3)
+            [ -n "$hit" ] && printf '  %s:\n%s\n' "$c" "$hit"
           done
-
-          # hideGui is a field, so the method-name dump could not see it.
-          echo; echo "===== net.minecraft.client.Options: fields ====="
-          javap -p -cp "$cp" net.minecraft.client.Options 2>&1 | grep -vE '\(' | sed 's/^/  /'
-
-          # GuiGraphics is gone; whatever a HUD draws onto now takes its place.
-          echo; echo "===== classes under client.gui named *Gui*, *Render*, *Draw* ====="
-          unzip -l "$client" 2>/dev/null \
-            | grep -oE 'net/minecraft/client/gui/[a-zA-Z0-9]*\.class' \
-            | sed 's|/|.|g; s|\.class||' | sort -u | sed 's/^/  /'
-
-          echo; echo "===== compile classpath ====="
-          ./gradlew --no-daemon -q printCompileClasspath 2>&1 | tail -70
+          echo "  (nothing above means hideGui is gone entirely)"
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one

@@ -75,10 +75,12 @@ test {
     }
 }
 
-// The compile classpath is the thing that decides whether a Fabric API class
-// resolves, and a "cannot find symbol" says nothing about why it was absent.
-// The failure diagnostic in CI reads this.
+// The compile classpath is what decides whether a class resolves, and a
+// "cannot find symbol" says nothing about why it was absent. The failure
+// diagnostic in CI reads this, and reads members out of exactly these jars —
+// the Gradle cache holds older copies of the same modules, and javap against
+// the cache answered for the wrong one once already.
 tasks.register('printCompileClasspath') {
     def cp = configurations.named('compileClasspath')
-    doLast { cp.get().files.collect { it.name }.sort().each { println it } }
+    doLast { println cp.get().files.join(':') }
 }
