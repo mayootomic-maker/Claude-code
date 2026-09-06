@@ -9,12 +9,15 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -75,6 +78,11 @@ public final class BuildTask {
 
     /** How many times a stubborn block is retried before being given up on. */
     private static final int MAX_ATTEMPTS = 3;
+    /** Give up clearing a block that will not break — bedrock, or a claim. */
+    private static final int MAX_CLEAR_TICKS = 200;
+    /** Fluids are placed into rather than broken; nothing else is left standing. */
+    private static final Set<String> POUR_INTO =
+            Set.of("water", "lava", "bubble_column", "flowing_water", "flowing_lava");
 
     private final Minecraft client;
     private final Consumer<String> report;
@@ -89,6 +97,13 @@ public final class BuildTask {
     private boolean running;
     private final Map<String, Integer> attempts = new LinkedHashMap<>();
     private final Map<String, Integer> missing = new LinkedHashMap<>();
+    private BlockPos clearing;
+    private int clearTicks;
+    private int cleared;
+    private final List<Blueprint.Placement> deferred = new ArrayList<>();
+    private boolean secondPass;
+    private final Set<Long> planned = new HashSet<>();
+    private final List<BlockPos> scaffolds = new ArrayList<>();
 
     public BuildTask(Minecraft client, TravelTask travel, Consumer<String> report) {
         this.client = client;
@@ -124,10 +139,19 @@ public final class BuildTask {
         this.index = 0;
         this.placed = 0;
         this.skipped = 0;
+        this.cleared = 0;
         this.cooldown = 0;
         this.running = true;
+        this.secondPass = false;
         this.attempts.clear();
         this.missing.clear();
+        this.deferred.clear();
+        this.scaffolds.clear();
+        this.planned.clear();
+        for (Blueprint.Placement p : queue) {
+            planned.add(pack(at.getX() + p.x(), at.getY() + p.y(), at.getZ() + p.z()));
+        }
+        this.clearing = null;
         report.accept("building " + blueprint.name() + ": " + queue.size() + " blocks");
     }
 
@@ -148,6 +172,11 @@ public final class BuildTask {
         if (travel != null && travel.running()) return; // walking to the site
         if (cooldown-- > 0) return;
 
+        // A build at night is a build with things spawning in it, and the
+        // guardian will end the job over a skeleton a torch would have
+        // prevented. One torch costs a tick and buys the rest of the night.
+        if (Torchlight.keepLit(client, player)) return;
+
         // Everything within arm's reach goes down in one tick. Walking to the
         // next spot is what a build actually spends its time on, so placing one
         // block per visit and strolling off was most of the wait.
@@ -160,6 +189,29 @@ public final class BuildTask {
     /** One block. False when the tick is over, whatever the reason. */
     private boolean one(LocalPlayer player) {
         if (index >= queue.size()) {
+            // Take the props back down. They were never part of the design and
+            // leaving them is the difference between a finished building and one
+            // with scaffolding still up.
+            if (!scaffolds.isEmpty()) {
+                BlockPos prop = scaffolds.get(0);
+                if (client.level.getBlockState(prop).isAir()) {
+                    scaffolds.remove(0);
+                    return true;
+                }
+                return clear(player, prop);
+            }
+            // Anything that had nothing to be placed against gets one more go
+            // now that the rest of it exists. A block in mid-air cannot be
+            // placed at all — the game wants a neighbouring face to click — and
+            // by the end of a pass its neighbours are usually there.
+            if (!deferred.isEmpty() && !secondPass) {
+                secondPass = true;
+                queue = new ArrayList<>(deferred);
+                deferred.clear();
+                attempts.clear();
+                index = 0;
+                return true;
+            }
             finish();
             return false;
         }
@@ -167,10 +219,18 @@ public final class BuildTask {
         Blueprint.Placement next = queue.get(index);
         BlockPos target = origin.offset(next.x(), next.y(), next.z());
 
-        // Already correct — a resumed build skips everything it did last time.
-        if (!client.level.getBlockState(target).isAir()) {
-            index++;
-            return true;
+        BlockState standing = client.level.getBlockState(target);
+        if (!standing.isAir()) {
+            if (nameOf(standing).equals(next.block())) {
+                index++;      // already right: a resumed build skips its own work
+                return true;
+            }
+            if (!POUR_INTO.contains(nameOf(standing))) {
+                // The site is not a bare plain. Grass, a hillside, somebody's
+                // fence — it was all being counted as "already built", which is
+                // how a house comes out with a tree standing in the hall.
+                return clear(player, target);
+            }
         }
 
         double distance = Math.sqrt(player.blockPosition().distSqr(target));
@@ -192,18 +252,104 @@ public final class BuildTask {
             index++;
             return true;
         }
+        // Nothing to click on. A block in mid-air cannot be placed at all, so
+        // prop it: an ordinary block underneath, which comes back out once the
+        // building is finished. This is what a person does, and without it a
+        // model whose shell steps diagonally loses every course above the first.
+        if (nothingToPlaceAgainst(target) && prop(player, target)) return false;
+
         String key = target.toShortString();
         if (attempts.merge(key, 1, Integer::sum) >= MAX_ATTEMPTS) {
             index++;
-            skipped++;
+            if (!secondPass && nothingToPlaceAgainst(target)) deferred.add(next);
+            else skipped++;
             return true;
         }
         return false; // let the world catch up before trying that one again
     }
 
+    /**
+     * Put a temporary block under something that has nothing to rest against.
+     *
+     * Only one deep, and only where the design does not want a block itself —
+     * a prop standing where a block belongs would be mistaken for finished work
+     * and never replaced. Returns whether one went down, in which case the real
+     * block is tried again next tick with something to click on.
+     */
+    private boolean prop(LocalPlayer player, BlockPos target) {
+        BlockPos under = target.below();
+        if (!client.level.getBlockState(under).isAir()) return false;
+        if (planned.contains(pack(under.getX(), under.getY(), under.getZ()))) return false;
+        if (nothingToPlaceAgainst(under)) return false;
+
+        String block = Walker.spare(player);
+        if (block == null || !Hotbar.hold(client, block)) return false;
+        if (!place(player, under, null)) return false;
+        scaffolds.add(under);
+        return true;
+    }
+
+    private static long pack(int x, int y, int z) {
+        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
+    }
+
+    /**
+     * Break what is standing where a block is meant to go.
+     *
+     * Returns false while it is still breaking, so the tick belongs to this.
+     * Levelling the site is not a separate phase on purpose: doing it block by
+     * block as the build reaches each one means a build can be stopped halfway
+     * without having flattened a hill it never got round to using.
+     */
+    private boolean clear(LocalPlayer player, BlockPos target) {
+        if (client.gameMode == null) return false;
+        if (player.blockPosition().distSqr(target) > REACH * REACH) {
+            travel.start(standingSpotFor(target));
+            return false;
+        }
+        if (!target.equals(clearing)) {
+            clearing = target;
+            clearTicks = 0;
+            client.gameMode.startDestroyBlock(target, Direction.UP);
+        }
+        look(player, Vec3.atCenterOf(target));
+        client.gameMode.continueDestroyBlock(target, Direction.UP);
+        player.swing(InteractionHand.MAIN_HAND);
+
+        if (client.level.getBlockState(target).isAir()) {
+            cleared++;
+            clearing = null;
+            return true;
+        }
+        if (++clearTicks > MAX_CLEAR_TICKS) {
+            // Bedrock, or a block a server will not let this player break.
+            clearing = null;
+            index++;
+            skipped++;
+        }
+        return false;
+    }
+
+    /** Whether the game would refuse this placement for having no face to click. */
+    private boolean nothingToPlaceAgainst(BlockPos target) {
+        for (Direction direction : Direction.values()) {
+            BlockState state = client.level.getBlockState(target.relative(direction));
+            if (!state.isAir() && state.getFluidState().isEmpty()) return false;
+        }
+        return true;
+    }
+
+    private static String nameOf(BlockState state) {
+        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+    }
+
     private void finish() {
         running = false;
         StringBuilder message = new StringBuilder("done: placed " + placed + " blocks");
+        if (cleared > 0) message.append(", cleared ").append(cleared);
+        if (!scaffolds.isEmpty()) {
+            message.append(", left ").append(scaffolds.size()).append(" props up");
+        }
         if (skipped > 0) message.append(", skipped ").append(skipped);
         if (!missing.isEmpty()) {
             message.append(" (ran out of: ");

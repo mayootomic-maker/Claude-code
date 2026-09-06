@@ -325,4 +325,87 @@ class SchematicTest {
                 .map(Blueprint.Placement::block)
                 .findFirst().orElse(null);
     }
+
+    /** The rule the game enforces: a block goes against a face that exists. */
+    private static int unplaceable(Blueprint blueprint) {
+        int[][] sides = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+        java.util.Set<Long> world = new java.util.HashSet<>();
+        int stuck = 0;
+        for (Blueprint.Placement p : blueprint.buildOrder()) {
+            boolean against = false;
+            for (int[] side : sides) {
+                int ny = p.y() + side[1];
+                // Below the floor is the ground the site sits on, which is
+                // always something to click.
+                if (ny < 0) { against = true; break; }
+                if (world.contains(cell(p.x() + side[0], ny, p.z() + side[2]))) {
+                    against = true;
+                    break;
+                }
+            }
+            if (!against) stuck++;
+            else world.add(cell(p.x(), p.y(), p.z()));
+        }
+        return stuck;
+    }
+
+    private static long cell(int x, int y, int z) {
+        return ((long) (x & 0xFFFF) << 32) | ((long) (z & 0xFFFF) << 16) | (y & 0xFFFF);
+    }
+
+    @Test
+    void everyDesignCanBeBuiltInTheOrderItIsGiven() {
+        // Bottom-up is not enough on its own. An eave, an overhang or the first
+        // block of a course has nothing beside it when its turn comes, and each
+        // one that fails takes the support out from under its neighbours — on
+        // the manor that cascade turned two impossible blocks into 271. The
+        // order has to grow outward from what is already standing.
+        for (Catalog.Entry entry : Catalog.entries()) {
+            Blueprint design = Catalog.build(entry, entry.defaultSize(),
+                    Materials.wood(0), Materials.stone(0));
+            assertEquals(0, unplaceable(design),
+                    entry.name() + " has blocks with nothing to place them against");
+        }
+    }
+
+    @Test
+    void turningADesignDoesNotBreakItsBuildOrder() {
+        // A turned building is a different set of coordinates, and an order that
+        // only worked in the original orientation would strand half a roof.
+        Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1), 9,
+                Materials.wood(2), Materials.stone(1));
+        for (int turns = 0; turns < 4; turns++) {
+            assertEquals(0, unplaceable(manor.turned(turns, false)),
+                    "unbuildable after " + (turns * 90) + " degrees");
+        }
+    }
+
+    @Test
+    void buildOrderStillPlacesEveryBlockExactlyOnce() {
+        // The ordering grew a frontier and a visited set; the way that goes
+        // wrong is quietly dropping or duplicating blocks.
+        Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1), 9,
+                Materials.wood(0), Materials.stone(0));
+        List<Blueprint.Placement> order = manor.buildOrder();
+        assertEquals(manor.blockCount(), order.size(), "lost or duplicated blocks");
+        assertEquals(manor.blockCount(),
+                order.stream().map(p -> cell(p.x(), p.y(), p.z())).distinct().count(),
+                "the same position twice");
+    }
+
+    @Test
+    void buildOrderStartsAtTheBottom() {
+        Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1), 9,
+                Materials.wood(0), Materials.stone(0));
+        List<Blueprint.Placement> order = manor.buildOrder();
+        assertEquals(0, order.get(0).y(), "did not start on the ground");
+        // Not strictly layered any more — it follows what is standing — but it
+        // must not be putting a roof on before there are walls.
+        int firstHigh = 0;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i).y() >= manor.sizeY() - 1) { firstHigh = i; break; }
+        }
+        assertTrue(firstHigh > order.size() / 2,
+                "reached the top course " + firstHigh + " blocks in, of " + order.size());
+    }
 }

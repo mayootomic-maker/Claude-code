@@ -35,6 +35,26 @@ public final class Hotbar {
     }
 
     /**
+     * Whether another one of these would actually fit.
+     *
+     * Progress through a gather is measured by what is in the inventory, which
+     * is the honest measure — a drop can land in water or roll into a hole. But
+     * a full inventory means the count can never rise however much is mined, and
+     * the gatherer will happily mine the same seam until the world ends. This is
+     * the question that stops that.
+     */
+    public static boolean roomFor(LocalPlayer player, String itemName) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.isEmpty()) return true;
+            if (itemName.equals(nameOf(stack)) && stack.getCount() < stack.getMaxStackSize()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Put `itemName` in the player's hand, moving it to the hotbar if needed.
      * Returns false when there is none to hold.
      */

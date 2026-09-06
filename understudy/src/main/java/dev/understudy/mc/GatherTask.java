@@ -196,6 +196,19 @@ public final class GatherTask {
             return;
         }
 
+        // Nowhere to put it. Mining on would drop everything on the floor and
+        // the count this job measures itself by would never move again, which
+        // is a loop rather than a job.
+        if (!Hotbar.roomFor(player, wanted.item())) {
+            releaseMining();
+            stop("your inventory is full — nothing else will fit");
+            return;
+        }
+
+        // A seam at y minus fifty is dark and things spawn in it, and one
+        // skeleton ends the whole job. This is cheaper than that.
+        if (Torchlight.keepLit(client, player)) return;
+
         if (wanted.tool() != null && !Hotbar.hold(client, wanted.tool())) {
             // Not having the tool is not a reason to stop; it is a reason to go
             // and make one. The plan thought there would be one here — it broke,
@@ -393,25 +406,9 @@ public final class GatherTask {
             Hud.setStatus("looking for " + wanted.item() + " (leg " + (legs + 1) + ")");
         }
         legs++;
-        lightTheWay(player);
+        Torchlight.keepLit(client, player);
         travel.start(goal, true);
         return true;
-    }
-
-    /**
-     * A torch, if there is one to spare and it is dark enough to matter.
-     *
-     * Not decoration: a fresh tunnel at y=-59 is pitch black, things spawn in
-     * it, and the guardian will quite rightly abort the whole job over a
-     * skeleton that a torch would have prevented. Nothing is placed if there
-     * are no torches — the plan asks for some when it knows it is going
-     * underground, and if there are none anyway, that is the player's call.
-     */
-    private void lightTheWay(LocalPlayer player) {
-        if (player.blockPosition().getY() > DARK_BELOW) return;
-        if (Hotbar.count(player, "torch") == 0 || !Hotbar.hold(client, "torch")) return;
-        BlockPos spot = Placement.spotBeside(client, player);
-        if (spot != null) Placement.put(client, player, spot, "torch");
     }
 
     /**

@@ -1,9 +1,14 @@
 package dev.understudy.core.build;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
 
 /**
  * A structure, as data.
@@ -116,19 +121,74 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
      * back to open ground.
      */
     public List<Placement> buildOrder() {
-        List<Placement> ordered = new ArrayList<>(placements);
-        ordered.sort((a, b) -> {
+        Comparator<Placement> preference = (a, b) -> {
             if (a.y() != b.y()) return Integer.compare(a.y(), b.y());
             // Furniture and lights go in after the shell of their layer, since
             // they need a floor and a wall to sit against.
             boolean fittingA = a.role() == Role.FURNITURE || a.role() == Role.LIGHT || a.role() == Role.DOOR;
             boolean fittingB = b.role() == Role.FURNITURE || b.role() == Role.LIGHT || b.role() == Role.DOOR;
             if (fittingA != fittingB) return fittingA ? 1 : -1;
-            double da = distanceFromEntrance(a);
-            double db = distanceFromEntrance(b);
-            return Double.compare(db, da);
-        });
+            return Double.compare(distanceFromEntrance(b), distanceFromEntrance(a));
+        };
+
+        // Ordered by what can actually be placed, not just by height.
+        //
+        // The game will not let you put a block in mid-air: you place it by
+        // clicking the face of one that is already there. So an order that is
+        // merely bottom-up hands the builder blocks with nothing beside them —
+        // an eave, the first block of a course, anything overhanging — and each
+        // one it fails on takes the support out from under its neighbours. On
+        // this manor that cascade turned two impossible blocks into two hundred
+        // and seventy-one. Growing the order outward from what is already
+        // standing costs one pass and removes the whole class of failure.
+        Map<Long, Placement> byPosition = new HashMap<>();
+        for (Placement p : placements) byPosition.put(at(p.x(), p.y(), p.z()), p);
+
+        List<Placement> pending = new ArrayList<>(placements);
+        pending.sort(preference);
+
+        PriorityQueue<Placement> frontier = new PriorityQueue<>(preference);
+        Set<Long> seen = new HashSet<>();
+        for (Placement p : pending) {
+            // Anything resting on the ground can always be placed: the terrain
+            // under the site is the face to click.
+            if (p.y() == 0 && seen.add(at(p.x(), p.y(), p.z()))) frontier.add(p);
+        }
+
+        List<Placement> ordered = new ArrayList<>(placements.size());
+        int next = 0;
+        while (ordered.size() < placements.size()) {
+            if (frontier.isEmpty()) {
+                // A piece with no path back to the ground — a floating island of
+                // a model, an arch's far side. It genuinely cannot be placed
+                // against anything yet, so start it and let the rest grow from
+                // it; the builder scaffolds or reports it.
+                while (next < pending.size()
+                        && !seen.add(at(pending.get(next).x(), pending.get(next).y(),
+                                pending.get(next).z()))) {
+                    next++;
+                }
+                if (next >= pending.size()) break;
+                frontier.add(pending.get(next++));
+            }
+            Placement p = frontier.poll();
+            ordered.add(p);
+            for (int[] side : SIDES) {
+                Placement neighbour = byPosition.get(
+                        at(p.x() + side[0], p.y() + side[1], p.z() + side[2]));
+                if (neighbour == null) continue;
+                if (!seen.add(at(neighbour.x(), neighbour.y(), neighbour.z()))) continue;
+                frontier.add(neighbour);
+            }
+        }
         return ordered;
+    }
+
+    private static final int[][] SIDES =
+            {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
+    private static long at(int x, int y, int z) {
+        return ((long) (x & 0xFFFF) << 32) | ((long) (z & 0xFFFF) << 16) | (y & 0xFFFF);
     }
 
     private double distanceFromEntrance(Placement p) {

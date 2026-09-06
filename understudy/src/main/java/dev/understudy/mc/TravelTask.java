@@ -151,9 +151,11 @@ public final class TravelTask {
         // nothing, at which point even someone who never tunnels picks up a
         // shovel rather than standing there, because one wall is all it usually is.
         options.allowDig = mustDig || profile.digTolerance() > 0.2 || failures > 0;
-        // Bridging still is not: placing a block underfoot mid-stride needs the
-        // block in hand and a free moment, and half of that is not built.
-        options.allowBridge = false;
+        // Bridging is on, but only when there is something ordinary to bridge
+        // with. Planning a route across a ravine you have no blocks for is a
+        // route that ends at the ravine, and the search is better off not
+        // knowing about the shortcut at all.
+        options.allowBridge = Walker.spare(player) != null;
         options.allowSwim = profile.swimTolerance() > 0.15;
         // A bigger budget is worth it here. The old one gave up on anything that
         // needed real thought and handed back a partial path, which is how a

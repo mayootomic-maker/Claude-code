@@ -11,6 +11,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -139,6 +141,7 @@ public final class Walker {
         // through is what lets a route go over a hill instead of round it, and
         // routing round everything is most of why long journeys used to wander.
         if (step.kind() == Step.Kind.DIG && digThrough(player, step)) return true;
+        if (step.kind() == Step.Kind.BRIDGE && bridge(player, step)) return true;
 
         if (aim.remaining() < Pursuit.REACHED && Math.abs(dy) < 1.2) {
             index = path.size();
@@ -269,6 +272,69 @@ public final class Walker {
         if (mayDig && stuckTicks > 45) return digAt(player, ahead);
         return false;
     }
+
+    /**
+     * Put a block under the gap and then walk onto it.
+     *
+     * The reason this was switched off for so long is the obvious one: the way
+     * to fall into a ravine is to walk towards it while placing the floor. So
+     * the forward key comes up first and stays up until the block is actually
+     * there — the placement is verified against the world, not assumed from
+     * having sent the click.
+     *
+     * The click itself is the one a person makes: the side face of the block
+     * under your own feet, which is the only face adjacent to a hole that you
+     * can reach.
+     */
+    private boolean bridge(LocalPlayer player, Step step) {
+        if (client.gameMode == null || client.level == null) return false;
+        BlockPos under = new BlockPos(step.x(), step.y() - 1, step.z());
+        if (!client.level.getBlockState(under).isAir()) return false; // floor is there; walk it
+
+        String block = spare(player);
+        if (block == null) {
+            // Nothing to build with. Saying so through the stuck counter gets a
+            // fresh search that will not plan another bridge.
+            stuckTicks = 999;
+            return false;
+        }
+        // Stand still. Everything below this is done from a standstill.
+        Keys.set(client.options.keyUp, false);
+        Keys.set(client.options.keySprint, false);
+        Keys.set(client.options.keyJump, false);
+        if (!Hotbar.hold(client, block)) return true;
+
+        BlockPos from = player.blockPosition().below();
+        if (client.level.getBlockState(from).isAir()) return false; // nothing to click either
+        Direction face = Torchlight.toward(from, under);
+        Vec3 hit = Vec3.atCenterOf(from).add(face.getStepX() * 0.5, 0, face.getStepZ() * 0.5);
+
+        lookAtBlock(player, under);
+        client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
+                new BlockHitResult(hit, face, from, false));
+        player.swing(InteractionHand.MAIN_HAND);
+        // True while there is still a hole: keep the tick and try again.
+        return client.level.getBlockState(under).isAir();
+    }
+
+    /**
+     * Something ordinary to build a floor out of.
+     *
+     * Deliberately a short list of the cheap and plentiful. Bridging a ravine
+     * with the oak doors you gathered for a house is not a trade anyone wants
+     * to make, and there is no way for this to know which of your blocks were
+     * spoken for.
+     */
+    static String spare(LocalPlayer player) {
+        for (String block : SPARES) {
+            if (Hotbar.count(player, block) > 0) return block;
+        }
+        return null;
+    }
+
+    private static final List<String> SPARES = List.of(
+            "dirt", "cobblestone", "cobbled_deepslate", "netherrack", "gravel",
+            "andesite", "diorite", "granite", "stone", "sand");
 
     /** The cell the player is walking into: one step along where they face. */
     private BlockPos inFront(LocalPlayer player) {
