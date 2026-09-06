@@ -9,7 +9,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -341,10 +340,15 @@ public final class GatherTask {
         if (wanted.item().equals(wantedFor)) return;
         wantedFor = wanted.item();
         restartScan();
+        // Looked up by walking the registry rather than by building an id:
+        // the id class was renamed this version, and the registry's own
+        // block -> name direction is the one that has not moved in years.
+        // A thousand-odd blocks, once per step, against a scan of a third of a
+        // million per second — this is not the expensive end.
+        List<String> names = Planner.sourcesOf(wanted.item());
         List<Block> blocks = new ArrayList<>();
-        for (String name : Planner.sourcesOf(wanted.item())) {
-            Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.withDefaultNamespace(name));
-            if (block != null) blocks.add(block);
+        for (Block block : BuiltInRegistries.BLOCK) {
+            if (names.contains(BuiltInRegistries.BLOCK.getKey(block).getPath())) blocks.add(block);
         }
         wantedBlocks = List.copyOf(blocks);
     }
