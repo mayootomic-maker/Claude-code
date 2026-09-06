@@ -41,6 +41,16 @@ const golem = new GolemBot({
   logger: log,
 })
 
+// A drive that hangs is worse than one that fails: it burns a CI runner and
+// tells you nothing. Every individual step has its own timeout, but the loops
+// that re-plan around failure can stack several of them, so there is a hard
+// ceiling on the whole run as well.
+const watchdog = setTimeout(() => {
+  console.log('FAIL  the drive finished within its time budget — hung after 6 minutes')
+  process.exit(1)
+}, 6 * 60_000)
+watchdog.unref()
+
 process.on('unhandledRejection', (error) => {
   console.log(`FAIL  unhandled rejection — ${String(error)}`)
   failures.push('unhandled rejection')
@@ -81,23 +91,29 @@ try {
   const nav = new Navigator(golem.bot, log)
   const before = golem.bot.entity.position.clone()
   const target = before.offset(8, 0, 8)
-  // While travelling, watch whether the aim layer and the pathfinder are both
-  // trying to hold the head. They were, on 99% of ticks — the bot still
-  // arrived, so nothing failed, but two contradictory look packets every tick
-  // is louder than either system alone and it threw away the aim model for the
-  // whole journey. Only measuring it caught that.
-  let contested = 0
+  // While travelling, check that the aim layer is not also writing look angles.
+  // It was, on every tick — the bot still arrived, so nothing failed, but two
+  // contradictory look packets twenty times a second is louder than either
+  // system alone and it threw away the aim model for the whole journey.
+  //
+  // The obvious check — compare the aim layer's angle to the real one — is
+  // flaky, because the aim layer tracks the pathfinder a tick behind and a
+  // sharp turn reads as disagreement when nothing is being contested. Counting
+  // actual writes is exact.
+  let violations = 0
   let ticks = 0
+  let wasMoving = false
+  let lastWrites = golem.aimWrites
   const watcher = setInterval(() => {
-    // Only while the pathfinder is actually steering. Before it has a path and
-    // after it arrives, the aim layer holds the head legitimately, and counting
-    // those ticks measures the handover rather than the contention.
-    if (!golem.bot.pathfinder.isMoving()) return
-    ticks++
-    const drift = Math.abs(
-      ((golem.aim.orientation.yaw - golem.bot.entity.yaw + Math.PI) % (2 * Math.PI)) - Math.PI,
-    )
-    if (drift > 0.5) contested++
+    const moving = golem.bot.pathfinder.isMoving()
+    // Require two consecutive moving samples so a write from just before the
+    // walk began is not attributed to it.
+    if (moving && wasMoving) {
+      ticks++
+      if (golem.aimWrites > lastWrites) violations++
+    }
+    wasMoving = moving
+    lastWrites = golem.aimWrites
   }, 50)
 
   const travel = await nav.travelTo(target, { range: 3, timeoutMs: 30_000 })
@@ -106,9 +122,9 @@ try {
   const moved = golem.bot.entity.position.distanceTo(before)
   check('walks somewhere when told to', moved > 2, `moved ${moved.toFixed(1)} blocks (${travel.reason})`)
   check(
-    'aiming yields the head to the pathfinder while walking',
-    ticks === 0 || contested / ticks < 0.05,
-    `${contested}/${ticks} contested ticks`,
+    'aiming writes nothing while the pathfinder is steering',
+    violations === 0,
+    `${violations} writes across ${ticks} moving samples`,
   )
 
   // --- digging --------------------------------------------------------------
@@ -185,6 +201,7 @@ try {
   golem.dispose('e2e done')
 }
 
+clearTimeout(watchdog)
 await sleep(500)
 console.log(failures.length === 0 ? '\nALL CHECKS PASSED' : `\n${failures.length} FAILED: ${failures.join(', ')}`)
 process.exit(failures.length === 0 ? 0 : 1)

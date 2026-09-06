@@ -174,8 +174,13 @@ write the view direction every tick, and the pathfinder steers by turning the
 head, so during a walk they were sending contradictory angles twenty times a
 second — disagreeing on 99% of ticks across a forty-block journey. Nothing
 failed; the bot still arrived. It only surfaced because the question asked was
-"how much do these two disagree" rather than "did it get there". The drive now
-asserts that number stays near zero.
+"how much do these two disagree" rather than "did it get there".
+
+Measuring it correctly took a second pass, too. Comparing the two angles is
+flaky: the aim layer tracks the pathfinder a tick behind, so a sharp turn reads
+as disagreement when nothing is being contested. The exact property is that the
+aim layer writes *nothing* while the pathfinder is steering, and counting writes
+is what the drive asserts.
 
 ## Known limits
 

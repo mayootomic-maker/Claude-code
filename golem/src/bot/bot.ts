@@ -41,6 +41,15 @@ export class GolemBot {
   readonly typist: Typist
   readonly log: Logger
 
+  /**
+   * How many times the aim loop has written a look angle.
+   *
+   * Exposed so the end-to-end drive can assert the exact property that matters
+   * while walking — that this loop writes nothing at all — rather than
+   * comparing angles, which lag by a tick and make the check flaky.
+   */
+  aimWrites = 0
+
   private readonly humanise: boolean
   private spawnedAt: number | null = null
   private pausedUntil = 0
@@ -91,6 +100,7 @@ export class GolemBot {
       }
 
       const { yaw, pitch } = this.aim.step(TICK_SECONDS)
+      this.aimWrites++
       void this.bot.look(yaw, pitch, true).catch(() => {
         /* look fails harmlessly while the world is loading */
       })
