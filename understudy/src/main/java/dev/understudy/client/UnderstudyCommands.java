@@ -38,11 +38,12 @@ public final class UnderstudyCommands {
                     .then(argument("x", IntegerArgumentType.integer())
                             .then(argument("y", IntegerArgumentType.integer())
                                     .then(argument("z", IntegerArgumentType.integer())
-                                            .executes(context -> travel(
-                                                    context.getSource(),
-                                                    IntegerArgumentType.getInteger(context, "x"),
-                                                    IntegerArgumentType.getInteger(context, "y"),
-                                                    IntegerArgumentType.getInteger(context, "z"))))))
+                                            .executes(context -> guarded(context.getSource(), "travel",
+                                                    () -> travel(
+                                                            context.getSource(),
+                                                            IntegerArgumentType.getInteger(context, "x"),
+                                                            IntegerArgumentType.getInteger(context, "y"),
+                                                            IntegerArgumentType.getInteger(context, "z")))))))
                     .then(literal("stop").executes(context -> stop(context.getSource()))));
 
             dispatcher.register(literal("build")
@@ -74,8 +75,12 @@ public final class UnderstudyCommands {
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
                     .then(literal("help").executes(context -> help(context.getSource())))
-                    .then(literal("chatfix").executes(context -> chatFix(context.getSource())))
-                    .then(literal("test").executes(context -> selfTest(context.getSource())))
+                    .then(literal("chatfix").executes(context ->
+                            guarded(context.getSource(), "understudy chatfix",
+                                    () -> chatFix(context.getSource()))))
+                    .then(literal("test").executes(context ->
+                            guarded(context.getSource(), "understudy test",
+                                    () -> selfTest(context.getSource()))))
                     .then(literal("hud").executes(context -> toggleHud(context.getSource())))
                     // Bare /understudy lists the commands rather than the
                     // status: someone typing it is usually asking what exists.
@@ -264,6 +269,26 @@ public final class UnderstudyCommands {
      * switched off — which is precisely the situation several of these
      * commands exist to diagnose.
      */
+    /**
+     * Run a command body, turning any exception into something readable.
+     *
+     * Brigadier reports a thrown exception as a generic red "an unexpected
+     * error occurred", which says nothing about which part failed. Naming the
+     * command and the exception is the difference between a bug report and a
+     * shrug.
+     */
+    private static int guarded(FabricClientCommandSource source, String name,
+                               java.util.function.Supplier<Integer> body) {
+        try {
+            return body.get();
+        } catch (Throwable error) {
+            UnderstudyClient.LOG.error("/{} failed", name, error);
+            Hud.warn("/" + name + " failed: " + error);
+            source.sendFeedback(Text.literal("§8[§bunderstudy§8] §c/" + name + " failed: " + error));
+            return 0;
+        }
+    }
+
     private static void say(FabricClientCommandSource source, String message) {
         UnderstudyClient.LOG.info("[cmd] {}", message);
         Hud.say(message);

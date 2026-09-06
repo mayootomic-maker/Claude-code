@@ -35,6 +35,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static BuildTask build;
     private static SortTask sort;
     private static boolean greeted;
+    private static boolean reportedFailure;
 
     @Override
     public void onInitializeClient() {
@@ -45,16 +46,25 @@ public final class UnderstudyClient implements ClientModInitializer {
                 greeted = false;
                 return;
             }
-            greet();
-            profile.tick();
-            if (travel == null) {
-                travel = new TravelTask(client, profile, UnderstudyClient::tell);
-                build = new BuildTask(client, travel, UnderstudyClient::tell);
-                sort = new SortTask(client, travel, UnderstudyClient::tell);
+            // An exception thrown here would otherwise be swallowed by the
+            // event dispatcher every tick: the mod would go quiet and there
+            // would be nothing on screen to say why. Catching it turns a silent
+            // death into a visible, actionable error — and stops everything
+            // rather than throwing twenty times a second.
+            try {
+                greet();
+                profile.tick();
+                if (travel == null) {
+                    travel = new TravelTask(client, profile, UnderstudyClient::tell);
+                    build = new BuildTask(client, travel, UnderstudyClient::tell);
+                    sort = new SortTask(client, travel, UnderstudyClient::tell);
+                }
+                travel.tick();
+                build.tick();
+                sort.tick();
+            } catch (Throwable error) {
+                onTickFailure(error);
             }
-            travel.tick();
-            build.tick();
-            sort.tick();
         });
 
         Hud.register();
@@ -84,6 +94,22 @@ public final class UnderstudyClient implements ClientModInitializer {
             for (String problem : problems) Hud.warn("  " + problem);
             Hud.warn("run /understudy chatfix to put them right");
         }
+    }
+
+    /**
+     * Report a crash in the tick loop, once, and stand down.
+     *
+     * Repeating the same stack trace every tick fills the log with one message
+     * and makes the actual first failure impossible to find.
+     */
+    private static void onTickFailure(Throwable error) {
+        LOG.error("tick failed", error);
+        if (!reportedFailure) {
+            reportedFailure = true;
+            warn("something went wrong: " + error);
+            warn("stopped. the full trace is in logs/latest.log");
+        }
+        stopAll();
     }
 
     public static PlayerProfile profile() {
