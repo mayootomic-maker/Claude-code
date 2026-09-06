@@ -14,6 +14,11 @@ on:
   pull_request:
     paths: ['understudy/**', '.github/workflows/understudy.yml']
   workflow_dispatch:
+    inputs:
+      class_query:
+        description: 'Class name to locate in the remapped Minecraft jar'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -69,6 +74,20 @@ jobs:
             | grep -E '^1\.(8|9|10|11)\.[0-9]+$' | tail -6 | sed 's/^/    /'
 
       - run: chmod +x gradlew
+
+      # Ask the game where a class actually lives, instead of guessing and
+      # spending a build to find out. Set CLASS_QUERY on a manual run to look
+      # something up; it never fails the build.
+      - name: Where does a class live
+        if: ${{ github.event.inputs.class_query != '' }}
+        continue-on-error: true
+        run: |
+          ./gradlew --no-daemon :dependencies > /dev/null 2>&1 || true
+          QUERY='${{ github.event.inputs.class_query }}'
+          echo "searching the remapped Minecraft jar for: $QUERY"
+          for jar in $(find ~/.gradle/caches/fabric-loom -name '*.jar' 2>/dev/null | head -40); do
+            unzip -l "$jar" 2>/dev/null | grep -i "$QUERY" | head -5 && echo "  ^ in $(basename "$jar")"
+          done
 
       - name: Build and test
         run: ./gradlew --no-daemon build

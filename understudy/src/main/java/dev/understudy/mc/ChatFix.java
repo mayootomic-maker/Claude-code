@@ -1,7 +1,6 @@
 package dev.understudy.mc;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.ChatVisibility;
 import net.minecraft.client.option.GameOptions;
 
 import java.util.ArrayList;
@@ -25,8 +24,14 @@ import java.util.List;
  *  - **Chat opacity** wound down to nothing, so the text is drawn but
  *    invisible.
  *
- * Nothing here is guessed at: each is read back after writing, and `report`
+ * Nothing here is guessed at: each is read back after writing, and the result
  * says what was actually changed rather than what was attempted.
+ *
+ * The chat-visibility enum is reached through the value already in the option
+ * rather than by importing it. Its package has moved between versions — the
+ * first attempt at this file failed to compile for exactly that reason — and
+ * since the only thing needed is the constant named FULL, asking the existing
+ * value for its own enum constants is both shorter and immune to the move.
  */
 public final class ChatFix {
     private ChatFix() {}
@@ -42,7 +47,7 @@ public final class ChatFix {
         GameOptions options = client.options;
         List<String> found = new ArrayList<>();
 
-        if (options.getChatVisibility().getValue() != ChatVisibility.FULL) {
+        if (!isFullVisibility(options)) {
             found.add("chat is set to " + options.getChatVisibility().getValue()
                     + " — you will not see other players");
         }
@@ -64,9 +69,8 @@ public final class ChatFix {
         List<String> changed = new ArrayList<>();
         List<String> fine = new ArrayList<>();
 
-        if (options.getChatVisibility().getValue() != ChatVisibility.FULL) {
-            options.getChatVisibility().setValue(ChatVisibility.FULL);
-            changed.add("chat visibility -> shown");
+        if (!isFullVisibility(options)) {
+            if (setFullVisibility(options)) changed.add("chat visibility -> shown");
         } else {
             fine.add("chat visibility");
         }
@@ -104,6 +108,25 @@ public final class ChatFix {
 
         if (!changed.isEmpty()) options.write();
         return new Result(changed, fine);
+    }
+
+    private static boolean isFullVisibility(GameOptions options) {
+        var current = options.getChatVisibility().getValue();
+        return current != null && "FULL".equals(current.name());
+    }
+
+    /** Set visibility to FULL without naming the enum's package. */
+    private static boolean setFullVisibility(GameOptions options) {
+        var option = options.getChatVisibility();
+        var current = option.getValue();
+        if (current == null) return false;
+        for (var candidate : current.getDeclaringClass().getEnumConstants()) {
+            if ("FULL".equals(candidate.name())) {
+                option.setValue(candidate);
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The current settings, for a diagnostic that does not need chat to read. */
