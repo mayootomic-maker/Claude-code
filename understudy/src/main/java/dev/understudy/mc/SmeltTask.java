@@ -33,12 +33,15 @@ import java.util.function.Consumer;
  */
 public final class SmeltTask {
 
-    /** A furnace menu: input on top, fuel below it, the result on the right. */
-    private static final int INPUT = 0;
-    private static final int FUEL = 1;
-    private static final int RESULT = 2;
-    /** Slot 3 onward is the player's own inventory, drawn under the furnace. */
-    private static final int FIRST_CARRIED = 3;
+    /**
+     * Input on top, fuel below it, the result on the right — named by the menu
+     * itself rather than written out here, and the slots after them are the
+     * player's own inventory drawn underneath.
+     */
+    private static final int INPUT = AbstractFurnaceMenu.INGREDIENT_SLOT;
+    private static final int FUEL = AbstractFurnaceMenu.FUEL_SLOT;
+    private static final int RESULT = AbstractFurnaceMenu.RESULT_SLOT;
+    private static final int FIRST_CARRIED = AbstractFurnaceMenu.SLOT_COUNT;
 
     private static final int OPEN_TIMEOUT = 40;
     /** One item takes ten seconds. Longer than that with nothing moving is a stall. */
@@ -164,7 +167,7 @@ public final class SmeltTask {
      * of sixty-four sand is eight separate loads of the input slot.
      */
     private void run(LocalPlayer player) {
-        AbstractContainerMenu open = menu(player);
+        AbstractFurnaceMenu open = menu(player);
         if (open == null) {
             finish(player, "the furnace window closed");
             return;
@@ -216,16 +219,18 @@ public final class SmeltTask {
 
         // Keep the fuel slot filled rather than waiting for the fire to go out.
         // A coal sat in the slot is not consumed until it is needed, so this
-        // costs nothing and saves a fifteen-second stall between every load.
+        // costs nothing and saves a stall between every load.
         if (open.getSlot(FUEL).getItem().isEmpty()) {
             int slot = carriedFuel(open);
             if (slot >= 0) {
                 shiftClick(player, open, slot);
                 return;
             }
-            // It may still be burning off the last one, so this is only fatal
-            // once nothing has moved for longer than a cook takes.
-            if (idle > STALL_TICKS) {
+            // Nothing in the slot and nothing burning is the end of it — the
+            // menu knows whether it is lit, so this does not have to be guessed
+            // from a stopwatch. Still lit means it is working through the last
+            // one, and there is a chance the job finishes on it.
+            if (!open.isLit()) {
                 if (emptied(player, open, INPUT)) return;
                 player.clientSideCloseContainer();
                 finish(player, "out of fuel — it needs coal or charcoal");
@@ -272,9 +277,8 @@ public final class SmeltTask {
         return stack.isEmpty() ? "-" : Hotbar.nameOf(stack) + "x" + stack.getCount();
     }
 
-    private static AbstractContainerMenu menu(LocalPlayer player) {
-        AbstractContainerMenu open = player.containerMenu;
-        return open instanceof AbstractFurnaceMenu ? open : null;
+    private static AbstractFurnaceMenu menu(LocalPlayer player) {
+        return player.containerMenu instanceof AbstractFurnaceMenu furnace ? furnace : null;
     }
 
     private void finish(LocalPlayer player, String why) {
