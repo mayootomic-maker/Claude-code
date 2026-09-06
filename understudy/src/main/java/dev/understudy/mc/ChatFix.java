@@ -1,7 +1,7 @@
 package dev.understudy.mc;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.GameOptions;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Options;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,29 +43,29 @@ public final class ChatFix {
     }
 
     /** Look without touching. Used on join to decide whether to warn. */
-    public static List<String> problems(MinecraftClient client) {
-        GameOptions options = client.options;
+    public static List<String> problems(Minecraft client) {
+        Options options = client.options;
         List<String> found = new ArrayList<>();
 
         if (!isFullVisibility(options)) {
-            found.add("chat is set to " + options.getChatVisibility().getValue()
+            found.add("chat is set to " + options.chatVisibility().getValue()
                     + " — you will not see other players");
         }
-        if (Boolean.TRUE.equals(options.getOnlyShowSecureChat().getValue())) {
+        if (Boolean.TRUE.equals(options.onlyShowSecureChat().getValue())) {
             found.add("only-secure-chat is on — unsigned messages are hidden");
         }
-        if (Boolean.FALSE.equals(options.getAutoSuggestions().getValue())) {
+        if (Boolean.FALSE.equals(options.autoSuggestions().getValue())) {
             found.add("command suggestions are off");
         }
-        if (options.getChatOpacity().getValue() < 0.2) {
+        if (options.chatOpacity().getValue() < 0.2) {
             found.add("chat opacity is almost zero");
         }
         return found;
     }
 
     /** Put them right, and say what actually changed. */
-    public static Result repair(MinecraftClient client) {
-        GameOptions options = client.options;
+    public static Result repair(Minecraft client) {
+        Options options = client.options;
         List<String> changed = new ArrayList<>();
         List<String> fine = new ArrayList<>();
 
@@ -75,49 +75,49 @@ public final class ChatFix {
             fine.add("chat visibility");
         }
 
-        if (Boolean.TRUE.equals(options.getOnlyShowSecureChat().getValue())) {
-            options.getOnlyShowSecureChat().setValue(false);
+        if (Boolean.TRUE.equals(options.onlyShowSecureChat().getValue())) {
+            options.onlyShowSecureChat().setValue(false);
             changed.add("only-secure-chat -> off (this is the usual culprit)");
         } else {
             fine.add("only-secure-chat");
         }
 
-        if (Boolean.FALSE.equals(options.getAutoSuggestions().getValue())) {
-            options.getAutoSuggestions().setValue(true);
+        if (Boolean.FALSE.equals(options.autoSuggestions().getValue())) {
+            options.autoSuggestions().setValue(true);
             changed.add("command suggestions -> on");
         } else {
             fine.add("command suggestions");
         }
 
-        if (options.getChatOpacity().getValue() < 0.2) {
-            options.getChatOpacity().setValue(1.0);
+        if (options.chatOpacity().getValue() < 0.2) {
+            options.chatOpacity().setValue(1.0);
             changed.add("chat opacity -> full");
         } else {
             fine.add("chat opacity");
         }
 
-        if (options.getTextBackgroundOpacity().getValue() < 0.1) {
-            options.getTextBackgroundOpacity().setValue(0.5);
+        if (options.textBackgroundOpacity().getValue() < 0.1) {
+            options.textBackgroundOpacity().setValue(0.5);
             changed.add("chat background -> visible");
         }
 
-        if (options.getChatScale().getValue() < 0.3) {
-            options.getChatScale().setValue(1.0);
+        if (options.chatScale().getValue() < 0.3) {
+            options.chatScale().setValue(1.0);
             changed.add("chat scale -> normal");
         }
 
-        if (!changed.isEmpty()) options.write();
+        if (!changed.isEmpty()) options.save();
         return new Result(changed, fine);
     }
 
-    private static boolean isFullVisibility(GameOptions options) {
-        var current = options.getChatVisibility().getValue();
+    private static boolean isFullVisibility(Options options) {
+        var current = options.chatVisibility().getValue();
         return current != null && "FULL".equals(current.name());
     }
 
     /** Set visibility to FULL without naming the enum's package. */
-    private static boolean setFullVisibility(GameOptions options) {
-        var option = options.getChatVisibility();
+    private static boolean setFullVisibility(Options options) {
+        var option = options.chatVisibility();
         var current = option.getValue();
         if (current == null) return false;
         for (var candidate : current.getDeclaringClass().getEnumConstants()) {
@@ -130,14 +130,14 @@ public final class ChatFix {
     }
 
     /** The current settings, for a diagnostic that does not need chat to read. */
-    public static List<String> describe(MinecraftClient client) {
-        GameOptions options = client.options;
+    public static List<String> describe(Minecraft client) {
+        Options options = client.options;
         List<String> out = new ArrayList<>();
-        out.add("visibility: " + options.getChatVisibility().getValue());
-        out.add("only secure: " + options.getOnlyShowSecureChat().getValue());
-        out.add("suggestions: " + options.getAutoSuggestions().getValue());
-        out.add("opacity: " + String.format("%.2f", options.getChatOpacity().getValue()));
-        out.add("scale: " + String.format("%.2f", options.getChatScale().getValue()));
+        out.add("visibility: " + options.chatVisibility().getValue());
+        out.add("only secure: " + options.onlyShowSecureChat().getValue());
+        out.add("suggestions: " + options.autoSuggestions().getValue());
+        out.add("opacity: " + String.format("%.2f", options.chatOpacity().getValue()));
+        out.add("scale: " + String.format("%.2f", options.chatScale().getValue()));
         return out;
     }
 }

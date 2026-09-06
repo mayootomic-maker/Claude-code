@@ -1,9 +1,9 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.path.PathFinder;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,9 +22,9 @@ import java.util.List;
 public final class SelfTest {
     private SelfTest() {}
 
-    public static List<String> run(MinecraftClient client) {
+    public static List<String> run(Minecraft client) {
         List<String> out = new ArrayList<>();
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
 
         if (player == null || client.world == null) {
             out.add("FAIL no world or player — join a world first");
@@ -56,10 +56,10 @@ public final class SelfTest {
 
         // Do the movement keys take a write? This is the one that decides
         // whether walking can work at all.
-        boolean before = client.options.forwardKey.isPressed();
-        client.options.forwardKey.setPressed(true);
-        boolean took = client.options.forwardKey.isPressed();
-        client.options.forwardKey.setPressed(before);
+        boolean before = client.options.keyUp.isDown();
+        client.options.keyUp.setDown(true);
+        boolean took = client.options.keyUp.isDown();
+        client.options.keyUp.setDown(before);
         out.add((took ? "OK  " : "FAIL") + " movement keys accept input");
 
         // And the settings that decide whether you can see anything.

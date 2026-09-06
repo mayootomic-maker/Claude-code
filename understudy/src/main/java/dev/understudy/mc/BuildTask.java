@@ -1,14 +1,14 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.build.Blueprint;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,12 +36,12 @@ public final class BuildTask {
     /** How many times a stubborn block is retried before being given up on. */
     private static final int MAX_ATTEMPTS = 3;
 
-    private final MinecraftClient client;
+    private final Minecraft client;
     private final Consumer<String> report;
     private final TravelTask travel;
 
     private List<Blueprint.Placement> queue = List.of();
-    private BlockPos origin = BlockPos.ORIGIN;
+    private BlockPos origin = BlockPos.ZERO;
     private int index;
     private int cooldown;
     private int placed;
@@ -50,7 +50,7 @@ public final class BuildTask {
     private final Map<String, Integer> attempts = new LinkedHashMap<>();
     private final Map<String, Integer> missing = new LinkedHashMap<>();
 
-    public BuildTask(MinecraftClient client, TravelTask travel, Consumer<String> report) {
+    public BuildTask(Minecraft client, TravelTask travel, Consumer<String> report) {
         this.client = client;
         this.travel = travel;
         this.report = report;
@@ -68,7 +68,7 @@ public final class BuildTask {
      * foundations, not halfway up the second wall.
      */
     public Map<String, Integer> shortfall(Blueprint blueprint) {
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         Map<String, Integer> short_ = new LinkedHashMap<>();
         if (player == null) return short_;
         for (Map.Entry<String, Integer> entry : blueprint.essentialMaterials().entrySet()) {
@@ -100,7 +100,7 @@ public final class BuildTask {
 
     public void tick() {
         if (!running) return;
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || client.world == null) {
             stop("lost the world");
             return;
@@ -122,7 +122,7 @@ public final class BuildTask {
             return;
         }
 
-        double distance = Math.sqrt(player.getBlockPos().getSquaredDistance(target));
+        double distance = Math.sqrt(player.getBlockPos().distSqr(target));
         if (distance > REACH) {
             // Stand next to it rather than trying to place from across the room.
             travel.start(standingSpotFor(target));
@@ -167,8 +167,8 @@ public final class BuildTask {
      * Place a block by clicking the face of a neighbour, which is the only way
      * the game lets anything be placed.
      */
-    private boolean place(ClientPlayerEntity player, BlockPos target) {
-        if (client.interactionManager == null || client.world == null) return false;
+    private boolean place(LocalPlayer player, BlockPos target) {
+        if (client.gameMode == null || client.world == null) return false;
 
         for (Direction direction : Direction.values()) {
             BlockPos reference = target.offset(direction);
@@ -176,26 +176,26 @@ public final class BuildTask {
             if (state.isAir() || !state.getFluidState().isEmpty()) continue;
 
             Direction face = direction.getOpposite();
-            Vec3d hit = Vec3d.ofCenter(reference).add(
-                    face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+            Vec3 hit = Vec3.atCenterOf(reference).add(
+                    face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
 
             look(player, hit);
             BlockHitResult result = new BlockHitResult(hit, face, reference, false);
-            client.interactionManager.interactBlock(player, Hand.MAIN_HAND, result);
-            player.swingHand(Hand.MAIN_HAND);
+            client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, result);
+            player.swing(InteractionHand.MAIN_HAND);
 
             if (!client.world.getBlockState(target).isAir()) return true;
         }
         return false;
     }
 
-    private void look(ClientPlayerEntity player, Vec3d at) {
+    private void look(LocalPlayer player, Vec3 at) {
         double dx = at.x - player.getX();
-        double dy = at.y - (player.getY() + player.getStandingEyeHeight());
+        double dy = at.y - (player.getY() + player.getEyeHeight());
         double dz = at.z - player.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
-        player.setYaw((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setPitch((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
+        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
+        player.setXRot((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
     }
 
     /** A spot beside the target that is worth standing in to reach it. */

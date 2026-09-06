@@ -16,7 +16,10 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    // Yarn publishes nothing for any 26.x version — Fabric moved to Mojang's
+    // own mappings for this era. That renames every Minecraft class and method
+    // this mod touches, which is why the game-facing package was rewritten.
+    mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 

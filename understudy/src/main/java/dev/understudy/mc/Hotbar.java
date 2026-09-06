@@ -1,10 +1,10 @@
 package dev.understudy.mc;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ClickType;
 
 /**
  * Getting the right thing into your hand.
@@ -21,14 +21,14 @@ public final class Hotbar {
     private static final int SCRATCH_SLOT = 8;
 
     public static String nameOf(ItemStack stack) {
-        return stack.isEmpty() ? null : Registries.ITEM.getId(stack.getItem()).getPath();
+        return stack.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
     }
 
     /** How many of an item the player is carrying, hotbar included. */
-    public static int count(ClientPlayerEntity player, String itemName) {
+    public static int count(LocalPlayer player, String itemName) {
         int total = 0;
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            ItemStack stack = player.getInventory().getStack(i);
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
             if (itemName.equals(nameOf(stack))) total += stack.getCount();
         }
         return total;
@@ -38,28 +38,28 @@ public final class Hotbar {
      * Put `itemName` in the player's hand, moving it to the hotbar if needed.
      * Returns false when there is none to hold.
      */
-    public static boolean hold(MinecraftClient client, String itemName) {
-        ClientPlayerEntity player = client.player;
+    public static boolean hold(Minecraft client, String itemName) {
+        LocalPlayer player = client.player;
         if (player == null) return false;
 
         // Already in the hotbar: just select it.
         for (int slot = 0; slot < 9; slot++) {
-            if (itemName.equals(nameOf(player.getInventory().getStack(slot)))) {
+            if (itemName.equals(nameOf(player.getInventory().getItem(slot)))) {
                 player.getInventory().setSelectedSlot(slot);
                 return true;
             }
         }
 
         // In the main inventory: swap it down into the scratch slot.
-        for (int slot = 9; slot < player.getInventory().size(); slot++) {
-            if (!itemName.equals(nameOf(player.getInventory().getStack(slot)))) continue;
-            if (client.interactionManager == null) return false;
+        for (int slot = 9; slot < player.getInventory().getContainerSize(); slot++) {
+            if (!itemName.equals(nameOf(player.getInventory().getItem(slot)))) continue;
+            if (client.gameMode == null) return false;
             // Main inventory slots keep their index in the player screen
             // handler; the hotbar sits at 36-44, which is why only the
             // 9-and-above case needs converting.
-            client.interactionManager.clickSlot(
-                    player.playerScreenHandler.syncId, slot, SCRATCH_SLOT,
-                    SlotActionType.SWAP, player);
+            client.gameMode.handleInventoryMouseClick(
+                    player.inventoryMenu.containerId, slot, SCRATCH_SLOT,
+                    ClickType.SWAP, player);
             player.getInventory().setSelectedSlot(SCRATCH_SLOT);
             return true;
         }

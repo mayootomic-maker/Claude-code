@@ -1,8 +1,8 @@
 package dev.understudy.mc;
 
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -68,10 +68,10 @@ public final class Hud {
         return enabled;
     }
 
-    private static synchronized void render(DrawContext context, Object tickCounter) {
+    private static synchronized void render(GuiGraphics context, Object tickCounter) {
         if (!enabled) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.options.hudHidden) return;
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.options.hideGui) return;
 
         long now = System.currentTimeMillis();
         lines.removeIf(line -> now - line.at() > LINE_LIFETIME_MS);
@@ -79,15 +79,15 @@ public final class Hud {
 
         int x = 4;
         int y = 4;
-        context.drawTextWithShadow(client.textRenderer, "understudy", x, y, 0x55FFFF);
+        context.drawString(client.font, "understudy", x, y, 0x55FFFF);
         y += 11;
 
         if (!status.isEmpty()) {
-            context.drawTextWithShadow(client.textRenderer, status, x, y, 0xFFFFFF);
+            context.drawString(client.font, status, x, y, 0xFFFFFF);
             y += 10;
         }
         for (Line line : lines) {
-            context.drawTextWithShadow(client.textRenderer, line.text(), x, y,
+            context.drawString(client.font, line.text(), x, y,
                     line.warning() ? 0xFF5555 : 0xAAAAAA);
             y += 10;
         }

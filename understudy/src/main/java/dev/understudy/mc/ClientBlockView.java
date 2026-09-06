@@ -1,10 +1,10 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.path.BlockView;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.BlockPos;
 
 import java.util.Set;
 
@@ -25,10 +25,10 @@ public final class ClientBlockView implements BlockView {
             "powder_snow", "campfire", "soul_campfire", "wither_rose", "pointed_dripstone",
             "end_portal", "nether_portal");
 
-    private final ClientWorld world;
+    private final ClientLevel world;
     private final BlockPos.Mutable cursor = new BlockPos.Mutable();
 
-    public ClientBlockView(ClientWorld world) {
+    public ClientBlockView(ClientLevel world) {
         this.world = world;
     }
 
@@ -58,11 +58,11 @@ public final class ClientBlockView implements BlockView {
     @Override
     public boolean hazard(int x, int y, int z) {
         BlockState state = stateAt(x, y, z);
-        if (!state.getFluidState().isEmpty() && state.getFluidState().isStill()) {
-            String fluid = Registries.BLOCK.getId(state.getBlock()).getPath();
+        if (!state.getFluidState().isEmpty() && state.getFluidState().isSource()) {
+            String fluid = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
             if (fluid.contains("lava")) return true;
         }
-        return HAZARDS.contains(Registries.BLOCK.getId(state.getBlock()).getPath());
+        return HAZARDS.contains(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath());
     }
 
     @Override
@@ -74,7 +74,7 @@ public final class ClientBlockView implements BlockView {
     public double breakSeconds(int x, int y, int z) {
         BlockState state = stateAt(x, y, z);
         if (state.isAir()) return -1;
-        float hardness = state.getHardness(world, cursor.set(x, y, z));
+        float hardness = state.getDestroySpeed(world, cursor.set(x, y, z));
         // Negative hardness is bedrock and friends: not breakable at any speed.
         if (hardness < 0) return -1;
         // A rough seconds-per-block. The exact figure depends on the held tool,
@@ -89,8 +89,8 @@ public final class ClientBlockView implements BlockView {
         // read as air and the route would walk confidently into a hillside.
         // getTopY() takes a heightmap and coordinates in this version; the
         // world's own vertical extent is the bottom plus its height.
-        return world.isChunkLoaded(x >> 4, z >> 4)
-                && y >= world.getBottomY()
-                && y < world.getBottomY() + world.getHeight();
+        return world.hasChunk(x >> 4, z >> 4)
+                && y >= world.getMinY()
+                && y < world.getMinY() + world.getHeight();
     }
 }

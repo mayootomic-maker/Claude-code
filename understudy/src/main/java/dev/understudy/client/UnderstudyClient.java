@@ -10,8 +10,8 @@ import dev.understudy.mc.TravelTask;
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,7 +88,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         // If chat is misconfigured, the line above may never be seen. Say it
         // again on the overlay, which no chat setting can suppress, and say
         // what is wrong rather than leaving the client looking broken.
-        List<String> problems = ChatFix.problems(MinecraftClient.getInstance());
+        List<String> problems = ChatFix.problems(Minecraft.getInstance());
         if (!problems.isEmpty()) {
             Hud.warn("your chat settings are hiding messages:");
             for (String problem : problems) Hud.warn("  " + problem);
@@ -150,9 +150,9 @@ public final class UnderstudyClient implements ClientModInitializer {
     public static void tell(String message) {
         LOG.info("[chat] {}", message);
         Hud.say(message);
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("§8[§bunderstudy§8] §r" + message), false);
+            client.player.displayClientMessage(Component.literal("§8[§bunderstudy§8] §r" + message), false);
         }
     }
 
@@ -160,9 +160,9 @@ public final class UnderstudyClient implements ClientModInitializer {
     public static void warn(String message) {
         LOG.warn("[chat] {}", message);
         Hud.warn(message);
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("§8[§bunderstudy§8] §c" + message), false);
+            client.player.displayClientMessage(Component.literal("§8[§bunderstudy§8] §c" + message), false);
         }
     }
 }

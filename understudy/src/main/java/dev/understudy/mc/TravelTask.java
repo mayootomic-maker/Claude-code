@@ -3,9 +3,9 @@ package dev.understudy.mc;
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.path.PathFinder;
 import dev.understudy.core.path.Step;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -30,7 +30,7 @@ public final class TravelTask {
     /** Give up after this many failed searches in a row. */
     private static final int MAX_FAILURES = 4;
 
-    private final MinecraftClient client;
+    private final Minecraft client;
     private final PlayerProfile profile;
     private final Walker walker;
     private final Consumer<String> report;
@@ -41,7 +41,7 @@ public final class TravelTask {
     private int ticks;
     private double startedDistance;
 
-    public TravelTask(MinecraftClient client, PlayerProfile profile, Consumer<String> report) {
+    public TravelTask(Minecraft client, PlayerProfile profile, Consumer<String> report) {
         this.client = client;
         this.profile = profile;
         this.walker = new Walker(client);
@@ -61,8 +61,8 @@ public final class TravelTask {
         this.running = true;
         this.failures = 0;
         this.ticks = 0;
-        ClientPlayerEntity player = client.player;
-        this.startedDistance = player == null ? 0 : Math.sqrt(player.getBlockPos().getSquaredDistance(target));
+        LocalPlayer player = client.player;
+        this.startedDistance = player == null ? 0 : Math.sqrt(player.getBlockPos().distSqr(target));
         replan();
     }
 
@@ -76,7 +76,7 @@ public final class TravelTask {
     /** Called every client tick while a journey is in progress. */
     public void tick() {
         if (!running) return;
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || client.world == null) {
             stop("lost the world");
             return;
@@ -85,7 +85,7 @@ public final class TravelTask {
         ticks++;
         BlockPos here = player.getBlockPos();
 
-        if (here.isWithinDistance(goal, 1.8)) {
+        if (here.closerThan(goal, 1.8)) {
             running = false;
             walker.stop();
             report.accept("arrived (" + (ticks / 20) + "s)");
@@ -104,7 +104,7 @@ public final class TravelTask {
     }
 
     private void replan() {
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || client.world == null) {
             stop("lost the world");
             return;
@@ -145,21 +145,21 @@ public final class TravelTask {
     }
 
     /** Feed the player's own movement back into the profile. */
-    private void observeTravel(ClientPlayerEntity player) {
+    private void observeTravel(LocalPlayer player) {
         Step step = walker.current();
         if (step == null) return;
         profile.travelled(0.05,
-                client.options.sprintKey.isPressed(),
+                client.options.keySprint.isDown(),
                 step.kind() == Step.Kind.DIG,
                 step.kind() == Step.Kind.BRIDGE,
-                player.isTouchingWater());
+                player.isInWater());
     }
 
     public String status() {
         if (!running) return "idle";
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null) return "no player";
-        double left = Math.sqrt(player.getBlockPos().getSquaredDistance(goal));
+        double left = Math.sqrt(player.getBlockPos().distSqr(goal));
         return String.format("travelling: %.0f blocks to go of %.0f", left, startedDistance);
     }
 }

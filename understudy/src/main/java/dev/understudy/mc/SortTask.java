@@ -2,20 +2,21 @@ package dev.understudy.mc;
 
 import dev.understudy.core.sort.Category;
 import dev.understudy.core.sort.Sorter;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -44,7 +45,7 @@ public final class SortTask {
     private static final int OPEN_TIMEOUT = 60;
     private static final int MOVE_INTERVAL = 2;
 
-    private final MinecraftClient client;
+    private final Minecraft client;
     private final TravelTask travel;
     private final Consumer<String> report;
 
@@ -58,7 +59,7 @@ public final class SortTask {
     private boolean keepKit = true;
     private final List<String> unplaced = new ArrayList<>();
 
-    public SortTask(MinecraftClient client, TravelTask travel, Consumer<String> report) {
+    public SortTask(Minecraft client, TravelTask travel, Consumer<String> report) {
         this.client = client;
         this.travel = travel;
         this.report = report;
@@ -86,7 +87,7 @@ public final class SortTask {
     }
 
     public void tick() {
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || client.world == null) {
             stop(null);
             return;
@@ -104,11 +105,11 @@ public final class SortTask {
     }
 
     /** Find the chests, read them, and decide what belongs where. */
-    private void survey(ClientPlayerEntity player) {
+    private void survey(LocalPlayer player) {
         BlockPos here = player.getBlockPos();
-        for (BlockPos pos : BlockPos.iterateOutwards(here, SEARCH_RADIUS, SEARCH_RADIUS / 2, SEARCH_RADIUS)) {
+        for (BlockPos pos : BlockPos.withinManhattan(here, SEARCH_RADIUS, SEARCH_RADIUS / 2, SEARCH_RADIUS)) {
             BlockState state = client.world.getBlockState(pos);
-            String name = state.getBlock().getTranslationKey();
+            String name = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
             if (name.endsWith("chest") || name.endsWith("barrel")) {
                 chests.add(pos.toImmutable());
             }
@@ -148,9 +149,9 @@ public final class SortTask {
     private Map<String, Integer> peek(BlockPos pos) {
         Map<String, Integer> out = new LinkedHashMap<>();
         BlockEntity entity = client.world.getBlockEntity(pos);
-        if (entity instanceof net.minecraft.inventory.Inventory inventory) {
-            for (int i = 0; i < inventory.size(); i++) {
-                ItemStack stack = inventory.getStack(i);
+        if (entity instanceof net.minecraft.world.Container inventory) {
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
                 String name = Hotbar.nameOf(stack);
                 if (name != null) out.merge(name, stack.getCount(), Integer::sum);
             }
@@ -158,17 +159,17 @@ public final class SortTask {
         return out;
     }
 
-    private Map<String, Integer> carrying(ClientPlayerEntity player) {
+    private Map<String, Integer> carrying(LocalPlayer player) {
         Map<String, Integer> out = new LinkedHashMap<>();
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            ItemStack stack = player.getInventory().getStack(i);
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
             String name = Hotbar.nameOf(stack);
             if (name != null) out.merge(name, stack.getCount(), Integer::sum);
         }
         return out;
     }
 
-    private void walk(ClientPlayerEntity player) {
+    private void walk(LocalPlayer player) {
         if (chestIndex >= chests.size()) {
             finish();
             return;
@@ -178,7 +179,7 @@ public final class SortTask {
             return;
         }
         BlockPos chest = chests.get(chestIndex);
-        if (Math.sqrt(player.getBlockPos().getSquaredDistance(chest)) > REACH) {
+        if (Math.sqrt(player.getBlockPos().distSqr(chest)) > REACH) {
             if (!travel.running()) travel.start(chest.up());
             return;
         }
@@ -186,9 +187,9 @@ public final class SortTask {
         phase = Phase.OPEN;
     }
 
-    private void open(ClientPlayerEntity player) {
+    private void open(LocalPlayer player) {
         BlockPos chest = chests.get(chestIndex);
-        if (player.currentScreenHandler instanceof GenericContainerScreenHandler) {
+        if (player.containerMenu instanceof ChestMenu) {
             phase = Phase.MOVE;
             return;
         }
@@ -200,13 +201,13 @@ public final class SortTask {
         }
         if (waited % 20 != 1) return; // one attempt a second, not one a tick
 
-        Vec3d hit = Vec3d.ofCenter(chest);
+        Vec3 hit = Vec3.atCenterOf(chest);
         double dx = hit.x - player.getX();
         double dz = hit.z - player.getZ();
-        player.setYaw((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setPitch(20f);
-        if (client.interactionManager != null) {
-            client.interactionManager.interactBlock(player, Hand.MAIN_HAND,
+        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
+        player.setXRot(20f);
+        if (client.gameMode != null) {
+            client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
                     new BlockHitResult(hit, Direction.UP, chest, false));
         }
     }
@@ -218,9 +219,9 @@ public final class SortTask {
      * tick is both a very loud tell and a good way to desynchronise from the
      * server's view of the container.
      */
-    private void move(ClientPlayerEntity player) {
-        ScreenHandler handler = player.currentScreenHandler;
-        if (!(handler instanceof GenericContainerScreenHandler container)) {
+    private void move(LocalPlayer player) {
+        AbstractContainerMenu handler = player.containerMenu;
+        if (!(handler instanceof ChestMenu container)) {
             phase = Phase.WALK;
             return;
         }
@@ -230,18 +231,18 @@ public final class SortTask {
             return;
         }
 
-        int containerSlots = container.getRows() * 9;
+        int containerSlots = container.getRowCount() * 9;
         for (int slot = containerSlots; slot < handler.slots.size(); slot++) {
             Slot s = handler.slots.get(slot);
-            String name = Hotbar.nameOf(s.getStack());
+            String name = Hotbar.nameOf(s.getItem());
             if (name == null) continue;
             Category category = Category.of(name);
             if (category != wanted) continue;
             if (keepKit && Sorter.keep(name, category)) continue;
 
-            if (client.interactionManager != null) {
-                client.interactionManager.clickSlot(handler.syncId, slot, 0,
-                        SlotActionType.QUICK_MOVE, player);
+            if (client.gameMode != null) {
+                client.gameMode.handleInventoryMouseClick(handler.containerId, slot, 0,
+                        ClickType.QUICK_MOVE, player);
                 moved++;
                 cooldown = MOVE_INTERVAL;
             }
@@ -257,8 +258,8 @@ public final class SortTask {
     }
 
     private void closeScreen() {
-        if (client.player != null && client.player.currentScreenHandler instanceof GenericContainerScreenHandler) {
-            client.player.closeHandledScreen();
+        if (client.player != null && client.player.containerMenu instanceof ChestMenu) {
+            client.player.closeContainer();
         }
     }
 

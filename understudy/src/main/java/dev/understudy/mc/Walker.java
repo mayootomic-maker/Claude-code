@@ -1,9 +1,9 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.path.Step;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
 
 import java.util.List;
 
@@ -23,13 +23,13 @@ public final class Walker {
     /** Turn no faster than this per tick, so the view does not snap. */
     private static final float MAX_TURN_DEGREES = 22f;
 
-    private final MinecraftClient client;
+    private final Minecraft client;
     private List<Step> path = List.of();
     private int index;
     private int stuckTicks;
     private double lastProgress = Double.MAX_VALUE;
 
-    public Walker(MinecraftClient client) {
+    public Walker(Minecraft client) {
         this.client = client;
     }
 
@@ -54,12 +54,12 @@ public final class Walker {
 
     /** Let go of everything. Always safe to call. */
     public void release() {
-        client.options.forwardKey.setPressed(false);
-        client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.rightKey.setPressed(false);
-        client.options.jumpKey.setPressed(false);
-        client.options.sprintKey.setPressed(false);
+        client.options.keyUp.setDown(false);
+        client.options.keyDown.setDown(false);
+        client.options.keyLeft.setDown(false);
+        client.options.keyRight.setDown(false);
+        client.options.keyJump.setDown(false);
+        client.options.keySprint.setDown(false);
     }
 
     public void stop() {
@@ -70,7 +70,7 @@ public final class Walker {
 
     /** Advance one tick. Returns false when there is nothing left to walk. */
     public boolean tick(boolean allowSprint) {
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || done()) {
             release();
             return false;
@@ -103,14 +103,14 @@ public final class Walker {
 
         face(player, dx, dz);
 
-        client.options.forwardKey.setPressed(true);
-        client.options.sprintKey.setPressed(allowSprint && horizontal > 2 && player.getHungerManager().getFoodLevel() > 6);
+        client.options.keyUp.setDown(true);
+        client.options.keySprint.setDown(allowSprint && horizontal > 2 && player.getFoodData().getFoodLevel() > 6);
         // Jump for a step up, to get out of water, or when the walk has snagged
         // on something a block high that the path did not model.
         boolean needsJump = step.kind() == Step.Kind.JUMP
-                || (player.isTouchingWater() && dy > -0.2)
+                || (player.isInWater() && dy > -0.2)
                 || stuckTicks > 12;
-        client.options.jumpKey.setPressed(needsJump);
+        client.options.keyJump.setDown(needsJump);
         return true;
     }
 
@@ -121,12 +121,12 @@ public final class Walker {
      * unpleasant to watch from inside the game and nothing like how a person
      * turns a corner.
      */
-    private void face(ClientPlayerEntity player, double dx, double dz) {
+    private void face(LocalPlayer player, double dx, double dz) {
         float wanted = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
-        float delta = MathHelper.wrapDegrees(wanted - player.getYaw());
-        float clamped = MathHelper.clamp(delta, -MAX_TURN_DEGREES, MAX_TURN_DEGREES);
-        player.setYaw(player.getYaw() + clamped);
+        float delta = Mth.wrapDegrees(wanted - player.getYRot());
+        float clamped = Mth.clamp(delta, -MAX_TURN_DEGREES, MAX_TURN_DEGREES);
+        player.setYRot(player.getYRot() + clamped);
         // Look slightly down, the way you do when watching where you are going.
-        player.setPitch(MathHelper.clamp(player.getPitch() + (10f - player.getPitch()) * 0.1f, -90f, 90f));
+        player.setXRot(Mth.clamp(player.getXRot() + (10f - player.getXRot()) * 0.1f, -90f, 90f));
     }
 }

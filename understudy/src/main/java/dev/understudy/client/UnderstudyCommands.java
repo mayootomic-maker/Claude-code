@@ -11,14 +11,14 @@ import dev.understudy.mc.Hud;
 import dev.understudy.mc.SelfTest;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 import java.util.List;
 import java.util.Map;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.BlockPos;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
@@ -193,7 +193,7 @@ public final class UnderstudyCommands {
      * point is that you cannot currently trust what you are being shown.
      */
     private static int chatFix(FabricClientCommandSource source) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         ChatFix.Result result = ChatFix.repair(client);
         if (!result.changedAnything()) {
             say(source, "chat settings were already fine:");
@@ -209,7 +209,7 @@ public final class UnderstudyCommands {
 
     /** Check every part the mod needs and report which one is broken. */
     private static int selfTest(FabricClientCommandSource source) {
-        List<String> results = SelfTest.run(MinecraftClient.getInstance());
+        List<String> results = SelfTest.run(Minecraft.getInstance());
         Hud.clear();
         for (String line : results) {
             say(source, line);
@@ -284,7 +284,7 @@ public final class UnderstudyCommands {
         } catch (Throwable error) {
             UnderstudyClient.LOG.error("/{} failed", name, error);
             Hud.warn("/" + name + " failed: " + error);
-            source.sendFeedback(Text.literal("§8[§bunderstudy§8] §c/" + name + " failed: " + error));
+            source.sendFeedback(Component.literal("§8[§bunderstudy§8] §c/" + name + " failed: " + error));
             return 0;
         }
     }
@@ -292,6 +292,6 @@ public final class UnderstudyCommands {
     private static void say(FabricClientCommandSource source, String message) {
         UnderstudyClient.LOG.info("[cmd] {}", message);
         Hud.say(message);
-        source.sendFeedback(Text.literal("§8[§bunderstudy§8] §r" + message));
+        source.sendFeedback(Component.literal("§8[§bunderstudy§8] §r" + message));
     }
 }
