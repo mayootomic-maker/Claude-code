@@ -54,24 +54,52 @@ jobs:
       # gradle.properties. This runs before the build and never fails it, so a
       # stale pin shows up as a visible mismatch in the log instead of a
       # dependency resolution error twenty lines deep in a stack trace.
-      - name: Versions Fabric currently publishes
-        continue-on-error: true
+      # Resolve the toolchain for whatever minecraft_version is set, instead of
+      # pinning four versions by hand and getting them wrong. The mod was built
+      # for 1.21.4 while the game had moved to a year-based scheme and was on
+      # 26.2, so Fabric refused to load it at all — the whole "nothing works"
+      # report was a version mismatch nobody could see from the inside.
+      #
+      # Everything chosen is printed, so the pins can be frozen later if a
+      # reproducible build matters more than tracking the game.
+      - name: Resolve the Fabric toolchain
         run: |
+          set -euo pipefail
           MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
-          echo "pinned in gradle.properties:"
-          grep -E '^(minecraft_version|yarn_mappings|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
-          echo "  gradle: $(grep distributionUrl gradle/wrapper/gradle-wrapper.properties | grep -o 'gradle-[0-9.]*')"
+          echo "target Minecraft: $MC"
+
+          YARN=$(curl -sf "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | jq -r '.[0].version // empty')
+          LOADER=$(curl -sf "https://meta.fabricmc.net/v2/versions/loader" | jq -r '[.[] | select(.stable)][0].version // empty')
+          API=$(curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
+                | grep -o "<version>[^<]*+${MC}</version>" | sed 's/<[^>]*>//g' | tail -1)
+          LOOM=$(curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-loom/net.fabricmc.fabric-loom.gradle.plugin/maven-metadata.xml" \
+                | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' \
+                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+
+          echo "  yarn:       ${YARN:-NOT FOUND}"
+          echo "  loader:     ${LOADER:-NOT FOUND}"
+          echo "  fabric-api: ${API:-NOT FOUND}"
+          echo "  loom:       ${LOOM:-NOT FOUND}"
+
+          missing=""
+          [ -z "$YARN" ]   && missing="$missing yarn"
+          [ -z "$LOADER" ] && missing="$missing loader"
+          [ -z "$API" ]    && missing="$missing fabric-api"
+          [ -z "$LOOM" ]   && missing="$missing loom"
+          if [ -n "$missing" ]; then
+            echo "::error::Fabric publishes no$missing for Minecraft $MC."
+            echo "Yarn versions that do exist, most recent last:"
+            curl -sf "https://meta.fabricmc.net/v2/versions/game" | jq -r '.[0:12] | .[].version' | sed 's/^/  /'
+            exit 1
+          fi
+
+          sed -i "s|^yarn_mappings=.*|yarn_mappings=${YARN}|" gradle.properties
+          sed -i "s|^loader_version=.*|loader_version=${LOADER}|" gradle.properties
+          sed -i "s|^fabric_version=.*|fabric_version=${API}|" gradle.properties
+          sed -i "s|^loom_version=.*|loom_version=${LOOM}|" gradle.properties
           echo
-          echo "latest published for ${MC}:"
-          echo "  yarn:   $(curl -s "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | jq -r '.[0].version')"
-          echo "  loader: $(curl -s "https://meta.fabricmc.net/v2/versions/loader" | jq -r '[.[] | select(.stable)][0].version')"
-          echo "  fabric-api:"
-          curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
-            | grep -o "<version>[^<]*${MC}</version>" | sed 's/<[^>]*>//g' | tail -2 | sed 's/^/    /'
-          echo "  loom (stable releases only — the tail of the list is alphas):"
-          curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-loom/net.fabricmc.fabric-loom.gradle.plugin/maven-metadata.xml" \
-            | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' \
-            | grep -E '^1\.(8|9|10|11)\.[0-9]+$' | tail -6 | sed 's/^/    /'
+          echo "resolved gradle.properties:"
+          grep -E '^(minecraft_version|minecraft_dependency|yarn_mappings|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
 
       - run: chmod +x gradlew
 
