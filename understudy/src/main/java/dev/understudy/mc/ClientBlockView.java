@@ -87,8 +87,10 @@ public final class ClientBlockView implements BlockView {
     public boolean known(int x, int y, int z) {
         // Never path into terrain the client has not received: the blocks would
         // read as air and the route would walk confidently into a hillside.
+        // getTopY() takes a heightmap and coordinates in this version; the
+        // world's own vertical extent is the bottom plus its height.
         return world.isChunkLoaded(x >> 4, z >> 4)
                 && y >= world.getBottomY()
-                && y < world.getTopY();
+                && y < world.getBottomY() + world.getHeight();
     }
 }
