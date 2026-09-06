@@ -6,9 +6,14 @@ import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Designs;
 import dev.understudy.mc.BuildTask;
+import dev.understudy.mc.ChatFix;
+import dev.understudy.mc.Hud;
+import dev.understudy.mc.SelfTest;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
+import net.minecraft.client.MinecraftClient;
 
+import java.util.List;
 import java.util.Map;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -69,6 +74,9 @@ public final class UnderstudyCommands {
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
                     .then(literal("help").executes(context -> help(context.getSource())))
+                    .then(literal("chatfix").executes(context -> chatFix(context.getSource())))
+                    .then(literal("test").executes(context -> selfTest(context.getSource())))
+                    .then(literal("hud").executes(context -> toggleHud(context.getSource())))
                     // Bare /understudy lists the commands rather than the
                     // status: someone typing it is usually asking what exists.
                     .executes(context -> help(context.getSource())));
@@ -173,12 +181,55 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /**
+     * Put the chat settings right.
+     *
+     * Reports what it changed rather than what it tried, because the whole
+     * point is that you cannot currently trust what you are being shown.
+     */
+    private static int chatFix(FabricClientCommandSource source) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        ChatFix.Result result = ChatFix.repair(client);
+        if (!result.changedAnything()) {
+            say(source, "chat settings were already fine:");
+            for (String line : ChatFix.describe(client)) say(source, "  " + line);
+            say(source, "so if you cannot see other players, it is the server, not your client");
+            return 1;
+        }
+        say(source, "fixed:");
+        for (String change : result.changed()) say(source, "  " + change);
+        say(source, "saved to options.txt — this sticks across restarts");
+        return 1;
+    }
+
+    /** Check every part the mod needs and report which one is broken. */
+    private static int selfTest(FabricClientCommandSource source) {
+        List<String> results = SelfTest.run(MinecraftClient.getInstance());
+        Hud.clear();
+        for (String line : results) {
+            say(source, line);
+            if (line.startsWith("FAIL") || line.startsWith("WARN")) Hud.warn(line);
+            else Hud.say(line);
+        }
+        say(source, "this is also in .minecraft/logs/latest.log");
+        return 1;
+    }
+
+    private static int toggleHud(FabricClientCommandSource source) {
+        Hud.setEnabled(!Hud.enabled());
+        say(source, "overlay " + (Hud.enabled() ? "on" : "off"));
+        return 1;
+    }
+
     private static int help(FabricClientCommandSource source) {
         say(source, "/travel <x> <y> <z> — walk there");
         say(source, "/build house|hut|tower|storage [size] — build it");
         say(source, "/plan house [size] — what it would take, without building");
         say(source, "/sort — put your things in the right chests (/sort all includes your kit)");
         say(source, "/understudy profile — what I have learned about how you play");
+        say(source, "/understudy test — check what is working and what is not");
+        say(source, "/understudy chatfix — repair chat settings that hide messages");
+        say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy stop — stop everything");
         return 1;
     }
@@ -206,7 +257,16 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /**
+     * Answer through chat and the overlay both.
+     *
+     * A reply that only goes to chat is invisible on a client whose chat is
+     * switched off — which is precisely the situation several of these
+     * commands exist to diagnose.
+     */
     private static void say(FabricClientCommandSource source, String message) {
+        UnderstudyClient.LOG.info("[cmd] {}", message);
+        Hud.say(message);
         source.sendFeedback(Text.literal("§8[§bunderstudy§8] §r" + message));
     }
 }

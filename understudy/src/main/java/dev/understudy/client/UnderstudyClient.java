@@ -2,8 +2,12 @@ package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.mc.BuildTask;
+import dev.understudy.mc.ChatFix;
+import dev.understudy.mc.Hud;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
+
+import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
@@ -53,6 +57,7 @@ public final class UnderstudyClient implements ClientModInitializer {
             sort.tick();
         });
 
+        Hud.register();
         UnderstudyCommands.register();
         LOG.info("Understudy ready");
     }
@@ -69,6 +74,16 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (greeted) return;
         greeted = true;
         tell("ready — /travel  /build  /plan  /sort  /understudy help");
+
+        // If chat is misconfigured, the line above may never be seen. Say it
+        // again on the overlay, which no chat setting can suppress, and say
+        // what is wrong rather than leaving the client looking broken.
+        List<String> problems = ChatFix.problems(MinecraftClient.getInstance());
+        if (!problems.isEmpty()) {
+            Hud.warn("your chat settings are hiding messages:");
+            for (String problem : problems) Hud.warn("  " + problem);
+            Hud.warn("run /understudy chatfix to put them right");
+        }
     }
 
     public static PlayerProfile profile() {
@@ -94,11 +109,34 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (sort != null) sort.stop(null);
     }
 
-    /** Print to the local chat log. Never sent anywhere. */
+    /**
+     * Say something, through every channel at once.
+     *
+     * Chat, the on-screen overlay, and the log. Not belt and braces for its own
+     * sake: chat can be switched off, dimmed to nothing, or filtered by the
+     * secure-chat setting, and when that happens a mod that only speaks through
+     * chat is indistinguishable from a mod that does nothing. The overlay
+     * always draws, and the log is what can be sent to someone who is not
+     * sitting at the machine.
+     *
+     * Nothing here leaves the client.
+     */
     public static void tell(String message) {
+        LOG.info("[chat] {}", message);
+        Hud.say(message);
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
             client.player.sendMessage(Text.literal("§8[§bunderstudy§8] §r" + message), false);
+        }
+    }
+
+    /** For things that went wrong: the same channels, marked as a problem. */
+    public static void warn(String message) {
+        LOG.warn("[chat] {}", message);
+        Hud.warn(message);
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            client.player.sendMessage(Text.literal("§8[§bunderstudy§8] §c" + message), false);
         }
     }
 }
