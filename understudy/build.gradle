@@ -16,10 +16,11 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    // Yarn publishes nothing for any 26.x version — Fabric moved to Mojang's
-    // own mappings for this era. That renames every Minecraft class and method
-    // this mod touches, which is why the game-facing package was rewritten.
-    mappings loom.officialMojangMappings()
+    // No mappings declaration, deliberately. Minecraft 26.x ships unobfuscated:
+    // Mojang's manifest carries no client_mappings for 26.1 through 26.2, Fabric's
+    // intermediary for 26.2 is the 0.0.0 placeholder, and Yarn has zero 26.x
+    // entries. There is nothing left to map, so asking loom for any mapping set
+    // fails outright. Fabric's own example mod for 26.2 declares none either.
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 

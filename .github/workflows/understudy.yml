@@ -81,8 +81,8 @@ jobs:
           echo "  fabric-api: ${API:-NOT FOUND}"
           echo "  loom:       ${LOOM:-NOT FOUND}"
 
-          # No yarn lookup: this project builds against Mojang's own mappings,
-          # which loom resolves from the game jar itself.
+          # No mappings lookup. Minecraft 26.x ships unobfuscated, so there is
+          # no mapping artifact to resolve — see the check below.
           missing=""
           [ -z "$LOADER" ] && missing="$missing loader"
           [ -z "$API" ]    && missing="$missing fabric-api"
@@ -107,56 +107,27 @@ jobs:
           echo "resolved gradle.properties:"
           grep -E '^(minecraft_version|minecraft_dependency|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
 
-      # Loom could not find official Mojang mappings for this version, and Yarn
-      # publishes none for 26.x either. Before guessing at a third option, ask
-      # Mojang's own manifest what it actually ships for the target: whether
-      # the version exists, what type it is, and whether it carries the
-      # client_mappings download that loom needs.
-      # Mojang's manifest for 26.2 offers only client and server — no
-      # client_mappings — so loom's official-mappings path cannot work. But
-      # mods plainly do run on 26.2, so something maps it. This checks every
-      # source explicitly, with HTTP status, because a silent curl failure and
-      # a genuinely empty result look identical and I have now been fooled by
-      # that once.
-      - name: What can map this version
-        continue-on-error: true
+      # The build declares no mappings because Minecraft 26.x ships unobfuscated:
+      # Mojang stopped publishing client_mappings after 1.21.11, and Fabric's
+      # intermediary for 26.2 is the 0.0.0 placeholder. That is load-bearing, and
+      # it is a decision Mojang could reverse. If client_mappings ever reappears
+      # for the target version, this fails here with the reason rather than
+      # letting the compile fail on ten thousand unresolved symbols.
+      - name: The target is still unobfuscated
         run: |
+          set -euo pipefail
           MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
-          echo "== target: $MC =="
-
-          probe() {
-            local name="$1" url="$2"
-            local code
-            code=$(curl -s -o /tmp/body -w '%{http_code}' "$url")
-            echo "-- $name  [HTTP $code]"
-            if [ "$code" = "200" ]; then
-              head -c 600 /tmp/body; echo
-            fi
-          }
-
-          probe "intermediary/$MC" "https://meta.fabricmc.net/v2/versions/intermediary/${MC}"
-          probe "yarn/$MC"         "https://meta.fabricmc.net/v2/versions/yarn/${MC}"
-
-          echo "-- newest yarn entries overall"
-          curl -s "https://meta.fabricmc.net/v2/versions/yarn" \
-            | jq -r '.[0:6] | .[] | "   \(.gameVersion) -> \(.version)"' 2>&1 | head -8
-
-          echo "-- yarn entries whose gameVersion mentions 26"
-          curl -s "https://meta.fabricmc.net/v2/versions/yarn" \
-            | jq -r '[.[] | select(.gameVersion | test("^26"))] | length as $n | "   count=\($n)"' 2>&1 | head -3
-
-          echo "-- Mojang manifest entry for $MC"
-          curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
-            | jq -r --arg mc "$MC" '.versions[] | select(.id == $mc) | "   type=\(.type)  released=\(.releaseTime)"'
-
-          echo "-- versions Mojang lists that DO carry client_mappings (newest few)"
-          for id in $(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
-                      | jq -r '[.versions[] | select(.type == "release")][0:6] | .[].id'); do
-            url=$(curl -s https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
-                  | jq -r --arg i "$id" '.versions[] | select(.id == $i) | .url')
-            has=$(curl -s "$url" | jq -r 'if .downloads.client_mappings then "yes" else "no" end')
-            echo "   $id  mappings=$has"
-          done
+          url=$(curl -sf https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
+                | jq -r --arg i "$MC" '.versions[] | select(.id == $i) | .url')
+          if [ -z "$url" ]; then
+            echo "::error::Mojang's manifest lists no version $MC."
+            exit 1
+          fi
+          if curl -sf "$url" | jq -e '.downloads.client_mappings' > /dev/null; then
+            echo "::error::Minecraft $MC now publishes client_mappings. It is obfuscated again, so build.gradle needs a mappings declaration back."
+            exit 1
+          fi
+          echo "Minecraft $MC ships no client_mappings — unobfuscated, no mappings needed."
 
       - run: chmod +x gradlew
 
