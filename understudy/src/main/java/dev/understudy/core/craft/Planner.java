@@ -79,6 +79,21 @@ public final class Planner {
     }
 
     /**
+     * Everything obtainable from nothing, sorted.
+     *
+     * Used for tab completion, so /get only ever offers things it can actually
+     * fetch — a completion list that suggests something the mod then refuses is
+     * worse than no completion at all.
+     */
+    public static java.util.List<String> obtainable() {
+        return Catalogue.solver().solve(Map.of()).entrySet().stream()
+                .filter(entry -> entry.getValue().reachable())
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    /**
      * The blocks that drop an item.
      *
      * Static because the gatherer asks per tick and the answer never changes.

@@ -156,6 +156,10 @@ public final class UnderstudyClient implements ClientModInitializer {
      * indistinguishable from a bug — you get "unknown command" for something
      * the source clearly registers.
      */
+    public static GatherTask gather() {
+        return gather;
+    }
+
     /** Ask for the build menu; it opens on the next tick. */
     public static void askForPicker() {
         pickerWanted = true;

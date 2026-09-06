@@ -117,10 +117,20 @@ public final class TravelTask {
         PathFinder.Options options = new PathFinder.Options();
         // Take the shortcuts you take. Someone who tunnels through hills gets a
         // route that tunnels; someone who walks round gets one that walks round.
-        options.allowDig = false; // digging is not wired to the walker yet
+        // Digging is wired to the walker now, so a route may go through a hill
+        // rather than all the way round it — which is what a person does, and
+        // what makes a long journey a journey rather than a tour. How willing it
+        // is comes from the profile: someone who tunnels gets a route that
+        // tunnels.
+        options.allowDig = profile.digTolerance() > 0.2;
+        // Bridging still is not: placing a block underfoot mid-stride needs the
+        // block in hand and a free moment, and half of that is not built.
         options.allowBridge = false;
         options.allowSwim = profile.swimTolerance() > 0.15;
-        options.budget = 9_000;
+        // A bigger budget is worth it here. The old one gave up on anything that
+        // needed real thought and handed back a partial path, which is how a
+        // walk ends up going the scenic way round a mountain one replan at a time.
+        options.budget = 24_000;
         options.range = 1;
 
         PathFinder.Result result =

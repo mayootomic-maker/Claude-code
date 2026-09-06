@@ -1,5 +1,10 @@
 package dev.understudy.core.build;
 
+import dev.understudy.core.model.BlockColours;
+import dev.understudy.core.model.Mesh;
+import dev.understudy.core.model.ObjReader;
+import dev.understudy.core.model.StlReader;
+import dev.understudy.core.model.Voxeliser;
 import dev.understudy.core.nbt.Nbt;
 
 import java.io.IOException;
@@ -37,6 +42,55 @@ public final class Schematic {
     public record Result(Blueprint blueprint, List<String> notes) {}
 
     private Schematic() {}
+
+    /**
+     * Turn a 3D model into a blueprint.
+     *
+     * A mesh is not block data, so unlike a schematic this is a conversion with
+     * choices in it: how tall to make it, whether to fill the inside, and which
+     * block stands in for each colour. The height is the one that matters most —
+     * a model has no scale of its own, and "as tall as the original" is not a
+     * number that exists.
+     *
+     * A model with materials gets its colours matched to buildable blocks. One
+     * without — every .stl, and plenty of .obj files — is a shape, and the shape
+     * is built out of whatever material was chosen in the menu.
+     *
+     * @param height  how many blocks tall the result should be
+     * @param solid   fill the inside, rather than leaving a shell you can enter
+     * @param plain   the block to use when the model carries no colours
+     */
+    public static Result readModel(String name, byte[] file, int height, boolean solid,
+                                   String plain) throws IOException {
+        Mesh mesh = name.toLowerCase(java.util.Locale.ROOT).endsWith(".stl")
+                ? StlReader.read(file)
+                : ObjReader.read(file, ignored -> null);
+        if (mesh.isEmpty()) throw new IOException("nothing in that model");
+
+        Voxeliser.Voxels voxels = Voxeliser.voxelise(mesh,
+                new Voxeliser.Options(height, solid, true));
+        if (voxels.count() == 0) throw new IOException("that model came out empty at that size");
+
+        Draft draft = new Draft(cleanName(name));
+        boolean coloured = mesh.hasColours();
+        for (Map.Entry<Long, Integer> cell : voxels.cells().entrySet()) {
+            int argb = cell.getValue();
+            String block = coloured && argb != -1 ? BlockColours.nearest(argb) : plain;
+            draft.set(Voxeliser.x(cell.getKey()), Voxeliser.y(cell.getKey()),
+                    Voxeliser.z(cell.getKey()), block, roleOf(block), false, null);
+        }
+
+        Blueprint blueprint = draft.finish(0, 0, 0);
+        List<String> notes = new ArrayList<>();
+        notes.add(mesh.triangles().size() + " triangles");
+        notes.add(voxels.count() + " blocks at " + height + " tall");
+        notes.add(coloured ? blueprint.materials().size() + " kinds matched to colours"
+                : "no colours in the file — built in " + plain);
+        if (voxels.count() >= Voxeliser.MAX_BLOCKS) {
+            notes.add("clipped at the size limit; try a smaller height");
+        }
+        return new Result(blueprint, notes);
+    }
 
     /** One block as read, before the whole thing is shifted to start at the origin. */
     private record Raw(int x, int y, int z, String block, Facing facing) {}

@@ -75,6 +75,25 @@ public final class UnderstudyCommands {
                                             StringArgumentType.getString(context, "what"),
                                             IntegerArgumentType.getInteger(context, "size"), true)))));
 
+            // /get is the planner and the gatherer with a one-line front door:
+            // name a thing and how many, and it works out the whole chain and
+            // goes and does it.
+            dispatcher.register(literal("get")
+                    .then(argument("item", StringArgumentType.word())
+                            .suggests((context, builder) -> {
+                                String typed = builder.getRemaining().toLowerCase();
+                                for (String item : Planner.obtainable()) {
+                                    if (item.startsWith(typed)) builder.suggest(item);
+                                }
+                                return builder.buildFuture();
+                            })
+                            .executes(context -> get(context.getSource(),
+                                    StringArgumentType.getString(context, "item"), 1))
+                            .then(argument("count", IntegerArgumentType.integer(1, 4096))
+                                    .executes(context -> get(context.getSource(),
+                                            StringArgumentType.getString(context, "item"),
+                                            IntegerArgumentType.getInteger(context, "count"))))));
+
             dispatcher.register(literal("sort")
                     .executes(context -> sort(context.getSource(), true))
                     .then(literal("all").executes(context -> sort(context.getSource(), false)))
@@ -184,6 +203,43 @@ public final class UnderstudyCommands {
 
     private static int cancelSite(FabricClientCommandSource source) {
         UnderstudyClient.cancelSite();
+        return 1;
+    }
+
+    /**
+     * Fetch a thing, however many levels deep it turns out to be.
+     *
+     * Nothing new underneath: the planner already worked out that iron means a
+     * stone pickaxe means cobblestone means a wooden pickaxe means a log, and
+     * the gatherer already knows how to go and do each step. This is the door.
+     */
+    private static int get(FabricClientCommandSource source, String rawItem, int count) {
+        GatherTask gather = UnderstudyClient.gather();
+        if (gather == null || source.getPlayer() == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        String item = rawItem.toLowerCase().replace("minecraft:", "");
+
+        Planner.Plan plan = new Planner(Catalogue.solver())
+                .plan(Map.of(item, count), Carried.contents(source.getPlayer()));
+
+        if (!plan.possible()) {
+            say(source, "no way to get " + String.join(", ", plan.shortfall().keySet())
+                    + " — /get with no name lists what it can");
+            return 0;
+        }
+        if (plan.actions().isEmpty()) {
+            say(source, "you already have " + count + " " + item);
+            return 1;
+        }
+
+        say(source, String.format("%d %s: %s", count, item,
+                plan.seconds() < 90
+                        ? Math.round(plan.seconds()) + " seconds"
+                        : Math.round(plan.seconds() / 60) + " minutes"));
+        for (String line : plan.summary()) say(source, "  " + line);
+        gather.start(plan, null);
         return 1;
     }
 

@@ -65,7 +65,8 @@ public final class BuildPicker extends Screen {
         }
     }
 
-    private record Imported(Path file, Blueprint blueprint, String note) implements Option {
+    private record Imported(Path file, Blueprint blueprint, String note, boolean model)
+            implements Option {
         @Override
         public String label() {
             return blueprint == null ? file.getFileName().toString() : blueprint.name();
@@ -75,11 +76,13 @@ public final class BuildPicker extends Screen {
     private final List<Option> options = new ArrayList<>();
     private int selected;
     private int size;
+    private boolean solid;
     private int woodIndex;
     private int stoneIndex = 1;
     private Blueprint blueprint;
     private Preview.Image image;
     private String costLine = "";
+    private String modelNote;
 
     public BuildPicker(Map<String, Integer> inventory, Chosen onChoose) {
         super(Component.literal("Build"));
@@ -90,15 +93,22 @@ public final class BuildPicker extends Screen {
         // Imports are read when the menu opens, not held between openings, so a
         // file dropped in the folder while the game is running is simply there.
         for (Path file : Imports.list()) {
+            // A model is not read here: it has no size until one is chosen, and
+            // voxelising every model in the folder to draw a list would be a
+            // slow way to open a menu. It is built when it is selected.
+            if (Imports.isModel(file)) {
+                options.add(new Imported(file, null, "3D model — pick a height", true));
+                continue;
+            }
             try {
                 Schematic.Result result = Imports.load(file);
                 options.add(new Imported(file, result.blueprint(),
-                        String.join(" · ", result.notes())));
+                        String.join(" · ", result.notes()), false));
             } catch (Exception error) {
                 // A file that will not read is still listed, with the reason, so
                 // it is obvious which one is the problem rather than it silently
                 // not appearing.
-                options.add(new Imported(file, null, "could not read: " + error.getMessage()));
+                options.add(new Imported(file, null, "could not read: " + error.getMessage(), false));
             }
         }
     }
@@ -127,10 +137,13 @@ public final class BuildPicker extends Screen {
                 .bounds(listX, controlsY + 24, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Stone \u203a"), button -> cycleStone(1))
                 .bounds(listX, controlsY + 48, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Hollow / solid"),
+                        button -> toggleSolid())
+                .bounds(listX, controlsY + 72, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Choose where"), button -> commit())
-                .bounds(listX, controlsY + 76, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
                 .bounds(listX, controlsY + 100, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
+                .bounds(listX, controlsY + 124, 120, 20).build());
 
         refresh();
     }
@@ -139,14 +152,30 @@ public final class BuildPicker extends Screen {
         selected = index;
         if (options.get(index) instanceof Designed designed) {
             size = designed.entry().defaultSize();
+        } else if (options.get(index) instanceof Imported imported && imported.model()) {
+            size = 20;
         }
         refresh();
     }
 
     private void resize(int by) {
-        if (!(options.get(selected) instanceof Designed designed)) return;
-        size = Math.max(designed.entry().minSize(),
-                Math.min(designed.entry().maxSize(), size + by));
+        Option option = options.get(selected);
+        if (option instanceof Designed designed) {
+            size = Math.max(designed.entry().minSize(),
+                    Math.min(designed.entry().maxSize(), size + by));
+        } else if (option instanceof Imported imported && imported.model()) {
+            // A model's size is how tall it comes out. Under about eight blocks
+            // nothing recognisable survives, and past a hundred it is a project
+            // rather than a build.
+            size = Math.max(8, Math.min(120, size + by * 4));
+        } else {
+            return;
+        }
+        refresh();
+    }
+
+    private void toggleSolid() {
+        solid = !solid;
         refresh();
     }
 
@@ -189,12 +218,24 @@ public final class BuildPicker extends Screen {
         Option option = options.get(selected);
         if (option instanceof Designed designed) {
             blueprint = Catalog.build(designed.entry(), size, wood(), stone());
+        } else if (option instanceof Imported imported && imported.model()) {
+            // Voxelising is quick but not free, so it happens on a change of
+            // size or material rather than per frame.
+            try {
+                Schematic.Result result = Imports.loadModel(imported.file(), size, solid,
+                        wood().planks());
+                blueprint = result.blueprint();
+                modelNote = String.join(" · ", result.notes());
+            } catch (Exception error) {
+                blueprint = null;
+                modelNote = "could not read: " + error.getMessage();
+            }
         } else if (option instanceof Imported imported) {
             blueprint = imported.blueprint();
         }
         if (blueprint == null) {
             image = null;
-            costLine = "§c" + ((Imported) option).note();
+            costLine = "§c" + (modelNote != null ? modelNote : ((Imported) option).note());
             return;
         }
         image = Preview.of(blueprint);
@@ -240,13 +281,21 @@ public final class BuildPicker extends Screen {
         String summary = option instanceof Designed designed
                 ? designed.entry().summary()
                 : "imported from " + ((Imported) option).file().getFileName();
-        String detail = option instanceof Designed
-                ? "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name()
-                : ((Imported) option).note();
+        String detail;
+        if (option instanceof Designed) {
+            detail = "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name();
+        } else if (option instanceof Imported imported && imported.model()) {
+            detail = size + " tall  ·  " + (solid ? "solid" : "hollow") + "  ·  " + wood().name();
+        } else {
+            detail = ((Imported) option).note();
+        }
 
         graphics.text(font, Component.literal(title), panelX + 10, panelY + 10, TEXT);
         graphics.text(font, Component.literal(summary), panelX + 10, panelY + 24, DIM);
         graphics.text(font, Component.literal(detail), panelX + 10, panelY + 38, DIM);
+        if (modelNote != null && option instanceof Imported imported && imported.model()) {
+            graphics.text(font, Component.literal(modelNote), panelX + 10, panelY + 52, DIM);
+        }
 
         drawPreview(graphics, panelX + 10, panelY + 56, panelW - 20, panelH - 96);
         graphics.text(font, Component.literal(costLine), panelX + 10, panelY + panelH - 26, TEXT);

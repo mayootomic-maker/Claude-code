@@ -8,6 +8,9 @@ import dev.understudy.human.Look;
 import dev.understudy.human.Rng;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
 
 import java.util.List;
 
@@ -42,6 +45,9 @@ public final class Walker {
     private int index;
     private int stuckTicks;
     private double lastProgress = Double.MAX_VALUE;
+    private BlockPos digging;
+    private int digTicks;
+    private int sidestep;
 
     public Walker(Minecraft client, Rng rng) {
         this.client = client;
@@ -89,11 +95,13 @@ public final class Walker {
         client.options.keyRight.setDown(false);
         client.options.keyJump.setDown(false);
         client.options.keySprint.setDown(false);
+        sidestep = 0;
     }
 
     public void stop() {
         path = List.of();
         index = 0;
+        stopDigging();
         release();
     }
 
@@ -114,6 +122,11 @@ public final class Walker {
 
         Step step = path.get(index);
         double dy = step.y() - player.getY();
+
+        // A dig step is a block in the way, not a place to walk to. Cutting
+        // through is what lets a route go over a hill instead of round it, and
+        // routing round everything is most of why long journeys used to wander.
+        if (step.kind() == Step.Kind.DIG && digThrough(player, step)) return true;
 
         if (aim.remaining() < Pursuit.REACHED && Math.abs(dy) < 1.2) {
             index = path.size();
@@ -153,6 +166,76 @@ public final class Walker {
                 || (player.isInWater() && dy > -0.2)
                 || stuckTicks > 12;
         client.options.keyJump.setDown(needsJump);
+
+        // Jumping gets you over a step. It does nothing about a fence post you
+        // are pressed against, and pressing forward harder never has. So after
+        // a couple of seconds of no progress, lean out sideways — alternating,
+        // because whichever way the obstruction is, one of the two is past it.
+        boolean stuckOnSomething = stuckTicks > 25;
+        if (stuckOnSomething) sidestep++;
+        boolean left = stuckOnSomething && (sidestep / 12) % 2 == 0;
+        boolean right = stuckOnSomething && !left;
+        client.options.keyLeft.setDown(left);
+        client.options.keyRight.setDown(right);
         return true;
+    }
+
+    /**
+     * Break what is in the way. Returns true while there is still digging to do.
+     *
+     * Both the block at head height and the one at foot height, because a player
+     * is two blocks tall and a tunnel one block high is a tunnel you cannot walk
+     * down.
+     */
+    private boolean digThrough(LocalPlayer player, Step step) {
+        if (client.gameMode == null || client.level == null) return false;
+
+        BlockPos feet = new BlockPos(step.x(), step.y(), step.z());
+        BlockPos head = feet.above();
+        BlockPos target = !client.level.getBlockState(head).isAir() ? head
+                : !client.level.getBlockState(feet).isAir() ? feet : null;
+
+        if (target == null) {
+            stopDigging();
+            return false; // the way is clear; walk it
+        }
+        if (player.blockPosition().distSqr(target) > 25) {
+            stopDigging();
+            return false; // too far to reach: walk closer first
+        }
+
+        if (!target.equals(digging)) {
+            digging = target;
+            digTicks = 0;
+            client.gameMode.startDestroyBlock(target, Direction.UP);
+        }
+        lookAtBlock(player, target);
+        client.gameMode.continueDestroyBlock(target, Direction.UP);
+        player.swing(InteractionHand.MAIN_HAND);
+
+        // Bedrock, or something a server will not let you break. Give up on the
+        // step rather than standing there hitting it forever.
+        if (++digTicks > 200) {
+            stopDigging();
+            stuckTicks = 999;
+        }
+        return true;
+    }
+
+    private void stopDigging() {
+        if (digging != null && client.gameMode != null) client.gameMode.stopDestroyBlock();
+        digging = null;
+        digTicks = 0;
+    }
+
+    private void lookAtBlock(LocalPlayer player, BlockPos at) {
+        double dx = at.getX() + 0.5 - player.getX();
+        double dy = at.getY() + 0.5 - (player.getY() + player.getEyeHeight());
+        double dz = at.getZ() + 0.5 - player.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        look.tick(Math.toDegrees(Math.atan2(dz, dx)) - 90.0,
+                -Math.toDegrees(Math.atan2(dy, horizontal)));
+        player.setYRot((float) look.yaw());
+        player.setXRot((float) look.pitch());
     }
 }
