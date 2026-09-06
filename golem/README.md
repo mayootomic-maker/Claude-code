@@ -160,13 +160,22 @@ on the wire, pathfinding, digging, chat, and a full plan carried out end to end
 until the item is really in the inventory.
 
 That last one matters, because most of the interesting bugs only existed at
-runtime. Typechecking passed cleanly on an ESM import of a CommonJS module that
-crashed the moment it was run. And driving the planner is what turned up the
-worst bug in the project: a cost that was true only while a stone pickaxe was
-mid-expansion leaked out of its cache, deleted smelting from the options for
-iron, and left the bot concluding that the best way to get an ingot was to go
-and fight an iron golem. It looked completely reasonable until you asked it for
-a shield and it quoted fifteen minutes.
+runtime, and each of the three worst was invisible to a different check.
+
+Typechecking passed cleanly on an ESM import of a CommonJS module that crashed
+the moment it was run. Driving the planner turned up a cost that was true only
+while a stone pickaxe was mid-expansion, leaked out of its cache, deleted
+smelting from the options for iron, and left the bot concluding that the best
+way to get an ingot was to go and fight an iron golem — it looked completely
+reasonable until you asked it for a shield and it quoted fifteen minutes.
+
+And the third passed every test there was. The aim layer and the pathfinder both
+write the view direction every tick, and the pathfinder steers by turning the
+head, so during a walk they were sending contradictory angles twenty times a
+second — disagreeing on 99% of ticks across a forty-block journey. Nothing
+failed; the bot still arrived. It only surfaced because the question asked was
+"how much do these two disagree" rather than "did it get there". The drive now
+asserts that number stays near zero.
 
 ## Known limits
 
