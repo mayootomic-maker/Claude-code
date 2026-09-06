@@ -48,7 +48,6 @@ public final class UnderstudyClient implements ClientModInitializer {
         // from inside the game, from a mod that is not installed. Whatever
         // fails now, the rest still comes up, and the log names the piece.
         setUp("commands", UnderstudyCommands::register);
-        setUp("overlay", Hud::register);
         setUp("tick loop", UnderstudyClient::registerTick);
 
         LOG.info("Understudy ready (Minecraft {})",
@@ -81,6 +80,7 @@ public final class UnderstudyClient implements ClientModInitializer {
             // rather than throwing twenty times a second.
             try {
                 greet();
+                Hud.tick();
                 profile.tick();
                 if (travel == null) {
                     travel = new TravelTask(client, profile, UnderstudyClient::tell);

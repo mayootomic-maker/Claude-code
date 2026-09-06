@@ -157,15 +157,18 @@ jobs:
           show net.fabricmc.fabric.api.client.command.v2.ClientCommands
           show net.minecraft.client.gui.Hud 30
 
-          # hideGui is in none of Options' fields, so it moved. Ask which class
-          # still declares something by that name.
-          echo; echo "===== who declares hideGui ====="
-          for c in net.minecraft.client.Options net.minecraft.client.Minecraft \
-                   net.minecraft.client.gui.Gui net.minecraft.client.gui.Hud; do
-            hit=$(javap -p -cp "$cp" "$c" 2>/dev/null | grep -i 'hidegui' | head -3)
-            [ -n "$hit" ] && printf '  %s:\n%s\n' "$c" "$hit"
-          done
-          echo "  (nothing above means hideGui is gone entirely)"
+          # The exact signatures this mod calls, rather than whole classes.
+          # Grepping one method out of a class is the cheapest possible answer
+          # and leaves room in the log for the next question.
+          sig() {
+            echo "-- $1 :: $2"
+            javap -p -cp "$cp" "$1" 2>/dev/null | grep -E "$2" | sed 's/^/    /' \
+              || echo "    (no member matching $2)"
+          }
+          echo; echo "===== signatures this mod depends on ====="
+          sig net.minecraft.client.player.LocalPlayer 'sendOverlayMessage|sendSystemMessage'
+          sig net.minecraft.client.multiplayer.MultiPlayerGameMode 'InventoryMouseClick|clicked|useItemOn|destroyBlock'
+          sig net.minecraft.client.Minecraft 'gui|Gui '
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one

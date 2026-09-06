@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 
 /**
  * Getting the right thing into your hand.
@@ -59,7 +59,7 @@ public final class Hotbar {
             // 9-and-above case needs converting.
             client.gameMode.handleInventoryMouseClick(
                     player.inventoryMenu.containerId, slot, SCRATCH_SLOT,
-                    ClickType.SWAP, player);
+                    ContainerInput.SWAP, player);
             player.getInventory().setSelectedSlot(SCRATCH_SLOT);
             return true;
         }

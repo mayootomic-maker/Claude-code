@@ -11,7 +11,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.core.BlockPos;
@@ -242,7 +242,7 @@ public final class SortTask {
 
             if (client.gameMode != null) {
                 client.gameMode.handleInventoryMouseClick(handler.containerId, slot, 0,
-                        ClickType.QUICK_MOVE, player);
+                        ContainerInput.QUICK_MOVE, player);
                 moved++;
                 cooldown = MOVE_INTERVAL;
             }

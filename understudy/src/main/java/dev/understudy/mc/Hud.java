@@ -1,45 +1,50 @@
 package dev.understudy.mc;
 
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
- * Draws what the mod is doing straight onto the screen.
+ * Says what the mod is doing somewhere chat settings cannot hide it.
  *
  * This exists because chat turned out to be an unreliable place to talk. If a
  * player's chat is set to commands-only, or opacity is at zero, or the client
  * is dropping unsigned messages, then a mod that reports through chat is
  * indistinguishable from a mod that does nothing — which is exactly the
- * failure this project hit. The overlay does not care about any of those
- * settings.
+ * failure this project hit. The overlay line above the hotbar obeys none of
+ * those settings.
  *
- * It draws nothing at all when there is nothing to say, so it costs no screen
- * space in normal play.
+ * It draws through the game's own overlay message rather than painting to the
+ * screen directly. Minecraft 26 moved rendering to an extract-and-submit model
+ * with no stable drawing surface for a mod to scribble on, and the overlay is
+ * both the supported route and the one that looks native. It also costs no
+ * screen space when there is nothing to say.
+ *
+ * The overlay fades after a few seconds, so a long-running status is re-sent
+ * from the tick loop; a one-off message wins until it has had its time.
  */
 public final class Hud {
 
     private static final int MAX_LINES = 6;
-    /** Lines older than this stop being drawn. */
-    private static final long LINE_LIFETIME_MS = 20_000;
+    /** Lines older than this stop being repeated. */
+    private static final long LINE_LIFETIME_MS = 6_000;
+    /** Well inside the vanilla fade, so a status never visibly blinks out. */
+    private static final int REFRESH_TICKS = 40;
 
     private record Line(String text, long at, boolean warning) {}
 
     private static final Deque<Line> lines = new ArrayDeque<>();
     private static String status = "";
     private static boolean enabled = true;
+    private static int sinceRefresh = 0;
 
     private Hud() {}
 
-    public static void register() {
-        HudRenderCallback.EVENT.register(Hud::render);
-    }
-
     public static void setStatus(String text) {
         status = text == null ? "" : text;
+        sinceRefresh = REFRESH_TICKS; // show it now rather than up to two seconds late
     }
 
     public static void say(String text) {
@@ -53,6 +58,7 @@ public final class Hud {
     private static synchronized void add(String text, boolean warning) {
         lines.addLast(new Line(text, System.currentTimeMillis(), warning));
         while (lines.size() > MAX_LINES) lines.removeFirst();
+        sinceRefresh = REFRESH_TICKS;
     }
 
     public static synchronized void clear() {
@@ -68,28 +74,29 @@ public final class Hud {
         return enabled;
     }
 
-    private static synchronized void render(GuiGraphics context, Object tickCounter) {
+    /** Called every client tick. Cheap: it sends nothing on most of them. */
+    public static synchronized void tick() {
         if (!enabled) return;
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.options.hideGui) return;
+        if (client.player == null) return;
 
         long now = System.currentTimeMillis();
         lines.removeIf(line -> now - line.at() > LINE_LIFETIME_MS);
-        if (lines.isEmpty() && status.isEmpty()) return;
 
-        int x = 4;
-        int y = 4;
-        context.drawString(client.font, "understudy", x, y, 0x55FFFF);
-        y += 11;
+        if (++sinceRefresh < REFRESH_TICKS) return;
+        sinceRefresh = 0;
 
-        if (!status.isEmpty()) {
-            context.drawString(client.font, status, x, y, 0xFFFFFF);
-            y += 10;
+        // The newest message outranks the status: a warning that scrolled past
+        // in chat is the thing most worth putting in front of someone.
+        Line latest = lines.peekLast();
+        String text;
+        if (latest != null) {
+            text = (latest.warning() ? "§c" : "§f") + latest.text();
+        } else if (!status.isEmpty()) {
+            text = "§b" + status;
+        } else {
+            return;
         }
-        for (Line line : lines) {
-            context.drawString(client.font, line.text(), x, y,
-                    line.warning() ? 0xFF5555 : 0xAAAAAA);
-            y += 10;
-        }
+        client.player.sendOverlayMessage(Component.literal("§8[§bunderstudy§8] §r" + text));
     }
 }
