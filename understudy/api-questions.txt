@@ -71,3 +71,9 @@ net.minecraft.client.Minecraft Screen screen
 # not itself pressing stops everything, which is the gesture people already
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
+
+# Torches at night, not just underground. Level.getDayTime() is gone in 26.2;
+# one of these is the way to ask what time it is.
+net.minecraft.world.level.Level dayTime
+net.minecraft.client.multiplayer.ClientLevel Time
+net.minecraft.world.level.storage.LevelData 14

@@ -17,27 +17,26 @@ import net.minecraft.world.level.block.state.BlockState;
  * this is the difference between a build that finishes and one that keeps being
  * interrupted by a creeper it invited.
  *
- * Two ways it knows it is dark, both from things that have not moved between
- * versions: below the surface it always is, and above it, the time of day says
- * so. Asking the light engine for a block's brightness would be exact and is
- * exactly the sort of call that gets renamed.
+ * How it knows it is dark: below the surface it always is, whatever the clock
+ * says. Reading the clock as well needs a call this version renamed, so that
+ * half waits for an answer rather than a guess.
  */
 final class Torchlight {
     private Torchlight() {}
 
     /** Deep enough that daylight never reaches, whatever the clock says. */
     private static final int UNDERGROUND = 40;
-    /** Minecraft's night, in ticks of a twenty-thousand-tick day. */
-    private static final long DUSK = 13_000;
-    private static final long DAWN = 23_000;
     /** How far apart torches go. Vanilla spawning needs a gap wider than this. */
     private static final int SPACING = 6;
 
     static boolean dark(Minecraft client, LocalPlayer player) {
         if (client.level == null) return false;
-        if (player.blockPosition().getY() < UNDERGROUND) return true;
-        long time = client.level.getDayTime() % 24_000L;
-        return time >= DUSK && time < DAWN;
+        // Underground only, for now. Telling the time turned out to need a call
+        // that does not exist in this version — getDayTime is gone — and a
+        // wrong guess about the clock is not worth a broken build when the half
+        // that matters most needs no clock at all: a tunnel at y minus fifty is
+        // dark at noon. The night half is waiting on one answer from CI.
+        return player.blockPosition().getY() < UNDERGROUND;
     }
 
     /**
@@ -80,31 +79,6 @@ final class Torchlight {
             }
         }
         return false;
-    }
-
-    /**
-     * Sleep, if there is a bed within reach and it is night.
-     *
-     * The honest limit: the game refuses if a monster is nearby, and it says so
-     * in chat rather than in anything this can read. So this asks once and the
-     * caller does not wait on the answer — a refused sleep costs a click and
-     * the night goes on being dealt with by torches.
-     */
-    static BlockPos bedNearby(Minecraft client, LocalPlayer player) {
-        BlockPos from = player.blockPosition();
-        for (int dx = -3; dx <= 3; dx++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                for (int dz = -3; dz <= 3; dz++) {
-                    BlockPos at = from.offset(dx, dy, dz);
-                    BlockState state = client.level.getBlockState(at);
-                    if (state.isAir()) continue;
-                    if (BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().endsWith("_bed")) {
-                        return at;
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     /** The face of a block a torch or a block goes against, from where you stand. */
