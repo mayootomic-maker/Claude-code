@@ -56,3 +56,15 @@ net.minecraft.world.inventory.InventoryMenu 14
 # the crafter asks which container menu is open instead, which is what the
 # server acts on — but worth knowing before something else reaches for it.
 net.minecraft.client.Minecraft Screen screen
+
+# The gatherer resolves an item's source blocks once and then compares block
+# identity per candidate, instead of building a name string for every block in
+# a third-of-a-million-block scan. Needs the name -> Block lookup.
+net.minecraft.core.Registry getValue
+net.minecraft.resources.ResourceLocation withDefaultNamespace
+
+# A stop you have to type into chat is not a stop you can reach when something
+# is going wrong. These are what a panic key needs.
+net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper 12
+com.mojang.blaze3d.platform.InputConstants Type
+net.minecraft.client.KeyMapping consumeClick

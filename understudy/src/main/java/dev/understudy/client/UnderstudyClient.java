@@ -12,6 +12,7 @@ import dev.understudy.mc.Carried;
 import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Hud;
+import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
 import dev.understudy.mc.Safety;
 import dev.understudy.mc.SmeltTask;
@@ -52,6 +53,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
+    private static boolean paused;
     private static boolean greeted;
     private static boolean reportedFailure;
 
@@ -113,6 +115,15 @@ public final class UnderstudyClient implements ClientModInitializer {
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
                     gather = new GatherTask(client, travel, craft, smelt, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
+                }
+
+                // Paused holds the place in every plan and queue and simply
+                // stops acting on them. Everything the mod was holding was let
+                // go at the moment of pausing, so this is a genuine hands-off
+                // and not a very fast loop that does nothing.
+                if (paused) {
+                    Hud.setStatus("paused — /understudy resume");
+                    return;
                 }
 
                 // Opening the menu is deferred to here because a command runs
@@ -241,13 +252,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     }
 
     private static void stopEverything() {
-        if (marker != null) marker.cancel();
-        if (travel != null) travel.stop("safety");
-        if (craft != null) craft.stop();
-        if (smelt != null) smelt.stop();
-        if (gather != null) gather.stop("safety");
-        if (build != null) build.stop("safety");
-        if (sort != null) sort.stop("safety");
+        stopAll("safety");
     }
 
     private static void greet() {
@@ -299,10 +304,68 @@ public final class UnderstudyClient implements ClientModInitializer {
     }
 
     /** Stop whatever is going on. */
+    /**
+     * Stop. All of it, at once, and let go of the world.
+     *
+     * This used to stop travel, building and sorting, which sounds like
+     * everything and is not: the gatherer was left running, and the first thing
+     * a running gatherer does is start travelling again. From the outside that
+     * is a mod that ignores you. So the list is now every task there is, the
+     * gatherer first because it is the one that starts the others, and it ends
+     * by putting down whatever the mod was physically holding — the keys, and
+     * the block it was halfway through breaking.
+     */
     public static void stopAll() {
+        stopAll("stopped");
+    }
+
+    public static void stopAll(String why) {
+        paused = false;
+        pickerWanted = false;
+        if (marker != null) marker.cancel();
+        if (gather != null) gather.stop(why);
+        if (build != null) build.stop(why);
+        if (sort != null) sort.stop(why);
+        if (craft != null) craft.stop();
+        if (smelt != null) smelt.stop();
         if (travel != null) travel.stop(null);
-        if (build != null) build.stop(null);
-        if (sort != null) sort.stop(null);
+        letGo();
+    }
+
+    /**
+     * Hands off: no key held down, no block half-broken, no status left up.
+     *
+     * Stopping a task clears what it intends to do next. This clears what it is
+     * doing right now, which is a different thing and the one you feel.
+     */
+    private static void letGo() {
+        Keys.releaseAll();
+        Minecraft client = Minecraft.getInstance();
+        if (client.gameMode != null) client.gameMode.stopDestroyBlock();
+        if (safety != null) safety.reset();
+        Hud.setStatus("");
+    }
+
+    public static boolean paused() {
+        return paused;
+    }
+
+    /**
+     * Hold everything where it is, without forgetting it.
+     *
+     * The difference from stopping: the plan, the queue and the place in them
+     * all survive, so resuming carries on rather than starting again. What does
+     * not survive is anything being held — a pause that leaves your movement
+     * keys down is not a pause.
+     */
+    public static void pause() {
+        if (paused) return;
+        paused = true;
+        letGo();
+    }
+
+    public static void resume() {
+        paused = false;
     }
 
     /**

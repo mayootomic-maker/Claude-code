@@ -27,7 +27,27 @@ public final class Catalogue {
     private static final int IRON_USES = 250;
     private static final int DIAMOND_USES = 1561;
 
+    /**
+     * Built once, not per call.
+     *
+     * This is a constant that happens to be written as code, and it was being
+     * rebuilt — fifty records and three lists — every single time anything
+     * asked. The gatherer asks once per candidate block while scanning, which
+     * is a third of a million blocks a scan, six times a second. That was not a
+     * slow frame, it was tens of millions of allocations a second.
+     */
+    private static final List<Gather> GATHERS = buildGathers();
+    private static final List<Recipe> RECIPES = buildRecipes();
+
     public static List<Gather> gathers() {
+        return GATHERS;
+    }
+
+    public static List<Recipe> recipes() {
+        return RECIPES;
+    }
+
+    private static List<Gather> buildGathers() {
         List<Gather> all = new ArrayList<>(List.of(
                 // Dirt and sand: hardness 0.5, by hand -> 0.75s.
                 Gather.byHand("dirt", 0.75, 1.5, 64),
@@ -103,7 +123,7 @@ public final class Catalogue {
         return List.copyOf(all);
     }
 
-    public static List<Recipe> recipes() {
+    private static List<Recipe> buildRecipes() {
         List<Recipe> all = new ArrayList<>(List.of(
                 Recipe.hand("crafting_table", 1, 1.0, "oak_planks", 4),
                 Recipe.hand("torch", 4, 1.0, "stick", 1, "coal", 1),

@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Schematic;
 import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Designs;
 import dev.understudy.core.build.Materials;
@@ -14,12 +15,16 @@ import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;
+import dev.understudy.mc.Imports;
 import dev.understudy.mc.SelfTest;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import net.minecraft.client.Minecraft;
 
 import java.util.List;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -57,6 +62,7 @@ public final class UnderstudyCommands {
                     // because a menu is slower than knowing what you want.
                     .executes(context -> openPicker(context.getSource()))
                     .then(literal("cancel").executes(context -> cancelSite(context.getSource())))
+                    .then(literal("imports").executes(context -> imports(context.getSource())))
                     .then(argument("what", StringArgumentType.word())
                             .executes(context -> build(context.getSource(),
                                     StringArgumentType.getString(context, "what"), 7, false))
@@ -101,6 +107,8 @@ public final class UnderstudyCommands {
 
             dispatcher.register(literal("understudy")
                     .then(literal("stop").executes(context -> stop(context.getSource())))
+                    .then(literal("pause").executes(context -> pause(context.getSource())))
+                    .then(literal("resume").executes(context -> resume(context.getSource())))
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
                     .then(literal("help").executes(context -> help(context.getSource())))
@@ -111,6 +119,11 @@ public final class UnderstudyCommands {
                             guarded(context.getSource(), "understudy test",
                                     () -> selfTest(context.getSource()))))
                     .then(literal("hud").executes(context -> toggleHud(context.getSource())))
+                    .then(literal("speed")
+                            .executes(context -> speed(context.getSource(), null))
+                            .then(argument("how", StringArgumentType.word())
+                                    .executes(context -> speed(context.getSource(),
+                                            StringArgumentType.getString(context, "how")))))
                     // Bare /understudy lists the commands rather than the
                     // status: someone typing it is usually asking what exists.
                     .executes(context -> help(context.getSource())));
@@ -118,6 +131,8 @@ public final class UnderstudyCommands {
     }
 
     private static int travel(FabricClientCommandSource source, int x, int y, int z) {
+        // Asking for new work is as clear a resume as there is.
+        UnderstudyClient.resume();
         TravelTask task = UnderstudyClient.travel();
         if (task == null) {
             say(source, "not in a world yet");
@@ -135,6 +150,8 @@ public final class UnderstudyCommands {
      * this" should never disagree about what the thing is.
      */
     private static int build(FabricClientCommandSource source, String what, int size, boolean planOnly) {
+        // Asking for new work is as clear a resume as there is.
+        UnderstudyClient.resume();
         BuildTask task = UnderstudyClient.build();
         PlayerProfile profile = UnderstudyClient.profile();
         if (task == null || profile == null) {
@@ -190,6 +207,8 @@ public final class UnderstudyCommands {
     }
 
     private static int openPicker(FabricClientCommandSource source) {
+        // Asking for new work is as clear a resume as there is.
+        UnderstudyClient.resume();
         if (Minecraft.getInstance().player == null) {
             say(source, "not in a world yet");
             return 0;
@@ -214,6 +233,8 @@ public final class UnderstudyCommands {
      * the gatherer already knows how to go and do each step. This is the door.
      */
     private static int get(FabricClientCommandSource source, String rawItem, int count) {
+        // Asking for new work is as clear a resume as there is.
+        UnderstudyClient.resume();
         GatherTask gather = UnderstudyClient.gather();
         if (gather == null || source.getPlayer() == null) {
             say(source, "not in a world yet");
@@ -268,6 +289,8 @@ public final class UnderstudyCommands {
     }
 
     private static int sort(FabricClientCommandSource source, boolean keepKit) {
+        // Asking for new work is as clear a resume as there is.
+        UnderstudyClient.resume();
         SortTask task = UnderstudyClient.sort();
         if (task == null) {
             say(source, "not in a world yet");
@@ -279,11 +302,32 @@ public final class UnderstudyCommands {
 
     private static int stop(FabricClientCommandSource source) {
         UnderstudyClient.stopAll();
-        say(source, "stopped");
+        say(source, "stopped — everything, and the keys are yours");
+        return 1;
+    }
+
+    private static int pause(FabricClientCommandSource source) {
+        if (UnderstudyClient.paused()) {
+            say(source, "already paused — /understudy resume to carry on");
+            return 1;
+        }
+        UnderstudyClient.pause();
+        say(source, "paused, holding its place — /understudy resume");
+        return 1;
+    }
+
+    private static int resume(FabricClientCommandSource source) {
+        if (!UnderstudyClient.paused()) {
+            say(source, "not paused");
+            return 1;
+        }
+        UnderstudyClient.resume();
+        say(source, "carrying on");
         return 1;
     }
 
     private static int status(FabricClientCommandSource source) {
+        if (UnderstudyClient.paused()) say(source, "§epaused — /understudy resume");
         TravelTask travel = UnderstudyClient.travel();
         BuildTask build = UnderstudyClient.build();
         SortTask sort = UnderstudyClient.sort();
@@ -338,6 +382,82 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /**
+     * What is in the import folder, and what is wrong with it.
+     *
+     * "It does not import" has two completely different causes — the files are
+     * somewhere else, or they are here and unreadable — and from the outside
+     * they look identical: a menu with nothing new in it. This prints the path
+     * it actually looks in and its verdict on every file there, so the answer
+     * takes one command instead of a guess.
+     */
+    private static int imports(FabricClientCommandSource source) {
+        Path folder = Imports.folder();
+        say(source, "import folder: " + folder.toAbsolutePath());
+
+        List<Path> files;
+        try {
+            Files.createDirectories(folder);
+            try (var all = Files.list(folder)) {
+                files = all.filter(Files::isRegularFile).toList();
+            }
+        } catch (IOException error) {
+            say(source, "§ccannot read that folder: " + error.getMessage());
+            return 0;
+        }
+
+        if (files.isEmpty()) {
+            say(source, "nothing in it yet — drop a .obj, .stl, .litematic, .schem or .nbt in there");
+            return 1;
+        }
+        for (Path file : files) {
+            String name = file.getFileName().toString();
+            if (!Imports.importable(name.toLowerCase(java.util.Locale.ROOT))) {
+                say(source, "§8· " + name + " — not a format it reads");
+                continue;
+            }
+            try {
+                long size = Files.size(file);
+                if (size > 16L * 1024 * 1024) {
+                    say(source, "§c· " + name + " — too big (" + (size / 1048576) + " MB, limit 16)");
+                } else if (Imports.isModel(file)) {
+                    say(source, "§a· " + name + " — 3D model, ready (pick a height in /build)");
+                } else {
+                    Schematic.Result result = Imports.load(file);
+                    say(source, "§a· " + name + " — "
+                            + result.blueprint().blockCount() + " blocks, ready");
+                }
+            } catch (Exception error) {
+                say(source, "§c· " + name + " — " + error.getClass().getSimpleName()
+                        + ": " + error.getMessage());
+            }
+        }
+        say(source, "everything marked ready appears at the top of /build");
+        return 1;
+    }
+
+    private static int speed(FabricClientCommandSource source, String how) {
+        if (how == null) {
+            for (BuildTask.Speed option : BuildTask.Speed.values()) {
+                say(source, (option == BuildTask.speed() ? "§a· " : "§8· ")
+                        + option.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
+                        + " — " + option.describe + ", " + option.blocksPerSecond() + " blocks/s");
+            }
+            say(source, "/understudy speed <steady|brisk|flat_out>");
+            return 1;
+        }
+        for (BuildTask.Speed option : BuildTask.Speed.values()) {
+            if (option.name().equalsIgnoreCase(how.replace(' ', '_'))) {
+                BuildTask.speed(option);
+                say(source, "building " + option.describe + " — "
+                        + option.blocksPerSecond() + " blocks a second");
+                return 1;
+            }
+        }
+        say(source, "no such speed — steady, brisk or flat_out");
+        return 0;
+    }
+
     private static int help(FabricClientCommandSource source) {
         say(source, "/travel <x> <y> <z> — walk there");
         say(source, "/build house|hut|tower|storage [size] — build it");
@@ -347,7 +467,10 @@ public final class UnderstudyCommands {
         say(source, "/understudy test — check what is working and what is not");
         say(source, "/understudy chatfix — repair chat settings that hide messages");
         say(source, "/understudy hud — toggle the on-screen overlay");
-        say(source, "/understudy stop — stop everything");
+        say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
+        say(source, "/build imports — where to put models and what it makes of them");
+        say(source, "/understudy stop — stop everything, at once");
+        say(source, "/understudy pause — hold it there; /understudy resume carries on");
         return 1;
     }
 

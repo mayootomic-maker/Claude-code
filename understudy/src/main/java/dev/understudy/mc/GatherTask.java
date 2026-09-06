@@ -9,6 +9,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -38,6 +40,16 @@ public final class GatherTask {
     private static final int MAX_MINING_TICKS = 300;
     /** Re-scan for a target no more than this often; a full scan is not free. */
     private static final int SCAN_INTERVAL = 10;
+    /**
+     * Offsets looked at per tick.
+     *
+     * The search volume is a third of a million blocks. Doing it in one go is a
+     * visible hitch every half second even once each block is cheap, and a
+     * hitch every half second is what "the UI lags" means. So it is resumable:
+     * a slice per tick, nearest first, which in practice finds something in the
+     * first few hundred anyway.
+     */
+    private static final int SCAN_BUDGET = 12_000;
     /** How far each leg of a strip mine goes. Half the scan radius, so no gaps. */
     private static final int STRIDE = 24;
     /** Legs before admitting this stretch of world does not have any. */
@@ -67,6 +79,10 @@ public final class GatherTask {
     private Runnable onDone;
     private int legs;
     private int heading;
+    private int scanCursor;
+    private BlockPos scanBuried;
+    private List<Block> wantedBlocks = List.of();
+    private String wantedFor;
     private final Set<String> fetched = new HashSet<>();
 
     public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
@@ -284,19 +300,61 @@ public final class GatherTask {
      * somebody had already dug a cave to.
      */
     private BlockPos findNearest(LocalPlayer player, Planner.Collect wanted) {
-        BlockPos exposed = scan(player, wanted, true);
-        return exposed != null ? exposed : scan(player, wanted, false);
+        resolveWanted(wanted);
+        BlockPos from = player.blockPosition();
+        List<int[]> offsets = Spiral.offsets();
+
+        int looked = 0;
+        while (scanCursor < offsets.size() && looked++ < SCAN_BUDGET) {
+            int[] offset = offsets.get(scanCursor++);
+            BlockPos at = from.offset(offset[0], offset[1], offset[2]);
+            if (!isWanted(at)) continue;
+            // Exposed wins outright — it is reachable by walking. A buried one
+            // is worth a tunnel, but only once nothing better turns up, so it
+            // is remembered rather than returned.
+            if (!buried(at)) {
+                restartScan();
+                return at;
+            }
+            if (scanBuried == null) scanBuried = at;
+        }
+
+        if (scanCursor < offsets.size()) return null; // more to look at next tick
+        BlockPos buriedOne = scanBuried;
+        restartScan();
+        return buriedOne;
     }
 
-    private BlockPos scan(LocalPlayer player, Planner.Collect wanted, boolean mustBeExposed) {
-        BlockPos from = player.blockPosition();
-        for (int[] offset : Spiral.offsets()) {
-            BlockPos at = from.offset(offset[0], offset[1], offset[2]);
-            if (!matches(at, wanted)) continue;
-            if (mustBeExposed && buried(at)) continue;
-            return at;
+    private void restartScan() {
+        scanCursor = 0;
+        scanBuried = null;
+    }
+
+    /**
+     * Turn the step's item into the blocks that drop it, once.
+     *
+     * This used to happen per candidate block, and behind it was a list the
+     * catalogue rebuilt from scratch on every call. Two lookups that each look
+     * free, inside a loop that runs a third of a million times.
+     */
+    private void resolveWanted(Planner.Collect wanted) {
+        if (wanted.item().equals(wantedFor)) return;
+        wantedFor = wanted.item();
+        restartScan();
+        List<Block> blocks = new ArrayList<>();
+        for (String name : Planner.sourcesOf(wanted.item())) {
+            Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.withDefaultNamespace(name));
+            if (block != null) blocks.add(block);
         }
-        return null;
+        wantedBlocks = List.copyOf(blocks);
+    }
+
+    /** Identity against a resolved block, so no string is built per candidate. */
+    private boolean isWanted(BlockPos at) {
+        if (client.level == null) return false;
+        BlockState state = client.level.getBlockState(at);
+        if (state.isAir()) return false;
+        return wantedBlocks.contains(state.getBlock());
     }
 
     /**
@@ -373,13 +431,8 @@ public final class GatherTask {
     }
 
     private boolean matches(BlockPos at, Planner.Collect wanted) {
-        if (client.level == null || !client.level.hasChunk(at.getX() >> 4, at.getZ() >> 4)) {
-            return false;
-        }
-        BlockState state = client.level.getBlockState(at);
-        if (state.isAir()) return false;
-        String name = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
-        return Planner.sourcesOf(wanted.item()).contains(name);
+        resolveWanted(wanted);
+        return isWanted(at);
     }
 
     private boolean buried(BlockPos at) {

@@ -32,8 +32,47 @@ public final class BuildTask {
 
     /** Maximum reach for placing; the game allows a little more. */
     private static final double REACH = 4.0;
-    /** Ticks between placements. Instant placement is both a tell and unstable. */
-    private static final int PLACE_INTERVAL = 4;
+
+    /**
+     * How hard to go at it.
+     *
+     * The old rate was one block every four ticks, which is five a second and
+     * about what a person does. That is the right default for a server, where
+     * anything faster is a thing a person cannot do and a thing a server can
+     * see. It is the wrong default for someone who wants their house now, so it
+     * is a choice rather than a constant, and the middle one — ten a second, a
+     * fast clicker — is where it starts.
+     */
+    public enum Speed {
+        STEADY("steady, like a person", 1, 4),
+        BRISK("brisk, like a fast one", 2, 2),
+        FLAT_OUT("flat out, like a mod", 8, 1);
+
+        public final String describe;
+        final int perTick;
+        final int cooldown;
+
+        Speed(String describe, int perTick, int cooldown) {
+            this.describe = describe;
+            this.perTick = perTick;
+            this.cooldown = cooldown;
+        }
+
+        public int blocksPerSecond() {
+            return perTick * 20 / cooldown;
+        }
+    }
+
+    private static Speed speed = Speed.BRISK;
+
+    public static Speed speed() {
+        return speed;
+    }
+
+    public static void speed(Speed chosen) {
+        speed = chosen;
+    }
+
     /** How many times a stubborn block is retried before being given up on. */
     private static final int MAX_ATTEMPTS = 3;
 
@@ -109,9 +148,20 @@ public final class BuildTask {
         if (travel != null && travel.running()) return; // walking to the site
         if (cooldown-- > 0) return;
 
+        // Everything within arm's reach goes down in one tick. Walking to the
+        // next spot is what a build actually spends its time on, so placing one
+        // block per visit and strolling off was most of the wait.
+        for (int done = 0; done < speed.perTick; done++) {
+            if (!one(player)) return;
+        }
+        cooldown = speed.cooldown;
+    }
+
+    /** One block. False when the tick is over, whatever the reason. */
+    private boolean one(LocalPlayer player) {
         if (index >= queue.size()) {
             finish();
-            return;
+            return false;
         }
 
         Blueprint.Placement next = queue.get(index);
@@ -120,36 +170,35 @@ public final class BuildTask {
         // Already correct — a resumed build skips everything it did last time.
         if (!client.level.getBlockState(target).isAir()) {
             index++;
-            return;
+            return true;
         }
 
         double distance = Math.sqrt(player.blockPosition().distSqr(target));
         if (distance > REACH) {
             // Stand next to it rather than trying to place from across the room.
             travel.start(standingSpotFor(target));
-            return;
+            return false;
         }
 
         if (!Hotbar.hold(client, next.block())) {
             missing.merge(next.block(), 1, Integer::sum);
             index++;
             skipped++;
-            return;
+            return true;
         }
 
         if (place(player, target, next.facing())) {
             placed++;
             index++;
-            cooldown = PLACE_INTERVAL;
-        } else {
-            String key = target.toShortString();
-            int tries = attempts.merge(key, 1, Integer::sum);
-            if (tries >= MAX_ATTEMPTS) {
-                index++;
-                skipped++;
-            }
-            cooldown = PLACE_INTERVAL;
+            return true;
         }
+        String key = target.toShortString();
+        if (attempts.merge(key, 1, Integer::sum) >= MAX_ATTEMPTS) {
+            index++;
+            skipped++;
+            return true;
+        }
+        return false; // let the world catch up before trying that one again
     }
 
     private void finish() {
