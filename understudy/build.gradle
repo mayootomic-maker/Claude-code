@@ -41,14 +41,18 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    // Minecraft 26.2 runs on Java 25 and loom refuses to set up the game with
+    // anything older, so the mod is compiled to match rather than to the 21
+    // this was originally written against.
+    it.options.release = 25
     it.options.encoding = 'UTF-8'
 }
 
 java {
     withSourcesJar()
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }
 
 test {

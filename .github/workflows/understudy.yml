@@ -31,10 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Minecraft 26.2 requires Java 25; loom will not even set the game up on
+      # anything older. 21 is what this project started on and is now too old.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       # Loom fetches Minecraft, the mappings and fifty remapped mod jars on
       # every cold run, which is most of the wall clock. Caching them turns a
