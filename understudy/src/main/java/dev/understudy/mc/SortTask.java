@@ -88,7 +88,7 @@ public final class SortTask {
 
     public void tick() {
         LocalPlayer player = client.player;
-        if (player == null || client.world == null) {
+        if (player == null || client.level == null) {
             stop(null);
             return;
         }
@@ -108,7 +108,7 @@ public final class SortTask {
     private void survey(LocalPlayer player) {
         BlockPos here = player.getBlockPos();
         for (BlockPos pos : BlockPos.withinManhattan(here, SEARCH_RADIUS, SEARCH_RADIUS / 2, SEARCH_RADIUS)) {
-            BlockState state = client.world.getBlockState(pos);
+            BlockState state = client.level.getBlockState(pos);
             String name = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
             if (name.endsWith("chest") || name.endsWith("barrel")) {
                 chests.add(pos.toImmutable());
@@ -148,7 +148,7 @@ public final class SortTask {
      */
     private Map<String, Integer> peek(BlockPos pos) {
         Map<String, Integer> out = new LinkedHashMap<>();
-        BlockEntity entity = client.world.getBlockEntity(pos);
+        BlockEntity entity = client.level.getBlockEntity(pos);
         if (entity instanceof net.minecraft.world.Container inventory) {
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);

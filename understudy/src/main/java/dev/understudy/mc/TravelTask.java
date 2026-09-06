@@ -77,7 +77,7 @@ public final class TravelTask {
     public void tick() {
         if (!running) return;
         LocalPlayer player = client.player;
-        if (player == null || client.world == null) {
+        if (player == null || client.level == null) {
             stop("lost the world");
             return;
         }
@@ -105,13 +105,13 @@ public final class TravelTask {
 
     private void replan() {
         LocalPlayer player = client.player;
-        if (player == null || client.world == null) {
+        if (player == null || client.level == null) {
             stop("lost the world");
             return;
         }
 
         BlockPos from = player.getBlockPos();
-        ClientBlockView view = new ClientBlockView(client.world);
+        ClientBlockView view = new ClientBlockView(client.level);
 
         PathFinder.Options options = new PathFinder.Options();
         // Take the shortcuts you take. Someone who tunnels through hills gets a

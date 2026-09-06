@@ -25,15 +25,15 @@ public final class ClientBlockView implements BlockView {
             "powder_snow", "campfire", "soul_campfire", "wither_rose", "pointed_dripstone",
             "end_portal", "nether_portal");
 
-    private final ClientLevel world;
+    private final ClientLevel level;
     private final BlockPos.Mutable cursor = new BlockPos.Mutable();
 
-    public ClientBlockView(ClientLevel world) {
-        this.world = world;
+    public ClientBlockView(ClientLevel level) {
+        this.level = level;
     }
 
     private BlockState stateAt(int x, int y, int z) {
-        return world.getBlockState(cursor.set(x, y, z));
+        return level.getBlockState(cursor.set(x, y, z));
     }
 
     @Override
@@ -44,7 +44,7 @@ public final class ClientBlockView implements BlockView {
         // Collision shape rather than a block list: it is the same question the
         // game asks when it decides whether you walk into something, so tall
         // grass, torches, signs and open doors all come out right for free.
-        return state.getCollisionShape(world, cursor.set(x, y, z)).isEmpty();
+        return state.getCollisionShape(level, cursor.set(x, y, z)).isEmpty();
     }
 
     @Override
@@ -52,7 +52,7 @@ public final class ClientBlockView implements BlockView {
         BlockState state = stateAt(x, y, z);
         if (state.isAir()) return false;
         if (!state.getFluidState().isEmpty()) return false;
-        return !state.getCollisionShape(world, cursor.set(x, y, z)).isEmpty();
+        return !state.getCollisionShape(level, cursor.set(x, y, z)).isEmpty();
     }
 
     @Override
@@ -74,7 +74,7 @@ public final class ClientBlockView implements BlockView {
     public double breakSeconds(int x, int y, int z) {
         BlockState state = stateAt(x, y, z);
         if (state.isAir()) return -1;
-        float hardness = state.getDestroySpeed(world, cursor.set(x, y, z));
+        float hardness = state.getDestroySpeed(level, cursor.set(x, y, z));
         // Negative hardness is bedrock and friends: not breakable at any speed.
         if (hardness < 0) return -1;
         // A rough seconds-per-block. The exact figure depends on the held tool,
@@ -89,8 +89,8 @@ public final class ClientBlockView implements BlockView {
         // read as air and the route would walk confidently into a hillside.
         // getTopY() takes a heightmap and coordinates in this version; the
         // world's own vertical extent is the bottom plus its height.
-        return world.hasChunk(x >> 4, z >> 4)
-                && y >= world.getMinY()
-                && y < world.getMinY() + world.getHeight();
+        return level.hasChunk(x >> 4, z >> 4)
+                && y >= level.getMinY()
+                && y < level.getMinY() + level.getHeight();
     }
 }

@@ -41,8 +41,36 @@ public final class UnderstudyClient implements ClientModInitializer {
     public void onInitializeClient() {
         profile = new PlayerProfile();
 
+        // Commands are registered first, and every step is guarded separately.
+        // Initialisation used to be a single unguarded sequence, so anything
+        // that threw part-way through silently took out everything after it —
+        // and a mod that loads but registers no commands is indistinguishable,
+        // from inside the game, from a mod that is not installed. Whatever
+        // fails now, the rest still comes up, and the log names the piece.
+        setUp("commands", UnderstudyCommands::register);
+        setUp("overlay", Hud::register);
+        setUp("tick loop", UnderstudyClient::registerTick);
+
+        LOG.info("Understudy ready (Minecraft {})",
+                net.fabricmc.loader.api.FabricLoader.getInstance()
+                        .getModContainer("minecraft")
+                        .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                        .orElse("unknown"));
+    }
+
+    private static void setUp(String what, Runnable action) {
+        try {
+            action.run();
+            LOG.info("registered {}", what);
+        } catch (Throwable error) {
+            LOG.error("could not register {} — the rest of the mod still loads", what, error);
+        }
+    }
+
+    private static void registerTick() {
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) {
+            if (client.player == null || client.level == null) {
                 greeted = false;
                 return;
             }
@@ -67,9 +95,6 @@ public final class UnderstudyClient implements ClientModInitializer {
             }
         });
 
-        Hud.register();
-        UnderstudyCommands.register();
-        LOG.info("Understudy ready");
     }
 
     /**

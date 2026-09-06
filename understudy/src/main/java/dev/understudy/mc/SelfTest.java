@@ -26,14 +26,14 @@ public final class SelfTest {
         List<String> out = new ArrayList<>();
         LocalPlayer player = client.player;
 
-        if (player == null || client.world == null) {
+        if (player == null || client.level == null) {
             out.add("FAIL no world or player — join a world first");
             return out;
         }
         out.add("OK   in a world at " + player.getBlockPos().toShortString());
 
         // Can the pathfinder read the world at all?
-        ClientBlockView view = new ClientBlockView(client.world);
+        ClientBlockView view = new ClientBlockView(client.level);
         BlockPos feet = player.getBlockPos();
         boolean groundBelow = view.solid(feet.getX(), feet.getY() - 1, feet.getZ());
         boolean spaceAtFeet = view.passable(feet.getX(), feet.getY(), feet.getZ());

@@ -101,7 +101,7 @@ public final class BuildTask {
     public void tick() {
         if (!running) return;
         LocalPlayer player = client.player;
-        if (player == null || client.world == null) {
+        if (player == null || client.level == null) {
             stop("lost the world");
             return;
         }
@@ -117,7 +117,7 @@ public final class BuildTask {
         BlockPos target = origin.add(next.x(), next.y(), next.z());
 
         // Already correct — a resumed build skips everything it did last time.
-        if (!client.world.getBlockState(target).isAir()) {
+        if (!client.level.getBlockState(target).isAir()) {
             index++;
             return;
         }
@@ -168,11 +168,11 @@ public final class BuildTask {
      * the game lets anything be placed.
      */
     private boolean place(LocalPlayer player, BlockPos target) {
-        if (client.gameMode == null || client.world == null) return false;
+        if (client.gameMode == null || client.level == null) return false;
 
         for (Direction direction : Direction.values()) {
             BlockPos reference = target.offset(direction);
-            BlockState state = client.world.getBlockState(reference);
+            BlockState state = client.level.getBlockState(reference);
             if (state.isAir() || !state.getFluidState().isEmpty()) continue;
 
             Direction face = direction.getOpposite();
@@ -184,7 +184,7 @@ public final class BuildTask {
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, result);
             player.swing(InteractionHand.MAIN_HAND);
 
-            if (!client.world.getBlockState(target).isAir()) return true;
+            if (!client.level.getBlockState(target).isAir()) return true;
         }
         return false;
     }
@@ -208,7 +208,7 @@ public final class BuildTask {
                 candidates.add(target.add(dx, 1, dz));
             }
         }
-        ClientBlockView view = new ClientBlockView(client.world);
+        ClientBlockView view = new ClientBlockView(client.level);
         for (BlockPos candidate : candidates) {
             if (view.passable(candidate.getX(), candidate.getY(), candidate.getZ())
                     && view.passable(candidate.getX(), candidate.getY() + 1, candidate.getZ())
