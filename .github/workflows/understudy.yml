@@ -73,9 +73,17 @@ jobs:
       - name: Build and test
         run: ./gradlew --no-daemon build
 
+      # Only the remapped jar. build/libs also holds a sources jar, and an
+      # artifact containing two jars is an invitation to install the wrong one
+      # — which is indistinguishable, in game, from the mod being broken.
+      - name: Show what was built
+        run: ls -la build/libs/
+
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: understudy-mod
-          path: understudy/build/libs/*.jar
+          path: |
+            understudy/build/libs/*.jar
+            !understudy/build/libs/*-sources.jar
           if-no-files-found: error
