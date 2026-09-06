@@ -1,11 +1,14 @@
 package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.core.survive.Guardian;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;
+import dev.understudy.mc.Safety;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
+import dev.understudy.human.Rng;
 
 import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
@@ -34,6 +37,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
+    private static Safety safety;
     private static boolean greeted;
     private static boolean reportedFailure;
 
@@ -83,10 +87,26 @@ public final class UnderstudyClient implements ClientModInitializer {
                 Hud.tick();
                 profile.tick();
                 if (travel == null) {
-                    travel = new TravelTask(client, profile, UnderstudyClient::tell);
+                    Rng rng = new Rng(client.getGameProfile().getName());
+                    safety = new Safety(UnderstudyClient::warn);
+                    travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                 }
+
+                // Safety runs before the tasks and can take the tick. Checking
+                // after them would mean acting on a health reading from before
+                // this tick's walking, which is the tick that matters when
+                // something is doing four hearts a second.
+                Guardian.Verdict verdict = safety.check(client);
+                if (safety.act(client, verdict)) {
+                    if (verdict.action() == Guardian.Action.ABORT
+                            || verdict.action() == Guardian.Action.FLEE) {
+                        stopEverything();
+                    }
+                    return;
+                }
+
                 travel.tick();
                 build.tick();
                 sort.tick();
@@ -105,6 +125,16 @@ public final class UnderstudyClient implements ClientModInitializer {
      * indistinguishable from a bug — you get "unknown command" for something
      * the source clearly registers.
      */
+    /**
+     * Everything down tools. Used when safety takes over, so no task is left
+     * quietly holding a movement key while the player is trying to escape.
+     */
+    private static void stopEverything() {
+        if (travel != null) travel.stop("safety");
+        if (build != null) build.stop();
+        if (sort != null) sort.stop();
+    }
+
     private static void greet() {
         if (greeted) return;
         greeted = true;

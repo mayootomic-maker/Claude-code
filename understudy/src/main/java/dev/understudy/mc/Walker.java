@@ -1,9 +1,13 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.path.BlockView;
+import dev.understudy.core.path.Pursuit;
+import dev.understudy.core.path.Smoother;
 import dev.understudy.core.path.Step;
+import dev.understudy.human.Look;
+import dev.understudy.human.Rng;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.util.Mth;
 
 import java.util.List;
 
@@ -15,29 +19,50 @@ import java.util.List;
  * movement all behave exactly as they do when a person plays: there is no
  * separate code path for "the mod is moving you". It also means the walk can be
  * interrupted at any tick simply by letting go.
+ *
+ * The first version of this walked straight at the next block's centre and
+ * turned at a fixed number of degrees per tick, and it looked exactly as bad as
+ * that description sounds. Three things fix it, and none of them are here:
+ * Smoother takes the staircase out of the path, Pursuit aims at a point further
+ * along it rather than at the next block, and Look turns the view like a mass on
+ * a spring instead of a stepper motor. What is left in this file is deciding
+ * which keys that implies.
  */
 public final class Walker {
 
-    /** Close enough to a step's centre to move on to the next one. */
-    private static final double ARRIVED = 0.6;
-    /** Turn no faster than this per tick, so the view does not snap. */
-    private static final float MAX_TURN_DEGREES = 22f;
+    /** Turn this far off course and it is worth slowing down for. */
+    private static final double EASE_FROM_DEGREES = 35;
+    /** Past this, stop walking and turn first, the way you would at a wall. */
+    private static final double STOP_AND_TURN_DEGREES = 100;
+    private static final double SPRINT_MIN_REMAINING = 6;
 
     private final Minecraft client;
+    private final Look look;
     private List<Step> path = List.of();
     private int index;
     private int stuckTicks;
     private double lastProgress = Double.MAX_VALUE;
 
-    public Walker(Minecraft client) {
+    public Walker(Minecraft client, Rng rng) {
         this.client = client;
+        LocalPlayer player = client.player;
+        this.look = new Look(rng,
+                player == null ? 0 : player.getYRot(),
+                player == null ? 0 : player.getXRot());
     }
 
-    public void follow(List<Step> steps) {
-        this.path = steps;
+    /**
+     * Take a path, with the world it was found in so the corners can be pulled
+     * out of it. Smoothing needs to see the blocks, and this is the only place
+     * that has both.
+     */
+    public void follow(List<Step> steps, BlockView world) {
+        this.path = Smoother.smooth(steps, world);
         this.index = 0;
         this.stuckTicks = 0;
         this.lastProgress = Double.MAX_VALUE;
+        LocalPlayer player = client.player;
+        if (player != null) look.reset(player.getYRot(), player.getXRot());
     }
 
     public boolean done() {
@@ -50,6 +75,10 @@ public final class Walker {
 
     public Step current() {
         return done() ? null : path.get(index);
+    }
+
+    public int waypoints() {
+        return path.size();
     }
 
     /** Let go of everything. Always safe to call. */
@@ -76,57 +105,54 @@ public final class Walker {
             return false;
         }
 
+        Pursuit.Aim aim = Pursuit.aim(path, index, player.getX(), player.getZ());
+        index = aim.index();
+        if (done()) {
+            release();
+            return false;
+        }
+
         Step step = path.get(index);
-        double targetX = step.x() + 0.5;
-        double targetZ = step.z() + 0.5;
-        double dx = targetX - player.getX();
-        double dz = targetZ - player.getZ();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
         double dy = step.y() - player.getY();
 
-        if (horizontal < ARRIVED && Math.abs(dy) < 1.2) {
-            index++;
-            stuckTicks = 0;
-            lastProgress = Double.MAX_VALUE;
-            if (done()) {
-                release();
-                return false;
-            }
-            return true;
+        if (aim.remaining() < Pursuit.REACHED && Math.abs(dy) < 1.2) {
+            index = path.size();
+            release();
+            return false;
         }
 
         // Not getting closer for three seconds means something is in the way
         // that the path did not know about.
-        if (horizontal >= lastProgress - 0.01) stuckTicks++;
+        if (aim.remaining() >= lastProgress - 0.01) stuckTicks++;
         else stuckTicks = 0;
-        lastProgress = horizontal;
+        lastProgress = aim.remaining();
 
-        face(player, dx, dz);
+        double wantedYaw = Math.toDegrees(Math.atan2(aim.z() - player.getZ(),
+                aim.x() - player.getX())) - 90.0;
+        // Look a little down the way you do when watching your footing, and
+        // further down when there is a step to take.
+        double wantedPitch = dy < -0.5 ? 22 : 8;
 
-        client.options.keyUp.setDown(true);
-        client.options.keySprint.setDown(allowSprint && horizontal > 2 && player.getFoodData().getFoodLevel() > 6);
-        // Jump for a step up, to get out of water, or when the walk has snagged
-        // on something a block high that the path did not model.
+        look.tick(wantedYaw, wantedPitch);
+        player.setYRot((float) look.yaw());
+        player.setXRot((float) look.pitch());
+
+        double offCourse = Math.abs(Look.wrap(wantedYaw - look.yaw()));
+        // Walking forward while facing the wrong way is how you scrape along
+        // walls and end up in the corner of a room. Turn first.
+        boolean forward = offCourse < STOP_AND_TURN_DEGREES;
+        client.options.keyUp.setDown(forward);
+
+        boolean straightAhead = offCourse < EASE_FROM_DEGREES && aim.bend() < 0.6;
+        client.options.keySprint.setDown(allowSprint
+                && straightAhead
+                && aim.remaining() > SPRINT_MIN_REMAINING
+                && player.getFoodData().getFoodLevel() > 6);
+
         boolean needsJump = step.kind() == Step.Kind.JUMP
                 || (player.isInWater() && dy > -0.2)
                 || stuckTicks > 12;
         client.options.keyJump.setDown(needsJump);
         return true;
-    }
-
-    /**
-     * Turn toward the target, but only so far per tick.
-     *
-     * A path change would otherwise snap the view instantly, which is both
-     * unpleasant to watch from inside the game and nothing like how a person
-     * turns a corner.
-     */
-    private void face(LocalPlayer player, double dx, double dz) {
-        float wanted = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
-        float delta = Mth.wrapDegrees(wanted - player.getYRot());
-        float clamped = Mth.clamp(delta, -MAX_TURN_DEGREES, MAX_TURN_DEGREES);
-        player.setYRot(player.getYRot() + clamped);
-        // Look slightly down, the way you do when watching where you are going.
-        player.setXRot(Mth.clamp(player.getXRot() + (10f - player.getXRot()) * 0.1f, -90f, 90f));
     }
 }
