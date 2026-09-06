@@ -106,12 +106,12 @@ public final class SortTask {
 
     /** Find the chests, read them, and decide what belongs where. */
     private void survey(LocalPlayer player) {
-        BlockPos here = player.getBlockPos();
+        BlockPos here = player.blockPosition();
         for (BlockPos pos : BlockPos.withinManhattan(here, SEARCH_RADIUS, SEARCH_RADIUS / 2, SEARCH_RADIUS)) {
             BlockState state = client.level.getBlockState(pos);
             String name = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
             if (name.endsWith("chest") || name.endsWith("barrel")) {
-                chests.add(pos.toImmutable());
+                chests.add(pos.immutable());
             }
         }
         if (chests.isEmpty()) {
@@ -179,8 +179,8 @@ public final class SortTask {
             return;
         }
         BlockPos chest = chests.get(chestIndex);
-        if (Math.sqrt(player.getBlockPos().distSqr(chest)) > REACH) {
-            if (!travel.running()) travel.start(chest.up());
+        if (Math.sqrt(player.blockPosition().distSqr(chest)) > REACH) {
+            if (!travel.running()) travel.start(chest.above());
             return;
         }
         waited = 0;

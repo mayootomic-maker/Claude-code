@@ -14,11 +14,6 @@ on:
   pull_request:
     paths: ['understudy/**', '.github/workflows/understudy.yml']
   workflow_dispatch:
-    inputs:
-      class_query:
-        description: 'Class name to locate in the remapped Minecraft jar'
-        required: false
-        default: ''
 
 jobs:
   build:
@@ -131,19 +126,55 @@ jobs:
 
       - run: chmod +x gradlew
 
-      # Ask the game where a class actually lives, instead of guessing and
-      # spending a build to find out. Set CLASS_QUERY on a manual run to look
-      # something up; it never fails the build.
-      - name: Where does a class live
-        if: ${{ github.event.inputs.class_query != '' }}
+      # When the compile fails, print the API the game and Fabric actually
+      # publish for the classes this mod touches. 26.x ships unobfuscated, so the
+      # real names are in the jar and there is no reason to guess them one CI
+      # round trip at a time — which is exactly what the mapping-era workflow
+      # forced. Runs only on failure, so a green build pays nothing for it.
+      - name: What the API actually looks like
+        if: failure()
         continue-on-error: true
         run: |
-          ./gradlew --no-daemon :dependencies > /dev/null 2>&1 || true
-          QUERY='${{ github.event.inputs.class_query }}'
-          echo "searching the remapped Minecraft jar for: $QUERY"
-          for jar in $(find ~/.gradle/caches/fabric-loom -name '*.jar' 2>/dev/null | head -40); do
-            unzip -l "$jar" 2>/dev/null | grep -i "$QUERY" | head -5 && echo "  ^ in $(basename "$jar")"
+          mcjar=$(find ~/.gradle/caches ~/.gradle/loom-cache .gradle -name '*.jar' 2>/dev/null \
+                  | xargs -I{} sh -c 'unzip -l "{}" 2>/dev/null | grep -q "net/minecraft/core/BlockPos.class" && echo "{}"' \
+                  | head -1)
+          echo "minecraft jar: ${mcjar:-NOT FOUND}"
+          [ -z "$mcjar" ] && exit 0
+
+          echo
+          echo "===== where these classes live ====="
+          for name in BlockPos LocalPlayer Options OptionInstance ClickType GuiGraphics \
+                      ChatVisiblity ItemStack Slot AbstractContainerMenu ChestMenu \
+                      BlockState BlockEntity Direction Component Mth InteractionHand \
+                      BlockHitResult Vec3 ClientLevel Minecraft BuiltInRegistries; do
+            hits=$(unzip -l "$mcjar" | grep -oE "net/minecraft/[a-z0-9/]*/${name}\.class" | sed 's|/|.|g; s|\.class||' | tr '\n' ' ')
+            printf '  %-24s %s\n' "$name" "${hits:-MISSING}"
           done
+
+          # Full signatures for the small classes whose members are in question.
+          for cls in net.minecraft.core.BlockPos net.minecraft.client.OptionInstance; do
+            echo
+            echo "===== $cls (declared members) ====="
+            javap -p -cp "$mcjar" "$cls" 2>&1 | head -80
+          done
+
+          # Method names only for the large ones: enough to spot a rename, and a
+          # full signature dump of Entity alone would bury everything else.
+          for cls in net.minecraft.client.player.LocalPlayer net.minecraft.world.entity.player.Player \
+                     net.minecraft.world.entity.Entity net.minecraft.client.Options; do
+            echo
+            echo "===== $cls (method names) ====="
+            javap -p -cp "$mcjar" "$cls" 2>&1 | grep -oE '\b[a-zA-Z_][a-zA-Z0-9_]*\(' | tr -d '(' | sort -u | tr '\n' ' '
+            echo
+          done
+
+          echo
+          echo "===== fabric api: client command and rendering packages ====="
+          for jar in $(find ~/.gradle/caches -name 'fabric-api-*.jar' -o -name 'fabric-*command*.jar' -o -name 'fabric-*rendering*.jar' 2>/dev/null | head -40); do
+            unzip -l "$jar" 2>/dev/null \
+              | grep -oE 'net/fabricmc/fabric/api/client/(command|rendering)/[a-zA-Z0-9/]*\.class' \
+              | grep -v '\$' | sed 's|/|.|g; s|\.class||' | sed 's/^/  /'
+          done | sort -u
 
       - name: Build and test
         run: ./gradlew --no-daemon build

@@ -26,7 +26,7 @@ public final class ClientBlockView implements BlockView {
             "end_portal", "nether_portal");
 
     private final ClientLevel level;
-    private final BlockPos.Mutable cursor = new BlockPos.Mutable();
+    private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
     public ClientBlockView(ClientLevel level) {
         this.level = level;

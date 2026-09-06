@@ -30,11 +30,11 @@ public final class SelfTest {
             out.add("FAIL no world or player — join a world first");
             return out;
         }
-        out.add("OK   in a world at " + player.getBlockPos().toShortString());
+        out.add("OK   in a world at " + player.blockPosition().toShortString());
 
         // Can the pathfinder read the world at all?
         ClientBlockView view = new ClientBlockView(client.level);
-        BlockPos feet = player.getBlockPos();
+        BlockPos feet = player.blockPosition();
         boolean groundBelow = view.solid(feet.getX(), feet.getY() - 1, feet.getZ());
         boolean spaceAtFeet = view.passable(feet.getX(), feet.getY(), feet.getZ());
         boolean chunkKnown = view.known(feet.getX(), feet.getY(), feet.getZ());
@@ -47,7 +47,7 @@ public final class SelfTest {
         options.allowDig = false;
         options.allowBridge = false;
         options.budget = 4_000;
-        BlockPos near = feet.add(8, 0, 8);
+        BlockPos near = feet.offset(8, 0, 8);
         PathFinder.Result result = new PathFinder(view, options)
                 .find(feet.getX(), feet.getY(), feet.getZ(), near.getX(), near.getY(), near.getZ());
         out.add((result.empty() ? "FAIL" : "OK  ") + " pathfinder: " + result.steps().size()

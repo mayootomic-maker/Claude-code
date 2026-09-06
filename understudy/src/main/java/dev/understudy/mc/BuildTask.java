@@ -114,7 +114,7 @@ public final class BuildTask {
         }
 
         Blueprint.Placement next = queue.get(index);
-        BlockPos target = origin.add(next.x(), next.y(), next.z());
+        BlockPos target = origin.offset(next.x(), next.y(), next.z());
 
         // Already correct — a resumed build skips everything it did last time.
         if (!client.level.getBlockState(target).isAir()) {
@@ -122,7 +122,7 @@ public final class BuildTask {
             return;
         }
 
-        double distance = Math.sqrt(player.getBlockPos().distSqr(target));
+        double distance = Math.sqrt(player.blockPosition().distSqr(target));
         if (distance > REACH) {
             // Stand next to it rather than trying to place from across the room.
             travel.start(standingSpotFor(target));
@@ -204,8 +204,8 @@ public final class BuildTask {
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 if (dx == 0 && dz == 0) continue;
-                candidates.add(target.add(dx, 0, dz));
-                candidates.add(target.add(dx, 1, dz));
+                candidates.add(target.offset(dx, 0, dz));
+                candidates.add(target.offset(dx, 1, dz));
             }
         }
         ClientBlockView view = new ClientBlockView(client.level);
@@ -216,7 +216,7 @@ public final class BuildTask {
                 return candidate;
             }
         }
-        return target.add(1, 0, 0);
+        return target.offset(1, 0, 0);
     }
 
     public String status() {

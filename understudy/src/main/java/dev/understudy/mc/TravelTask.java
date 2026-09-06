@@ -62,7 +62,7 @@ public final class TravelTask {
         this.failures = 0;
         this.ticks = 0;
         LocalPlayer player = client.player;
-        this.startedDistance = player == null ? 0 : Math.sqrt(player.getBlockPos().distSqr(target));
+        this.startedDistance = player == null ? 0 : Math.sqrt(player.blockPosition().distSqr(target));
         replan();
     }
 
@@ -83,7 +83,7 @@ public final class TravelTask {
         }
 
         ticks++;
-        BlockPos here = player.getBlockPos();
+        BlockPos here = player.blockPosition();
 
         if (here.closerThan(goal, 1.8)) {
             running = false;
@@ -110,7 +110,7 @@ public final class TravelTask {
             return;
         }
 
-        BlockPos from = player.getBlockPos();
+        BlockPos from = player.blockPosition();
         ClientBlockView view = new ClientBlockView(client.level);
 
         PathFinder.Options options = new PathFinder.Options();
@@ -159,7 +159,7 @@ public final class TravelTask {
         if (!running) return "idle";
         LocalPlayer player = client.player;
         if (player == null) return "no player";
-        double left = Math.sqrt(player.getBlockPos().distSqr(goal));
+        double left = Math.sqrt(player.blockPosition().distSqr(goal));
         return String.format("travelling: %.0f blocks to go of %.0f", left, startedDistance);
     }
 }

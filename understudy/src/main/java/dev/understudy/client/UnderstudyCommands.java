@@ -151,7 +151,7 @@ public final class UnderstudyCommands {
             return 0;
         }
         // Build in front of where you are standing, not on top of you.
-        task.start(blueprint, source.getPlayer().getBlockPos().add(2, 0, 2));
+        task.start(blueprint, source.getPlayer().blockPosition().offset(2, 0, 2));
         return 1;
     }
 
