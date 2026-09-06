@@ -133,47 +133,40 @@ jobs:
           set -o pipefail
           ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
 
-      # When the compile fails, print the API the game and Fabric actually
-      # publish for whatever the compiler could not find. 26.x ships
-      # unobfuscated, so the real names are in the jars and there is no reason to
-      # guess them one CI round trip at a time.
+      # Minecraft 26 ships unobfuscated but undocumented, so the real names are
+      # in the jar and the only cost of reading them is asking. api-questions.txt
+      # holds whatever the code does not yet know; this answers all of it on
+      # every run, so a question never costs a round trip of its own.
       #
-      # Every lookup is capped. An uncapped javap of Options ran to ninety lines
-      # of private fields and pushed the answers being looked for out of the log.
-      - name: What the API actually looks like
+      # It runs even on a green build. Making it conditional on failure meant
+      # the only way to ask a question was to break the build first.
+      - name: Answer the open API questions
+        if: always()
+        continue-on-error: true
+        run: |
+          [ -s api-questions.txt ] || exit 0
+          cp=$(./gradlew --no-daemon -q printCompileClasspath 2>/dev/null | tail -1)
+          [ -n "$cp" ] || { echo "no classpath; the build failed before configuring"; exit 0; }
+
+          grep -vE '^\s*(#|$)' api-questions.txt | while read -r cls limit; do
+            echo; echo "===== $cls ====="
+            case "$limit" in
+              ''|*[!0-9]*)
+                # A word rather than a number means grep for that member.
+                javap -p -cp "$cp" "$cls" 2>&1 | grep -i "${limit:-.}" | head -12 | sed 's/^/  /'
+                ;;
+              *)
+                javap -cp "$cp" "$cls" 2>&1 | head -"$limit" | sed 's/^/  /'
+                ;;
+            esac
+          done
+
+      # Compiler errors go last, after every diagnostic, so that whatever else
+      # gets cut from a long log, the errors do not.
+      - name: The errors, again, at the end
         if: failure()
         continue-on-error: true
         run: |
-          cp=$(./gradlew --no-daemon -q printCompileClasspath 2>/dev/null | tail -1)
-          echo "classpath entries: $(echo "$cp" | tr ':' '\n' | wc -l)"
-
-          # Public members only, capped: enough to see the shape, never enough to
-          # bury the next answer.
-          show() {
-            echo; echo "===== $1 ====="
-            javap -cp "$cp" "$1" 2>&1 | head -"${2:-22}" | sed 's/^/  /'
-          }
-          show net.minecraft.world.inventory.ContainerInput 30
-          show net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement
-          show net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
-          show net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements 14
-          show net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
-          show net.fabricmc.fabric.api.client.command.v2.ClientCommands
-          show net.minecraft.client.gui.Hud 30
-
-          # The exact signatures this mod calls, rather than whole classes.
-          # Grepping one method out of a class is the cheapest possible answer
-          # and leaves room in the log for the next question.
-          sig() {
-            echo "-- $1 :: $2"
-            javap -p -cp "$cp" "$1" 2>/dev/null | grep -E "$2" | sed 's/^/    /' \
-              || echo "    (no member matching $2)"
-          }
-          echo; echo "===== signatures this mod depends on ====="
-          sig net.minecraft.client.player.LocalPlayer 'sendOverlayMessage|sendSystemMessage'
-          show net.minecraft.client.multiplayer.MultiPlayerGameMode 45
-
-          echo; echo "===== the errors this was printed for ====="
           grep -E '^\s*(/home.*error:|[0-9]+ errors?|error:)' /tmp/build.log \
             | sed 's|.*/understudy/src/|src/|' | tail -40
 

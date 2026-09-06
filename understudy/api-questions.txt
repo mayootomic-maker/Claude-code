@@ -1,0 +1,23 @@
+# Classes whose shape this mod needs to know, one per line, with an optional
+# line cap after a space. CI prints their public members on every run and the
+# answers get folded into the code, at which point the line is deleted.
+#
+# This file exists because Minecraft 26 ships unobfuscated but undocumented:
+# the names are all there in the jar, and guessing at them one CI round trip at
+# a time is what made the first port take a day. Asking the jar directly costs
+# one step of a build that was running anyway.
+
+# For the /build picker: a screen, and whatever it draws onto now that
+# GuiGraphics is gone.
+net.minecraft.client.gui.screens.Screen 45
+net.minecraft.client.gui.GuiGraphicsExtractor 45
+net.minecraft.client.gui.components.Button 25
+
+# For marking out an area in the world, and for drawing the box while marking.
+net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents 20
+net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext 25
+
+# For seeing mobs before they reach you, which is the half of the survival
+# guard that is still missing.
+net.minecraft.client.multiplayer.ClientLevel 30
+net.minecraft.world.entity.Entity fallDistance

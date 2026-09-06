@@ -87,7 +87,10 @@ public final class UnderstudyClient implements ClientModInitializer {
                 Hud.tick();
                 profile.tick();
                 if (travel == null) {
-                    Rng rng = new Rng(client.getGameProfile().getName());
+                    // Seeded from the account, so the character walks the same way every
+                    // session. getStringUUID is on Entity and is stable; the game
+                    // profile's accessors are not — GameProfile became a record.
+                    Rng rng = new Rng(client.player.getStringUUID());
                     safety = new Safety(UnderstudyClient::warn);
                     travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
@@ -131,8 +134,8 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     private static void stopEverything() {
         if (travel != null) travel.stop("safety");
-        if (build != null) build.stop();
-        if (sort != null) sort.stop();
+        if (build != null) build.stop("safety");
+        if (sort != null) sort.stop("safety");
     }
 
     private static void greet() {
