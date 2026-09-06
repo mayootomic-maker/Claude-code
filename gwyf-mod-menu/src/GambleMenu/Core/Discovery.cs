@@ -46,15 +46,15 @@ namespace GambleMenu.Core
         public static string LastError { get; private set; }
 
         /// <summary>
-        /// Assemblies that ship with Unity, BepInEx or .NET. Everything else is either the game
-        /// or a library it chose, and both are worth reading.
+        /// The game's own code, and only that.
+        ///
+        /// This used to be an exclusion list — everything that was not Unity, .NET or BepInEx —
+        /// which swept in every middleware the game ships with: voice chat, audio, Steam,
+        /// tweening, the debug console. Walking the members of all of it, in Awake, is what
+        /// took the game down. Assembly-CSharp is where the casino actually lives and the only
+        /// thing any binding here has ever needed; the rest are listed by name and left alone.
         /// </summary>
-        private static readonly string[] NotTheGame =
-        {
-            "UnityEngine", "Unity.", "UnityEditor", "System", "mscorlib", "netstandard",
-            "Mono.", "BepInEx", "0Harmony", "HarmonyX", "GambleMenu", "Microsoft.",
-            "Newtonsoft.Json", "ICSharpCode", "MonoMod", "Cpp2IL", "Iced",
-        };
+        private const string GameCode = "Assembly-CSharp";
 
         /// <summary>
         /// A marker type per networking library, because which one the game uses decides whether
@@ -168,12 +168,12 @@ namespace GambleMenu.Core
             catch (Exception ex) { sb.AppendLine($"  lookup threw: {ex.Message}"); }
             sb.AppendLine();
 
-            sb.AppendLine("assemblies that are not Unity, .NET or BepInEx");
-            foreach (var asm in GameAssemblies())
+            sb.AppendLine("loaded assemblies (only Assembly-CSharp is walked in full)");
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
-                int types = 0;
-                try { types = asm.GetTypes().Length; } catch { }
-                sb.AppendLine($"  {Short(asm),-44} {types,5} type(s)");
+                string name = Short(asm);
+                bool walked = name.StartsWith(GameCode, StringComparison.Ordinal);
+                sb.AppendLine($"  {(walked ? "*" : " ")} {name}");
             }
             sb.AppendLine();
 
@@ -467,10 +467,7 @@ namespace GambleMenu.Core
             {
                 string name;
                 try { name = asm.GetName().Name; } catch { continue; }
-                bool engine = false;
-                foreach (var prefix in NotTheGame)
-                    if (name.StartsWith(prefix, StringComparison.Ordinal)) { engine = true; break; }
-                if (!engine) yield return asm;
+                if (name.StartsWith(GameCode, StringComparison.Ordinal)) yield return asm;
             }
         }
 

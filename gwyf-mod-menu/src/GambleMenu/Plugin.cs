@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using BepInEx;
 using GambleMenu.Core;
 using GambleMenu.Mods;
@@ -23,7 +22,6 @@ namespace GambleMenu
         public const string Version = "1.2.0";
 
         private GameObject _host;
-        private bool _sceneDiscoveryDone;
 
         private void Awake()
         {
@@ -60,9 +58,11 @@ namespace GambleMenu
                 // identical from outside the game, and this is the one file that separates them.
                 Diagnostics.WriteStartupReport(Version);
 
-                // The startup report says which of this plugin's guesses failed. This says what
-                // the right answers were, which is the only way the guessing ends.
-                Discovery.WriteAll(Version);
+                // Discovery is deliberately NOT run here. It walks every type in every game
+                // assembly and every component in the scene, and running that unasked during
+                // Awake crashed the game on the first machine it ever reached. A diagnostic is
+                // not worth the thing it is diagnosing: it is a button on the Compatibility
+                // page now, pressed when someone wants it, with the game already up.
 
                 Log.Info($"ready — {ModRegistry.All.Count} mods registered, press {Settings.MenuKey.Value} to open");
             }
@@ -78,34 +78,6 @@ namespace GambleMenu
         {
             GameBridge.InvalidateInstances();
             if (Settings.VerboseLog.Value) Log.Info($"scene '{scene.name}' loaded — instance cache dropped");
-
-            // The dump written in Awake catches the type map but an empty scene: no floor, no
-            // machines, no interface to read colours off. The first scene the game loads has
-            // all three, so it is worth the one repeat — during a loading screen, once.
-            if (!_sceneDiscoveryDone)
-            {
-                _sceneDiscoveryDone = true;
-                Discovery.WriteAll(Version);
-                StartCoroutine(RewriteDiscoveryOncePopulated());
-            }
-        }
-
-        /// <summary>
-        /// Takes the dump a second time once the floor has filled in.
-        ///
-        /// A scene finishes loading before the things worth describing exist: machines and
-        /// players are spawned over the network a moment later, and the interface is built
-        /// after that. The dump written at sceneLoaded can therefore describe an empty room.
-        ///
-        /// The menu has a button for taking another, which is the answer when the menu opens.
-        /// It is no answer at all when it does not — which is the report this was written for —
-        /// so the second pass happens whether anyone asks for it or not.
-        /// </summary>
-        private IEnumerator RewriteDiscoveryOncePopulated()
-        {
-            // Unscaled: the game may well be paused behind a loading screen for some of this.
-            yield return new WaitForSecondsRealtime(25f);
-            Discovery.WriteAll(Version);
         }
 
         private void OnDestroy()
