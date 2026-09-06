@@ -74,3 +74,11 @@ test {
         showStandardStreams = true
     }
 }
+
+// The compile classpath is the thing that decides whether a Fabric API class
+// resolves, and a "cannot find symbol" says nothing about why it was absent.
+// The failure diagnostic in CI reads this.
+tasks.register('printCompileClasspath') {
+    def entries = configurations.compileClasspath.map { it.files.collect { f -> f.name }.sort() }
+    doLast { entries.get().each { println it } }
+}

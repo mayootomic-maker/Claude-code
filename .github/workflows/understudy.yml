@@ -138,46 +138,54 @@ jobs:
         if: failure()
         continue-on-error: true
         run: |
-          mcjar=$(find ~/.gradle/caches ~/.gradle/loom-cache .gradle -name '*.jar' 2>/dev/null \
-                  | xargs -I{} sh -c 'unzip -l "{}" 2>/dev/null | grep -q "net/minecraft/core/BlockPos.class" && echo "{}"' \
-                  | head -1)
-          echo "minecraft jar: ${mcjar:-NOT FOUND}"
-          [ -z "$mcjar" ] && exit 0
+          pick() {  # first jar containing the given class entry
+            find ~/.gradle/caches .gradle -name '*.jar' 2>/dev/null | while read -r j; do
+              if unzip -l "$j" 2>/dev/null | grep -q "$1"; then echo "$j"; return; fi
+            done | head -1
+          }
+          server=$(pick 'net/minecraft/core/BlockPos.class')
+          client=$(pick 'net/minecraft/client/Minecraft.class')
+          echo "server jar: ${server:-NOT FOUND}"
+          echo "client jar: ${client:-NOT FOUND}"
+          jars="$server $client"
 
           echo
           echo "===== where these classes live ====="
-          for name in BlockPos LocalPlayer Options OptionInstance ClickType GuiGraphics \
-                      ChatVisiblity ItemStack Slot AbstractContainerMenu ChestMenu \
-                      BlockState BlockEntity Direction Component Mth InteractionHand \
-                      BlockHitResult Vec3 ClientLevel Minecraft BuiltInRegistries; do
-            hits=$(unzip -l "$mcjar" | grep -oE "net/minecraft/[a-z0-9/]*/${name}\.class" | sed 's|/|.|g; s|\.class||' | tr '\n' ' ')
-            printf '  %-24s %s\n' "$name" "${hits:-MISSING}"
-          done
-
-          # Full signatures for the small classes whose members are in question.
-          for cls in net.minecraft.core.BlockPos net.minecraft.client.OptionInstance; do
-            echo
-            echo "===== $cls (declared members) ====="
-            javap -p -cp "$mcjar" "$cls" 2>&1 | head -80
-          done
-
-          # Method names only for the large ones: enough to spot a rename, and a
-          # full signature dump of Entity alone would bury everything else.
-          for cls in net.minecraft.client.player.LocalPlayer net.minecraft.world.entity.player.Player \
-                     net.minecraft.world.entity.Entity net.minecraft.client.Options; do
-            echo
-            echo "===== $cls (method names) ====="
-            javap -p -cp "$mcjar" "$cls" 2>&1 | grep -oE '\b[a-zA-Z_][a-zA-Z0-9_]*\(' | tr -d '(' | sort -u | tr '\n' ' '
-            echo
+          for name in LocalPlayer Options OptionInstance ClientLevel Minecraft \
+                      ClickType GuiGraphics ChatVisiblity; do
+            hits=$(for j in $jars; do [ -n "$j" ] && unzip -l "$j" 2>/dev/null; done \
+                   | grep -oE "net/minecraft/[a-z0-9/]*/${name}\.class" | sed 's|/|.|g; s|\.class||' | sort -u | tr '\n' ' ')
+            printf '  %-20s %s\n' "$name" "${hits:-MISSING}"
           done
 
           echo
-          echo "===== fabric api: client command and rendering packages ====="
-          for jar in $(find ~/.gradle/caches -name 'fabric-api-*.jar' -o -name 'fabric-*command*.jar' -o -name 'fabric-*rendering*.jar' 2>/dev/null | head -40); do
-            unzip -l "$jar" 2>/dev/null \
-              | grep -oE 'net/fabricmc/fabric/api/client/(command|rendering)/[a-zA-Z0-9/]*\.class' \
-              | grep -v '\$' | sed 's|/|.|g; s|\.class||' | sed 's/^/  /'
-          done | sort -u
+          echo "===== classes whose name contains Graphics or Click ====="
+          for j in $jars; do [ -n "$j" ] && unzip -l "$j" 2>/dev/null; done \
+            | grep -oE 'net/minecraft/[a-zA-Z0-9/$]*(Graphics|Click)[a-zA-Z0-9$]*\.class' \
+            | sed 's|/|.|g; s|\.class||' | sort -u | sed 's/^/  /'
+
+          cp="$(echo $jars | tr ' ' ':')"
+          for cls in net.minecraft.client.OptionInstance; do
+            echo; echo "===== $cls (declared members) ====="
+            javap -p -cp "$cp" "$cls" 2>&1 | head -40
+          done
+
+          for cls in net.minecraft.client.player.LocalPlayer net.minecraft.client.Options \
+                     net.minecraft.client.Minecraft net.minecraft.client.multiplayer.ClientLevel; do
+            echo; echo "===== $cls (method names) ====="
+            javap -p -cp "$cp" "$cls" 2>&1 | grep -oE '\b[a-zA-Z_][a-zA-Z0-9_]*\(' | tr -d '(' | sort -u | tr '\n' ' '
+            echo
+          done
+
+          # ClickType is gone; whatever replaced it is in this signature.
+          echo; echo "===== AbstractContainerMenu: click-shaped members ====="
+          javap -p -cp "$cp" net.minecraft.world.inventory.AbstractContainerMenu 2>&1 \
+            | grep -iE 'click|carried' | sed 's/^/  /'
+
+          # Fabric's classes exist in the cache but did not resolve at compile
+          # time, so the question is what is actually on the compile classpath.
+          echo; echo "===== compile classpath ====="
+          ./gradlew --no-daemon -q printCompileClasspath 2>&1 | tail -60
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one
