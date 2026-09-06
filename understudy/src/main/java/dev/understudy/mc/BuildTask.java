@@ -171,7 +171,7 @@ public final class BuildTask {
         if (client.gameMode == null || client.level == null) return false;
 
         for (Direction direction : Direction.values()) {
-            BlockPos reference = target.offset(direction);
+            BlockPos reference = target.relative(direction);
             BlockState state = client.level.getBlockState(reference);
             if (state.isAir() || !state.getFluidState().isEmpty()) continue;
 
