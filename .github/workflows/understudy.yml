@@ -126,6 +126,9 @@ jobs:
 
       - run: chmod +x gradlew
 
+      - name: Build and test
+        run: ./gradlew --no-daemon build
+
       # When the compile fails, print the API the game and Fabric actually
       # publish for the classes this mod touches. 26.x ships unobfuscated, so the
       # real names are in the jar and there is no reason to guess them one CI
@@ -175,9 +178,6 @@ jobs:
               | grep -oE 'net/fabricmc/fabric/api/client/(command|rendering)/[a-zA-Z0-9/]*\.class' \
               | grep -v '\$' | sed 's|/|.|g; s|\.class||' | sed 's/^/  /'
           done | sort -u
-
-      - name: Build and test
-        run: ./gradlew --no-daemon build
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one
