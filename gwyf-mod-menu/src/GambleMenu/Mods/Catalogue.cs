@@ -35,6 +35,7 @@ namespace GambleMenu.Mods
             ModRegistry.Add(new GameSpeed());
 
             // Progression — the tower.
+            ModRegistry.Add(new ChallengePack());
             ModRegistry.Add(new FloorAccess());
             ModRegistry.Add(new HoldFloor());
             ModRegistry.Add(new SurvivedDays());

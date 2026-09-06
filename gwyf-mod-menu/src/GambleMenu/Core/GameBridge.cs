@@ -218,10 +218,10 @@ namespace GambleMenu.Core
         public static readonly TypeBinding TDialog         = Add(new TypeBinding("ConfirmationDialogManager", "reuse the game's own dialog"));
 
         // --- the casino itself ------------------------------------------------------
-        // These names were not inferred. They were read out of the reference tables of
-        // five shipped mods for this game (AutoSlots, MachineControl, Crash100x, More Slots,
-        // MoreUpgrades), which were compiled against the real assembly — so every member
-        // below is one the game actually exposes rather than one that seemed plausible.
+        // Every name in this file has now been checked against the game's own
+        // Assembly-CSharp. They were guesses when they were written, and all but one of them
+        // happened to be right; the exception was GameSettings.GetQuota, which does not exist
+        // and has been replaced below by the two methods that do.
         public static readonly TypeBinding TGameBase        = Add(new TypeBinding("GameBase", "the base class every casino game derives from"));
         public static readonly TypeBinding TInteractable    = Add(new TypeBinding("InteractableBase", "anything the player can press"));
         public static readonly TypeBinding TPlayerInteract  = Add(new TypeBinding("PlayerInteract", "what the player is currently looking at"));
@@ -234,6 +234,26 @@ namespace GambleMenu.Core
         public static readonly TypeBinding TPayoutRecord    = Add(new TypeBinding("PayoutRecord", "one round: bet, payout, won or lost"));
         public static readonly TypeBinding TMinesweeperTile = Add(new TypeBinding("MinesweeperTile", "a tile on a grid game"));
 
+        // --- challenges -------------------------------------------------------------
+        // The game's objectives are ScriptableObjects listed on a ChallengeSettings asset that
+        // ChallengeManager loads from Resources and copies into its own list. That makes them
+        // the one content system here that new entries can simply be added to — the game's own
+        // UI, progress tracking and ticket rewards then treat them like any other challenge.
+        public static readonly TypeBinding TChallengeSettings = Add(new TypeBinding("ChallengeSettings", "the table of every objective in the game"));
+        public static readonly TypeBinding TChallenge         = Add(new TypeBinding("Challenge", "one objective: conditions, floor, reward"));
+        public static readonly TypeBinding TChallengeManager  = Add(new TypeBinding("ChallengeManager", "hands out objectives and tracks them"));
+
+        // The condition vocabulary an authored objective is built from. Each is a plain
+        // serialisable class, so instances can be made and filled in without the game's
+        // assembly being referenced at compile time.
+        public static readonly TypeBinding TCondWinCount   = Add(new TypeBinding("WinCountConditionData", "win N rounds, optionally consecutive"));
+        public static readonly TypeBinding TCondLossCount  = Add(new TypeBinding("LossCountConditionData", "lose N rounds, optionally consecutive"));
+        public static readonly TypeBinding TCondBetAmount  = Add(new TypeBinding("BetAmountConditionData", "stake a share of the quota"));
+        public static readonly TypeBinding TCondPayoutMult = Add(new TypeBinding("PayoutMultiplierConditionData", "hit a payout multiplier"));
+        public static readonly TypeBinding TCondGameType   = Add(new TypeBinding("GameTypeConditionData", "restrict an objective to one game"));
+        public static readonly TypeBinding TCondProfit     = Add(new TypeBinding("ProfitConditionData", "clear a share of the quota in profit"));
+        public static readonly TypeBinding TCondTime       = Add(new TypeBinding("TimeConditionData", "do it inside a time limit"));
+
         // --- Mirror ----------------------------------------------------------------
         public static readonly TypeBinding TNetworkServer  = Add(new TypeBinding("Mirror.NetworkServer", "am I the host?"));
         public static readonly TypeBinding TNetworkClient  = Add(new TypeBinding("Mirror.NetworkClient", "am I connected?"));
@@ -243,7 +263,19 @@ namespace GambleMenu.Core
         // --- members ---------------------------------------------------------------
         public static FieldBinding DayDuration;
         public static FieldBinding FloorData;
-        public static MethodBinding GetQuota;
+
+        /// <summary>
+        /// The per-day step in the quota curve, as a multiplier.
+        ///
+        /// This replaces a binding to <c>GetQuota</c>, which was written on the assumption that
+        /// the demand was one number the game asked for and returned. It is not, and no such
+        /// method exists: the quota is a BigNumber held as a SyncVar on GameManager, grown each
+        /// day by this multiplier off the starting figure below.
+        /// </summary>
+        public static MethodBinding GetQuotaMultiplier;
+        public static MethodBinding GetStartingQuota;
+
+        public static FieldBinding ChallengeList;
 
         public static FieldBinding SdMoney;
         public static FieldBinding SdCurrentQuota;
@@ -309,7 +341,10 @@ namespace GambleMenu.Core
 
             DayDuration = AddMember(new FieldBinding(TGameSettings, "dayDuration", typeof(float), "length of one casino day in seconds"));
             FloorData   = AddMember(new FieldBinding(TGameSettings, "floorData", typeof(IList), "the floor table; its Count is the top floor"));
-            GetQuota    = AddMember(new MethodBinding(TGameSettings, "GetQuota", null, "the loan shark's daily demand"));
+            GetQuotaMultiplier = AddMember(new MethodBinding(TGameSettings, "GetQuotaMultiplier", new[] { typeof(int) }, "how much the demand grows each day"));
+            GetStartingQuota   = AddMember(new MethodBinding(TGameSettings, "GetStartingQuota", null, "the demand on day one"));
+
+            ChallengeList = AddMember(new FieldBinding(TChallengeSettings, "challenges", typeof(IList), "every objective the game can hand out"));
 
             SdMoney                    = AddMember(new FieldBinding(TSaveData, "money", typeof(long), "the shared bank balance"));
             SdCurrentQuota             = AddMember(new FieldBinding(TSaveData, "currentQuota", typeof(long), "this day's quota"));

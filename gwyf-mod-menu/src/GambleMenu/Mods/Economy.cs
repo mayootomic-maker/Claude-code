@@ -214,20 +214,23 @@ namespace GambleMenu.Mods
         public override Category Cat => Category.Economy;
         public override Authority Auth => Authority.HostOnly;
         public override string[] Tags => new[] { "quota", "debt", "loan shark", "demand" };
-        public override Binding[] Requires => new Binding[] { GameBridge.GetQuota };
+        public override Binding[] Requires => new Binding[] { GameBridge.GetQuotaMultiplier };
 
         // Harmony patches are static, so the live value reaches the prefix through a static.
         // Only one instance of this mod is ever registered, so there is nothing to collide with.
-        private static long _frozenAt;
+        private static float _frozenAt;
         private static bool _active;
 
-        private LongOption _value;
+        private FloatOption _value;
 
         protected override void Build()
         {
-            _value = Opt(new LongOption("economy.quotafreeze.value", "Hold quota at", 1_000L, 0L, long.MaxValue / 4,
-                "Every day will ask for exactly this.")
-            { Presets = new[] { 0L, 1_000L, 100_000L } });
+            // A multiplier rather than an amount. The demand is not a number the game asks for
+            // and returns — it is a BigNumber grown off day one's figure by this step, so the
+            // honest way to stop the ramp is to hold the step, and 1 holds it exactly flat.
+            _value = Opt(new FloatOption("economy.quotafreeze.value", "Hold growth at", 1f, 0f, 4f,
+                "1 keeps every day asking for what day one asked for. Below 1 the demand shrinks.")
+            { Step = 0.05f, Format = "0.00", Unit = "×" });
             _value.Changed += () => _frozenAt = _value.Value;
         }
 
@@ -239,7 +242,7 @@ namespace GambleMenu.Mods
 
         protected override void OnDisable() => _active = false;
 
-        private static bool Prefix(ref long __result)
+        private static bool Prefix(ref float __result)
         {
             if (!_active) return true;   // fall through to the game's own calculation
             __result = _frozenAt;
@@ -248,7 +251,7 @@ namespace GambleMenu.Mods
 
         protected override IEnumerable<PatchSpec> Patches()
         {
-            yield return PatchSpec.Of(GameBridge.GetQuota,
+            yield return PatchSpec.Of(GameBridge.GetQuotaMultiplier,
                                       prefix: AccessTools.Method(typeof(QuotaFreeze), nameof(Prefix)));
         }
     }
