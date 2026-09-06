@@ -31,6 +31,20 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # Loom fetches Minecraft, the mappings and fifty remapped mod jars on
+      # every cold run, which is most of the wall clock. Caching them turns a
+      # five-minute round trip into a one-minute one, and the compile loop here
+      # is the only compiler this mod has.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            understudy/.gradle/loom-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('understudy/gradle.properties', 'understudy/build.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       # Ask Fabric what actually exists rather than trusting the pins in
       # gradle.properties. This runs before the build and never fails it, so a
       # stale pin shows up as a visible mismatch in the log instead of a
