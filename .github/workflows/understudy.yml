@@ -69,6 +69,14 @@ jobs:
           echo "target Minecraft: $MC"
 
           YARN=$(curl -sf "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | jq -r '.[0].version // empty')
+          if [ -z "$YARN" ]; then
+            # The per-version endpoint can come back empty even when builds
+            # exist, so fall back to matching against the full list before
+            # concluding there are none.
+            echo "  (no yarn at /yarn/${MC}; searching the full list)"
+            YARN=$(curl -sf "https://meta.fabricmc.net/v2/versions/yarn" \
+                   | jq -r --arg mc "$MC" '[.[] | select(.gameVersion == $mc)][0].version // empty')
+          fi
           LOADER=$(curl -sf "https://meta.fabricmc.net/v2/versions/loader" | jq -r '[.[] | select(.stable)][0].version // empty')
           API=$(curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
                 | grep -o "<version>[^<]*+${MC}</version>" | sed 's/<[^>]*>//g' | tail -1)
@@ -88,8 +96,18 @@ jobs:
           [ -z "$LOOM" ]   && missing="$missing loom"
           if [ -n "$missing" ]; then
             echo "::error::Fabric publishes no$missing for Minecraft $MC."
-            echo "Yarn versions that do exist, most recent last:"
-            curl -sf "https://meta.fabricmc.net/v2/versions/game" | jq -r '.[0:12] | .[].version' | sed 's/^/  /'
+            echo
+            echo "game versions Fabric knows about, around this one:"
+            curl -sf "https://meta.fabricmc.net/v2/versions/game" \
+              | jq -r '[.[] | select(.version | startswith("26"))][0:20] | .[].version' | sed 's/^/  /'
+            echo
+            echo "yarn builds for any 26.x game version:"
+            curl -sf "https://meta.fabricmc.net/v2/versions/yarn" \
+              | jq -r '[.[] | select(.gameVersion | startswith("26"))][0:20] | .[] | "  \(.gameVersion) -> \(.version)"'
+            echo
+            echo "fabric-api builds mentioning 26:"
+            curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
+              | grep -o '<version>[^<]*26[^<]*</version>' | sed 's/<[^>]*>//g' | tail -10 | sed 's/^/  /'
             exit 1
           fi
 
