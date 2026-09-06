@@ -125,9 +125,16 @@ public final class BuildPicker extends Screen {
         return Math.round(seconds / 60) + " minutes";
     }
 
+    /**
+     * Not render(): Minecraft 26 screens describe what they want drawn and the
+     * game draws it later, so there is no render method to override at all any
+     * more. Everything below still just says "fill this rectangle" — that part
+     * of the API survived the rework unchanged.
+     */
     @Override
-    public void render(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        super.render(graphics, mouseX, mouseY, partialTick);
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+                                   float partialTick) {
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         Catalog.Entry entry = Catalog.entries().get(selected);
         int panelX = 148;

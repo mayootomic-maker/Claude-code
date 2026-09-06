@@ -14,15 +14,12 @@
 #   ClientLevel.entitiesForRendering() -> Iterable<Entity>  - the hostile scan
 #   Entity.fallDistance is a public double
 #   Fabric's world render events live under rendering.v1.level, not rendering.v1
-
-# The methods a Screen has to override, whose shape changed with the rendering
-# rework. Asked as greps because the class is far too long to print.
-net.minecraft.client.gui.screens.Screen render
-net.minecraft.client.gui.screens.Screen Widget
-net.minecraft.client.gui.screens.Screen mouseClicked
+#   Screen has no render() at all: it is extractRenderState(GuiGraphicsExtractor,
+#     mouseX, mouseY, partialTick). Screens describe what to draw and the game
+#     draws it later.
+#   Screen.addRenderableWidget(T) is unchanged
+#   world.entity.monster.Monster is the base class of everything that attacks
 
 # For drawing the selection box in the world while marking out a site.
 net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 20
 
-# For telling a zombie apart from a cow.
-net.minecraft.world.entity.monster.Monster 12

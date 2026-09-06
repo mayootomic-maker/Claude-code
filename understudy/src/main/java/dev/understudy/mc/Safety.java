@@ -5,6 +5,8 @@ import dev.understudy.core.survive.Guardian;
 import dev.understudy.core.survive.Vitals;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.function.Consumer;
@@ -27,6 +29,8 @@ public final class Safety {
 
     /** Hunger below which eating is worth interrupting for. */
     private static final int EAT_UNTIL = 18;
+    /** Far enough to see one coming, near enough that it is about you. */
+    private static final double WATCH_RADIUS = 16.0;
 
     private final Guardian guardian = new Guardian();
     private final Consumer<String> report;
@@ -51,6 +55,7 @@ public final class Safety {
     public Vitals read(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null) return Vitals.healthy();
+        Threats threats = scan(client);
         return new Vitals(
                 player.getHealth(),
                 player.getMaxHealth(),
@@ -62,11 +67,37 @@ public final class Safety {
                 player.isInLava(),
                 player.isInWater(),
                 player.fallDistance,
-                // Nothing scans for mobs yet, so this reports no hostiles rather
-                // than guessing at some. The Guardian still catches an attack
-                // through the damage it does, which needs no entity list.
-                0,
-                Double.MAX_VALUE);
+                threats.count(),
+                threats.nearest());
+    }
+
+    private record Threats(int count, double nearest) {}
+
+    /**
+     * How many hostiles are close, and how close the closest is.
+     *
+     * entitiesForRendering is already limited to what the client has loaded
+     * around you, which is exactly the right scope: something four hundred
+     * blocks away is not a reason to stop building, and the client cannot see it
+     * anyway.
+     *
+     * Monster covers what actually attacks — zombies, skeletons, creepers,
+     * spiders — and leaves out cows, villagers and your own pets, which is the
+     * distinction that matters when deciding whether to stop.
+     */
+    private static Threats scan(Minecraft client) {
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) return new Threats(0, Double.MAX_VALUE);
+        int count = 0;
+        double nearest = Double.MAX_VALUE;
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (!(entity instanceof Monster) || !entity.isAlive()) continue;
+            double distance = Math.sqrt(player.distanceToSqr(entity));
+            if (distance > WATCH_RADIUS) continue;
+            count++;
+            nearest = Math.min(nearest, distance);
+        }
+        return new Threats(count, nearest);
     }
 
     public Guardian.Verdict check(Minecraft client) {
