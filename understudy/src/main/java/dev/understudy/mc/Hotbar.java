@@ -57,7 +57,7 @@ public final class Hotbar {
             // Main inventory slots keep their index in the player screen
             // handler; the hotbar sits at 36-44, which is why only the
             // 9-and-above case needs converting.
-            client.gameMode.handleInventoryMouseClick(
+            client.gameMode.handleContainerInput(
                     player.inventoryMenu.containerId, slot, SCRATCH_SLOT,
                     ContainerInput.SWAP, player);
             player.getInventory().setSelectedSlot(SCRATCH_SLOT);

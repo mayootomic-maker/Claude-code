@@ -241,7 +241,7 @@ public final class SortTask {
             if (keepKit && Sorter.keep(name, category)) continue;
 
             if (client.gameMode != null) {
-                client.gameMode.handleInventoryMouseClick(handler.containerId, slot, 0,
+                client.gameMode.handleContainerInput(handler.containerId, slot, 0,
                         ContainerInput.QUICK_MOVE, player);
                 moved++;
                 cooldown = MOVE_INTERVAL;
