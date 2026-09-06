@@ -10,6 +10,7 @@ import dev.understudy.core.build.Materials;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
+import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;

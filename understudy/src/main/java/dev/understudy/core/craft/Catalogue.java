@@ -31,32 +31,32 @@ public final class Catalogue {
                 Gather.byHand("dirt", 0.75, 1.5, 64),
                 Gather.byHand("sand", 0.75, 25.0, 64),
                 Gather.byHand("gravel", 0.9, 12.0, 32),
-                Gather.byHand("clay_ball", 0.9, 60.0, 16),
+                Gather.byHand("clay_ball", 0.9, 60.0, 16, "clay"),
                 Gather.byHand("sugar_cane", 0.0, 25.0, 6),
                 // Wool: shearing is instant once the sheep is found, which is
                 // the entire cost.
-                Gather.byHand("white_wool", 0.0, 45.0, 3),
+                Gather.byHand("white_wool", 0.0, 45.0, 3, "white_wool"),
                 // Stone: hardness 1.5, wooden pickaxe speed 2 -> 1.13s.
-                Gather.with("cobblestone", 1.13, 20.0, 64, "wooden_pickaxe", WOOD_USES),
-                Gather.with("cobblestone", 0.6, 20.0, 64, "stone_pickaxe", STONE_USES),
+                Gather.with("cobblestone", 1.13, 20.0, 64, "wooden_pickaxe", WOOD_USES, "stone"),
+                Gather.with("cobblestone", 0.6, 20.0, 64, "stone_pickaxe", STONE_USES, "stone"),
                 Gather.with("andesite", 1.13, 40.0, 32, "wooden_pickaxe", WOOD_USES),
                 Gather.with("andesite", 0.6, 40.0, 32, "stone_pickaxe", STONE_USES),
                 // Deepslate is hardness 3, so the tool matters most here: 2.63s
                 // with wood against 1.13s with stone, and a stone pickaxe lasts
                 // more than twice as long.
-                Gather.with("cobbled_deepslate", 2.63, 90.0, 64, "wooden_pickaxe", WOOD_USES),
-                Gather.with("cobbled_deepslate", 1.13, 90.0, 64, "stone_pickaxe", STONE_USES),
+                Gather.with("cobbled_deepslate", 2.63, 90.0, 64, "wooden_pickaxe", WOOD_USES, "deepslate"),
+                Gather.with("cobbled_deepslate", 1.13, 90.0, 64, "stone_pickaxe", STONE_USES, "deepslate"),
                 // Blackstone is only in the nether. The four minutes is getting
                 // there, and the menu shows the total so the choice is informed
                 // rather than surprising.
                 Gather.with("blackstone", 1.13, 600.0, 64, "wooden_pickaxe", WOOD_USES),
                 Gather.with("blackstone", 0.6, 600.0, 64, "stone_pickaxe", STONE_USES),
                 // Coal ore: hardness 3, wooden pickaxe -> 2.25s.
-                Gather.with("coal", 2.25, 25.0, 8, "wooden_pickaxe", WOOD_USES),
-                Gather.with("coal", 1.15, 25.0, 8, "stone_pickaxe", STONE_USES),
+                Gather.with("coal", 2.25, 25.0, 8, "wooden_pickaxe", WOOD_USES, "coal_ore", "deepslate_coal_ore"),
+                Gather.with("coal", 1.15, 25.0, 8, "stone_pickaxe", STONE_USES, "coal_ore", "deepslate_coal_ore"),
                 // Iron ore needs stone or better. Hardness 3, stone speed 4.
-                Gather.with("raw_iron", 1.13, 90.0, 4, "stone_pickaxe", STONE_USES),
-                Gather.with("raw_copper", 1.13, 60.0, 6, "stone_pickaxe", STONE_USES)));
+                Gather.with("raw_iron", 1.13, 90.0, 4, "stone_pickaxe", STONE_USES, "iron_ore", "deepslate_iron_ore"),
+                Gather.with("raw_copper", 1.13, 60.0, 6, "stone_pickaxe", STONE_USES, "copper_ore", "deepslate_copper_ore")));
 
         // Every wood the material picker offers, or choosing spruce produces a
         // plan that says spruce planks cannot be obtained. Logs are all hardness

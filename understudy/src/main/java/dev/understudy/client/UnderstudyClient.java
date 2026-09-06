@@ -6,7 +6,10 @@ import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.mc.BuildPicker;
+import dev.understudy.core.craft.Catalogue;
+import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
+import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Marker;
 import dev.understudy.mc.Safety;
@@ -41,6 +44,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
+    private static GatherTask gather;
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
@@ -101,6 +105,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
+                    gather = new GatherTask(client, travel, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                 }
 
@@ -129,6 +134,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 }
 
                 travel.tick();
+                gather.tick();
                 build.tick();
                 sort.tick();
             } catch (Throwable error) {
@@ -164,9 +170,38 @@ public final class UnderstudyClient implements ClientModInitializer {
      * looking at the world rather than at a menu.
      */
     private static void siteFor(Blueprint blueprint) {
-        marker.start(blueprint, (plan, origin) -> {
-            if (build != null) build.start(plan, origin);
-        });
+        marker.start(blueprint, UnderstudyClient::gatherThenBuild);
+    }
+
+    /**
+     * Go and get whatever is missing, then build it.
+     *
+     * The two halves are deliberately one flow. Being told "you are short of
+     * ninety planks" and then having to go and get them yourself is most of the
+     * work; the planner already knows what is needed and the gatherer already
+     * knows how to fetch it, so the only thing missing was joining them up.
+     *
+     * With a full inventory it skips straight to building, which is the common
+     * case for anyone who keeps a stocked chest.
+     */
+    private static void gatherThenBuild(Blueprint blueprint, net.minecraft.core.BlockPos origin) {
+        Minecraft client = Minecraft.getInstance();
+        if (build == null || gather == null || client.player == null) return;
+
+        Planner.Plan needed = new Planner(Catalogue.solver())
+                .plan(blueprint.essentialMaterials(), Carried.contents(client.player));
+
+        if (needed.actions().isEmpty()) {
+            build.start(blueprint, origin);
+            return;
+        }
+        if (!needed.possible()) {
+            warn("no way to get " + String.join(", ", needed.shortfall().keySet())
+                    + " — building what is possible");
+            build.start(blueprint, origin);
+            return;
+        }
+        gather.start(needed, () -> build.start(blueprint, origin));
     }
 
     /**
@@ -176,6 +211,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static void stopEverything() {
         if (marker != null) marker.cancel();
         if (travel != null) travel.stop("safety");
+        if (gather != null) gather.stop("safety");
         if (build != null) build.stop("safety");
         if (sort != null) sort.stop("safety");
     }

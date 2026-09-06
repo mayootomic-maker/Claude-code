@@ -30,9 +30,12 @@ package dev.understudy.core.craft;
  *                    five hours of "finding" while standing in the middle of it.
  * @param tool        the tool that must be held, or null when bare hands will do
  * @param toolUses    durability of that tool, for amortising its cost per block
+ * @param from        the blocks that drop it. Usually one name, but iron comes
+ *                    out of both iron_ore and deepslate_iron_ore, and a gatherer
+ *                    that only knows the first walks past half the ore it sees.
  */
 public record Gather(String item, int amount, double digSeconds, double findSeconds,
-                     int perTrip, String tool, int toolUses) {
+                     int perTrip, String tool, int toolUses, java.util.List<String> from) {
 
     /** Time for one block: the dig, plus this block's share of finding the deposit. */
     public double seconds() {
@@ -43,12 +46,19 @@ public record Gather(String item, int amount, double digSeconds, double findSeco
         return seconds() / Math.max(1, amount);
     }
 
-    public static Gather byHand(String item, double digSeconds, double findSeconds, int perTrip) {
-        return new Gather(item, 1, digSeconds, findSeconds, perTrip, null, 0);
+    public static Gather byHand(String item, double digSeconds, double findSeconds, int perTrip,
+                                String... from) {
+        return new Gather(item, 1, digSeconds, findSeconds, perTrip, null, 0, blocks(item, from));
     }
 
     public static Gather with(String item, double digSeconds, double findSeconds, int perTrip,
-                              String tool, int toolUses) {
-        return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses);
+                              String tool, int toolUses, String... from) {
+        return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses,
+                blocks(item, from));
+    }
+
+    /** Most things drop from the block of the same name; the rest say so. */
+    private static java.util.List<String> blocks(String item, String[] from) {
+        return from.length == 0 ? java.util.List.of(item) : java.util.List.of(from);
     }
 }

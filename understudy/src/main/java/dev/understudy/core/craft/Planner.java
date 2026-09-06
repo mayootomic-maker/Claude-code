@@ -78,6 +78,20 @@ public final class Planner {
         this.solver = solver;
     }
 
+    /**
+     * The blocks that drop an item.
+     *
+     * Static because the gatherer asks per tick and the answer never changes.
+     * Iron comes out of both iron_ore and deepslate_iron_ore, and a gatherer
+     * that only knows the first walks past half the ore it sees.
+     */
+    public static java.util.List<String> sourcesOf(String item) {
+        for (Gather gather : Catalogue.gathers()) {
+            if (gather.item().equals(item)) return gather.from();
+        }
+        return java.util.List.of(item);
+    }
+
     public Plan plan(Map<String, Integer> goal, Map<String, Integer> have) {
         Map<String, Solver.Cost> costs = solver.solve(have);
         Map<String, Integer> stock = new LinkedHashMap<>(have);

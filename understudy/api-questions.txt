@@ -33,3 +33,13 @@ net.minecraft.world.item.crafting.display.RecipeDisplayId 12
 net.minecraft.client.gui.screens.inventory.InventoryScreen 15
 net.minecraft.world.inventory.CraftingMenu 20
 net.minecraft.client.player.LocalPlayer getRecipeBook
+
+# Answered: handlePlaceRecipe(containerId, RecipeDisplayId, makeAll) fills the
+# grid from the recipe book; RecipeDisplayId is a record of an int index;
+# LocalPlayer.getRecipeBook() -> ClientRecipeBook.getCollections();
+# CraftingMenu has getResultSlot(), getInputGridSlots(), RESULT_SLOT.
+# What is left is how to get from a collection to the id of the recipe that
+# makes a particular item.
+net.minecraft.client.gui.screens.recipebook.RecipeCollection 20
+net.minecraft.world.item.crafting.display.RecipeDisplayEntry 14
+net.minecraft.world.inventory.AbstractContainerMenu containerId
