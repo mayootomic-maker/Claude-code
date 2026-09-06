@@ -107,6 +107,33 @@ jobs:
           echo "resolved gradle.properties:"
           grep -E '^(minecraft_version|minecraft_dependency|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
 
+      # Loom could not find official Mojang mappings for this version, and Yarn
+      # publishes none for 26.x either. Before guessing at a third option, ask
+      # Mojang's own manifest what it actually ships for the target: whether
+      # the version exists, what type it is, and whether it carries the
+      # client_mappings download that loom needs.
+      - name: What Mojang publishes for this version
+        continue-on-error: true
+        run: |
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          MANIFEST=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          echo "latest release / snapshot Mojang lists:"
+          curl -sf "$MANIFEST" | jq -r '.latest | "  release=\(.release)  snapshot=\(.snapshot)"'
+
+          URL=$(curl -sf "$MANIFEST" | jq -r --arg mc "$MC" '.versions[] | select(.id == $mc) | .url')
+          TYPE=$(curl -sf "$MANIFEST" | jq -r --arg mc "$MC" '.versions[] | select(.id == $mc) | .type')
+          if [ -z "$URL" ]; then
+            echo "  ${MC} is NOT in Mojang's manifest at all"
+            echo "  ids Mojang lists that start with 26:"
+            curl -sf "$MANIFEST" | jq -r '[.versions[] | select(.id | startswith("26"))][0:15] | .[] | "    \(.id)  (\(.type))"'
+          else
+            echo "  ${MC} exists, type=${TYPE}"
+            echo "  downloads it offers:"
+            curl -sf "$URL" | jq -r '.downloads | keys[]' | sed 's/^/    /'
+            echo "  java version it wants:"
+            curl -sf "$URL" | jq -r '.javaVersion // "none stated"' | sed 's/^/    /'
+          fi
+
       - run: chmod +x gradlew
 
       # Ask the game where a class actually lives, instead of guessing and
