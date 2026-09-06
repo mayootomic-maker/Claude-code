@@ -1,0 +1,178 @@
+package dev.understudy.mc;
+
+import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Catalog;
+import dev.understudy.core.build.Designs;
+import dev.understudy.core.build.Preview;
+import dev.understudy.core.craft.Catalogue;
+import dev.understudy.core.craft.Planner;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.List;
+import java.util.Map;
+import java.util.function.BiConsumer;
+
+/**
+ * The menu /build opens: everything the mod can build, with a picture of each.
+ *
+ * The pictures are drawn from the blueprint rather than fetched from anywhere.
+ * A photograph off the internet shows someone else's house, in someone else's
+ * materials, at a size this is not going to build; this shows the exact
+ * structure that will be placed, in the palette it will use, and it redraws when
+ * the size changes. It also needs no network and ships nothing copyrighted.
+ *
+ * The cost line under the preview is the real plan, run against what is actually
+ * in your inventory — so it says "four minutes" when you have the wood and
+ * "twenty" when you do not, rather than quoting an average nobody has.
+ */
+public final class BuildPicker extends Screen {
+
+    private static final int PANEL = 0xC0101418;
+    private static final int LINE = 0xFF39414B;
+    private static final int SELECTED = 0xFF2E6DA4;
+    private static final int TEXT = 0xFFE6E6E6;
+    private static final int DIM = 0xFF9AA3AD;
+
+    private final Map<String, Integer> inventory;
+    /** Called with the chosen design and size once the player commits. */
+    private final BiConsumer<Catalog.Entry, Integer> onChoose;
+
+    private int selected;
+    private int size;
+    private Blueprint blueprint;
+    private Preview.Image image;
+    private String costLine = "";
+
+    public BuildPicker(Map<String, Integer> inventory, BiConsumer<Catalog.Entry, Integer> onChoose) {
+        super(Component.literal("Build"));
+        this.inventory = inventory;
+        this.onChoose = onChoose;
+        this.size = Catalog.entries().get(0).defaultSize();
+    }
+
+    @Override
+    protected void init() {
+        int listX = 16;
+        int listY = 44;
+        List<Catalog.Entry> entries = Catalog.entries();
+        for (int i = 0; i < entries.size(); i++) {
+            int index = i;
+            addRenderableWidget(Button.builder(Component.literal(entries.get(i).name()),
+                            button -> select(index))
+                    .bounds(listX, listY + i * 24, 120, 20).build());
+        }
+
+        int controlsY = listY + entries.size() * 24 + 16;
+        addRenderableWidget(Button.builder(Component.literal("-"), button -> resize(-1))
+                .bounds(listX, controlsY, 24, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("+"), button -> resize(1))
+                .bounds(listX + 96, controlsY, 24, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("Choose where"), button -> commit())
+                .bounds(listX, controlsY + 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
+                .bounds(listX, controlsY + 52, 120, 20).build());
+
+        refresh();
+    }
+
+    private void select(int index) {
+        selected = index;
+        size = Catalog.entries().get(index).defaultSize();
+        refresh();
+    }
+
+    private void resize(int by) {
+        Catalog.Entry entry = Catalog.entries().get(selected);
+        size = Math.max(entry.minSize(), Math.min(entry.maxSize(), size + by));
+        refresh();
+    }
+
+    private void commit() {
+        onChoose.accept(Catalog.entries().get(selected), size);
+        onClose();
+    }
+
+    /**
+     * Rebuild the blueprint, its picture and its cost.
+     *
+     * Done on change rather than per frame: planning a house is a graph search,
+     * and running one sixty times a second to draw a line of text would be a
+     * strange way to spend a frame budget.
+     */
+    private void refresh() {
+        Catalog.Entry entry = Catalog.entries().get(selected);
+        blueprint = Catalog.build(entry, size, Designs.defaultPalette());
+        image = Preview.of(blueprint);
+
+        Planner.Plan plan = new Planner(Catalogue.solver())
+                .plan(blueprint.essentialMaterials(), inventory);
+        if (!plan.possible()) {
+            costLine = "§cmissing: " + String.join(", ", plan.shortfall().keySet());
+        } else if (plan.actions().isEmpty()) {
+            costLine = "§aeverything needed is already in your inventory";
+        } else {
+            costLine = String.format("%d blocks · about %s to gather and build",
+                    blueprint.blockCount(), minutes(plan.seconds()));
+        }
+    }
+
+    private static String minutes(double seconds) {
+        if (seconds < 90) return Math.round(seconds) + " seconds";
+        return Math.round(seconds / 60) + " minutes";
+    }
+
+    @Override
+    public void render(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+
+        Catalog.Entry entry = Catalog.entries().get(selected);
+        int panelX = 148;
+        int panelY = 44;
+        int panelW = width - panelX - 16;
+        int panelH = height - panelY - 16;
+
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, PANEL);
+        graphics.outline(panelX, panelY, panelW, panelH, LINE);
+
+        graphics.text(font, Component.literal(entry.name()), panelX + 10, panelY + 10, TEXT);
+        graphics.text(font, Component.literal(entry.summary()), panelX + 10, panelY + 24, DIM);
+        graphics.text(font, Component.literal("size " + size), panelX + 10, panelY + 38, DIM);
+
+        drawPreview(graphics, panelX + 10, panelY + 56, panelW - 20, panelH - 96);
+        graphics.text(font, Component.literal(costLine), panelX + 10, panelY + panelH - 26, TEXT);
+
+        graphics.text(font, Component.literal("size " + size), 16 + 32,
+                44 + Catalog.entries().size() * 24 + 22, TEXT);
+    }
+
+    /**
+     * Draw the preview, scaled to fit and centred.
+     *
+     * Each run is one fill call. A house is a few hundred of them, which is
+     * nothing — and it is the only drawing primitive whose shape did not change
+     * in this version of the game.
+     */
+    private void drawPreview(GuiGraphicsExtractor graphics, int x, int y, int boxW, int boxH) {
+        if (image == null || image.isEmpty()) return;
+        int scale = Math.max(1, Math.min(boxW / image.width(), boxH / image.height()));
+        int drawnW = image.width() * scale;
+        int drawnH = image.height() * scale;
+        int offsetX = x + (boxW - drawnW) / 2;
+        int offsetY = y + (boxH - drawnH) / 2;
+
+        for (Preview.Run run : image.runs()) {
+            int left = offsetX + run.x() * scale;
+            int top = offsetY + run.y() * scale;
+            graphics.fill(left, top, left + run.length() * scale, top + scale, run.argb());
+        }
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+}

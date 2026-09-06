@@ -4,7 +4,11 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Designs;
+import dev.understudy.core.craft.Catalogue;
+import dev.understudy.core.craft.Planner;
+import dev.understudy.mc.Carried;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;
@@ -47,6 +51,10 @@ public final class UnderstudyCommands {
                     .then(literal("stop").executes(context -> stop(context.getSource()))));
 
             dispatcher.register(literal("build")
+                    // No arguments opens the menu. Typing the name still works,
+                    // because a menu is slower than knowing what you want.
+                    .executes(context -> openPicker(context.getSource()))
+                    .then(literal("cancel").executes(context -> cancelSite(context.getSource())))
                     .then(argument("what", StringArgumentType.word())
                             .executes(context -> build(context.getSource(),
                                     StringArgumentType.getString(context, "what"), 7, false))
@@ -116,32 +124,36 @@ public final class UnderstudyCommands {
         Map<Blueprint.Role, String> palette = Designs.paletteFrom(
                 profile.buildingBlocks(6), Designs.defaultPalette());
 
-        Blueprint blueprint = switch (what.toLowerCase()) {
-            case "house" -> Designs.house(size, size, 4, palette);
-            case "hut", "shelter" -> Designs.hut(Math.min(size, 9), palette);
-            case "tower" -> Designs.tower(Math.max(size, 6), 5, palette);
-            case "storage", "chests" -> Designs.storage(size, palette);
-            default -> null;
-        };
-        if (blueprint == null) {
-            say(source, "I can build: house, hut, tower, storage");
+        Catalog.Entry entry = Catalog.byId(what.toLowerCase());
+        if (entry == null && what.equalsIgnoreCase("shelter")) entry = Catalog.byId("hut");
+        if (entry == null && what.equalsIgnoreCase("chests")) entry = Catalog.byId("storage");
+        if (entry == null) {
+            say(source, "I can build: " + String.join(", ", Catalog.ids()));
             return 0;
         }
+        Blueprint blueprint = Catalog.build(entry, size, palette);
 
-        Map<String, Integer> shortfall = task.shortfall(blueprint);
         say(source, blueprint.name() + ": " + blueprint.blockCount() + " blocks");
-        for (Map.Entry<String, Integer> entry : blueprint.essentialMaterials().entrySet()) {
-            say(source, "  " + entry.getValue() + "x " + entry.getKey());
-        }
 
-        if (!shortfall.isEmpty()) {
-            StringBuilder message = new StringBuilder("short of: ");
-            shortfall.forEach((item, count) -> message.append(count).append("x ").append(item).append(" "));
-            say(source, message.toString().trim());
-            if (!planOnly) {
-                say(source, "get those and run it again, or /build " + what + " anyway to start with what you have");
-                return 0;
-            }
+        // The real plan against the real inventory, rather than a list of what
+        // is missing. Knowing you are short of glass is less useful than being
+        // told the sand is twenty seconds away and the furnace is not built yet.
+        Map<String, Integer> carrying = Carried.contents(source.getPlayer());
+        Planner.Plan plan = new Planner(Catalogue.solver())
+                .plan(blueprint.essentialMaterials(), carrying);
+
+        if (plan.actions().isEmpty() && plan.possible()) {
+            say(source, "everything needed is already in your inventory");
+        } else {
+            say(source, String.format("to gather and craft: about %s",
+                    plan.seconds() < 90
+                            ? Math.round(plan.seconds()) + " seconds"
+                            : Math.round(plan.seconds() / 60) + " minutes"));
+            for (String line : plan.summary()) say(source, "  " + line);
+        }
+        if (!plan.possible()) {
+            say(source, "no way to get: " + String.join(", ", plan.shortfall().keySet()));
+            if (!planOnly) return 0;
         }
 
         if (planOnly) return 1;
@@ -152,6 +164,23 @@ public final class UnderstudyCommands {
         }
         // Build in front of where you are standing, not on top of you.
         task.start(blueprint, source.getPlayer().blockPosition().offset(2, 0, 2));
+        return 1;
+    }
+
+    private static int openPicker(FabricClientCommandSource source) {
+        if (Minecraft.getInstance().player == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        // Asked for, not opened here. A command runs while the chat screen is
+        // still up, and chat closes itself afterwards by setting the screen to
+        // null — which would shut the picker the moment it appeared.
+        UnderstudyClient.askForPicker();
+        return 1;
+    }
+
+    private static int cancelSite(FabricClientCommandSource source) {
+        UnderstudyClient.cancelSite();
         return 1;
     }
 

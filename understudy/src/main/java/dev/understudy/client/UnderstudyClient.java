@@ -4,7 +4,13 @@ import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.survive.Guardian;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
+import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Catalog;
+import dev.understudy.core.build.Designs;
+import dev.understudy.mc.BuildPicker;
+import dev.understudy.mc.Carried;
 import dev.understudy.mc.Hud;
+import dev.understudy.mc.Marker;
 import dev.understudy.mc.Safety;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
@@ -38,6 +44,8 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static BuildTask build;
     private static SortTask sort;
     private static Safety safety;
+    private static Marker marker;
+    private static boolean pickerWanted;
     private static boolean greeted;
     private static boolean reportedFailure;
 
@@ -95,7 +103,19 @@ public final class UnderstudyClient implements ClientModInitializer {
                     travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
+                    marker = new Marker(client, UnderstudyClient::tell);
                 }
+
+                // Opening the menu is deferred to here because a command runs
+                // while the chat screen is still open, and chat closes itself
+                // afterwards by clearing the screen — which would shut the
+                // picker in the same frame it opened.
+                if (pickerWanted) {
+                    pickerWanted = false;
+                    client.setScreenAndShow(new BuildPicker(
+                            Carried.contents(client.player), UnderstudyClient::siteFor));
+                }
+                marker.tick();
 
                 // Safety runs before the tasks and can take the tick. Checking
                 // after them would mean acting on a health reading from before
@@ -128,11 +148,36 @@ public final class UnderstudyClient implements ClientModInitializer {
      * indistinguishable from a bug — you get "unknown command" for something
      * the source clearly registers.
      */
+    /** Ask for the build menu; it opens on the next tick. */
+    public static void askForPicker() {
+        pickerWanted = true;
+    }
+
+    public static void cancelSite() {
+        if (marker != null) marker.cancel();
+        if (build != null) build.stop("cancelled");
+    }
+
+    /**
+     * Chosen in the menu: now go and point at where it should stand.
+     *
+     * Split in two because picking what to build and picking where to build it
+     * are different questions, and the second one can only be answered while
+     * looking at the world rather than at a menu.
+     */
+    private static void siteFor(Catalog.Entry entry, int size) {
+        Blueprint blueprint = Catalog.build(entry, size, Designs.defaultPalette());
+        marker.start(blueprint, (plan, origin) -> {
+            if (build != null) build.start(plan, origin);
+        });
+    }
+
     /**
      * Everything down tools. Used when safety takes over, so no task is left
      * quietly holding a movement key while the player is trying to escape.
      */
     private static void stopEverything() {
+        if (marker != null) marker.cancel();
         if (travel != null) travel.stop("safety");
         if (build != null) build.stop("safety");
         if (sort != null) sort.stop("safety");
