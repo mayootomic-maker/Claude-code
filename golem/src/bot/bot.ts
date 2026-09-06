@@ -78,6 +78,18 @@ export class GolemBot {
     // tick boundaries the way a real client's does.
     this.bot.on('physicsTick', () => {
       if (!this.humanise || this.disposed) return
+
+      // The pathfinder steers by turning the head, so while it is walking it
+      // owns the head and this loop stands down. Writing both meant two
+      // contradictory look packets every tick — measured at 99% disagreement
+      // across a walk — which is louder than either system alone, and it threw
+      // away the aim model's motion for the whole journey. Tracking the real
+      // orientation meanwhile is what stops the head snapping back on arrival.
+      if (this.walking()) {
+        this.aim.reset({ yaw: this.bot.entity.yaw, pitch: this.bot.entity.pitch })
+        return
+      }
+
       const { yaw, pitch } = this.aim.step(TICK_SECONDS)
       void this.bot.look(yaw, pitch, true).catch(() => {
         /* look fails harmlessly while the world is loading */
@@ -91,6 +103,16 @@ export class GolemBot {
 
   get spawned(): boolean {
     return this.spawnedAt !== null
+  }
+
+  /** Whether the pathfinder is currently steering. */
+  private walking(): boolean {
+    try {
+      return this.bot.pathfinder?.isMoving() === true
+    } catch {
+      // The plugin is not ready until after the first spawn.
+      return false
+    }
   }
 
   /** Resolves once the world is loaded and the bot has a position. */
@@ -151,6 +173,13 @@ export class GolemBot {
       await this.bot.look(target.yaw, target.pitch, true)
       return
     }
+    // Aiming during a walk is not possible — the pathfinder is holding the
+    // head — and waiting for an aim that will never run would hang the caller.
+    if (this.walking()) {
+      await this.bot.look(target.yaw, target.pitch, true)
+      return
+    }
+
     this.aim.moveTo(target, targetWidth)
     // The physicsTick loop is doing the actual moving; just wait for it.
     const deadline = Date.now() + 5_000

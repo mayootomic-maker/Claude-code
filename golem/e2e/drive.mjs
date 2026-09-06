@@ -81,9 +81,35 @@ try {
   const nav = new Navigator(golem.bot, log)
   const before = golem.bot.entity.position.clone()
   const target = before.offset(8, 0, 8)
+  // While travelling, watch whether the aim layer and the pathfinder are both
+  // trying to hold the head. They were, on 99% of ticks — the bot still
+  // arrived, so nothing failed, but two contradictory look packets every tick
+  // is louder than either system alone and it threw away the aim model for the
+  // whole journey. Only measuring it caught that.
+  let contested = 0
+  let ticks = 0
+  const watcher = setInterval(() => {
+    // Only while the pathfinder is actually steering. Before it has a path and
+    // after it arrives, the aim layer holds the head legitimately, and counting
+    // those ticks measures the handover rather than the contention.
+    if (!golem.bot.pathfinder.isMoving()) return
+    ticks++
+    const drift = Math.abs(
+      ((golem.aim.orientation.yaw - golem.bot.entity.yaw + Math.PI) % (2 * Math.PI)) - Math.PI,
+    )
+    if (drift > 0.5) contested++
+  }, 50)
+
   const travel = await nav.travelTo(target, { range: 3, timeoutMs: 30_000 })
+  clearInterval(watcher)
+
   const moved = golem.bot.entity.position.distanceTo(before)
   check('walks somewhere when told to', moved > 2, `moved ${moved.toFixed(1)} blocks (${travel.reason})`)
+  check(
+    'aiming yields the head to the pathfinder while walking',
+    ticks === 0 || contested / ticks < 0.05,
+    `${contested}/${ticks} contested ticks`,
+  )
 
   // --- digging --------------------------------------------------------------
   const solid = golem.bot.findBlock({
