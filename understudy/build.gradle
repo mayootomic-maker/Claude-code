@@ -1,5 +1,12 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
+    // Loom publishes three plugin ids and they are not interchangeable.
+    // 'fabric-loom' is the legacy one (LoomGradlePlugin), which always takes the
+    // obfuscated path and so demands a mappings dependency; that is what failed
+    // here with "Configuration 'mappings' has no dependencies".
+    // 'net.fabricmc.fabric-loom' is LoomNoRemapGradlePlugin, which sets
+    // disableObfuscation and skips mapping setup entirely — correct for 26.x,
+    // and what Fabric's own 26.2 example mod uses.
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
 
