@@ -36,7 +36,11 @@ public final class Catalog {
             new Entry("tower", "Tower", "A lookout with a ladder up the middle and a light on top.",
                     6, 24, 12),
             new Entry("storage", "Storage room", "Walls of chests, lit, with room to walk between them.",
-                    2, 20, 6));
+                    2, 20, 6),
+            new Entry("manor", "Manor",
+                    "Two floors, a pitched roof and a chimney. Kitchen, workbench, table, "
+                            + "beds, bookshelves and a wall of chests.",
+                    11, 23, 15));
 
     private Catalog() {}
 
@@ -55,9 +59,11 @@ public final class Catalog {
         return ids;
     }
 
-    /** Build the blueprint an entry describes at a given size. */
-    public static Blueprint build(Entry entry, int size, Map<Blueprint.Role, String> palette) {
+    /** Build the blueprint an entry describes, at a size and in a material. */
+    public static Blueprint build(Entry entry, int size, Materials.Wood wood,
+                                  Materials.Stone stone) {
         int clamped = Math.max(entry.minSize(), Math.min(entry.maxSize(), size));
+        Map<Blueprint.Role, String> palette = Designs.paletteOf(wood, stone);
         return switch (entry.id()) {
             case "hut" -> Designs.hut(clamped, palette);
             // Depth follows width at roughly the proportions of a room you would
@@ -65,13 +71,15 @@ public final class Catalog {
             case "house" -> Designs.house(clamped, Math.max(5, clamped * 3 / 4), 4, palette);
             case "tower" -> Designs.tower(clamped, 5, palette);
             case "storage" -> Designs.storage(clamped, palette);
+            case "manor" -> Manor.build(clamped, wood, stone);
             default -> throw new IllegalArgumentException("no design called " + entry.id());
         };
     }
 
-    public static Blueprint build(String id, int size, Map<Blueprint.Role, String> palette) {
+    public static Blueprint build(String id, int size, Materials.Wood wood,
+                                  Materials.Stone stone) {
         Entry entry = byId(id);
         if (entry == null) throw new IllegalArgumentException("no design called " + id);
-        return build(entry, size, palette);
+        return build(entry, size, wood, stone);
     }
 }

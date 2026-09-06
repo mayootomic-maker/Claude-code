@@ -13,12 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CatalogTest {
 
+    private static final Materials.Wood OAK = Materials.woodNamed("oak");
+    private static final Materials.Stone STONE = Materials.stoneNamed("stone brick");
+
     @Test
     void everyListedDesignCanActuallyBeBuilt() {
         // The menu and the command both read this list, so an entry that does
         // not build is an entry the menu offers and the mod then refuses.
         for (Catalog.Entry entry : Catalog.entries()) {
-            Blueprint blueprint = Catalog.build(entry, entry.defaultSize(), Designs.defaultPalette());
+            Blueprint blueprint = Catalog.build(entry, entry.defaultSize(), OAK, STONE);
             assertNotNull(blueprint, entry.id());
             assertTrue(blueprint.blockCount() > 0, entry.id() + " built nothing");
         }
@@ -28,7 +31,7 @@ class CatalogTest {
     void buildsAtEverySizeItAdvertises() {
         for (Catalog.Entry entry : Catalog.entries()) {
             for (int size = entry.minSize(); size <= entry.maxSize(); size++) {
-                Blueprint blueprint = Catalog.build(entry, size, Designs.defaultPalette());
+                Blueprint blueprint = Catalog.build(entry, size, OAK, STONE);
                 assertTrue(blueprint.blockCount() > 0,
                         entry.id() + " at size " + size + " built nothing");
                 assertFalseEmptyPreview(blueprint);
@@ -44,8 +47,8 @@ class CatalogTest {
     void clampsSizesOutsideItsRange() {
         Catalog.Entry hut = Catalog.byId("hut");
         assertNotNull(hut);
-        Blueprint tiny = Catalog.build(hut, -50, Designs.defaultPalette());
-        Blueprint huge = Catalog.build(hut, 5000, Designs.defaultPalette());
+        Blueprint tiny = Catalog.build(hut, -50, OAK, STONE);
+        Blueprint huge = Catalog.build(hut, 5000, OAK, STONE);
         assertTrue(tiny.blockCount() > 0);
         assertTrue(huge.blockCount() > 0);
         assertTrue(huge.blockCount() > tiny.blockCount());
@@ -75,6 +78,6 @@ class CatalogTest {
     void unknownNamesAreRefusedRatherThanGuessed() {
         assertNull(Catalog.byId("mansion"));
         assertThrows(IllegalArgumentException.class,
-                () -> Catalog.build("mansion", 8, Designs.defaultPalette()));
+                () -> Catalog.build("mansion", 8, OAK, STONE));
     }
 }

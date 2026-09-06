@@ -34,6 +34,15 @@ import java.util.Set;
  * final value, each item is settled exactly once in increasing order, and a
  * recipe is only ever evaluated after every one of its inputs is already final.
  * There is nothing to cache and nothing to invalidate.
+ *
+ * One thing it deliberately does not decide: which tool to mine with. Amortising
+ * a pickaxe over its durability makes "deepslate with a stone pickaxe" cost less
+ * per block than the stone pickaxe itself, and an edge cheaper than its own
+ * input breaks the ordering the algorithm depends on. It is also genuinely not a
+ * per-block question — wood is right for eight blocks and stone for six hundred
+ * — so it belongs where the quantity is known, in the planner. What comes out of
+ * here is the cost with the cheapest tool that works, which is the right
+ * estimate for everything upstream.
  */
 public final class Solver {
 
@@ -47,17 +56,31 @@ public final class Solver {
     }
 
     private final List<Recipe> recipes;
-    private final Map<String, Gather> gathers;
+    private final List<Gather> gathers;
 
     public Solver(List<Recipe> recipes, List<Gather> gathers) {
         this.recipes = List.copyOf(recipes);
-        Map<String, Gather> byItem = new HashMap<>();
-        // Cheapest way to gather wins when a thing drops from more than one block.
-        for (Gather gather : gathers) {
-            Gather existing = byItem.get(gather.item());
-            if (existing == null || gather.perUnit() < existing.perUnit()) byItem.put(gather.item(), gather);
-        }
-        this.gathers = Map.copyOf(byItem);
+        // Every way of getting a thing is kept, not just the one that looks
+        // cheapest to dig. Which is actually cheapest depends on the tool: a
+        // stone pickaxe halves the time on deepslate but costs more to make, and
+        // whether that pays back depends on how much you are mining. Keeping
+        // both and letting the search decide is the whole point of the search —
+        // picking one here was choosing ten wooden pickaxes over one stone one.
+        this.gathers = List.copyOf(gathers);
+    }
+
+    /**
+     * Every way of gathering an item, cheapest per block first.
+     *
+     * The planner needs these rather than one winner, because which tool is
+     * right depends on how much you are mining and the solver works in per-block
+     * costs that cannot know that. See Planner.bestGather.
+     */
+    public List<Gather> gathersFor(String item) {
+        List<Gather> found = new ArrayList<>();
+        for (Gather gather : gathers) if (gather.item().equals(item)) found.add(gather);
+        found.sort((a, b) -> Double.compare(a.perUnit(), b.perUnit()));
+        return found;
     }
 
     /**
@@ -71,15 +94,15 @@ public final class Solver {
         Set<String> settled = new HashSet<>();
 
         for (Map.Entry<String, Integer> held : have.entrySet()) {
-            if (held.getValue() > 0) offer(best, queue, held.getKey(), new Cost(0, null, null));
+            if (held.getValue() > 0) offer(best, queue, settled, held.getKey(), new Cost(0, null, null));
         }
 
         // Gathering with bare hands is available from the start. Anything that
         // needs a tool has to wait until the tool's own cost is known, so it is
         // relaxed later, from the tool.
-        for (Gather gather : gathers.values()) {
+        for (Gather gather : gathers) {
             if (gather.tool() == null) {
-                offer(best, queue, gather.item(), new Cost(gather.perUnit(), null, gather));
+                offer(best, queue, settled, gather.item(), new Cost(gather.perUnit(), null, gather));
             }
         }
 
@@ -94,7 +117,7 @@ public final class Solver {
                 usedBy.computeIfAbsent(input, key -> new ArrayList<>()).add(recipe);
             }
         }
-        for (Gather gather : gathers.values()) {
+        for (Gather gather : gathers) {
             if (gather.tool() != null) {
                 toolFor.computeIfAbsent(gather.tool(), key -> new ArrayList<>()).add(gather);
             }
@@ -108,7 +131,7 @@ public final class Solver {
             // at the gather time plus the tool's share of its own durability.
             for (Gather gather : toolFor.getOrDefault(entry.item, List.of())) {
                 double amortised = entry.cost / Math.max(1, gather.toolUses());
-                offer(best, queue, gather.item(),
+                offer(best, queue, settled, gather.item(),
                         new Cost(gather.perUnit() + amortised, null, gather));
             }
 
@@ -125,7 +148,7 @@ public final class Solver {
                     total += inputCost.seconds() * input.getValue();
                 }
                 if (total < UNREACHABLE) {
-                    offer(best, queue, recipe.output(),
+                    offer(best, queue, settled, recipe.output(),
                             new Cost(total / recipe.count(), recipe, null));
                 }
             }
@@ -133,8 +156,20 @@ public final class Solver {
         return best;
     }
 
+    /**
+     * Record a way of getting something, if it beats the way already known.
+     *
+     * A settled item is finished and must not be touched again, and that guard
+     * is not a nicety. Without it, a later, cheaper-looking route overwrites the
+     * provenance of an item whose cost is already final — which is how the
+     * planner came to believe the best way to get cobblestone was to mine it
+     * with a stone pickaxe, a stone pickaxe being made of cobblestone. The
+     * algorithm's ordering guarantee only holds if what it has settled stays
+     * settled; the cost was right and the story of where it came from was not.
+     */
     private static void offer(Map<String, Cost> best, PriorityQueue<Entry> queue,
-                              String item, Cost cost) {
+                              Set<String> settled, String item, Cost cost) {
+        if (settled.contains(item)) return;
         Cost existing = best.get(item);
         if (existing != null && existing.seconds() <= cost.seconds()) return;
         best.put(item, cost);

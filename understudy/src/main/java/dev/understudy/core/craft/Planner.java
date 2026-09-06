@@ -85,9 +85,13 @@ public final class Planner {
         // Insertion-ordered: the first time an item is finished fixes where its
         // one step goes, and every later demand for it adds to the same total.
         Map<String, Integer> produce = new LinkedHashMap<>();
+        // Which variant was actually chosen, so the step that comes out names
+        // the tool the plan really uses rather than the one the solver costed.
+        Map<String, Gather> chosen = new LinkedHashMap<>();
 
         for (Map.Entry<String, Integer> want : goal.entrySet()) {
-            obtain(want.getKey(), want.getValue(), costs, stock, produce, shortfall, new HashSet<>());
+            obtain(want.getKey(), want.getValue(), costs, stock, produce, chosen, shortfall,
+                    new HashSet<>());
         }
 
         List<Action> actions = new ArrayList<>();
@@ -95,7 +99,7 @@ public final class Planner {
             Solver.Cost cost = costs.get(made.getKey());
             if (cost == null) continue;
             if (cost.viaGather() != null) {
-                Gather gather = cost.viaGather();
+                Gather gather = chosen.getOrDefault(made.getKey(), cost.viaGather());
                 int blocks = ceilDiv(made.getValue(), gather.amount());
                 actions.add(new Collect(made.getKey(), blocks * gather.amount(),
                         blocks * gather.seconds(), gather.tool()));
@@ -113,7 +117,8 @@ public final class Planner {
 
     private void obtain(String item, int count, Map<String, Solver.Cost> costs,
                         Map<String, Integer> stock, Map<String, Integer> produce,
-                        Map<String, Integer> shortfall, Set<String> underway) {
+                        Map<String, Gather> chosen, Map<String, Integer> shortfall,
+                        Set<String> underway) {
         int held = stock.getOrDefault(item, 0);
         int take = Math.min(held, count);
         stock.put(item, held - take);
@@ -135,14 +140,19 @@ public final class Planner {
         }
 
         if (cost.viaGather() != null) {
-            Gather gather = cost.viaGather();
+            Gather gather = bestGather(item, missing, costs, underway);
+            // The dearer tool wins: two calls for the same item, one for three
+            // blocks and one for six hundred, must not leave the plan claiming
+            // the small one's tool was enough for both.
+            Gather already = chosen.get(item);
+            if (already == null || already.perUnit() > gather.perUnit()) chosen.put(item, gather);
             int blocks = ceilDiv(missing, gather.amount());
             if (gather.tool() != null) {
                 // A pickaxe is worn out, not eaten. Enough of them to survive the
                 // job, and the survivor goes back in the bag for the next one —
                 // which is why asking for stone and then coal does not build two.
                 int tools = ceilDiv(blocks, Math.max(1, gather.toolUses()));
-                obtain(gather.tool(), tools, costs, stock, produce, shortfall, underway);
+                obtain(gather.tool(), tools, costs, stock, produce, chosen, shortfall, underway);
                 credit(stock, gather.tool(), 1);
             }
             produce.merge(item, blocks * gather.amount(), Integer::sum);
@@ -152,20 +162,80 @@ public final class Planner {
             int batches = ceilDiv(missing, recipe.count());
             for (Map.Entry<String, Integer> input : recipe.inputs().entrySet()) {
                 obtain(input.getKey(), input.getValue() * batches,
-                        costs, stock, produce, shortfall, underway);
+                        costs, stock, produce, chosen, shortfall, underway);
             }
             if (recipe.station() == Recipe.Station.CRAFTING_TABLE) {
-                obtain("crafting_table", 1, costs, stock, produce, shortfall, underway);
+                obtain("crafting_table", 1, costs, stock, produce, chosen, shortfall, underway);
                 credit(stock, "crafting_table", 1); // used, not consumed
             }
             if (recipe.station() == Recipe.Station.FURNACE) {
-                obtain("furnace", 1, costs, stock, produce, shortfall, underway);
+                obtain("furnace", 1, costs, stock, produce, chosen, shortfall, underway);
                 credit(stock, "furnace", 1);
             }
             produce.merge(item, batches * recipe.count(), Integer::sum);
             credit(stock, item, batches * recipe.count() - missing);
         }
         underway.remove(item);
+    }
+
+    /**
+     * Which tool to mine this with, given how much of it is wanted.
+     *
+     * Not a per-block question, which is why the solver does not answer it. A
+     * stone pickaxe costs three cobblestone to make and saves a second and a
+     * half on every deepslate block: pointless for eight blocks, obviously worth
+     * it for six hundred. So the whole job is costed each way — the digging plus
+     * however many tools it wears out — and the cheaper one wins.
+     *
+     * A variant whose tool is already being obtained further up the stack is
+     * skipped, which is what stops "mine cobblestone with a stone pickaxe" being
+     * considered while working out how to make the stone pickaxe.
+     */
+    private Gather bestGather(String item, int wanted, Map<String, Solver.Cost> costs,
+                              Set<String> underway) {
+        List<Gather> options = solver.gathersFor(item);
+        Gather best = null;
+        double bestTotal = Double.MAX_VALUE;
+        for (Gather option : options) {
+            if (option.tool() != null && underway.contains(option.tool())) continue;
+            // You cannot mine cobblestone with a pickaxe made of cobblestone.
+            // Costing it looks fine — a stone pickaxe amortised over 131 blocks
+            // is cheap — and it is nonsense, so the dependency is checked rather
+            // than left to a cycle guard to catch further down. If the tool is
+            // already in the chest its cost is zero and the walk stops there,
+            // which is right: then you really can use it.
+            if (option.tool() != null
+                    && dependsOn(option.tool(), item, costs, new HashSet<>())) continue;
+            int blocks = ceilDiv(wanted, option.amount());
+            double total = blocks * option.seconds();
+            if (option.tool() != null) {
+                Solver.Cost toolCost = costs.get(option.tool());
+                if (toolCost == null || !toolCost.reachable()) continue;
+                total += ceilDiv(blocks, Math.max(1, option.toolUses())) * toolCost.seconds();
+            }
+            if (total < bestTotal) {
+                bestTotal = total;
+                best = option;
+            }
+        }
+        return best == null ? options.get(0) : best;
+    }
+
+    /** Whether making one of these would, somewhere down the chain, need the other. */
+    private static boolean dependsOn(String item, String target,
+                                     Map<String, Solver.Cost> costs, Set<String> seen) {
+        if (item.equals(target)) return true;
+        if (!seen.add(item)) return false;
+        Solver.Cost cost = costs.get(item);
+        if (cost == null) return false;
+        if (cost.viaRecipe() != null) {
+            for (String input : cost.viaRecipe().inputs().keySet()) {
+                if (dependsOn(input, target, costs, seen)) return true;
+            }
+        } else if (cost.viaGather() != null && cost.viaGather().tool() != null) {
+            return dependsOn(cost.viaGather().tool(), target, costs, seen);
+        }
+        return false;
     }
 
     /** Leftovers from a batch stay available for whatever is planned next. */

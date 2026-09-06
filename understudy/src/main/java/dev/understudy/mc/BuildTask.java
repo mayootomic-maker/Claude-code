@@ -1,6 +1,7 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Facing;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -136,7 +137,7 @@ public final class BuildTask {
             return;
         }
 
-        if (place(player, target)) {
+        if (place(player, target, next.facing())) {
             placed++;
             index++;
             cooldown = PLACE_INTERVAL;
@@ -168,6 +169,18 @@ public final class BuildTask {
      * the game lets anything be placed.
      */
     private boolean place(LocalPlayer player, BlockPos target) {
+        return place(player, target, null);
+    }
+
+    /**
+     * Place a block, and if it cares which way it faces, face that way first.
+     *
+     * Stairs, doors and trapdoors take their orientation from where the player
+     * is looking, not from the face that was clicked. So the yaw is set after
+     * aiming at the block and before the click — a roof built without this has
+     * every step pointing the same wrong way.
+     */
+    private boolean place(LocalPlayer player, BlockPos target, Facing facing) {
         if (client.gameMode == null || client.level == null) return false;
 
         for (Direction direction : Direction.values()) {
@@ -180,6 +193,7 @@ public final class BuildTask {
                     face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
 
             look(player, hit);
+            if (facing != null) player.setYRot(facing.yaw());
             BlockHitResult result = new BlockHitResult(hit, face, reference, false);
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, result);
             player.swing(InteractionHand.MAIN_HAND);

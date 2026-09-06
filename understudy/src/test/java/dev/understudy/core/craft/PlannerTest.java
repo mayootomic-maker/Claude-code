@@ -164,6 +164,78 @@ class PlannerTest {
     }
 
     @Test
+    void neverPlansToMineSomethingWithAToolMadeOfIt() {
+        // The bug: keeping every way of gathering a thing let a cheaper-looking
+        // route overwrite an item that was already settled, and cobblestone
+        // ended up being mined with a stone pickaxe — a stone pickaxe being made
+        // of cobblestone. Costs stayed right; the story of where they came from
+        // did not.
+        Planner.Plan plan = planner().plan(Map.of("cobbled_deepslate", 400), Map.of());
+        assertTrue(plan.possible(), "should be reachable: " + plan.shortfall());
+
+        int firstCobble = -1;
+        int stonePickaxe = -1;
+        List<String> steps = plan.summary();
+        for (int i = 0; i < steps.size(); i++) {
+            if (firstCobble < 0 && steps.get(i).startsWith("gather") && steps.get(i).contains("cobblestone")) {
+                firstCobble = i;
+                assertFalse(steps.get(i).contains("stone_pickaxe"),
+                        "cobblestone cannot need the tool it makes: " + steps);
+            }
+            if (stonePickaxe < 0 && steps.get(i).contains("stone_pickaxe")) stonePickaxe = i;
+        }
+        assertTrue(firstCobble >= 0 && stonePickaxe > firstCobble,
+                "cobblestone must come before the pickaxe made from it: " + steps);
+    }
+
+    @Test
+    void upgradesTheToolInsteadOfGrindingOutWoodenOnes() {
+        // Deepslate is 2.63s with wood and 1.13s with stone, and a stone pickaxe
+        // lasts twice as long. Mining six hundred blocks with wooden pickaxes
+        // means eleven of them; the planner should work out that three
+        // cobblestone up front is the better trade. Nobody tells it that — it
+        // falls out of the costs.
+        Planner.Plan plan = planner().plan(Map.of("cobbled_deepslate", 600), Map.of());
+        assertTrue(plan.possible(), plan.shortfall().toString());
+        assertTrue(totalMade(plan, "stone_pickaxe") > 0,
+                "should upgrade for a job this size: " + plan.summary());
+        assertTrue(totalMade(plan, "wooden_pickaxe") <= 2,
+                "should not grind out wooden pickaxes when stone is available: " + plan.summary());
+    }
+
+    @Test
+    void searchTimeIsPaidPerTripRatherThanPerBlock() {
+        // Once you are standing in a deepslate layer the next block is right
+        // there. Charging the walk to get there against every block made six
+        // hundred of them cost five hours of "finding".
+        double eight = planner().plan(Map.of("cobbled_deepslate", 8), Map.of()).seconds();
+        double sixHundred = planner().plan(Map.of("cobbled_deepslate", 600), Map.of()).seconds();
+        assertTrue(sixHundred < eight * 40,
+                "seventy-five times the blocks should not cost forty times as long: "
+                        + eight + "s vs " + sixHundred + "s");
+    }
+
+    @Test
+    void everyMaterialTheMenuOffersCanActuallyBeObtained() {
+        // A picker that offers spruce and a planner that only knows oak is how
+        // a menu ends up promising something the mod then refuses to build.
+        for (dev.understudy.core.build.Materials.Wood wood
+                : dev.understudy.core.build.Materials.woods()) {
+            for (dev.understudy.core.build.Materials.Stone stone
+                    : dev.understudy.core.build.Materials.stones()) {
+                Map<String, Integer> want = Map.of(
+                        wood.planks(), 64, wood.stairs(), 16, wood.slab(), 8,
+                        wood.fence(), 8, wood.door(), 1, wood.trapdoor(), 1, wood.log(), 16,
+                        stone.block(), 64, stone.stairs(), 32, stone.slab(), 8);
+                Planner.Plan plan = planner().plan(want, Map.of());
+                assertTrue(plan.possible(),
+                        wood.name() + " + " + stone.name() + " cannot be obtained: "
+                                + plan.shortfall());
+            }
+        }
+    }
+
+    @Test
     void saysSoWhenSomethingCannotBeReached() {
         Planner.Plan plan = planner().plan(Map.of("netherite_ingot", 1), Map.of());
         assertFalse(plan.possible());

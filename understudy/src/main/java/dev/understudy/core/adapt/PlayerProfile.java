@@ -91,6 +91,23 @@ public final class PlayerProfile {
     }
 
     /** Your building blocks in order, for filling out a whole palette. */
+    /**
+     * The wood you actually build with, so /build matches the rest of your base
+     * without being told. Oak until there is evidence otherwise, because that is
+     * what a new world hands you first.
+     */
+    public String favouriteWood() {
+        for (String block : buildingBlocks(12)) {
+            if (block == null) continue;
+            for (dev.understudy.core.build.Materials.Wood wood
+                    : dev.understudy.core.build.Materials.woods()) {
+                String id = wood.planks().replace("_planks", "");
+                if (block.startsWith(id + "_")) return wood.name();
+            }
+        }
+        return "Oak";
+    }
+
     public List<String> buildingBlocks(int limit) {
         return placed.top(limit);
     }

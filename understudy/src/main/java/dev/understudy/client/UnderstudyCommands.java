@@ -6,6 +6,7 @@ import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Designs;
+import dev.understudy.core.build.Materials;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
@@ -131,7 +132,8 @@ public final class UnderstudyCommands {
             say(source, "I can build: " + String.join(", ", Catalog.ids()));
             return 0;
         }
-        Blueprint blueprint = Catalog.build(entry, size, palette);
+        Blueprint blueprint = Catalog.build(entry, size,
+                Materials.woodNamed(profile.favouriteWood()), Materials.stoneNamed("stone brick"));
 
         say(source, blueprint.name() + ": " + blueprint.blockCount() + " blocks");
 

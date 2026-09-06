@@ -2,7 +2,7 @@ package dev.understudy.mc;
 
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Catalog;
-import dev.understudy.core.build.Designs;
+import dev.understudy.core.build.Materials;
 import dev.understudy.core.build.Preview;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
@@ -13,7 +13,6 @@ import net.minecraft.network.chat.Component;
 
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiConsumer;
 
 /**
  * The menu /build opens: everything the mod can build, with a picture of each.
@@ -37,16 +36,23 @@ public final class BuildPicker extends Screen {
     private static final int DIM = 0xFF9AA3AD;
 
     private final Map<String, Integer> inventory;
-    /** Called with the chosen design and size once the player commits. */
-    private final BiConsumer<Catalog.Entry, Integer> onChoose;
+    /** Called with the chosen design, size and materials once the player commits. */
+    private final Chosen onChoose;
+
+    /** What the menu hands back: everything needed to build the thing. */
+    public interface Chosen {
+        void accept(Catalog.Entry entry, int size, Materials.Wood wood, Materials.Stone stone);
+    }
 
     private int selected;
     private int size;
+    private int woodIndex;
+    private int stoneIndex = 1;
     private Blueprint blueprint;
     private Preview.Image image;
     private String costLine = "";
 
-    public BuildPicker(Map<String, Integer> inventory, BiConsumer<Catalog.Entry, Integer> onChoose) {
+    public BuildPicker(Map<String, Integer> inventory, Chosen onChoose) {
         super(Component.literal("Build"));
         this.inventory = inventory;
         this.onChoose = onChoose;
@@ -71,10 +77,17 @@ public final class BuildPicker extends Screen {
         addRenderableWidget(Button.builder(Component.literal("+"), button -> resize(1))
                 .bounds(listX + 96, controlsY, 24, 20).build());
 
+        // Materials cycle rather than opening a second menu: eight woods and
+        // seven masonries is a list nobody wants to scroll, and the preview
+        // shows the answer immediately anyway.
+        addRenderableWidget(Button.builder(Component.literal("Wood \u203a"), button -> cycleWood(1))
+                .bounds(listX, controlsY + 24, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Stone \u203a"), button -> cycleStone(1))
+                .bounds(listX, controlsY + 48, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Choose where"), button -> commit())
-                .bounds(listX, controlsY + 28, 120, 20).build());
+                .bounds(listX, controlsY + 76, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
-                .bounds(listX, controlsY + 52, 120, 20).build());
+                .bounds(listX, controlsY + 100, 120, 20).build());
 
         refresh();
     }
@@ -91,8 +104,26 @@ public final class BuildPicker extends Screen {
         refresh();
     }
 
+    private void cycleWood(int by) {
+        woodIndex += by;
+        refresh();
+    }
+
+    private void cycleStone(int by) {
+        stoneIndex += by;
+        refresh();
+    }
+
+    private Materials.Wood wood() {
+        return Materials.wood(woodIndex);
+    }
+
+    private Materials.Stone stone() {
+        return Materials.stone(stoneIndex);
+    }
+
     private void commit() {
-        onChoose.accept(Catalog.entries().get(selected), size);
+        onChoose.accept(Catalog.entries().get(selected), size, wood(), stone());
         onClose();
     }
 
@@ -105,7 +136,7 @@ public final class BuildPicker extends Screen {
      */
     private void refresh() {
         Catalog.Entry entry = Catalog.entries().get(selected);
-        blueprint = Catalog.build(entry, size, Designs.defaultPalette());
+        blueprint = Catalog.build(entry, size, wood(), stone());
         image = Preview.of(blueprint);
 
         Planner.Plan plan = new Planner(Catalogue.solver())
@@ -147,12 +178,14 @@ public final class BuildPicker extends Screen {
 
         graphics.text(font, Component.literal(entry.name()), panelX + 10, panelY + 10, TEXT);
         graphics.text(font, Component.literal(entry.summary()), panelX + 10, panelY + 24, DIM);
-        graphics.text(font, Component.literal("size " + size), panelX + 10, panelY + 38, DIM);
+        graphics.text(font, Component.literal(
+                        "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name()),
+                panelX + 10, panelY + 38, DIM);
 
         drawPreview(graphics, panelX + 10, panelY + 56, panelW - 20, panelH - 96);
         graphics.text(font, Component.literal(costLine), panelX + 10, panelY + panelH - 26, TEXT);
 
-        graphics.text(font, Component.literal("size " + size), 16 + 32,
+        graphics.text(font, Component.literal(String.valueOf(size)), 16 + 40,
                 44 + Catalog.entries().size() * 24 + 22, TEXT);
     }
 

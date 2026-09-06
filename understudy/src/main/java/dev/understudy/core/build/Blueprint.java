@@ -23,7 +23,19 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
     /** What a block is for, so its material can be chosen separately. */
     public enum Role { FLOOR, WALL, ACCENT, ROOF, WINDOW, LIGHT, DOOR, FURNITURE }
 
-    public record Placement(int x, int y, int z, String block, Role role, boolean optional) {}
+    /**
+     * One block, and which way round it goes.
+     *
+     * facing is null for everything that does not care, which is most blocks.
+     * It is not decoration: stairs take their orientation from where the player
+     * is looking, so a roof built without it points the wrong way everywhere.
+     */
+    public record Placement(int x, int y, int z, String block, Role role, boolean optional,
+                            Facing facing) {
+        public Placement(int x, int y, int z, String block, Role role, boolean optional) {
+            this(x, y, z, block, role, optional, null);
+        }
+    }
 
     /** Block name to how many are needed, optional pieces included. */
     public Map<String, Integer> materials() {

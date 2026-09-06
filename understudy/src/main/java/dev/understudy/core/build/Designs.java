@@ -31,6 +31,26 @@ public final class Designs {
         return palette;
     }
 
+    /**
+     * A palette from a chosen wood and masonry.
+     *
+     * The small designs speak in roles rather than block names, so this is how a
+     * material choice in the menu reaches them. Picking spruce has to move the
+     * planks, the logs and the door together or the result looks like a mistake.
+     */
+    public static Map<Role, String> paletteOf(Materials.Wood wood, Materials.Stone stone) {
+        Map<Role, String> palette = new EnumMap<>(Role.class);
+        palette.put(Role.FLOOR, wood.planks());
+        palette.put(Role.WALL, wood.planks());
+        palette.put(Role.ACCENT, wood.log());
+        palette.put(Role.ROOF, stone.block());
+        palette.put(Role.WINDOW, "glass");
+        palette.put(Role.LIGHT, "torch");
+        palette.put(Role.DOOR, wood.door());
+        palette.put(Role.FURNITURE, "chest");
+        return palette;
+    }
+
     /** Candidates per role, so a preferred block is only used where it fits. */
     private static final Map<Role, List<String>> SUITABLE = Map.of(
             Role.FLOOR, List.of("planks", "stone", "cobble", "deepslate", "bricks", "terracotta", "concrete", "sandstone", "dirt", "log"),

@@ -30,7 +30,16 @@ public final class Draft {
     }
 
     public Draft set(int x, int y, int z, String block, Blueprint.Role role, boolean optional) {
-        cells.put(key(x, y, z), new Blueprint.Placement(x, y, z, block, role, optional));
+        return set(x, y, z, block, role, optional, null);
+    }
+
+    public Draft facing(int x, int y, int z, String block, Blueprint.Role role, Facing facing) {
+        return set(x, y, z, block, role, false, facing);
+    }
+
+    public Draft set(int x, int y, int z, String block, Blueprint.Role role, boolean optional,
+                     Facing facing) {
+        cells.put(key(x, y, z), new Blueprint.Placement(x, y, z, block, role, optional, facing));
         return this;
     }
 
