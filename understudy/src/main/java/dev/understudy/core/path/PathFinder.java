@@ -55,6 +55,29 @@ public final class PathFinder {
         public int range = 1;
         /** Ceiling on a single break, so it never decides to chew through obsidian. */
         public double maxBreakSeconds = 6.0;
+        /**
+         * How much to trust the straight-line estimate.
+         *
+         * At 1.0 this is textbook A*: the path it returns is optimal, and on a
+         * long journey it proves that by expanding an enormous fan of nodes in
+         * every direction before committing. Which would be fine, except the
+         * search is budgeted — so it runs out mid-fan and hands back whichever
+         * partial route it happened to reach, and that is what a wandering walk
+         * actually is. Leaning on the estimate makes it commit early and follow
+         * its nose. Paths come out a few per cent longer than perfect and enormously
+         * straighter, and on a budget the second thing is the one you can see.
+         */
+        public double heuristicWeight = 1.35;
+        /**
+         * Extra cost for swimming with your head under.
+         *
+         * Surface swimming is slow; swimming submerged is slow and has a timer on
+         * it. Without this the search happily routes along the bottom of a lake
+         * because it is a block or two shorter.
+         */
+        public double submergedPenalty = 6.0;
+
+        public Options heuristicWeight(double value) { this.heuristicWeight = value; return this; }
 
         public Options allowDig(boolean value) { this.allowDig = value; return this; }
         public Options allowBridge(boolean value) { this.allowBridge = value; return this; }
@@ -63,7 +86,15 @@ public final class PathFinder {
         public Options range(int value) { this.range = value; return this; }
     }
 
-    public record Result(List<Step> steps, boolean complete, int expanded, double cost) {
+    /**
+     * @param complete the path reaches the goal
+     * @param progress the path ends closer to the goal than it started; false
+     *                 means the search only found a way to somewhere sideways,
+     *                 which is still worth walking to get out of a pocket, but
+     *                 is not something to do twice in a row
+     */
+    public record Result(List<Step> steps, boolean complete, boolean progress,
+                         int expanded, double cost) {
         public boolean empty() {
             return steps.isEmpty();
         }
@@ -84,12 +115,18 @@ public final class PathFinder {
         Map<Long, Node> seen = new HashMap<>();
         PriorityQueue<Node> open = new PriorityQueue<>((a, b) -> Double.compare(a.f, b.f));
 
-        Node origin = new Node(fromX, fromY, fromZ, 0, heuristic(fromX, fromY, fromZ, toX, toY, toZ), null, null);
+        Node origin = new Node(fromX, fromY, fromZ, 0,
+                heuristic(fromX, fromY, fromZ, toX, toY, toZ) * options.heuristicWeight, null, null);
         seen.put(start, origin);
         open.add(origin);
 
         Node best = origin;
         double bestScore = origin.h;
+        // The best node that is not where we started. When the goal is behind a
+        // wall every reachable cell is further from it than this one, so `best`
+        // stays put and the path comes back empty — see the tail of this method.
+        Node escape = null;
+        double escapeScore = Double.MAX_VALUE;
         int expanded = 0;
 
         while (!open.isEmpty() && expanded < options.budget) {
@@ -99,11 +136,15 @@ public final class PathFinder {
             expanded++;
 
             if (within(current, toX, toY, toZ)) {
-                return new Result(reconstruct(current), true, expanded, current.g);
+                return new Result(reconstruct(current), true, true, expanded, current.g);
             }
             if (current.h < bestScore) {
                 bestScore = current.h;
                 best = current;
+            }
+            if (current.via != null && current.h + current.g * 0.25 < escapeScore) {
+                escapeScore = current.h + current.g * 0.25;
+                escape = current;
             }
 
             for (Step move : moves(current.x, current.y, current.z)) {
@@ -115,7 +156,8 @@ public final class PathFinder {
                 Node next = new Node(
                         move.x(), move.y(), move.z(),
                         g,
-                        heuristic(move.x(), move.y(), move.z(), toX, toY, toZ),
+                        heuristic(move.x(), move.y(), move.z(), toX, toY, toZ)
+                                * options.heuristicWeight,
                         current,
                         move);
                 seen.put(id, next);
@@ -125,8 +167,23 @@ public final class PathFinder {
 
         // Out of budget, or genuinely boxed in. Either way the best node reached
         // is a real, walkable prefix — hand it back rather than nothing.
-        List<Step> partial = reconstruct(best);
-        return new Result(partial, false, expanded, best.g);
+        //
+        // Unless it is where we started, which is what happens whenever the way
+        // on leads away from the goal first: round the far side of a lake, back
+        // out of a ravine, down a corridor that starts by heading north. Every
+        // reachable cell is then further from the goal than this one, `best`
+        // never moves, and the path comes back empty — which the caller reads as
+        // "no route at all" and, four of those in a row, gives up standing in an
+        // open field. So fall back to the best cell that is not this one,
+        // trading a little distance for actually leaving. It is flagged as
+        // no-progress so a caller can tell the difference and stop if it keeps
+        // happening, rather than pacing.
+        boolean progress = best != origin;
+        Node reached = progress ? best : escape;
+        if (reached == null) {
+            return new Result(List.of(), false, false, expanded, 0);
+        }
+        return new Result(reconstruct(reached), false, progress, expanded, reached.g);
     }
 
     private boolean within(Node node, int toX, int toY, int toZ) {
@@ -182,8 +239,11 @@ public final class PathFinder {
 
         // Straight across.
         if (standable(nx, y, nz)) {
-            out.add(new Step(nx, y, nz, world.liquid(nx, y, nz) ? Step.Kind.SWIM : Step.Kind.WALK,
-                    world.liquid(nx, y, nz) ? SWIM_COST : base));
+            boolean swimming = world.liquid(nx, y, nz);
+            // Head under as well as feet: that is the one with a timer on it.
+            double cost = !swimming ? base
+                    : SWIM_COST + (world.liquid(nx, y + 1, nz) ? options.submergedPenalty : 0);
+            out.add(new Step(nx, y, nz, swimming ? Step.Kind.SWIM : Step.Kind.WALK, cost));
             return;
         }
 

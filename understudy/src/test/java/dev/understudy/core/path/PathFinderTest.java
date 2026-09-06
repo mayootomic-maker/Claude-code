@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -218,6 +219,105 @@ class PathFinderTest {
         world.setUnbreakable(10, 66, 0);
         PathFinder.Result result = run(world, options().budget(20_000), 0, 64, 0, 10, 64, 0);
         assertFalse(result.complete());
+    }
+
+    @Test
+    @DisplayName("goes round deep water rather than along the bottom of it")
+    void staysAtTheSurface() {
+        // A barrier with two crossings: a deep one straight ahead, where the
+        // water is over your head, and a shallow one eight blocks off to the
+        // side. Wading further is better than drowning nearer.
+        TestWorld world = new TestWorld(63);
+        for (int x = 4; x <= 7; x++)
+            for (int y = 64; y <= 70; y++)
+                for (int z = -25; z <= 25; z++) {
+                    if (z == 0 || z == 8) continue;
+                    world.setUnbreakable(x, y, z);
+                }
+        for (int x = 4; x <= 7; x++) {
+            world.setLiquid(x, 64, 0).setLiquid(x, 65, 0);
+            world.setLiquid(x, 64, 8);
+        }
+
+        PathFinder.Result careful = run(world, options().budget(60_000), 0, 64, 0, 11, 64, 0);
+        assertTrue(careful.complete(), "did not get across");
+        assertTrue(careful.steps().stream().allMatch(s -> s.z() != 0 || s.x() < 4 || s.x() > 7),
+                "swam through the deep crossing");
+
+        // And that it is the penalty doing it, not the geometry.
+        PathFinder.Result reckless =
+                run(world, withoutSubmergedPenalty(), 0, 64, 0, 11, 64, 0);
+        assertTrue(reckless.steps().stream().anyMatch(s -> s.z() == 0 && s.x() >= 4 && s.x() <= 7),
+                "without the penalty it should take the short deep route");
+    }
+
+    private static PathFinder.Options withoutSubmergedPenalty() {
+        PathFinder.Options opts = options().budget(60_000);
+        opts.submergedPenalty = 0;
+        return opts;
+    }
+
+    @Test
+    @DisplayName("walks out of a dead end rather than reporting no route")
+    void leavesAPocket() {
+        // The goal is due east; the only way out of here is west. Every cell
+        // reachable is further from the goal than this one, which used to come
+        // back as an empty path — read by the caller as "nowhere to go" while
+        // standing in a perfectly walkable corridor.
+        TestWorld world = new TestWorld(63);
+        for (int y = 64; y <= 66; y++) {
+            for (int x = -11; x <= 1; x++) {
+                world.setUnbreakable(x, y, 1);
+                world.setUnbreakable(x, y, -1);
+            }
+            world.setUnbreakable(1, y, 0);
+            world.setUnbreakable(-11, y, 0);
+        }
+
+        PathFinder.Result result = run(world, options().budget(20_000), 0, 64, 0, 20, 64, 0);
+        assertFalse(result.complete());
+        assertFalse(result.empty(), "gave up standing in an open corridor");
+        assertFalse(result.progress(), "claimed to have got closer when it went the other way");
+        assertContinuous(0, 64, 0, result.steps());
+        assertTrue(result.steps().get(result.steps().size() - 1).x() < 0,
+                "did not actually leave");
+    }
+
+    @Test
+    @DisplayName("leans on the estimate so a budgeted search commits to a direction")
+    void weightedHeuristicCommits() {
+        // Broken ground — scattered rocks and one- to three-block rises, which
+        // is what ordinary terrain looks like to a pathfinder. On a billiard
+        // table every route is optimal and it makes no difference; the moment
+        // there is anything to step round, an admissible estimate has a fan of
+        // equally optimal routes to separate and spends the whole budget doing
+        // it, while the goal is still two hundred blocks away.
+        TestWorld world = new TestWorld(63);
+        Random rocks = new Random(7);
+        for (int x = -20; x <= 300; x++)
+            for (int z = -80; z <= 80; z++)
+                if (rocks.nextInt(100) < 12)
+                    for (int y = 64, top = 64 + rocks.nextInt(3); y <= top; y++)
+                        world.setSolid(x, y, z);
+
+        PathFinder.Options budgeted = options().budget(4_000);
+        budgeted.allowDig = false;
+        PathFinder.Result weighted = run(world, budgeted, 0, 65, 0, 250, 65, 0);
+
+        PathFinder.Options admissible = options().heuristicWeight(1.0).budget(4_000);
+        admissible.allowDig = false;
+        PathFinder.Result textbook = run(world, admissible, 0, 65, 0, 250, 65, 0);
+
+        assertTrue(weighted.complete(), "the weighted search should just walk it");
+        assertContinuous(0, 65, 0, weighted.steps());
+        assertFalse(textbook.complete(), "the premise of the weighting no longer holds");
+        int fanned = textbook.steps().isEmpty() ? 0
+                : textbook.steps().get(textbook.steps().size() - 1).x();
+        assertTrue(fanned < 250, "expected a prefix, got the whole way: " + fanned);
+        // And it is not paying much for it: a route a few per cent longer than
+        // the provably optimal one, found in a fraction of the search.
+        assertTrue(weighted.expanded() < textbook.expanded() / 2,
+                "no cheaper to search: " + weighted.expanded() + " vs " + textbook.expanded());
     }
 
     @Test

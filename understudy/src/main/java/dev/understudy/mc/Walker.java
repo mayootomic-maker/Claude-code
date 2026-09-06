@@ -48,6 +48,7 @@ public final class Walker {
     private BlockPos digging;
     private int digTicks;
     private int sidestep;
+    private BlockView world;
 
     public Walker(Minecraft client, Rng rng) {
         this.client = client;
@@ -64,6 +65,7 @@ public final class Walker {
      */
     public void follow(List<Step> steps, BlockView world) {
         this.path = Smoother.smooth(steps, world);
+        this.world = world;
         this.index = 0;
         this.stuckTicks = 0;
         this.lastProgress = Double.MAX_VALUE;
@@ -171,13 +173,54 @@ public final class Walker {
         // are pressed against, and pressing forward harder never has. So after
         // a couple of seconds of no progress, lean out sideways — alternating,
         // because whichever way the obstruction is, one of the two is past it.
-        boolean stuckOnSomething = stuckTicks > 25;
-        if (stuckOnSomething) sidestep++;
-        boolean left = stuckOnSomething && (sidestep / 12) % 2 == 0;
-        boolean right = stuckOnSomething && !left;
+        //
+        // Only onto ground, though. Blind strafing is a fine way to unstick
+        // yourself from a fence and an excellent way to walk off the cliff you
+        // were stuck at the edge of, and the second one costs a life.
+        boolean left = false;
+        boolean right = false;
+        if (stuckTicks > 25) {
+            sidestep++;
+            boolean preferLeft = (sidestep / 12) % 2 == 0;
+            if (canStrafe(player, preferLeft)) {
+                left = preferLeft;
+                right = !preferLeft;
+            } else if (canStrafe(player, !preferLeft)) {
+                left = !preferLeft;
+                right = preferLeft;
+            }
+        }
         client.options.keyLeft.setDown(left);
         client.options.keyRight.setDown(right);
         return true;
+    }
+
+    /**
+     * Whether stepping one block to the side lands on something.
+     *
+     * The pathfinder's own rule, asked of the block beside you: feet and head
+     * clear, nothing that hurts, and ground underneath — or water, which you
+     * can fall a block into without noticing. Anything else and the key stays
+     * up, because the alternative to being stuck is not always better.
+     */
+    private boolean canStrafe(LocalPlayer player, boolean leftward) {
+        if (world == null) return false;
+        double yaw = Math.toRadians(player.getYRot());
+        // Facing south (yaw 0, +Z) your left hand points east: (cos, sin).
+        double vx = Math.cos(yaw);
+        double vz = Math.sin(yaw);
+        if (!leftward) {
+            vx = -vx;
+            vz = -vz;
+        }
+        int x = (int) Math.floor(player.getX() + vx * 0.9);
+        int y = (int) Math.floor(player.getY());
+        int z = (int) Math.floor(player.getZ() + vz * 0.9);
+
+        if (!world.known(x, y, z)) return false;
+        if (world.hazard(x, y, z) || world.hazard(x, y + 1, z)) return false;
+        if (!world.passable(x, y, z) || !world.passable(x, y + 1, z)) return false;
+        return world.solid(x, y - 1, z) || world.liquid(x, y - 1, z) || world.liquid(x, y, z);
     }
 
     /**

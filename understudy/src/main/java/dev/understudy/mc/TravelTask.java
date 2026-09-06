@@ -41,6 +41,8 @@ public final class TravelTask {
     private int failures;
     private int ticks;
     private double startedDistance;
+    private BlockPos plannedFrom;
+    private int plannedTick;
 
     public TravelTask(Minecraft client, PlayerProfile profile, Rng rng, Consumer<String> report) {
         this.client = client;
@@ -62,6 +64,8 @@ public final class TravelTask {
         this.running = true;
         this.failures = 0;
         this.ticks = 0;
+        this.plannedFrom = null;
+        this.plannedTick = 0;
         LocalPlayer player = client.player;
         this.startedDistance = player == null ? 0 : Math.sqrt(player.blockPosition().distSqr(target));
         replan();
@@ -112,17 +116,29 @@ public final class TravelTask {
         }
 
         BlockPos from = player.blockPosition();
+        // Did the last plan get us anywhere? Not "did the search succeed" —
+        // the search can hand back a perfect route to a door the walker cannot
+        // open, and then it is asked again from the same three blocks, and
+        // succeeds again, forever. Ground covered is the only honest measure.
+        // A plan made moments ago is exempt: a short prefix is meant to be
+        // walked out quickly.
+        boolean movedOn = plannedFrom == null
+                || from.distSqr(plannedFrom) > 9
+                || ticks - plannedTick < 40;
+        plannedFrom = from;
+        plannedTick = ticks;
+
         ClientBlockView view = new ClientBlockView(client.level);
 
         PathFinder.Options options = new PathFinder.Options();
-        // Take the shortcuts you take. Someone who tunnels through hills gets a
-        // route that tunnels; someone who walks round gets one that walks round.
-        // Digging is wired to the walker now, so a route may go through a hill
-        // rather than all the way round it — which is what a person does, and
-        // what makes a long journey a journey rather than a tour. How willing it
-        // is comes from the profile: someone who tunnels gets a route that
-        // tunnels.
-        options.allowDig = profile.digTolerance() > 0.2;
+        // Take the shortcuts you take. Digging is wired to the walker, so a route
+        // may go through a hill rather than all the way round it — which is what
+        // a person does, and what makes a long journey a journey rather than a
+        // tour. How willing it is comes from the profile: someone who tunnels
+        // gets a route that tunnels. Unless the last search came back with
+        // nothing, at which point even someone who never tunnels picks up a
+        // shovel rather than standing there, because one wall is all it usually is.
+        options.allowDig = profile.digTolerance() > 0.2 || failures > 0;
         // Bridging still is not: placing a block underfoot mid-stride needs the
         // block in hand and a free moment, and half of that is not built.
         options.allowBridge = false;
@@ -137,15 +153,23 @@ public final class TravelTask {
                 new PathFinder(view, options).find(from.getX(), from.getY(), from.getZ(),
                         goal.getX(), goal.getY(), goal.getZ());
 
-        if (result.empty()) {
+        // Three ways to be getting nowhere: no route at all, a route that ends
+        // no closer than it began, or a route we have already been given and
+        // failed to walk. Any of them once is nothing — terrain loads, a mob
+        // gets in the way. Four in a row is the walk pacing, and saying so is
+        // better than doing it until the world ends.
+        if (result.empty() || !result.progress() || !movedOn) {
             failures++;
             if (failures >= MAX_FAILURES) {
-                stop("can't find a way there from here");
+                stop(result.empty() ? "can't find a way there from here"
+                        : "stuck: nothing from here is getting any closer");
+                return;
             }
-            return;
+            if (result.empty()) return;
+        } else {
+            failures = 0;
         }
 
-        failures = 0;
         List<Step> steps = result.steps();
         // Walking the whole prefix before re-planning wastes the chance to use
         // terrain that loads on the way, so stop a little short of the end.
