@@ -1,5 +1,7 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.craft.Catalogue;
+import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.core.path.Spiral;
 import net.minecraft.client.Minecraft;
@@ -9,7 +11,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -32,6 +38,14 @@ public final class GatherTask {
     private static final int MAX_MINING_TICKS = 300;
     /** Re-scan for a target no more than this often; a full scan is not free. */
     private static final int SCAN_INTERVAL = 10;
+    /** How far each leg of a strip mine goes. Half the scan radius, so no gaps. */
+    private static final int STRIDE = 24;
+    /** Legs before admitting this stretch of world does not have any. */
+    private static final int MAX_LEGS = 14;
+    /** Deep enough that it is dark and things spawn. */
+    private static final int DARK_BELOW = 40;
+    /** The four compass headings a strip mine can run along. */
+    private static final int[][] LEGS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
     private final Minecraft client;
     private final TravelTask travel;
@@ -39,7 +53,7 @@ public final class GatherTask {
     private final SmeltTask smelt;
     private final Consumer<String> report;
 
-    private List<Planner.Action> plan = List.of();
+    private List<Planner.Action> plan = new ArrayList<>();
     private int step;
     private boolean running;
 
@@ -51,6 +65,9 @@ public final class GatherTask {
     private String waitingOn;
     private boolean attempted;
     private Runnable onDone;
+    private int legs;
+    private int heading;
+    private final Set<String> fetched = new HashSet<>();
 
     public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
                       Consumer<String> report) {
@@ -67,13 +84,19 @@ public final class GatherTask {
 
     public void start(Planner.Plan wanted, Runnable then) {
         this.onDone = then;
-        this.plan = wanted.actions();
+        // Copied rather than referenced: a missing tool splices its own steps
+        // into this list, and a plan is not the sort of thing that arrives
+        // knowing it will be edited.
+        this.plan = new ArrayList<>(wanted.actions());
         this.step = 0;
         this.running = !plan.isEmpty();
         this.target = null;
         this.gathered = 0;
         this.waitingOn = null;
         this.attempted = false;
+        this.legs = 0;
+        this.heading = 0;
+        this.fetched.clear();
         if (running) {
             report.accept("gathering: " + plan.size() + " steps, about "
                     + Math.round(wanted.seconds() / 60) + " minutes");
@@ -84,7 +107,7 @@ public final class GatherTask {
         if (!running) return;
         running = false;
         onDone = null; // a cancelled gather must not go on to build
-        plan = List.of();
+        plan = new ArrayList<>();
         target = null;
         releaseMining();
         report.accept("stopped gathering — " + why);
@@ -159,8 +182,14 @@ public final class GatherTask {
         }
 
         if (wanted.tool() != null && !Hotbar.hold(client, wanted.tool())) {
+            // Not having the tool is not a reason to stop; it is a reason to go
+            // and make one. The plan thought there would be one here — it broke,
+            // or a craft failed upstream — so work out what a fresh one costs
+            // and put those steps in front of this one.
+            if (fetchTool(player, wanted.tool())) return;
             if (waitingOn == null) {
-                waitingOn = "no " + wanted.tool() + " to mine " + wanted.item() + " with";
+                waitingOn = "no " + wanted.tool() + " to mine " + wanted.item()
+                        + " with, and no way to make one";
                 report.accept(waitingOn);
             }
             return;
@@ -173,12 +202,20 @@ public final class GatherTask {
             target = findNearest(player, wanted);
             miningTicks = 0;
             if (target == null) {
-                if (!travel.running()) {
-                    report.accept("no " + wanted.item() + " in sight — move somewhere it grows"
-                            + " and it will pick up again");
-                }
+                // Still walking or digging somewhere it might be: let that finish.
+                if (travel.running()) return;
+                if (prospect(player, wanted)) return;
+                report.accept("no " + wanted.item() + " anywhere around here"
+                        + (wanted.bestY() == Gather.ANYWHERE
+                                ? " — move somewhere it grows and it will pick up again"
+                                : " — dug " + legs + " legs at y=" + wanted.bestY()
+                                        + " and found none; try somewhere else"));
+                releaseMining();
+                step++;
+                legs = 0;
                 return;
             }
+            legs = 0; // found some: the search starts over if this vein runs out
         }
 
         double distance = Math.sqrt(player.blockPosition().distSqr(target));
@@ -188,7 +225,9 @@ public final class GatherTask {
         if (distance > REACH) {
             // Walking is somebody else's job, and it already knows how to do it
             // smoothly and how to get unstuck.
-            if (!travel.running()) travel.start(target.above());
+            // Digging allowed: the block may well be sealed in rock, and
+            // walking to a seam of ore is a contradiction in terms.
+            if (!travel.running()) travel.start(target.above(), true);
             return;
         }
         if (travel.running()) travel.stop("arrived");
@@ -234,18 +273,103 @@ public final class GatherTask {
         if (next != null) next.run();
     }
 
-    /** The closest block that drops what is wanted, searched outward. */
+    /**
+     * The closest block that drops what is wanted, searched outward.
+     *
+     * Exposed ones first, and only then the ones sealed in rock. That order is
+     * the whole difference between walking to a tree you can see and tunnelling
+     * to it. But "sealed in rock" is where every ore in the game is — and so is
+     * the stone three blocks under a grass field — so refusing those outright,
+     * which is what this used to do, meant the gatherer could mine only what
+     * somebody had already dug a cave to.
+     */
     private BlockPos findNearest(LocalPlayer player, Planner.Collect wanted) {
+        BlockPos exposed = scan(player, wanted, true);
+        return exposed != null ? exposed : scan(player, wanted, false);
+    }
+
+    private BlockPos scan(LocalPlayer player, Planner.Collect wanted, boolean mustBeExposed) {
         BlockPos from = player.blockPosition();
         for (int[] offset : Spiral.offsets()) {
             BlockPos at = from.offset(offset[0], offset[1], offset[2]);
             if (!matches(at, wanted)) continue;
-            // Skip anything walled in on all six sides: it cannot be reached
-            // without digging a tunnel, and the next one probably can be.
-            if (buried(at)) continue;
+            if (mustBeExposed && buried(at)) continue;
             return at;
         }
         return null;
+    }
+
+    /**
+     * Nothing in range. Go where it is instead of saying there is none.
+     *
+     * Ore does not come to you, and "no diamond in sight" while standing in a
+     * field is true and useless. So: down to the height the game actually puts
+     * it at, and then a strip mine — one straight leg at a time, rescanning
+     * between them, because the scan reaches further than a leg is long and a
+     * straight tunnel exposes more new rock than a wandering one.
+     *
+     * It is bounded. Fourteen legs is about three hundred blocks of tunnel, and
+     * if that turns up nothing the honest answer is that this stretch of world
+     * does not have any, not another hour of digging.
+     */
+    private boolean prospect(LocalPlayer player, Planner.Collect wanted) {
+        if (wanted.bestY() == Gather.ANYWHERE) return false;
+        if (legs >= MAX_LEGS) return false;
+        BlockPos from = player.blockPosition();
+
+        BlockPos goal;
+        if (Math.abs(from.getY() - wanted.bestY()) > 4) {
+            goal = new BlockPos(from.getX(), wanted.bestY(), from.getZ());
+            report.accept("no " + wanted.item() + " up here — digging down to y="
+                    + wanted.bestY());
+        } else {
+            // One heading for the whole search, picked from where we happen to
+            // be so two jobs in the same spot do not retrace the same tunnel.
+            if (heading == 0) heading = 1 + Math.floorMod(from.getX() + from.getZ(), 4);
+            int[] along = LEGS[heading - 1];
+            goal = from.offset(along[0] * STRIDE, 0, along[1] * STRIDE);
+            Hud.setStatus("looking for " + wanted.item() + " (leg " + (legs + 1) + ")");
+        }
+        legs++;
+        lightTheWay(player);
+        travel.start(goal, true);
+        return true;
+    }
+
+    /**
+     * A torch, if there is one to spare and it is dark enough to matter.
+     *
+     * Not decoration: a fresh tunnel at y=-59 is pitch black, things spawn in
+     * it, and the guardian will quite rightly abort the whole job over a
+     * skeleton that a torch would have prevented. Nothing is placed if there
+     * are no torches — the plan asks for some when it knows it is going
+     * underground, and if there are none anyway, that is the player's call.
+     */
+    private void lightTheWay(LocalPlayer player) {
+        if (player.blockPosition().getY() > DARK_BELOW) return;
+        if (Hotbar.count(player, "torch") == 0 || !Hotbar.hold(client, "torch")) return;
+        BlockPos spot = Placement.spotBeside(client, player);
+        if (spot != null) Placement.put(client, player, spot, "torch");
+    }
+
+    /**
+     * Plan a replacement tool and splice it in ahead of the step that needs it.
+     *
+     * Once per tool per job: if a fresh wooden pickaxe still leaves us without
+     * one, the problem is not that nobody tried, and repeating the attempt for
+     * the rest of the session would hide whatever the real failure is.
+     */
+    private boolean fetchTool(LocalPlayer player, String tool) {
+        if (!fetched.add(tool)) return false;
+        Planner.Plan makeIt = new Planner(Catalogue.solver())
+                .plan(Map.of(tool, 1), Carried.contents(player));
+        if (!makeIt.possible() || makeIt.actions().isEmpty()) return false;
+
+        report.accept("no " + tool + " — making one first ("
+                + makeIt.actions().size() + " steps)");
+        plan.addAll(step, makeIt.actions());
+        attempted = false;
+        return true;
     }
 
     private boolean matches(BlockPos at, Planner.Collect wanted) {

@@ -30,12 +30,25 @@ package dev.understudy.core.craft;
  *                    five hours of "finding" while standing in the middle of it.
  * @param tool        the tool that must be held, or null when bare hands will do
  * @param toolUses    durability of that tool, for amortising its cost per block
+ * @param bestY       the height this is most common at, or ANYWHERE for things
+ *                    found wherever you happen to be standing. Ore does not
+ *                    come to you: without this the gatherer looks around, sees
+ *                    no diamond on the surface, and says so — which is true and
+ *                    useless. With it, it knows where to go and dig.
  * @param from        the blocks that drop it. Usually one name, but iron comes
  *                    out of both iron_ore and deepslate_iron_ore, and a gatherer
  *                    that only knows the first walks past half the ore it sees.
  */
 public record Gather(String item, int amount, double digSeconds, double findSeconds,
-                     int perTrip, String tool, int toolUses, java.util.List<String> from) {
+                     int perTrip, String tool, int toolUses, int bestY,
+                     java.util.List<String> from) {
+
+    /** Found at whatever height you are already at: wood, sand, animals. */
+    public static final int ANYWHERE = Integer.MIN_VALUE;
+
+    public boolean underground() {
+        return bestY != ANYWHERE;
+    }
 
     /** Time for one block: the dig, plus this block's share of finding the deposit. */
     public double seconds() {
@@ -48,12 +61,26 @@ public record Gather(String item, int amount, double digSeconds, double findSeco
 
     public static Gather byHand(String item, double digSeconds, double findSeconds, int perTrip,
                                 String... from) {
-        return new Gather(item, 1, digSeconds, findSeconds, perTrip, null, 0, blocks(item, from));
+        return new Gather(item, 1, digSeconds, findSeconds, perTrip, null, 0, ANYWHERE,
+                blocks(item, from));
     }
 
     public static Gather with(String item, double digSeconds, double findSeconds, int perTrip,
                               String tool, int toolUses, String... from) {
-        return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses,
+        return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses, ANYWHERE,
+                blocks(item, from));
+    }
+
+    /**
+     * Something you have to go down for, with the height it is most common at.
+     *
+     * The numbers are the game's own distribution peaks — diamond at -59, gold
+     * at -16, iron at 15 — rather than folklore. They are where a strip mine
+     * goes, and being a dozen blocks out costs time, not correctness.
+     */
+    public static Gather deep(String item, double digSeconds, double findSeconds, int perTrip,
+                              String tool, int toolUses, int bestY, String... from) {
+        return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses, bestY,
                 blocks(item, from));
     }
 

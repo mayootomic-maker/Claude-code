@@ -21,9 +21,11 @@ public final class Catalogue {
 
     private Catalogue() {}
 
-    /** Wooden tools take 59 uses, stone 131, iron 250. */
+    /** Wooden tools take 59 uses, stone 131, iron 250, diamond 1561. */
     private static final int WOOD_USES = 59;
     private static final int STONE_USES = 131;
+    private static final int IRON_USES = 250;
+    private static final int DIAMOND_USES = 1561;
 
     public static List<Gather> gathers() {
         List<Gather> all = new ArrayList<>(List.of(
@@ -39,13 +41,15 @@ public final class Catalogue {
                 // Stone: hardness 1.5, wooden pickaxe speed 2 -> 1.13s.
                 Gather.with("cobblestone", 1.13, 20.0, 64, "wooden_pickaxe", WOOD_USES, "stone"),
                 Gather.with("cobblestone", 0.6, 20.0, 64, "stone_pickaxe", STONE_USES, "stone"),
-                Gather.with("andesite", 1.13, 40.0, 32, "wooden_pickaxe", WOOD_USES),
-                Gather.with("andesite", 0.6, 40.0, 32, "stone_pickaxe", STONE_USES),
+                Gather.deep("andesite", 1.13, 40.0, 32, "wooden_pickaxe", WOOD_USES, 10),
+                Gather.deep("andesite", 0.6, 40.0, 32, "stone_pickaxe", STONE_USES, 10),
                 // Deepslate is hardness 3, so the tool matters most here: 2.63s
                 // with wood against 1.13s with stone, and a stone pickaxe lasts
                 // more than twice as long.
-                Gather.with("cobbled_deepslate", 2.63, 90.0, 64, "wooden_pickaxe", WOOD_USES, "deepslate"),
-                Gather.with("cobbled_deepslate", 1.13, 90.0, 64, "stone_pickaxe", STONE_USES, "deepslate"),
+                Gather.deep("cobbled_deepslate", 2.63, 90.0, 64, "wooden_pickaxe", WOOD_USES, -10,
+                        "deepslate"),
+                Gather.deep("cobbled_deepslate", 1.13, 90.0, 64, "stone_pickaxe", STONE_USES, -10,
+                        "deepslate"),
                 // Blackstone is only in the nether. The four minutes is getting
                 // there, and the menu shows the total so the choice is informed
                 // rather than surprising.
@@ -55,8 +59,39 @@ public final class Catalogue {
                 Gather.with("coal", 2.25, 25.0, 8, "wooden_pickaxe", WOOD_USES, "coal_ore", "deepslate_coal_ore"),
                 Gather.with("coal", 1.15, 25.0, 8, "stone_pickaxe", STONE_USES, "coal_ore", "deepslate_coal_ore"),
                 // Iron ore needs stone or better. Hardness 3, stone speed 4.
-                Gather.with("raw_iron", 1.13, 90.0, 4, "stone_pickaxe", STONE_USES, "iron_ore", "deepslate_iron_ore"),
-                Gather.with("raw_copper", 1.13, 60.0, 6, "stone_pickaxe", STONE_USES, "copper_ore", "deepslate_copper_ore")));
+                Gather.deep("raw_iron", 1.13, 90.0, 4, "stone_pickaxe", STONE_USES, 15,
+                        "iron_ore", "deepslate_iron_ore"),
+                Gather.deep("raw_copper", 1.13, 60.0, 6, "stone_pickaxe", STONE_USES, 48,
+                        "copper_ore", "deepslate_copper_ore"),
+
+                // The rest of the ladder. Each of these is gated on a tool that
+                // is itself two or three levels of this same list deep, which is
+                // the entire point: asking for a diamond with nothing in your
+                // pockets has to come out as a plan that starts by punching a
+                // tree, and it does.
+                //
+                // The heights are the game's own distribution peaks. Iron has a
+                // second peak up at 232 that this ignores, because 15 is the one
+                // you can walk to from a hole in the ground.
+                Gather.deep("raw_gold", 1.13, 150.0, 4, "iron_pickaxe", IRON_USES, -16,
+                        "gold_ore", "deepslate_gold_ore"),
+                Gather.deep("redstone", 1.13, 120.0, 20, "iron_pickaxe", IRON_USES, -58,
+                        "redstone_ore", "deepslate_redstone_ore"),
+                Gather.deep("lapis_lazuli", 1.13, 180.0, 8, "stone_pickaxe", STONE_USES, 0,
+                        "lapis_ore", "deepslate_lapis_ore"),
+                Gather.deep("diamond", 1.13, 300.0, 4, "iron_pickaxe", IRON_USES, -59,
+                        "diamond_ore", "deepslate_diamond_ore"),
+                // Emerald is the exception that has no depth worth digging to:
+                // it is mountains-only and sits in exposed stone high up, so a
+                // strip mine at any height finds nothing. Left at the surface on
+                // purpose — it mines what it sees and says so when it sees none,
+                // which beats tunnelling for an hour under the wrong biome.
+                Gather.with("emerald", 1.13, 900.0, 1, "iron_pickaxe", IRON_USES,
+                        "emerald_ore", "deepslate_emerald_ore"),
+                // Obsidian: the top of the ladder, and the reason the ladder
+                // ends at a diamond pickaxe. 9.4s a block even with diamond.
+                Gather.deep("obsidian", 9.4, 240.0, 8, "diamond_pickaxe", DIAMOND_USES, -20,
+                        "obsidian")));
 
         // Every wood the material picker offers, or choosing spruce produces a
         // plan that says spruce planks cannot be obtained. Logs are all hardness
@@ -88,6 +123,7 @@ public final class Catalogue {
                 Recipe.table("stone_pickaxe", 1, 3.0, "cobblestone", 3, "stick", 2),
                 Recipe.table("stone_axe", 1, 3.0, "cobblestone", 3, "stick", 2),
                 Recipe.table("iron_pickaxe", 1, 3.0, "iron_ingot", 3, "stick", 2),
+                Recipe.table("diamond_pickaxe", 1, 3.0, "diamond", 3, "stick", 2),
                 Recipe.table("shears", 1, 3.0, "iron_ingot", 2),
 
                 // A furnace run is ten seconds a piece and needs fuel, which the
@@ -100,6 +136,8 @@ public final class Catalogue {
                 new Recipe("iron_ingot", 1, java.util.Map.of("raw_iron", 1, "coal", 1),
                         Recipe.Station.FURNACE, 10.0),
                 new Recipe("copper_ingot", 1, java.util.Map.of("raw_copper", 1, "coal", 1),
+                        Recipe.Station.FURNACE, 10.0),
+                new Recipe("gold_ingot", 1, java.util.Map.of("raw_gold", 1, "coal", 1),
                         Recipe.Station.FURNACE, 10.0),
                 new Recipe("brick", 1, java.util.Map.of("clay_ball", 1, "coal", 1),
                         Recipe.Station.FURNACE, 10.0),

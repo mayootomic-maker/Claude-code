@@ -43,6 +43,7 @@ public final class TravelTask {
     private double startedDistance;
     private BlockPos plannedFrom;
     private int plannedTick;
+    private boolean mustDig;
 
     public TravelTask(Minecraft client, PlayerProfile profile, Rng rng, Consumer<String> report) {
         this.client = client;
@@ -60,6 +61,17 @@ public final class TravelTask {
     }
 
     public void start(BlockPos target) {
+        start(target, false);
+    }
+
+    /**
+     * Go there, digging whether or not that is your style.
+     *
+     * Used when the destination is underground and there is no walking to it:
+     * a mine shaft is not a route preference, it is the only route.
+     */
+    public void start(BlockPos target, boolean digging) {
+        this.mustDig = digging;
         this.goal = target;
         this.running = true;
         this.failures = 0;
@@ -138,7 +150,7 @@ public final class TravelTask {
         // gets a route that tunnels. Unless the last search came back with
         // nothing, at which point even someone who never tunnels picks up a
         // shovel rather than standing there, because one wall is all it usually is.
-        options.allowDig = profile.digTolerance() > 0.2 || failures > 0;
+        options.allowDig = mustDig || profile.digTolerance() > 0.2 || failures > 0;
         // Bridging still is not: placing a block underfoot mid-stride needs the
         // block in hand and a free moment, and half of that is not built.
         options.allowBridge = false;

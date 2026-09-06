@@ -221,8 +221,23 @@ public final class UnderstudyCommands {
         }
         String item = rawItem.toLowerCase().replace("minecraft:", "");
 
-        Planner.Plan plan = new Planner(Catalogue.solver())
-                .plan(Map.of(item, count), Carried.contents(source.getPlayer()));
+        Map<String, Integer> have = Carried.contents(source.getPlayer());
+        Planner.Plan plan = new Planner(Catalogue.solver()).plan(Map.of(item, count), have);
+
+        // Anything with a depth means a tunnel, and a tunnel at y=-59 is pitch
+        // black and full of things that spawn in it. Asking for torches in the
+        // same breath costs a stick and a coal and is the difference between
+        // coming back with diamonds and the guardian aborting over a skeleton.
+        if (plan.possible() && goesUnderground(plan) && !have.containsKey("torch")) {
+            // Torches first, literally: the planner emits goals in the order it
+            // is given them, and torches made after the dig they were for are
+            // no use to anybody.
+            java.util.LinkedHashMap<String, Integer> lit = new java.util.LinkedHashMap<>();
+            lit.put("torch", TORCHES_FOR_A_DIG);
+            lit.put(item, count);
+            Planner.Plan withLight = new Planner(Catalogue.solver()).plan(lit, have);
+            if (withLight.possible()) plan = withLight;
+        }
 
         if (!plan.possible()) {
             say(source, "no way to get " + String.join(", ", plan.shortfall().keySet())
@@ -241,6 +256,15 @@ public final class UnderstudyCommands {
         for (String line : plan.summary()) say(source, "  " + line);
         gather.start(plan, null);
         return 1;
+    }
+
+    /** Enough to light a few hundred blocks of tunnel at eight-block spacing. */
+    private static final int TORCHES_FOR_A_DIG = 24;
+
+    private static boolean goesUnderground(Planner.Plan plan) {
+        return plan.actions().stream()
+                .anyMatch(action -> action instanceof Planner.Collect collect
+                        && collect.bestY() != dev.understudy.core.craft.Gather.ANYWHERE);
     }
 
     private static int sort(FabricClientCommandSource source, boolean keepKit) {

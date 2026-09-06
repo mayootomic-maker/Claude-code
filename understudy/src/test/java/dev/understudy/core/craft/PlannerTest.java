@@ -287,4 +287,81 @@ class PlannerTest {
             }
         }
     }
+
+    @Test
+    void reachesDiamondFromAnEmptyInventory() {
+        // The whole ladder in one ask: diamond needs an iron pickaxe, which
+        // needs iron, which needs a stone pickaxe, which needs cobblestone,
+        // which needs a wooden pickaxe, which needs a log. Six levels, and the
+        // only thing the planner is told is the word "diamond".
+        List<String> steps = stepsFor(Map.of("diamond", 3), Map.of());
+        for (String rung : List.of("oak_log", "wooden_pickaxe", "cobblestone",
+                "stone_pickaxe", "raw_iron", "iron_ingot", "iron_pickaxe", "diamond")) {
+            assertTrue(indexOf(steps, rung) >= 0, "no " + rung + " in: " + steps);
+        }
+        assertTrue(indexOf(steps, "wooden_pickaxe") < indexOf(steps, "cobblestone"), steps.toString());
+        assertTrue(indexOf(steps, "stone_pickaxe") < indexOf(steps, "raw_iron"), steps.toString());
+        assertTrue(indexOf(steps, "iron_pickaxe") < indexOf(steps, "diamond"), steps.toString());
+    }
+
+    @Test
+    void obsidianGoesAllTheWayToADiamondPickaxe() {
+        // The top of the ladder, and the only thing that needs the rung above
+        // iron. If this ever comes back impossible, a tier is missing.
+        Planner.Plan plan = planner().plan(Map.of("obsidian", 10), Map.of());
+        assertTrue(plan.possible(), plan.shortfall().toString());
+        List<String> steps = stepsFor(Map.of("obsidian", 10), Map.of());
+        assertTrue(indexOf(steps, "diamond_pickaxe") >= 0, steps.toString());
+        assertTrue(indexOf(steps, "diamond_pickaxe") < indexOf(steps, "obsidian"), steps.toString());
+    }
+
+    @Test
+    void undergroundStepsSayHowDeepToGo() {
+        // The gatherer digs to this number. A depth of ANYWHERE on an ore is
+        // how "no diamond in sight" happens while standing in a field.
+        Planner.Plan plan = planner().plan(Map.of("diamond", 1), Map.of());
+        Planner.Collect diamond = plan.actions().stream()
+                .filter(action -> action instanceof Planner.Collect collect
+                        && collect.item().equals("diamond"))
+                .map(Planner.Collect.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(-59, diamond.bestY(), "diamond is not at the surface");
+
+        Planner.Collect logs = plan.actions().stream()
+                .filter(action -> action instanceof Planner.Collect collect
+                        && collect.item().endsWith("_log"))
+                .map(Planner.Collect.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Gather.ANYWHERE, logs.bestY(), "trees are not underground");
+    }
+
+    @Test
+    void everyToolAnOreNeedsIsItselfObtainable() {
+        // A gather whose tool cannot be made is a step that stalls forever in
+        // the game and looks perfectly fine here. Check every one of them.
+        for (Gather gather : Catalogue.gathers()) {
+            if (gather.tool() == null) continue;
+            Planner.Plan plan = planner().plan(Map.of(gather.tool(), 1), Map.of());
+            assertTrue(plan.possible(),
+                    gather.item() + " needs a " + gather.tool() + ", which cannot be made: "
+                            + plan.shortfall());
+        }
+    }
+
+    @Test
+    void torchesAreMadeBeforeTheDigTheyLight() {
+        // Ordering the planner will not work out on its own: torches depend on
+        // nothing underground, so any position in the plan is legal. Only the
+        // order the goals are given fixes it, and a torch crafted after the
+        // diamond it was for is a tunnel dug in the dark.
+        java.util.LinkedHashMap<String, Integer> goal = new java.util.LinkedHashMap<>();
+        goal.put("torch", 24);
+        goal.put("diamond", 3);
+        List<String> steps = stepsFor(goal, Map.of());
+        assertTrue(indexOf(steps, "torch") >= 0, steps.toString());
+        assertTrue(indexOf(steps, "torch") < indexOf(steps, "diamond"),
+                "torches after the dig: " + steps);
+    }
 }
