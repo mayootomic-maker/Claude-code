@@ -1,8 +1,15 @@
 package dev.understudy.client;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.core.build.Blueprint;
+import dev.understudy.core.build.Designs;
+import dev.understudy.mc.BuildTask;
+import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
+
+import java.util.Map;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.text.Text;
@@ -33,10 +40,35 @@ public final class UnderstudyCommands {
                                                     IntegerArgumentType.getInteger(context, "z"))))))
                     .then(literal("stop").executes(context -> stop(context.getSource()))));
 
+            dispatcher.register(literal("build")
+                    .then(argument("what", StringArgumentType.word())
+                            .executes(context -> build(context.getSource(),
+                                    StringArgumentType.getString(context, "what"), 7, false))
+                            .then(argument("size", IntegerArgumentType.integer(3, 32))
+                                    .executes(context -> build(context.getSource(),
+                                            StringArgumentType.getString(context, "what"),
+                                            IntegerArgumentType.getInteger(context, "size"), false))))
+                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+
+            dispatcher.register(literal("plan")
+                    .then(argument("what", StringArgumentType.word())
+                            .executes(context -> build(context.getSource(),
+                                    StringArgumentType.getString(context, "what"), 7, true))
+                            .then(argument("size", IntegerArgumentType.integer(3, 32))
+                                    .executes(context -> build(context.getSource(),
+                                            StringArgumentType.getString(context, "what"),
+                                            IntegerArgumentType.getInteger(context, "size"), true)))));
+
+            dispatcher.register(literal("sort")
+                    .executes(context -> sort(context.getSource(), true))
+                    .then(literal("all").executes(context -> sort(context.getSource(), false)))
+                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+
             dispatcher.register(literal("understudy")
                     .then(literal("stop").executes(context -> stop(context.getSource())))
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
+                    .then(literal("help").executes(context -> help(context.getSource())))
                     .executes(context -> status(context.getSource())));
         });
     }
@@ -52,20 +84,100 @@ public final class UnderstudyCommands {
         return 1;
     }
 
-    private static int stop(FabricClientCommandSource source) {
-        TravelTask task = UnderstudyClient.travel();
-        if (task == null || !task.running()) {
-            say(source, "not doing anything");
+    /**
+     * Design a structure and either report what it needs or go and build it.
+     *
+     * The same code path for both, because "tell me what this costs" and "build
+     * this" should never disagree about what the thing is.
+     */
+    private static int build(FabricClientCommandSource source, String what, int size, boolean planOnly) {
+        BuildTask task = UnderstudyClient.build();
+        PlayerProfile profile = UnderstudyClient.profile();
+        if (task == null || profile == null) {
+            say(source, "not in a world yet");
             return 0;
         }
-        task.stop(null);
+
+        Map<Blueprint.Role, String> palette = Designs.paletteFrom(
+                profile.buildingBlocks(6), Designs.defaultPalette());
+
+        Blueprint blueprint = switch (what.toLowerCase()) {
+            case "house" -> Designs.house(size, size, 4, palette);
+            case "hut", "shelter" -> Designs.hut(Math.min(size, 9), palette);
+            case "tower" -> Designs.tower(Math.max(size, 6), 5, palette);
+            case "storage", "chests" -> Designs.storage(size, palette);
+            default -> null;
+        };
+        if (blueprint == null) {
+            say(source, "I can build: house, hut, tower, storage");
+            return 0;
+        }
+
+        Map<String, Integer> shortfall = task.shortfall(blueprint);
+        say(source, blueprint.name() + ": " + blueprint.blockCount() + " blocks");
+        for (Map.Entry<String, Integer> entry : blueprint.essentialMaterials().entrySet()) {
+            say(source, "  " + entry.getValue() + "x " + entry.getKey());
+        }
+
+        if (!shortfall.isEmpty()) {
+            StringBuilder message = new StringBuilder("short of: ");
+            shortfall.forEach((item, count) -> message.append(count).append("x ").append(item).append(" "));
+            say(source, message.toString().trim());
+            if (!planOnly) {
+                say(source, "get those and run it again, or /build " + what + " anyway to start with what you have");
+                return 0;
+            }
+        }
+
+        if (planOnly) return 1;
+
+        if (UnderstudyClient.travel() != null && UnderstudyClient.travel().running()) {
+            say(source, "busy travelling — /understudy stop first");
+            return 0;
+        }
+        // Build in front of where you are standing, not on top of you.
+        task.start(blueprint, source.getPlayer().getBlockPos().add(2, 0, 2));
+        return 1;
+    }
+
+    private static int sort(FabricClientCommandSource source, boolean keepKit) {
+        SortTask task = UnderstudyClient.sort();
+        if (task == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        task.start(keepKit);
+        return 1;
+    }
+
+    private static int stop(FabricClientCommandSource source) {
+        UnderstudyClient.stopAll();
         say(source, "stopped");
         return 1;
     }
 
     private static int status(FabricClientCommandSource source) {
-        TravelTask task = UnderstudyClient.travel();
-        say(source, task == null ? "idle" : task.status());
+        TravelTask travel = UnderstudyClient.travel();
+        BuildTask build = UnderstudyClient.build();
+        SortTask sort = UnderstudyClient.sort();
+        if (travel == null) {
+            say(source, "idle");
+            return 1;
+        }
+        if (travel.running()) say(source, travel.status());
+        else if (build != null && build.running()) say(source, build.status());
+        else if (sort != null && sort.running()) say(source, sort.status());
+        else say(source, "idle");
+        return 1;
+    }
+
+    private static int help(FabricClientCommandSource source) {
+        say(source, "/travel <x> <y> <z> — walk there");
+        say(source, "/build house|hut|tower|storage [size] — build it");
+        say(source, "/plan house [size] — what it would take, without building");
+        say(source, "/sort — put your things in the right chests (/sort all includes your kit)");
+        say(source, "/understudy profile — what I have learned about how you play");
+        say(source, "/understudy stop — stop everything");
         return 1;
     }
 

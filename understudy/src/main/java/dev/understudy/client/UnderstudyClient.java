@@ -1,6 +1,8 @@
 package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.mc.BuildTask;
+import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -26,6 +28,8 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     private static PlayerProfile profile;
     private static TravelTask travel;
+    private static BuildTask build;
+    private static SortTask sort;
 
     @Override
     public void onInitializeClient() {
@@ -34,8 +38,14 @@ public final class UnderstudyClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.world == null) return;
             profile.tick();
-            if (travel == null) travel = new TravelTask(client, profile, UnderstudyClient::tell);
+            if (travel == null) {
+                travel = new TravelTask(client, profile, UnderstudyClient::tell);
+                build = new BuildTask(client, travel, UnderstudyClient::tell);
+                sort = new SortTask(client, travel, UnderstudyClient::tell);
+            }
             travel.tick();
+            build.tick();
+            sort.tick();
         });
 
         UnderstudyCommands.register();
@@ -48,6 +58,21 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     public static TravelTask travel() {
         return travel;
+    }
+
+    public static BuildTask build() {
+        return build;
+    }
+
+    public static SortTask sort() {
+        return sort;
+    }
+
+    /** Stop whatever is going on. */
+    public static void stopAll() {
+        if (travel != null) travel.stop(null);
+        if (build != null) build.stop(null);
+        if (sort != null) sort.stop(null);
     }
 
     /** Print to the local chat log. Never sent anywhere. */
