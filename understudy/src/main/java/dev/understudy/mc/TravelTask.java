@@ -188,7 +188,9 @@ public final class TravelTask {
         if (!result.complete() && steps.size() > REPLAN_AT * 2) {
             steps = steps.subList(0, steps.size() - REPLAN_AT);
         }
-        walker.follow(steps, view);
+        // The walker is told whether this route was allowed to tunnel, because
+        // that is also the answer to "may I break the thing I am stuck on".
+        walker.follow(steps, view, options.allowDig);
     }
 
     /** Feed the player's own movement back into the profile. */

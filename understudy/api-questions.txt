@@ -68,3 +68,8 @@ net.minecraft.client.Minecraft Screen screen
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 net.minecraft.client.KeyMapping$Category 10
 net.minecraft.client.Options keyMappings
+
+# Fences and walls are matched by name for now. The collision box would be
+# exact and cover modded blocks too, if these are still shaped this way.
+net.minecraft.world.phys.shapes.VoxelShape max
+net.minecraft.core.Direction Axis

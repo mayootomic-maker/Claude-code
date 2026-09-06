@@ -65,6 +65,38 @@ public final class ClientBlockView implements BlockView {
         return HAZARDS.contains(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath());
     }
 
+    /**
+     * Fences, walls and gates: one block of world, one and a half of collision.
+     *
+     * Matched by name rather than by measuring the collision box, because the
+     * shape API is one of the things that moves between versions and this list
+     * covers every one of them in the game. A block whose name ends in _wall is
+     * a wall; nothing else does — wall torches, signs and banners all end in
+     * something else.
+     */
+    @Override
+    public boolean tall(int x, int y, int z) {
+        String name = nameAt(x, y, z);
+        return name.endsWith("_fence") || name.endsWith("_fence_gate") || name.endsWith("_wall");
+    }
+
+    /**
+     * Things you open rather than walk round. Iron ones are excluded: they
+     * need a signal, and standing in front of one pressing use is not a plan.
+     */
+    @Override
+    public boolean openable(int x, int y, int z) {
+        String name = nameAt(x, y, z);
+        if (name.startsWith("iron_")) return false;
+        return name.endsWith("_door") || name.endsWith("_trapdoor") || name.endsWith("_fence_gate");
+    }
+
+    private String nameAt(int x, int y, int z) {
+        BlockState state = stateAt(x, y, z);
+        if (state.isAir()) return "";
+        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+    }
+
     @Override
     public boolean liquid(int x, int y, int z) {
         return !stateAt(x, y, z).getFluidState().isEmpty();

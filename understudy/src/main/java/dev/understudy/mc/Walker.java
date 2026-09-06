@@ -49,6 +49,9 @@ public final class Walker {
     private int digTicks;
     private int sidestep;
     private BlockView world;
+    private boolean mayDig;
+    private BlockPos opening;
+    private int openTicks;
 
     public Walker(Minecraft client, Rng rng) {
         this.client = client;
@@ -64,8 +67,15 @@ public final class Walker {
      * that has both.
      */
     public void follow(List<Step> steps, BlockView world) {
+        follow(steps, world, false);
+    }
+
+    public void follow(List<Step> steps, BlockView world, boolean mayDig) {
         this.path = Smoother.smooth(steps, world);
         this.world = world;
+        this.mayDig = mayDig;
+        this.opening = null;
+        this.openTicks = 0;
         this.index = 0;
         this.stuckTicks = 0;
         this.lastProgress = Double.MAX_VALUE;
@@ -164,6 +174,13 @@ public final class Walker {
                 && aim.remaining() > SPRINT_MIN_REMAINING
                 && player.getFoodData().getFoodLevel() > 6);
 
+        // Something is in the way that the route did not think was in the way.
+        // A shut door is the common one and costs a click; anything else, if
+        // this route was allowed to tunnel, costs a few seconds of mining. Both
+        // beat the alternative, which is leaning on a wall until the task gives
+        // up and tells you it cannot find a way somewhere it is standing.
+        if (stuckTicks > 20 && unstick(player)) return true;
+
         boolean needsJump = step.kind() == Step.Kind.JUMP
                 || (player.isInWater() && dy > -0.2)
                 || stuckTicks > 12;
@@ -224,6 +241,45 @@ public final class Walker {
     }
 
     /**
+     * Deal with whatever is actually in the way, rather than pressing harder.
+     *
+     * Returns true when it took the tick. Doors first, because a door is a
+     * second's work and a person would simply open it; digging only if this
+     * route was planned as one that may tunnel, since chewing through a wall
+     * you were only meant to walk past is not an improvement.
+     */
+    private boolean unstick(LocalPlayer player) {
+        if (world == null || client.level == null) return false;
+        BlockPos ahead = inFront(player);
+
+        if (opening != null || world.openable(ahead.getX(), ahead.getY(), ahead.getZ())) {
+            if (opening == null) {
+                opening = ahead;
+                openTicks = 0;
+            }
+            lookAtBlock(player, opening);
+            // A few ticks of turning first, so the click lands on a door the
+            // view is already pointed at rather than snapping onto it.
+            if (++openTicks < 5) return true;
+            Placement.use(client, player, opening);
+            opening = null;
+            stuckTicks = 0;
+            return true;
+        }
+        if (mayDig && stuckTicks > 45) return digAt(player, ahead);
+        return false;
+    }
+
+    /** The cell the player is walking into: one step along where they face. */
+    private BlockPos inFront(LocalPlayer player) {
+        double yaw = Math.toRadians(player.getYRot());
+        return new BlockPos(
+                (int) Math.floor(player.getX() - Math.sin(yaw)),
+                (int) Math.floor(player.getY()),
+                (int) Math.floor(player.getZ() + Math.cos(yaw)));
+    }
+
+    /**
      * Break what is in the way. Returns true while there is still digging to do.
      *
      * Both the block at head height and the one at foot height, because a player
@@ -231,9 +287,12 @@ public final class Walker {
      * down.
      */
     private boolean digThrough(LocalPlayer player, Step step) {
+        return digAt(player, new BlockPos(step.x(), step.y(), step.z()));
+    }
+
+    private boolean digAt(LocalPlayer player, BlockPos feet) {
         if (client.gameMode == null || client.level == null) return false;
 
-        BlockPos feet = new BlockPos(step.x(), step.y(), step.z());
         BlockPos head = feet.above();
         BlockPos target = !client.level.getBlockState(head).isAir() ? head
                 : !client.level.getBlockState(feet).isAir() ? feet : null;

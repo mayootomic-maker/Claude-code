@@ -34,6 +34,33 @@ final class TestWorld implements BlockView {
         return this;
     }
 
+    private final Set<Long> talls = new HashSet<>();
+    private final Set<Long> doors = new HashSet<>();
+
+    /** A fence: solid, one and a half blocks high, impossible to jump onto. */
+    TestWorld setFence(int x, int y, int z) {
+        setSolid(x, y, z);
+        talls.add(PathFinder.key(x, y, z));
+        return this;
+    }
+
+    /** A shut door: solid to a collision test, and openable. */
+    TestWorld setDoor(int x, int y, int z) {
+        setSolid(x, y, z);
+        doors.add(PathFinder.key(x, y, z));
+        return this;
+    }
+
+    @Override
+    public boolean tall(int x, int y, int z) {
+        return talls.contains(PathFinder.key(x, y, z));
+    }
+
+    @Override
+    public boolean openable(int x, int y, int z) {
+        return doors.contains(PathFinder.key(x, y, z));
+    }
+
     TestWorld setHazard(int x, int y, int z) {
         hazards.add(PathFinder.key(x, y, z));
         return this;

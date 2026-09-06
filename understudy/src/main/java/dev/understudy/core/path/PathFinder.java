@@ -247,8 +247,12 @@ public final class PathFinder {
             return;
         }
 
-        // Up one, if there is headroom to jump into.
-        if (clearColumn(nx, y + 1, nz) && world.solid(nx, y, nz) && passableAt(x, y + 2, z)) {
+        // Up one, if there is headroom to jump into — and if the thing being
+        // jumped onto is a block rather than a fence. You cannot jump onto a
+        // fence. The game measures its collision at one and a half blocks, and
+        // a route that says otherwise is a route the walker cannot walk.
+        if (clearColumn(nx, y + 1, nz) && world.solid(nx, y, nz) && !world.tall(nx, y, nz)
+                && passableAt(x, y + 2, z)) {
             out.add(new Step(nx, y + 1, nz, Step.Kind.JUMP, base + JUMP_COST));
             return;
         }
@@ -298,7 +302,7 @@ public final class PathFinder {
     }
 
     private boolean supported(int x, int y, int z) {
-        return world.solid(x, y - 1, z);
+        return world.solid(x, y - 1, z) && !world.tall(x, y - 1, z);
     }
 
     /** Two blocks of clearance for the player, and neither of them dangerous. */
@@ -309,7 +313,9 @@ public final class PathFinder {
     private boolean passableAt(int x, int y, int z) {
         if (!world.known(x, y, z)) return false;
         if (world.hazard(x, y, z)) return false;
-        return world.passable(x, y, z);
+        // A shut door is not a wall. Routing round every one of them is why a
+        // path inside a building used to come back as no path at all.
+        return world.passable(x, y, z) || world.openable(x, y, z);
     }
 
     /** Pack a block position into a long, so the open set keys are cheap. */

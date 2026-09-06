@@ -332,4 +332,64 @@ class PathFinderTest {
         assertTrue(result.expanded() <= 5_000, "blew the budget: " + result.expanded());
         assertTrue(ms < 4_000, "took too long: " + ms + "ms");
     }
+
+    @Test
+    @DisplayName("never plans to jump onto a fence")
+    void willNotJumpOntoAFence() {
+        // A fence line across the way, with a gap round the end. The route must
+        // go round. Jumping onto a fence is a move the game refuses, so a path
+        // that contains it is a path that ends with the walker pressed against
+        // a fence post until something gives up.
+        TestWorld world = new TestWorld(63);
+        for (int z = -6; z <= 6; z++) world.setFence(5, 64, z);
+
+        PathFinder.Result result = run(world, options().budget(40_000), 0, 64, 0, 10, 64, 0);
+        assertTrue(result.complete(), "could not get past a fence at all");
+        assertContinuous(0, 64, 0, result.steps());
+        for (Step step : result.steps()) {
+            assertFalse(step.x() == 5 && step.y() == 65 && Math.abs(step.z()) <= 6,
+                    "planned to stand on a fence: " + step);
+        }
+    }
+
+    @Test
+    @DisplayName("walks through a door instead of reporting no way round")
+    void opensDoorsRatherThanGivingUp() {
+        // A room with one door. Treating a shut door as a wall is how a route
+        // inside a building comes back empty while you are standing in it.
+        TestWorld world = new TestWorld(63);
+        for (int y = 64; y <= 66; y++) {
+            for (int x = 3; x <= 9; x++) {
+                world.setUnbreakable(x, y, 3);
+                world.setUnbreakable(x, y, 9);
+            }
+            for (int z = 3; z <= 9; z++) {
+                world.setUnbreakable(3, y, z);
+                world.setUnbreakable(9, y, z);
+            }
+        }
+        // The doorway, shut.
+        world.setDoor(3, 64, 6);
+        world.setDoor(3, 65, 6);
+
+        PathFinder.Result result = run(world, options().budget(40_000), 0, 64, 6, 6, 64, 6);
+        assertTrue(result.complete(), "would not go through a door");
+        assertTrue(result.steps().stream().anyMatch(s -> s.x() == 3 && s.z() == 6),
+                "got in some other way: " + result.steps());
+    }
+
+    @Test
+    @DisplayName("does not drop onto a fence as if it were ground")
+    void doesNotLandOnFences() {
+        TestWorld world = new TestWorld(63);
+        // A pit with a fence at the bottom of one column: standing there is not
+        // something the game lets you do at the height the search assumes.
+        world.hole(4, 6, -1, 1, 3);
+        world.setFence(5, 61, 0);
+        PathFinder.Result result = run(world, options().budget(40_000), 0, 64, 0, 10, 64, 0);
+        for (Step step : result.steps()) {
+            assertFalse(step.x() == 5 && step.z() == 0 && step.y() == 62,
+                    "planned to stand on top of a fence: " + step);
+        }
+    }
 }
