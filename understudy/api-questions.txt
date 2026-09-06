@@ -43,3 +43,8 @@ net.minecraft.client.player.LocalPlayer getRecipeBook
 net.minecraft.client.gui.screens.recipebook.RecipeCollection 20
 net.minecraft.world.item.crafting.display.RecipeDisplayEntry 14
 net.minecraft.world.inventory.AbstractContainerMenu containerId
+
+# resultItems needs a ContextMap to resolve a recipe's output, and this is the
+# helper that builds one on the client.
+net.minecraft.world.item.crafting.display.SlotDisplayContext 12
+net.minecraft.world.inventory.InventoryMenu 14

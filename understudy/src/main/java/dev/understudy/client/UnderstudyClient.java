@@ -9,6 +9,7 @@ import dev.understudy.mc.BuildPicker;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
+import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Marker;
@@ -45,6 +46,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static BuildTask build;
     private static SortTask sort;
     private static GatherTask gather;
+    private static CraftTask craft;
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
@@ -105,7 +107,8 @@ public final class UnderstudyClient implements ClientModInitializer {
                     travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
-                    gather = new GatherTask(client, travel, UnderstudyClient::tell);
+                    craft = new CraftTask(client, UnderstudyClient::tell);
+                    gather = new GatherTask(client, travel, craft, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                 }
 
@@ -134,6 +137,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 }
 
                 travel.tick();
+                craft.tick();
                 gather.tick();
                 build.tick();
                 sort.tick();
@@ -211,6 +215,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static void stopEverything() {
         if (marker != null) marker.cancel();
         if (travel != null) travel.stop("safety");
+        if (craft != null) craft.stop();
         if (gather != null) gather.stop("safety");
         if (build != null) build.stop("safety");
         if (sort != null) sort.stop("safety");

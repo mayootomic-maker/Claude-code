@@ -35,6 +35,7 @@ public final class GatherTask {
 
     private final Minecraft client;
     private final TravelTask travel;
+    private final CraftTask craft;
     private final Consumer<String> report;
 
     private List<Planner.Action> plan = List.of();
@@ -47,11 +48,14 @@ public final class GatherTask {
     private int sinceScan;
     private int gathered;
     private String waitingOn;
+    private boolean attempted;
     private Runnable onDone;
 
-    public GatherTask(Minecraft client, TravelTask travel, Consumer<String> report) {
+    public GatherTask(Minecraft client, TravelTask travel, CraftTask craft,
+                      Consumer<String> report) {
         this.client = client;
         this.travel = travel;
+        this.craft = craft;
         this.report = report;
     }
 
@@ -67,6 +71,7 @@ public final class GatherTask {
         this.target = null;
         this.gathered = 0;
         this.waitingOn = null;
+        this.attempted = false;
         if (running) {
             report.accept("gathering: " + plan.size() + " steps, about "
                     + Math.round(wanted.seconds() / 60) + " minutes");
@@ -104,19 +109,39 @@ public final class GatherTask {
         if (action instanceof Planner.Collect collect) {
             collect(player, collect);
         } else if (action instanceof Planner.Make make) {
-            // Crafting is not wired to the menus yet. Saying so and moving on
-            // beats holding the whole plan hostage: the rest of it can still be
-            // gathered while this one step waits for a person.
-            if (Hotbar.count(player, make.item()) >= make.count()) {
-                waitingOn = null;
-                step++;
-                return;
-            }
-            if (waitingOn == null) {
-                waitingOn = "waiting for you to " + make.describe();
-                report.accept(waitingOn + " — then it carries on by itself");
-            }
+            make(player, make);
         }
+    }
+
+    /**
+     * Craft a step, or wait for the crafter to finish the one it is on.
+     *
+     * Smelting is not crafting and the crafter says so, so a furnace step is
+     * announced and skipped rather than silently stalling the rest of the plan.
+     */
+    private void make(LocalPlayer player, Planner.Make wanted) {
+        if (Hotbar.count(player, wanted.item()) >= wanted.count()) {
+            waitingOn = null;
+            attempted = false;
+            step++;
+            return;
+        }
+        if (craft.running()) return;
+
+        if (!attempted) {
+            attempted = true;
+            Hud.setStatus(wanted.describe());
+            if (craft.start(wanted)) return;
+            waitingOn = "needs a furnace: " + wanted.describe();
+            report.accept(waitingOn + " — do that one and it carries on by itself");
+            return;
+        }
+        // The crafter had a go and the count did not move, so something is
+        // missing that the plan thought would be there. Moving on beats
+        // repeating the same failed attempt every tick.
+        report.accept("could not " + wanted.describe() + " — moving on");
+        attempted = false;
+        step++;
     }
 
     private void collect(LocalPlayer player, Planner.Collect wanted) {
