@@ -167,8 +167,7 @@ jobs:
           }
           echo; echo "===== signatures this mod depends on ====="
           sig net.minecraft.client.player.LocalPlayer 'sendOverlayMessage|sendSystemMessage'
-          sig net.minecraft.client.multiplayer.MultiPlayerGameMode 'InventoryMouseClick|clicked|useItemOn|destroyBlock'
-          sig net.minecraft.client.Minecraft 'gui|Gui '
+          show net.minecraft.client.multiplayer.MultiPlayerGameMode 45
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one
