@@ -469,7 +469,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
         say(source, "/build imports — where to put models and what it makes of them");
-        say(source, "/understudy stop — stop everything, at once");
+        say(source, "/understudy stop — stop everything, at once (or just press a movement key)");
         say(source, "/understudy pause — hold it there; /understudy resume carries on");
         return 1;
     }

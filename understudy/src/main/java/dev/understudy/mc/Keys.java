@@ -48,4 +48,15 @@ public final class Keys {
     public static boolean holding() {
         return !ours.isEmpty();
     }
+
+    /**
+     * Whether this key is down because of the mod rather than because of you.
+     *
+     * The one question the shared switch cannot answer on its own, and the
+     * whole reason the set exists. A key that is down and not in it is a hand
+     * on the keyboard.
+     */
+    public static boolean pressedByHand(KeyMapping key) {
+        return key.isDown() && !ours.contains(key);
+    }
 }

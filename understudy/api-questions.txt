@@ -19,6 +19,10 @@
 #     draws it later.
 #   Screen.addRenderableWidget(T) is unchanged
 #   world.entity.monster.Monster is the base class of everything that attacks
+#   VoxelShape.max(Direction$Axis) is there, so "is this taller than a block"
+#     is measured off the collision box rather than guessed from a name list
+#   KeyMapping$Category is a class of constants now, not a string
+#   Options.keyMappings is a public final KeyMapping[]
 #   ResourceLocation IS GONE: it is net.minecraft.resources.Identifier now, and
 #     Registry.getValue takes one. Anything reaching for a block by name should
 #     walk the registry and use getKey(block).getPath() instead, which has not
@@ -63,13 +67,7 @@ net.minecraft.client.Minecraft Screen screen
 
 # A stop you have to type into chat is not a stop you can reach when something
 # is going wrong. These are what a panic key needs.
-# KeyBindingHelper is not at the v1 path — that module may not be pulled in by
-# the fabric-api dependency at all. These are the other two ways in.
+# A panic key turned out not to need one: pressing any movement key the mod is
+# not itself pressing stops everything, which is the gesture people already
+# make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
-net.minecraft.client.KeyMapping$Category 10
-net.minecraft.client.Options keyMappings
-
-# Fences and walls are matched by name for now. The collision box would be
-# exact and cover modded blocks too, if these are still shaped this way.
-net.minecraft.world.phys.shapes.VoxelShape max
-net.minecraft.core.Direction Axis

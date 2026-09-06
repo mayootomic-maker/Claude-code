@@ -117,6 +117,17 @@ public final class UnderstudyClient implements ClientModInitializer {
                     marker = new Marker(client, UnderstudyClient::tell);
                 }
 
+                // Take the controls and it lets go of them. No command, no key
+                // to remember, no menu: the gesture you already make when
+                // something is going wrong is to grab the keyboard, and every
+                // autopilot worth using treats that as the instruction it is.
+                // Keys knows which of them it is pressing itself, so a movement
+                // key that is down and not one of those is a hand.
+                if (working() && handOnTheControls(client)) {
+                    stopAll("you took the controls");
+                    return;
+                }
+
                 // Paused holds the place in every plan and queue and simply
                 // stops acting on them. Everything the mod was holding was let
                 // go at the moment of pausing, so this is a genuine hands-off
@@ -241,6 +252,22 @@ public final class UnderstudyClient implements ClientModInitializer {
      * Everything down tools. Used when safety takes over, so no task is left
      * quietly holding a movement key while the player is trying to escape.
      */
+    /**
+     * Someone pressing a movement key that the mod is not pressing.
+     *
+     * Sneak is in the list and the mod never uses it, so it is the one that is
+     * unambiguous — but any of them will do, because if you are steering, you
+     * did not want the mod steering too.
+     */
+    private static boolean handOnTheControls(Minecraft client) {
+        return Keys.pressedByHand(client.options.keyUp)
+                || Keys.pressedByHand(client.options.keyDown)
+                || Keys.pressedByHand(client.options.keyLeft)
+                || Keys.pressedByHand(client.options.keyRight)
+                || Keys.pressedByHand(client.options.keyJump)
+                || Keys.pressedByHand(client.options.keyShift);
+    }
+
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
         return (travel != null && travel.running())

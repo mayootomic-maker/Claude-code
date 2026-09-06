@@ -5,6 +5,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.Set;
 
@@ -66,18 +68,19 @@ public final class ClientBlockView implements BlockView {
     }
 
     /**
-     * Fences, walls and gates: one block of world, one and a half of collision.
+     * Taller than the metre it looks: a fence, a wall, a gate.
      *
-     * Matched by name rather than by measuring the collision box, because the
-     * shape API is one of the things that moves between versions and this list
-     * covers every one of them in the game. A block whose name ends in _wall is
-     * a wall; nothing else does — wall torches, signs and banners all end in
-     * something else.
+     * Measured rather than listed. The collision box is the same thing the game
+     * itself consults when it decides you cannot jump onto that, so it is right
+     * for blocks nobody thought of, including any a mod adds. An open gate has
+     * no collision at all and correctly stops counting.
      */
     @Override
     public boolean tall(int x, int y, int z) {
-        String name = nameAt(x, y, z);
-        return name.endsWith("_fence") || name.endsWith("_fence_gate") || name.endsWith("_wall");
+        BlockState state = stateAt(x, y, z);
+        if (state.isAir()) return false;
+        VoxelShape shape = state.getCollisionShape(level, cursor.set(x, y, z));
+        return !shape.isEmpty() && shape.max(Direction.Axis.Y) > 1.0;
     }
 
     /**
