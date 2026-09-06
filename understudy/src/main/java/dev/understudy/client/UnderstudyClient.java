@@ -14,6 +14,7 @@ import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Marker;
 import dev.understudy.mc.Safety;
+import dev.understudy.mc.SmeltTask;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import dev.understudy.human.Rng;
@@ -47,6 +48,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static SortTask sort;
     private static GatherTask gather;
     private static CraftTask craft;
+    private static SmeltTask smelt;
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
@@ -108,7 +110,8 @@ public final class UnderstudyClient implements ClientModInitializer {
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
-                    gather = new GatherTask(client, travel, craft, UnderstudyClient::tell);
+                    smelt = new SmeltTask(client, UnderstudyClient::tell);
+                    gather = new GatherTask(client, travel, craft, smelt, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                 }
 
@@ -123,21 +126,32 @@ public final class UnderstudyClient implements ClientModInitializer {
                 }
                 marker.tick();
 
-                // Safety runs before the tasks and can take the tick. Checking
-                // after them would mean acting on a health reading from before
-                // this tick's walking, which is the tick that matters when
-                // something is doing four hearts a second.
-                Guardian.Verdict verdict = safety.check(client);
-                if (safety.act(client, verdict)) {
-                    if (verdict.action() == Guardian.Action.ABORT
-                            || verdict.action() == Guardian.Action.FLEE) {
-                        stopEverything();
+                // Safety only exists to stop the mod from getting you killed.
+                // When the mod is not doing anything there is nothing to stop,
+                // and a guardian that grabs the controls anyway is not a safety
+                // feature — it is the thing holding your movement keys up while
+                // a skeleton shoots you. So it watches only while something is
+                // running, and lets go of everything the moment nothing is.
+                if (!working()) {
+                    safety.reset();
+                } else {
+                    // Checked before the tasks: acting after them would mean
+                    // deciding on a health reading from before this tick's
+                    // walking, and that is the tick that matters when something
+                    // is doing four hearts a second.
+                    Guardian.Verdict verdict = safety.check(client);
+                    if (safety.act(client, verdict)) {
+                        if (verdict.action() == Guardian.Action.ABORT
+                                || verdict.action() == Guardian.Action.FLEE) {
+                            stopEverything();
+                        }
+                        return;
                     }
-                    return;
                 }
 
                 travel.tick();
                 craft.tick();
+                smelt.tick();
                 gather.tick();
                 build.tick();
                 sort.tick();
@@ -216,10 +230,21 @@ public final class UnderstudyClient implements ClientModInitializer {
      * Everything down tools. Used when safety takes over, so no task is left
      * quietly holding a movement key while the player is trying to escape.
      */
+    /** Whether the mod is driving anything at all right now. */
+    private static boolean working() {
+        return (travel != null && travel.running())
+                || (build != null && build.running())
+                || (sort != null && sort.running())
+                || (gather != null && gather.running())
+                || (craft != null && craft.running())
+                || (smelt != null && smelt.running());
+    }
+
     private static void stopEverything() {
         if (marker != null) marker.cancel();
         if (travel != null) travel.stop("safety");
         if (craft != null) craft.stop();
+        if (smelt != null) smelt.stop();
         if (gather != null) gather.stop("safety");
         if (build != null) build.stop("safety");
         if (sort != null) sort.stop("safety");

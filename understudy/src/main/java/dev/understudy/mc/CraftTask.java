@@ -7,9 +7,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.CraftingMenu;
@@ -17,9 +14,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.function.Consumer;
 
@@ -43,7 +37,6 @@ import java.util.function.Consumer;
  */
 public final class CraftTask {
 
-    private static final double REACH = 4.0;
     /** How long to wait for the server to agree that the grid is full. */
     private static final int PLACE_TIMEOUT = 40;
     private static final int OPEN_TIMEOUT = 40;
@@ -103,7 +96,7 @@ public final class CraftTask {
     // --- finding somewhere to craft ------------------------------------------
 
     private void findOrPlaceTable(LocalPlayer player) {
-        BlockPos found = nearestTable(player);
+        BlockPos found = Placement.nearest(client, player.blockPosition(), "crafting_table");
         if (found != null) {
             table = found;
             stage = Stage.OPENING;
@@ -111,8 +104,8 @@ public final class CraftTask {
             return;
         }
         if (Hotbar.count(player, "crafting_table") > 0 && Hotbar.hold(client, "crafting_table")) {
-            BlockPos spot = spotBeside(player);
-            if (spot != null && placeAt(player, spot)) {
+            BlockPos spot = Placement.spotBeside(client, player);
+            if (spot != null && Placement.put(client, player, spot, "crafting_table")) {
                 table = spot;
                 stage = Stage.OPENING;
                 waited = 0;
@@ -120,58 +113,6 @@ public final class CraftTask {
             }
         }
         fail("no crafting table nearby and none to put down");
-    }
-
-    private BlockPos nearestTable(LocalPlayer player) {
-        BlockPos from = player.blockPosition();
-        BlockPos best = null;
-        double nearest = REACH * REACH;
-        for (int dx = -4; dx <= 4; dx++) {
-            for (int dy = -3; dy <= 3; dy++) {
-                for (int dz = -4; dz <= 4; dz++) {
-                    BlockPos at = from.offset(dx, dy, dz);
-                    if (!isTable(at)) continue;
-                    double distance = at.distSqr(from);
-                    if (distance < nearest) {
-                        nearest = distance;
-                        best = at;
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    private boolean isTable(BlockPos at) {
-        if (client.level == null) return false;
-        BlockState state = client.level.getBlockState(at);
-        return !state.isAir()
-                && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().equals("crafting_table");
-    }
-
-    /** Somewhere within arm's reach with air above it and ground under it. */
-    private BlockPos spotBeside(LocalPlayer player) {
-        BlockPos feet = player.blockPosition();
-        for (Direction direction : Direction.Plane.HORIZONTAL) {
-            BlockPos at = feet.relative(direction);
-            if (client.level == null) return null;
-            if (client.level.getBlockState(at).isAir()
-                    && client.level.getBlockState(at.above()).isAir()
-                    && !client.level.getBlockState(at.below()).isAir()) {
-                return at;
-            }
-        }
-        return null;
-    }
-
-    private boolean placeAt(LocalPlayer player, BlockPos at) {
-        BlockPos under = at.below();
-        Vec3 hit = Vec3.atCenterOf(under).add(0, 0.5, 0);
-        lookAt(player, hit);
-        client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
-                new BlockHitResult(hit, Direction.UP, under, false));
-        player.swing(InteractionHand.MAIN_HAND);
-        return isTable(at);
     }
 
     // --- the crafting itself -------------------------------------------------
@@ -188,12 +129,7 @@ public final class CraftTask {
         }
         if (waited > 1) return; // one attempt, then wait for the screen to arrive
 
-        if (table != null) {
-            Vec3 hit = Vec3.atCenterOf(table);
-            lookAt(player, hit);
-            client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(hit, Direction.UP, table, false));
-        }
+        if (table != null) Placement.use(client, player, table);
     }
 
     private void place(LocalPlayer player) {
@@ -305,14 +241,5 @@ public final class CraftTask {
             }
         }
         return null;
-    }
-
-    private void lookAt(LocalPlayer player, Vec3 at) {
-        double dx = at.x - player.getX();
-        double dy = at.y - (player.getY() + player.getEyeHeight());
-        double dz = at.z - player.getZ();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setXRot((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
     }
 }

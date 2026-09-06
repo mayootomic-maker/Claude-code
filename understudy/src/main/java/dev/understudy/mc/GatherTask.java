@@ -36,6 +36,7 @@ public final class GatherTask {
     private final Minecraft client;
     private final TravelTask travel;
     private final CraftTask craft;
+    private final SmeltTask smelt;
     private final Consumer<String> report;
 
     private List<Planner.Action> plan = List.of();
@@ -51,11 +52,12 @@ public final class GatherTask {
     private boolean attempted;
     private Runnable onDone;
 
-    public GatherTask(Minecraft client, TravelTask travel, CraftTask craft,
+    public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
                       Consumer<String> report) {
         this.client = client;
         this.travel = travel;
         this.craft = craft;
+        this.smelt = smelt;
         this.report = report;
     }
 
@@ -114,10 +116,11 @@ public final class GatherTask {
     }
 
     /**
-     * Craft a step, or wait for the crafter to finish the one it is on.
+     * Make a step: at a grid if it is a recipe, at a furnace if it is a smelt.
      *
-     * Smelting is not crafting and the crafter says so, so a furnace step is
-     * announced and skipped rather than silently stalling the rest of the plan.
+     * Which of the two it is comes from the plan rather than from guessing, and
+     * each of them says up front whether it can take the job — so a step that
+     * neither can do is reported as such instead of stalling the plan behind it.
      */
     private void make(LocalPlayer player, Planner.Make wanted) {
         if (Hotbar.count(player, wanted.item()) >= wanted.count()) {
@@ -126,14 +129,15 @@ public final class GatherTask {
             step++;
             return;
         }
-        if (craft.running()) return;
+        if (craft.running() || smelt.running()) return;
 
         if (!attempted) {
             attempted = true;
             Hud.setStatus(wanted.describe());
             if (craft.start(wanted)) return;
-            waitingOn = "needs a furnace: " + wanted.describe();
-            report.accept(waitingOn + " — do that one and it carries on by itself");
+            if (smelt.start(wanted)) return;
+            waitingOn = "cannot " + wanted.describe() + " by itself";
+            report.accept(waitingOn + " — do that one and it carries on");
             return;
         }
         // The crafter had a go and the count did not move, so something is

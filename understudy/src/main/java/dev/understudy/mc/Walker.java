@@ -91,12 +91,12 @@ public final class Walker {
 
     /** Let go of everything. Always safe to call. */
     public void release() {
-        client.options.keyUp.setDown(false);
-        client.options.keyDown.setDown(false);
-        client.options.keyLeft.setDown(false);
-        client.options.keyRight.setDown(false);
-        client.options.keyJump.setDown(false);
-        client.options.keySprint.setDown(false);
+        Keys.set(client.options.keyUp, false);
+        Keys.set(client.options.keyDown, false);
+        Keys.set(client.options.keyLeft, false);
+        Keys.set(client.options.keyRight, false);
+        Keys.set(client.options.keyJump, false);
+        Keys.set(client.options.keySprint, false);
         sidestep = 0;
     }
 
@@ -156,10 +156,10 @@ public final class Walker {
         // Walking forward while facing the wrong way is how you scrape along
         // walls and end up in the corner of a room. Turn first.
         boolean forward = offCourse < STOP_AND_TURN_DEGREES;
-        client.options.keyUp.setDown(forward);
+        Keys.set(client.options.keyUp, forward);
 
         boolean straightAhead = offCourse < EASE_FROM_DEGREES && aim.bend() < 0.6;
-        client.options.keySprint.setDown(allowSprint
+        Keys.set(client.options.keySprint, allowSprint
                 && straightAhead
                 && aim.remaining() > SPRINT_MIN_REMAINING
                 && player.getFoodData().getFoodLevel() > 6);
@@ -167,7 +167,7 @@ public final class Walker {
         boolean needsJump = step.kind() == Step.Kind.JUMP
                 || (player.isInWater() && dy > -0.2)
                 || stuckTicks > 12;
-        client.options.keyJump.setDown(needsJump);
+        Keys.set(client.options.keyJump, needsJump);
 
         // Jumping gets you over a step. It does nothing about a fence post you
         // are pressed against, and pressing forward harder never has. So after
@@ -190,8 +190,8 @@ public final class Walker {
                 right = preferLeft;
             }
         }
-        client.options.keyLeft.setDown(left);
-        client.options.keyRight.setDown(right);
+        Keys.set(client.options.keyLeft, left);
+        Keys.set(client.options.keyRight, right);
         return true;
     }
 

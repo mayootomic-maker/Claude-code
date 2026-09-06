@@ -24,6 +24,14 @@ import java.util.function.Consumer;
  * as likely to run off a ledge or into the next cave as away from anything, and
  * "it killed me while escaping" is a worse failure than "it stopped and told
  * you". Stopping is the safe move, and it is the one that is honestly available.
+ *
+ * "Gives you back the controls" is meant literally, and getting it wrong is
+ * worse than not having a guardian at all. Two rules make it true. It runs only
+ * while the mod is driving something — an idle mod has nothing to stop, so it
+ * watches nothing and touches nothing. And letting go means letting go of the
+ * mod's own keys, through Keys, never blanking the movement keys outright:
+ * doing that to someone holding W leaves them standing still, mid-fight,
+ * wondering why.
  */
 public final class Safety {
 
@@ -46,10 +54,18 @@ public final class Safety {
         return eatingTicks > 0;
     }
 
+    /**
+     * Forget everything and let go.
+     *
+     * Called whenever the mod goes idle, which matters more than it looks: a
+     * half-finished mouthful leaves the use key held down, and a use key held
+     * down by nobody is a player who cannot stop eating.
+     */
     public void reset() {
         guardian.reset();
         eatingTicks = 0;
         lastReported = "";
+        Keys.releaseAll();
     }
 
     public Vitals read(Minecraft client) {
@@ -116,7 +132,7 @@ public final class Safety {
             eatingTicks--;
             boolean full = player.getFoodData().getFoodLevel() >= EAT_UNTIL;
             if (eatingTicks == 0 || full) {
-                client.options.keyUse.setDown(false);
+                Keys.set(client.options.keyUse, false);
                 eatingTicks = 0;
             }
             return true;
@@ -136,19 +152,19 @@ public final class Safety {
             }
             case SURFACE -> {
                 announce(verdict.reason(), "surfacing");
-                releaseMovement(client);
+                releaseMovement();
                 // Look up and swim: holding jump is what rises in water.
                 player.setXRot(-70f);
-                client.options.keyJump.setDown(true);
-                client.options.keyUp.setDown(true);
+                Keys.set(client.options.keyJump, true);
+                Keys.set(client.options.keyUp, true);
                 return true;
             }
             case HOLD -> {
-                releaseMovement(client);
+                releaseMovement();
                 return true;
             }
             case FLEE, ABORT -> {
-                releaseMovement(client);
+                releaseMovement();
                 announce(verdict.reason(), "stopping");
                 return true;
             }
@@ -166,20 +182,20 @@ public final class Safety {
     private boolean startEating(Minecraft client, LocalPlayer player) {
         String food = bestFood(player);
         if (food == null || !Hotbar.hold(client, food)) return false;
-        client.options.keyUse.setDown(true);
+        Keys.set(client.options.keyUse, true);
         // Long enough for the slowest food, and cut short the moment the hunger
         // bar says it worked.
         eatingTicks = 40;
         return true;
     }
 
-    private static void releaseMovement(Minecraft client) {
-        client.options.keyUp.setDown(false);
-        client.options.keyDown.setDown(false);
-        client.options.keyLeft.setDown(false);
-        client.options.keyRight.setDown(false);
-        client.options.keySprint.setDown(false);
-        client.options.keyJump.setDown(false);
+    /**
+     * Let go. Of the mod's own keys only — the player may well be holding the
+     * same ones, and taking those off them is how "it stopped me moving while I
+     * was being hit" happens.
+     */
+    private static void releaseMovement() {
+        Keys.releaseAll();
     }
 
     private static boolean hasFood(LocalPlayer player) {

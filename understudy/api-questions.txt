@@ -52,3 +52,15 @@ net.minecraft.world.inventory.InventoryMenu 14
 # the crafter asks which container menu is open instead, which is what the
 # server acts on — but worth knowing before something else reaches for it.
 net.minecraft.client.Minecraft Screen screen
+
+# For smelting, which is the half of a plan a crafting grid cannot do. The three
+# slots are input, fuel, result in that order and have been for a decade; what
+# needs confirming is the class name and that shift-clicking still routes a
+# stack to the right one of them.
+net.minecraft.world.inventory.AbstractFurnaceMenu 24
+net.minecraft.world.inventory.FurnaceMenu 12
+
+# For letting go of a key without taking it off the player, who may be holding
+# the same one. Only the setDown/isDown pair is needed, but the class moved
+# packages once before.
+net.minecraft.client.KeyMapping setDown
