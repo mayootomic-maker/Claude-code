@@ -177,7 +177,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         Hud.say(message);
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.displayClientMessage(Component.literal("§8[§bunderstudy§8] §r" + message), false);
+            client.player.sendSystemMessage(Component.literal("§8[§bunderstudy§8] §r" + message));
         }
     }
 
@@ -187,7 +187,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         Hud.warn(message);
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
-            client.player.displayClientMessage(Component.literal("§8[§bunderstudy§8] §c" + message), false);
+            client.player.sendSystemMessage(Component.literal("§8[§bunderstudy§8] §c" + message));
         }
     }
 }
