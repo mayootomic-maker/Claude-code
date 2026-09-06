@@ -48,3 +48,7 @@ net.minecraft.world.inventory.AbstractContainerMenu containerId
 # helper that builds one on the client.
 net.minecraft.world.item.crafting.display.SlotDisplayContext 12
 net.minecraft.world.inventory.InventoryMenu 14
+# Minecraft's current-screen field, whose name changed. Not needed any more —
+# the crafter asks which container menu is open instead, which is what the
+# server acts on — but worth knowing before something else reaches for it.
+net.minecraft.client.Minecraft Screen screen

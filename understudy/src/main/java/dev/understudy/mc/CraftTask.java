@@ -4,7 +4,6 @@ import dev.understudy.core.craft.Planner;
 import dev.understudy.core.craft.Recipe;
 import net.minecraft.client.ClientRecipeBook;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -189,9 +188,7 @@ public final class CraftTask {
         }
         if (waited > 1) return; // one attempt, then wait for the screen to arrive
 
-        if (job.recipe().station() == Recipe.Station.HAND) {
-            client.setScreenAndShow(new InventoryScreen(player));
-        } else if (table != null) {
+        if (table != null) {
             Vec3 hit = Vec3.atCenterOf(table);
             lookAt(player, hit);
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
@@ -261,22 +258,29 @@ public final class CraftTask {
 
     // --- the bits that poke at Minecraft -------------------------------------
 
+    /**
+     * The window a recipe can be placed into, or null if it is not open yet.
+     *
+     * No screen has to be showing for the two-by-two. The player's own
+     * inventory menu is always active, and what the server acts on is the
+     * packet naming its container, not whether anybody is looking at it — so
+     * a hand recipe does not interrupt what you were doing to open a menu at
+     * you. Asking the game which screen is up would also mean depending on a
+     * field whose name changed in this version, and this does not need to know.
+     */
     private AbstractContainerMenu craftingMenu(LocalPlayer player) {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu instanceof CraftingMenu) return menu;
-        // The two-by-two lives in the player's own inventory menu, which is
-        // always open — so it only counts while its screen is actually showing.
         if (job != null && job.recipe().station() == Recipe.Station.HAND
-                && client.screen instanceof InventoryScreen) {
+                && menu == player.inventoryMenu) {
             return menu;
         }
         return null;
     }
 
+    /** Where the finished item appears. Slot zero in the inventory's own grid. */
     private static int resultSlot(AbstractContainerMenu menu) {
-        return menu instanceof CraftingMenu crafting
-                ? crafting.getResultSlot().index
-                : 0; // the inventory menu puts its result first
+        return menu instanceof CraftingMenu crafting ? crafting.getResultSlot().index : 0;
     }
 
     private static ItemStack resultOf(AbstractContainerMenu menu) {
