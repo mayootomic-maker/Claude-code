@@ -32,7 +32,16 @@ namespace GambleMenu
 
             try
             {
-                GameBridge.Resolve();
+                // Resolving bindings is the one step that touches the game, so it is the one
+                // most likely to be surprised by it — and it used to be able to end the whole
+                // plugin. An ambiguous method name did exactly that: the menu never appeared,
+                // on every launch, and the only sign was one line in this log.
+                //
+                // Nothing here is worth the menu. A binding layer that fails now costs the mods
+                // that needed those bindings and nothing else.
+                try { GameBridge.Resolve(); }
+                catch (Exception ex) { Log.Error($"binding resolution failed; mods that need the game will be unavailable: {ex}"); }
+
                 Catalogue.RegisterAll();
 
                 ConfigStore.EnsureDirectories();

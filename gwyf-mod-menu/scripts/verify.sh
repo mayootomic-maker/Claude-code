@@ -57,7 +57,14 @@ if [[ -n "${GWYF_ASSEMBLY:-}" && -f "$GWYF_ASSEMBLY" ]]; then
     -out:"$out/BindingCheck.dll" tools/BindingCheck/Program.cs
   cp "$REFDIR/cecil/Mono.Cecil.dll" "$out/"
   python3 scripts/apphost.py "$tc" "$out" BindingCheck >/dev/null
-  "$out/BindingCheck" "$GWYF_ASSEMBLY" src ${GWYF_MIRROR:+"$GWYF_MIRROR"} | tail -4
+  # Piping straight into tail would hand back tail's exit code, and a check that cannot
+  # fail the build is a check everyone learns to scroll past.
+  "$out/BindingCheck" "$GWYF_ASSEMBLY" src ${GWYF_MIRROR:+"$GWYF_MIRROR"} > "$out/bindings.txt" || {
+    tail -20 "$out/bindings.txt"
+    echo "   bindings FAILED — see $out/bindings.txt"
+    exit 1
+  }
+  tail -3 "$out/bindings.txt"
 else
   echo "==> bindings NOT checked — set GWYF_ASSEMBLY to the game's Assembly-CSharp.dll"
 fi

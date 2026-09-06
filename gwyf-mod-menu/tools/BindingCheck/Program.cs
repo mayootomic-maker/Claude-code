@@ -152,28 +152,95 @@ namespace GambleMenu.BindingCheck
             }
         }
 
+        /// <summary>
+        /// Method bindings, checked the way the runtime will resolve them.
+        ///
+        /// Existence is not enough here. A binding that names a method with no signature
+        /// resolves through Type.GetMethod, which throws AmbiguousMatchException the moment the
+        /// game has two overloads of that name — and that throw is what took the whole plugin
+        /// down. A checker that only asks "does a method with this name exist" answers yes to
+        /// exactly that bug, so it counts the overloads and insists a binding can only match one.
+        /// </summary>
         private static void CheckMethods(
             string bridge, Dictionary<string, string> typeVars,
             Dictionary<string, TypeDefinition> types, Report report)
         {
             Console.WriteLine("methods");
             foreach (Match m in Regex.Matches(bridge,
-                @"new MethodBinding\((\w+),\s*""([^""]+)"""))
+                @"new MethodBinding\((\w+),\s*""([^""]+)"",\s*(null|new\[\]\s*\{([^}]*)\})"))
             {
                 string owner = m.Groups[1].Value, method = m.Groups[2].Value;
+                string[] args = m.Groups[3].Value == "null"
+                    ? null
+                    : Regex.Matches(m.Groups[4].Value, @"""([^""]+)""")
+                           .Cast<Match>().Select(x => x.Groups[1].Value).ToArray();
+
                 var type = Resolve(owner, typeVars, types, method, report);
                 if (type == null) continue;
 
-                var found = Walk(type, t => t.Methods.FirstOrDefault(x => x.Name == method));
-                if (found == null) { report.Fail($"{typeVars[owner]}.{method}", "no such method"); continue; }
+                var overloads = Overloads(type, method);
+                string what = $"{typeVars[owner]}.{method}";
 
-                // The signature is printed rather than asserted: a Harmony prefix binds to it
-                // by shape, so a wrong return type is a silent failure that only reading the
-                // real one catches.
-                string args = string.Join(", ", found.Parameters.Select(p => p.ParameterType.Name));
-                report.Pass($"{typeVars[owner]}.{method}", $"{found.ReturnType.Name} ({args})");
+                if (overloads.Count == 0) { report.Fail(what, "no such method"); continue; }
+
+                if (args == null)
+                {
+                    if (overloads.Count > 1)
+                    {
+                        report.Fail(what, $"{overloads.Count} overloads and no signature given — " +
+                                          "this throws AmbiguousMatchException at runtime: " +
+                                          string.Join(" | ", overloads.Select(Signature)));
+                        continue;
+                    }
+                    report.Pass(what, Signature(overloads[0]));
+                    continue;
+                }
+
+                var fits = overloads.Where(o => Fits(o, args)).ToList();
+                if (fits.Count == 0)
+                {
+                    report.Fail(what, $"no overload takes ({string.Join(", ", args)}) — has: " +
+                                      string.Join(" | ", overloads.Select(Signature)));
+                }
+                else if (fits.Count > 1)
+                {
+                    report.Fail(what, $"({string.Join(", ", args)}) still matches {fits.Count} overloads");
+                }
+                else
+                {
+                    report.Pass(what, Signature(fits[0]));
+                }
             }
         }
+
+        /// <summary>Every method of this name on the nearest type that declares any — the same
+        /// rule the runtime binding uses, so an override does not count as a second overload.</summary>
+        private static List<MethodDefinition> Overloads(TypeDefinition type, string name)
+        {
+            for (var t = type; t != null; t = Base(t))
+            {
+                var found = t.Methods.Where(x => x.Name == name).ToList();
+                if (found.Count > 0) return found;
+            }
+            return new List<MethodDefinition>();
+        }
+
+        private static TypeDefinition Base(TypeDefinition t)
+        {
+            if (t.BaseType == null) return null;
+            try { return t.BaseType.Resolve(); } catch { return null; }
+        }
+
+        private static bool Fits(MethodDefinition m, string[] args)
+        {
+            if (m.Parameters.Count != args.Length) return false;
+            for (int i = 0; i < args.Length; i++)
+                if (m.Parameters[i].ParameterType.Name != args[i]) return false;
+            return true;
+        }
+
+        private static string Signature(MethodDefinition m) =>
+            $"{m.ReturnType.Name} {m.Name}({string.Join(", ", m.Parameters.Select(p => p.ParameterType.Name))})";
 
         private static TypeDefinition Resolve(
             string ownerVar, Dictionary<string, string> typeVars,

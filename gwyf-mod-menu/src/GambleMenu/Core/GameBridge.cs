@@ -38,7 +38,9 @@ namespace GambleMenu.Core
 
         public void Resolve()
         {
-            Type = AccessTools.TypeByName(Id);
+            try { Type = AccessTools.TypeByName(Id); }
+            catch (Exception ex) { State = BindingState.TypeMissing; Detail = $"lookup threw {ex.GetType().Name}: {ex.Message}"; return; }
+
             if (Type == null) { State = BindingState.TypeMissing; Detail = $"type '{Id}' not found in any loaded assembly"; return; }
             State = BindingState.Resolved;
             Detail = Type.FullName;
@@ -61,7 +63,10 @@ namespace GambleMenu.Core
         public void Resolve()
         {
             if (!_owner.Ok) { State = BindingState.TypeMissing; Detail = $"owner type '{_owner.Id}' missing"; return; }
-            Field = AccessTools.Field(_owner.Type, _name);
+
+            try { Field = AccessTools.Field(_owner.Type, _name); }
+            catch (Exception ex) { State = BindingState.WrongShape; Detail = $"lookup threw {ex.GetType().Name}: {ex.Message}"; return; }
+
             if (Field == null) { State = BindingState.MemberMissing; Detail = $"field '{_name}' not found on {_owner.Type.Name}"; return; }
             if (_expected != null && !_expected.IsAssignableFrom(Field.FieldType))
             {
@@ -169,24 +174,89 @@ namespace GambleMenu.Core
         public MethodInfo Method;
         private readonly TypeBinding _owner;
         private readonly string _name;
-        private readonly Type[] _args;
+        private readonly string[] _args;
 
-        public MethodBinding(TypeBinding owner, string name, Type[] args, string purpose)
+        /// <param name="args">
+        /// Parameter type names, to pick one overload out of several — <c>"Int32"</c>,
+        /// <c>"PlayerProfile"</c>. Names rather than Types because half of them are the game's
+        /// own, which cannot be named at compile time. Null means the method has no overloads.
+        /// </param>
+        public MethodBinding(TypeBinding owner, string name, string[] args, string purpose)
         {
             _owner = owner; _name = name; _args = args;
             Id = $"{owner.Id}.{name}"; Purpose = purpose;
         }
 
+        /// <summary>
+        /// Finds the method, and never throws doing it.
+        ///
+        /// This used to hand the lookup to AccessTools.Method, which asks Type.GetMethod for a
+        /// name with no signature — and that throws AmbiguousMatchException when the game has
+        /// two overloads of it. PayoutTracker.GetPlayerRecords has exactly two, so the throw
+        /// escaped GameBridge.Resolve, escaped Awake, and took all fifty-three mods down with
+        /// it. The plugin loaded and did nothing, on every launch, for weeks.
+        ///
+        /// The rule this file is built on — a failed lookup is data, not an exception — was
+        /// therefore never actually true. It is now: a name that is ambiguous, missing, or
+        /// unreadable ends up as a binding that reports why, and nothing else notices.
+        /// </summary>
         public void Resolve()
         {
             if (!_owner.Ok) { State = BindingState.TypeMissing; Detail = $"owner type '{_owner.Id}' missing"; return; }
-            Method = _args != null
-                ? AccessTools.Method(_owner.Type, _name, _args)
-                : AccessTools.Method(_owner.Type, _name);
-            if (Method == null) { State = BindingState.MemberMissing; Detail = $"method '{_name}' not found on {_owner.Type.Name}"; return; }
+
+            List<MethodInfo> candidates;
+            try { candidates = Candidates(); }
+            catch (Exception ex) { State = BindingState.WrongShape; Detail = $"lookup threw {ex.GetType().Name}: {ex.Message}"; return; }
+
+            if (candidates.Count == 0)
+            {
+                State = BindingState.MemberMissing;
+                Detail = _args == null
+                    ? $"method '{_name}' not found on {_owner.Type.Name}"
+                    : $"no overload of '{_name}' takes ({string.Join(", ", _args)})";
+                return;
+            }
+            if (candidates.Count > 1)
+            {
+                // Better to say so than to pick one and be quietly wrong about which.
+                State = BindingState.WrongShape;
+                Detail = $"'{_name}' is ambiguous — {candidates.Count} overloads: " +
+                         string.Join(" | ", candidates.Select(Signature).ToArray());
+                return;
+            }
+
+            Method = candidates[0];
             State = BindingState.Resolved;
-            Detail = $"{Method.ReturnType.Name} {Method.Name}({string.Join(", ", Method.GetParameters().Select(p => p.ParameterType.Name))})";
+            Detail = Signature(Method);
         }
+
+        /// <summary>Methods of this name on the nearest type that declares any, filtered to the
+        /// requested signature. Stopping at the nearest declaring type keeps an override from
+        /// competing with the base method it overrides.</summary>
+        private List<MethodInfo> Candidates()
+        {
+            var found = new List<MethodInfo>();
+            for (var t = _owner.Type; t != null; t = t.BaseType)
+            {
+                foreach (var m in t.GetMethods(AccessTools.all | BindingFlags.DeclaredOnly))
+                    if (m.Name == _name) found.Add(m);
+                if (found.Count > 0) break;
+            }
+            if (_args == null) return found;
+            return found.Where(Fits).ToList();
+        }
+
+        private bool Fits(MethodInfo m)
+        {
+            var parameters = m.GetParameters();
+            if (parameters.Length != _args.Length) return false;
+            for (int i = 0; i < parameters.Length; i++)
+                if (!string.Equals(parameters[i].ParameterType.Name, _args[i], StringComparison.Ordinal)) return false;
+            return true;
+        }
+
+        private static string Signature(MethodInfo m) =>
+            $"{m.ReturnType.Name} {m.Name}({string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name).ToArray())})";
 
         public object Invoke(object instance, params object[] args)
         {
@@ -341,7 +411,7 @@ namespace GambleMenu.Core
 
             DayDuration = AddMember(new FieldBinding(TGameSettings, "dayDuration", typeof(float), "length of one casino day in seconds"));
             FloorData   = AddMember(new FieldBinding(TGameSettings, "floorData", typeof(IList), "the floor table; its Count is the top floor"));
-            GetQuotaMultiplier = AddMember(new MethodBinding(TGameSettings, "GetQuotaMultiplier", new[] { typeof(int) }, "how much the demand grows each day"));
+            GetQuotaMultiplier = AddMember(new MethodBinding(TGameSettings, "GetQuotaMultiplier", new[] { "Int32" }, "how much the demand grows each day"));
             GetStartingQuota   = AddMember(new MethodBinding(TGameSettings, "GetStartingQuota", null, "the demand on day one"));
 
             ChallengeList = AddMember(new FieldBinding(TChallengeSettings, "challenges", typeof(IList), "every objective the game can hand out"));
@@ -378,10 +448,10 @@ namespace GambleMenu.Core
             PrIsWin    = AddMember(new FieldBinding(TPayoutRecord, "isWin", typeof(bool), "the round was won"));
             PrIsLoss   = AddMember(new FieldBinding(TPayoutRecord, "isLoss", typeof(bool), "the round was lost"));
             PrGameType = AddMember(new FieldBinding(TPayoutRecord, "gameType", null, "which game the round was on"));
-            GetPlayerRecords = AddMember(new MethodBinding(TPayoutTracker, "GetPlayerRecords", null, "every round this player has played"));
+            GetPlayerRecords = AddMember(new MethodBinding(TPayoutTracker, "GetPlayerRecords", new[] { "PlayerProfile" }, "every round this player has played"));
 
-            CreateNewSave = AddMember(new MethodBinding(TLocalSaveMgr, "CreateNewSave", new[] { typeof(string) }, "make a save slot"));
-            DeleteSave    = AddMember(new MethodBinding(TLocalSaveMgr, "DeleteSave", new[] { typeof(string) }, "remove a save slot"));
+            CreateNewSave = AddMember(new MethodBinding(TLocalSaveMgr, "CreateNewSave", new[] { "String", "SaveGameRules" }, "make a save slot"));
+            DeleteSave    = AddMember(new MethodBinding(TLocalSaveMgr, "DeleteSave", new[] { "String" }, "remove a save slot"));
             LoadGame      = AddMember(new MethodBinding(TSaveManager, "LoadGame", null, "server-side run load"));
 
             if (TNetworkServer.Ok)
