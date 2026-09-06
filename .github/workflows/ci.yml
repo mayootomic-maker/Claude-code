@@ -77,3 +77,29 @@ jobs:
           name: screenshots
           path: app/e2e/shots/
           retention-days: 7
+
+  golem:
+    name: Golem — typecheck, tests, and a drive against a real server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: golem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: golem/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # Boots an actual offline 1.21.4 server and drives the built bot at it.
+      # Two of this project's worst bugs only existed at runtime — an ESM import
+      # of a CommonJS module that typechecked cleanly and crashed on the first
+      # line, and a planner cost that leaked out of its context — so the drive
+      # is a gate, not a nicety.
+      - run: npm run e2e
