@@ -72,8 +72,11 @@ net.minecraft.client.Minecraft Screen screen
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
-# Torches at night, not just underground. Level.getDayTime() is gone in 26.2;
-# one of these is the way to ask what time it is.
-net.minecraft.world.level.Level dayTime
-net.minecraft.client.multiplayer.ClientLevel Time
-net.minecraft.world.level.storage.LevelData 14
+# Torches at night, not just underground. Answered so far by elimination:
+# Level has no dayTime, LevelData has getGameTime() but no day time, and
+# ClientLevel only has setTimeFromServer(long) going in. Game time would be a
+# near-enough proxy and is quietly wrong the moment anyone runs /time set, so
+# these are the two questions that would settle it honestly.
+net.minecraft.world.level.Level Darken
+net.minecraft.client.multiplayer.ClientLevel Bright
+net.minecraft.world.level.LightLayer 8

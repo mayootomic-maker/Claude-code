@@ -189,21 +189,14 @@ public final class BuildTask {
     /** One block. False when the tick is over, whatever the reason. */
     private boolean one(LocalPlayer player) {
         if (index >= queue.size()) {
-            // Take the props back down. They were never part of the design and
-            // leaving them is the difference between a finished building and one
-            // with scaffolding still up.
-            if (!scaffolds.isEmpty()) {
-                BlockPos prop = scaffolds.get(0);
-                if (client.level.getBlockState(prop).isAir()) {
-                    scaffolds.remove(0);
-                    return true;
-                }
-                return clear(player, prop);
-            }
-            // Anything that had nothing to be placed against gets one more go
-            // now that the rest of it exists. A block in mid-air cannot be
-            // placed at all — the game wants a neighbouring face to click — and
-            // by the end of a pass its neighbours are usually there.
+            // The retry pass first, and the props come down after it. The other
+            // way round takes away the very thing a deferred block was waiting
+            // for something to place against — which is the whole reason the
+            // prop went in.
+            //
+            // A block in mid-air cannot be placed at all: the game wants a
+            // neighbouring face to click. By the end of a pass its neighbours
+            // usually exist.
             if (!deferred.isEmpty() && !secondPass) {
                 secondPass = true;
                 queue = new ArrayList<>(deferred);
@@ -211,6 +204,17 @@ public final class BuildTask {
                 attempts.clear();
                 index = 0;
                 return true;
+            }
+            // Now take the props back down. They were never part of the design,
+            // and leaving them up is the difference between a finished building
+            // and one with the scaffolding still on it.
+            if (!scaffolds.isEmpty()) {
+                BlockPos prop = scaffolds.get(0);
+                if (client.level.getBlockState(prop).isAir()) {
+                    scaffolds.remove(0);
+                    return true;
+                }
+                return clear(player, prop);
             }
             finish();
             return false;
