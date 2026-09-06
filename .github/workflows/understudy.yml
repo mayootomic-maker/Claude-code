@@ -41,16 +41,18 @@ jobs:
           MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
           echo "pinned in gradle.properties:"
           grep -E '^(minecraft_version|yarn_mappings|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
+          echo "  gradle: $(grep distributionUrl gradle/wrapper/gradle-wrapper.properties | grep -o 'gradle-[0-9.]*')"
           echo
           echo "latest published for ${MC}:"
-          echo -n "  yarn:   "; curl -s "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | head -c 400 | grep -o '"version":"[^"]*"' | head -1
-          echo -n "  loader: "; curl -s "https://meta.fabricmc.net/v2/versions/loader" | head -c 400 | grep -o '"version":"[^"]*"' | head -1
-          echo "  fabric-api candidates:"
+          echo "  yarn:   $(curl -s "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | jq -r '.[0].version')"
+          echo "  loader: $(curl -s "https://meta.fabricmc.net/v2/versions/loader" | jq -r '[.[] | select(.stable)][0].version')"
+          echo "  fabric-api:"
           curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
-            | grep -o "<version>[^<]*${MC}</version>" | tail -3 | sed 's/^/    /'
-          echo "  loom candidates:"
+            | grep -o "<version>[^<]*${MC}</version>" | sed 's/<[^>]*>//g' | tail -2 | sed 's/^/    /'
+          echo "  loom (stable releases only — the tail of the list is alphas):"
           curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-loom/net.fabricmc.fabric-loom.gradle.plugin/maven-metadata.xml" \
-            | grep -o '<version>[^<]*</version>' | tail -5 | sed 's/^/    /'
+            | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' \
+            | grep -E '^1\.(8|9|10|11)\.[0-9]+$' | tail -6 | sed 's/^/    /'
 
       - run: chmod +x gradlew
 
