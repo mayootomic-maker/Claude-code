@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Compiles the plugin and runs the unit tests. Uses the .NET SDK when one is installed,
-# and otherwise assembles a compiler from NuGet (see toolchain.sh).
+# Compiles the plugin, runs the unit tests, and — when the game's own assembly is pointed
+# at — checks every name this plugin reaches into the game by against the game itself.
+#
+# Uses the .NET SDK when one is installed, and otherwise assembles a compiler from NuGet
+# (see toolchain.sh).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +17,9 @@ fi
 
 # shellcheck source=toolchain.sh
 source "$root/scripts/toolchain.sh"
-out="$root/.toolchain/out"; mkdir -p "$out"
+tc="$root/.toolchain"
+out="$tc/out"
+mkdir -p "$out"
 
 refs() { local d; for d in "$@"; do find "$REFDIR/$d" -name '*.dll' -printf '\055r:%p\n'; done; }
 
@@ -26,21 +31,7 @@ refs net8 > "$out/net8.rsp"
   src/GambleMenu/Core/Json.cs \
   src/GambleMenu/Core/JsonField.cs \
   installer/GambleMenu.Installer/ConfigPatch.cs
-
-cat > "$out/GambleMenu.Tests.runtimeconfig.json" <<'JSON'
-{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"8.0.0"},"rollForward":"Major"}}
-JSON
-# The tests are a plain console app; give them a host built the same way csc's was.
-python3 - "$out" <<'PY'
-import pathlib, stat, sys
-out = pathlib.Path(sys.argv[1])
-host = bytearray((out.parent/"roslyn"/"csc").read_bytes())
-i = host.find(b"csc.dll\0")
-name = b"GambleMenu.Tests.dll\0"
-host[i:i+len(name)] = name
-t = out/"GambleMenu.Tests"; t.write_bytes(bytes(host))
-t.chmod(t.stat().st_mode | stat.S_IEXEC)
-PY
+python3 scripts/apphost.py "$tc" "$out" GambleMenu.Tests >/dev/null
 ( cd "$out" && ./GambleMenu.Tests )
 
 echo "==> build"
@@ -50,3 +41,23 @@ find src/GambleMenu -name '*.cs' >> "$out/plugin.rsp"
 "$CSC" -noconfig -nostdlib+ -target:library -langversion:latest -nologo \
   -nowarn:CS0649,CS0436 -warnaserror+ -out:"$out/GambleMenu.dll" "@$out/plugin.rsp"
 echo "   GambleMenu.dll  $(stat -c%s "$out/GambleMenu.dll") bytes"
+
+# Every game type, field and method this plugin names as a string, looked up in the real
+# assembly. The game's files belong to whoever owns the game and are not in this
+# repository, so this runs only when one is pointed at — but when it does not run, nothing
+# is checking those names at all, which is the state that let a binding to a method the
+# game never had survive twenty-odd commits.
+#
+#   GWYF_ASSEMBLY=/path/to/Assembly-CSharp.dll ./scripts/verify.sh
+#   GWYF_MIRROR=/path/to/Mirror.dll            (optional; covers the Mirror bindings too)
+if [[ -n "${GWYF_ASSEMBLY:-}" && -f "$GWYF_ASSEMBLY" ]]; then
+  echo "==> bindings, against $(basename "$GWYF_ASSEMBLY")"
+  refs net8 cecil > "$out/check.rsp"
+  "$CSC" -noconfig -nostdlib+ -target:exe -langversion:latest -nologo "@$out/check.rsp" \
+    -out:"$out/BindingCheck.dll" tools/BindingCheck/Program.cs
+  cp "$REFDIR/cecil/Mono.Cecil.dll" "$out/"
+  python3 scripts/apphost.py "$tc" "$out" BindingCheck >/dev/null
+  "$out/BindingCheck" "$GWYF_ASSEMBLY" src ${GWYF_MIRROR:+"$GWYF_MIRROR"} | tail -4
+else
+  echo "==> bindings NOT checked — set GWYF_ASSEMBLY to the game's Assembly-CSharp.dll"
+fi

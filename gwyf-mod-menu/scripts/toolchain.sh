@@ -37,6 +37,7 @@ nuget microsoft.net.compilers.toolset         "$ROSLYN_VER"
 nuget microsoft.netcore.app.ref               "$RT_VER"
 nuget microsoft.netframework.referenceassemblies.net472 1.0.3
 nuget unityengine.modules                     "$UNITY_VER"
+nuget mono.cecil                              0.11.6
 
 # BepInEx is not published to nuget.org; its own feed is unreachable from here.
 if [[ ! -s "$tc/pkg/bepinex.zip" ]]; then
@@ -95,6 +96,7 @@ def extract(nupkg, prefix, dest, depth=None):
 extract("microsoft.netframework.referenceassemblies.net472.nupkg", "build/.NETFramework/v4.7.2/", "net472", 3)
 extract("microsoft.netcore.app.ref.nupkg", "ref/net8.0/", "net8")
 extract("unityengine.modules.nupkg", "lib/", "unity")
+extract("mono.cecil.nupkg", "lib/netstandard2.0/", "cecil")
 
 # Mixed-mode COM interop stubs are not managed assemblies, and the managed
 # System.EnterpriseServices that references them drags them in. None are wanted here.
