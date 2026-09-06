@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "understudy",
+  "version": "${version}",
+  "name": "Understudy",
+  "description": "Plays your character for you when you would rather not. Client-side only.",
+  "authors": ["Understudy"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.understudy.client.UnderstudyClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.4",
+    "java": ">=21"
+  }
+}

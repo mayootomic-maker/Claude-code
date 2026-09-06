@@ -1,0 +1,65 @@
+name: Understudy
+
+# Nothing in this repository's container can compile a Fabric mod: the egress
+# policy blocks maven.fabricmc.net, meta.fabricmc.net and every Mojang host, so
+# there is no Minecraft to compile against and no mappings to compile with. CI
+# has the network the container does not, which makes this workflow the only
+# compiler the mod has — and the jar it uploads is how a build actually reaches
+# a launcher.
+
+on:
+  push:
+    branches: ['**']
+    paths: ['understudy/**', '.github/workflows/understudy.yml']
+  pull_request:
+    paths: ['understudy/**', '.github/workflows/understudy.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Mod jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: understudy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Ask Fabric what actually exists rather than trusting the pins in
+      # gradle.properties. This runs before the build and never fails it, so a
+      # stale pin shows up as a visible mismatch in the log instead of a
+      # dependency resolution error twenty lines deep in a stack trace.
+      - name: Versions Fabric currently publishes
+        continue-on-error: true
+        run: |
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          echo "pinned in gradle.properties:"
+          grep -E '^(minecraft_version|yarn_mappings|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
+          echo
+          echo "latest published for ${MC}:"
+          echo -n "  yarn:   "; curl -s "https://meta.fabricmc.net/v2/versions/yarn/${MC}" | head -c 400 | grep -o '"version":"[^"]*"' | head -1
+          echo -n "  loader: "; curl -s "https://meta.fabricmc.net/v2/versions/loader" | head -c 400 | grep -o '"version":"[^"]*"' | head -1
+          echo "  fabric-api candidates:"
+          curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
+            | grep -o "<version>[^<]*${MC}</version>" | tail -3 | sed 's/^/    /'
+          echo "  loom candidates:"
+          curl -s "https://maven.fabricmc.net/net/fabricmc/fabric-loom/net.fabricmc.fabric-loom.gradle.plugin/maven-metadata.xml" \
+            | grep -o '<version>[^<]*</version>' | tail -5 | sed 's/^/    /'
+
+      - run: chmod +x gradlew
+
+      - name: Build and test
+        run: ./gradlew --no-daemon build
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: understudy-mod
+          path: understudy/build/libs/*.jar
+          if-no-files-found: error
