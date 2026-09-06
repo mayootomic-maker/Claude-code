@@ -77,6 +77,8 @@ public final class BuildPicker extends Screen {
     private int selected;
     private int size;
     private boolean solid;
+    private int turns;
+    private boolean upsideDown;
     private int woodIndex;
     private int stoneIndex = 1;
     private Blueprint blueprint;
@@ -140,10 +142,18 @@ public final class BuildPicker extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Hollow / solid"),
                         button -> toggleSolid())
                 .bounds(listX, controlsY + 72, 120, 20).build());
+
+        // Which way up an imported file means is not written in the file, so it
+        // is asked here instead of guessed at twice.
+        addRenderableWidget(Button.builder(Component.literal("Turn \u21bb"), button -> turn())
+                .bounds(listX, controlsY + 96, 58, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Flip \u21c5"), button -> flip())
+                .bounds(listX + 62, controlsY + 96, 58, 20).build());
+
         addRenderableWidget(Button.builder(Component.literal("Choose where"), button -> commit())
-                .bounds(listX, controlsY + 100, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
                 .bounds(listX, controlsY + 124, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
+                .bounds(listX, controlsY + 148, 120, 20).build());
 
         refresh();
     }
@@ -176,6 +186,16 @@ public final class BuildPicker extends Screen {
 
     private void toggleSolid() {
         solid = !solid;
+        refresh();
+    }
+
+    private void turn() {
+        turns = (turns + 1) % 4;
+        refresh();
+    }
+
+    private void flip() {
+        upsideDown = !upsideDown;
         refresh();
     }
 
@@ -238,6 +258,10 @@ public final class BuildPicker extends Screen {
             costLine = "§c" + (modelNote != null ? modelNote : ((Imported) option).note());
             return;
         }
+        // Applied after whatever produced the blueprint, so it corrects a
+        // built-in design turned to suit a plot just as well as it corrects a
+        // model that came out of Blender standing on its head.
+        blueprint = blueprint.turned(turns, upsideDown);
         image = Preview.of(blueprint);
 
         Planner.Plan plan = new Planner(Catalogue.solver())
@@ -250,6 +274,13 @@ public final class BuildPicker extends Screen {
             costLine = String.format("%d blocks · about %s to gather and build",
                     blueprint.blockCount(), minutes(plan.seconds()));
         }
+    }
+
+    /** Only says anything when it has been turned, so the usual case stays quiet. */
+    private String turnNote() {
+        if (turns == 0 && !upsideDown) return "";
+        return "  \u00b7  " + (turns == 0 ? "" : (turns * 90) + "\u00b0 ")
+                + (upsideDown ? "flipped" : "").trim();
     }
 
     private static String minutes(double seconds) {
@@ -285,9 +316,10 @@ public final class BuildPicker extends Screen {
         if (option instanceof Designed) {
             detail = "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name();
         } else if (option instanceof Imported imported && imported.model()) {
-            detail = size + " tall  ·  " + (solid ? "solid" : "hollow") + "  ·  " + wood().name();
+            detail = size + " tall  ·  " + (solid ? "solid" : "hollow") + "  ·  " + wood().name()
+                    + turnNote();
         } else {
-            detail = ((Imported) option).note();
+            detail = ((Imported) option).note() + turnNote();
         }
 
         graphics.text(font, Component.literal(title), panelX + 10, panelY + 10, TEXT);

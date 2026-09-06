@@ -253,4 +253,76 @@ class SchematicTest {
         Blueprint blueprint = Schematic.read("cabin.schem", NbtWriter.gzip(spongeSchem())).blueprint();
         assertTrue(!Preview.of(blueprint).isEmpty());
     }
+
+    @Test
+    void flippingPutsTheRoofBackOnTop() {
+        // A file does not say which way is up — .obj has no field for it and
+        // .stl has no fields at all — so the menu asks. This is that control.
+        Draft draft = new Draft("tower");
+        draft.set(0, 0, 0, "stone", Blueprint.Role.FLOOR, false);
+        draft.set(0, 1, 0, "stone", Blueprint.Role.WALL, false);
+        draft.set(0, 2, 0, "glass", Blueprint.Role.ROOF, false);
+        Blueprint upright = draft.finish(0, 0, 0);
+
+        Blueprint flipped = upright.turned(0, true);
+        assertEquals(3, flipped.sizeY());
+        assertEquals("glass", blockAt(flipped, 0, 0, 0), "the roof should be at the bottom now");
+        assertEquals("stone", blockAt(flipped, 0, 2, 0));
+        assertEquals(upright.blockCount(), flipped.blockCount());
+        // And flipping twice is where you started.
+        assertEquals("stone", blockAt(flipped.turned(0, true), 0, 0, 0));
+    }
+
+    @Test
+    void turningMovesTheFootprintAndTheStairsTogether() {
+        Draft draft = new Draft("L");
+        draft.set(0, 0, 0, "stone", Blueprint.Role.FLOOR, false);
+        draft.set(3, 0, 0, "oak_stairs", Blueprint.Role.ROOF, false, Facing.NORTH);
+        draft.set(0, 0, 1, "stone", Blueprint.Role.FLOOR, false);
+        Blueprint one = draft.finish(0, 0, 0);
+        assertEquals(4, one.sizeX());
+        assertEquals(2, one.sizeZ());
+
+        Blueprint turned = one.turned(1, false);
+        // A quarter turn swaps the footprint over.
+        assertEquals(2, turned.sizeX());
+        assertEquals(4, turned.sizeZ());
+        assertEquals(one.blockCount(), turned.blockCount());
+        // Stairs must turn with the building, or a roof comes out inside out.
+        Blueprint.Placement stairs = turned.placements().stream()
+                .filter(p -> p.block().equals("oak_stairs"))
+                .findFirst().orElseThrow();
+        assertEquals(Facing.EAST, stairs.facing());
+        // Four turns is the identity, footprint and facing alike.
+        Blueprint round = one.turned(4, false);
+        assertEquals(one.sizeX(), round.sizeX());
+        assertEquals(Facing.NORTH, round.placements().stream()
+                .filter(p -> p.block().equals("oak_stairs"))
+                .findFirst().orElseThrow().facing());
+    }
+
+    @Test
+    void everyBlockStaysInsideTheFootprintAfterTurning() {
+        // The invariant that matters: a turned blueprint whose blocks fall
+        // outside its own size builds through whatever is next to the site.
+        Blueprint manor = Catalog.build(Catalog.entries().get(0), 9,
+                Materials.wood(0), Materials.stone(0));
+        for (int turns = 0; turns < 4; turns++) {
+            for (boolean flip : new boolean[]{false, true}) {
+                Blueprint moved = manor.turned(turns, flip);
+                for (Blueprint.Placement p : moved.placements()) {
+                    assertTrue(p.x() >= 0 && p.x() < moved.sizeX(), "x out of bounds: " + p);
+                    assertTrue(p.y() >= 0 && p.y() < moved.sizeY(), "y out of bounds: " + p);
+                    assertTrue(p.z() >= 0 && p.z() < moved.sizeZ(), "z out of bounds: " + p);
+                }
+            }
+        }
+    }
+
+    private static String blockAt(Blueprint blueprint, int x, int y, int z) {
+        return blueprint.placements().stream()
+                .filter(p -> p.x() == x && p.y() == y && p.z() == z)
+                .map(Blueprint.Placement::block)
+                .findFirst().orElse(null);
+    }
 }

@@ -46,6 +46,16 @@ public enum Facing {
         };
     }
 
+    /** A quarter turn clockwise seen from above: north becomes east. */
+    public Facing clockwise() {
+        return switch (this) {
+            case NORTH -> EAST;
+            case EAST -> SOUTH;
+            case SOUTH -> WEST;
+            case WEST -> NORTH;
+        };
+    }
+
     public Facing opposite() {
         return switch (this) {
             case NORTH -> SOUTH;

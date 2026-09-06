@@ -58,6 +58,53 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
     }
 
     /**
+     * The same structure, turned and possibly stood on its head.
+     *
+     * This exists because a mesh file does not say which way is up. An .obj has
+     * no field for it and an .stl has no fields at all, so which axis means up
+     * is a convention of whatever program wrote it — and the two common
+     * conventions disagree. Guessing gets it right most of the time, and most
+     * of the time is no use when you are looking at your model standing on its
+     * roof. So the guess stays as a default and this is the correction, applied
+     * to whatever came out and shown in the preview before anything is built.
+     *
+     * @param quarterTurns clockwise turns about the vertical axis
+     * @param upsideDown   mirror top to bottom
+     */
+    public Blueprint turned(int quarterTurns, boolean upsideDown) {
+        int turns = Math.floorMod(quarterTurns, 4);
+        if (turns == 0 && !upsideDown) return this;
+
+        List<Placement> moved = new ArrayList<>(placements.size());
+        for (Placement p : placements) {
+            int x = p.x();
+            int z = p.z();
+            int width = sizeX;
+            int depth = sizeZ;
+            Facing facing = p.facing();
+            for (int turn = 0; turn < turns; turn++) {
+                int nx = depth - 1 - z;
+                z = x;
+                x = nx;
+                int swap = width;
+                width = depth;
+                depth = swap;
+                facing = facing == null ? null : facing.clockwise();
+            }
+            int y = upsideDown ? sizeY - 1 - p.y() : p.y();
+            moved.add(new Placement(x, y, z, p.block(), p.role(), p.optional(), facing));
+        }
+
+        boolean sideways = turns % 2 == 1;
+        int newX = sideways ? sizeZ : sizeX;
+        int newZ = sideways ? sizeX : sizeZ;
+        return new Blueprint(name, List.copyOf(moved), newX, sizeY, newZ,
+                sideways ? sizeZ - 1 - entranceZ : entranceX,
+                upsideDown ? sizeY - 1 - entranceY : entranceY,
+                sideways ? entranceX : entranceZ);
+    }
+
+    /**
      * The order to place them in: bottom layer first, and within a layer,
      * furthest from the door first.
      *
