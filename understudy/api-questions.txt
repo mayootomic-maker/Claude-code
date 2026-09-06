@@ -77,6 +77,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # ClientLevel only has setTimeFromServer(long) going in. Game time would be a
 # near-enough proxy and is quietly wrong the moment anyone runs /time set, so
 # these are the two questions that would settle it honestly.
-net.minecraft.world.level.Level Darken
-net.minecraft.client.multiplayer.ClientLevel Bright
-net.minecraft.world.level.LightLayer 8
+# LightLayer.SKY and BLOCK are both still there, so the concept survives; what
+# is missing is the getter that takes one, and it is inherited, which is why
+# grepping ClientLevel for it found nothing. It lives on one of these.
+net.minecraft.world.level.LevelReader Brightness
+net.minecraft.world.level.BlockAndTintGetter Bright
+net.minecraft.world.level.Level Raw
