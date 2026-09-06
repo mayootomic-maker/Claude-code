@@ -30,13 +30,18 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
+    private static boolean greeted;
 
     @Override
     public void onInitializeClient() {
         profile = new PlayerProfile();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.world == null) return;
+            if (client.player == null || client.world == null) {
+                greeted = false;
+                return;
+            }
+            greet();
             profile.tick();
             if (travel == null) {
                 travel = new TravelTask(client, profile, UnderstudyClient::tell);
@@ -50,6 +55,20 @@ public final class UnderstudyClient implements ClientModInitializer {
 
         UnderstudyCommands.register();
         LOG.info("Understudy ready");
+    }
+
+    /**
+     * Say hello once per world, listing what this build can do.
+     *
+     * Which is the point: the commands a jar has are the only reliable way to
+     * tell which build you installed, and installing a stale one is otherwise
+     * indistinguishable from a bug — you get "unknown command" for something
+     * the source clearly registers.
+     */
+    private static void greet() {
+        if (greeted) return;
+        greeted = true;
+        tell("ready — /travel  /build  /plan  /sort  /understudy help");
     }
 
     public static PlayerProfile profile() {

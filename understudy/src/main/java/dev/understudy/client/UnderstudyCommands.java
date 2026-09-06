@@ -69,7 +69,9 @@ public final class UnderstudyCommands {
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
                     .then(literal("help").executes(context -> help(context.getSource())))
-                    .executes(context -> status(context.getSource())));
+                    // Bare /understudy lists the commands rather than the
+                    // status: someone typing it is usually asking what exists.
+                    .executes(context -> help(context.getSource())));
         });
     }
 
