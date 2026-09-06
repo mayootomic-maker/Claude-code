@@ -126,8 +126,12 @@ jobs:
 
       - run: chmod +x gradlew
 
+      # Output is kept so the failure diagnostic can re-print the errors after
+      # its own output. PIPESTATUS, not tee's exit code, decides the step.
       - name: Build and test
-        run: ./gradlew --no-daemon build
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
 
       # When the compile fails, print the API the game and Fabric actually
       # publish for whatever the compiler could not find. 26.x ships
@@ -168,6 +172,10 @@ jobs:
           echo; echo "===== signatures this mod depends on ====="
           sig net.minecraft.client.player.LocalPlayer 'sendOverlayMessage|sendSystemMessage'
           show net.minecraft.client.multiplayer.MultiPlayerGameMode 45
+
+          echo; echo "===== the errors this was printed for ====="
+          grep -E '^\s*(/home.*error:|[0-9]+ errors?|error:)' /tmp/build.log \
+            | sed 's|.*/understudy/src/|src/|' | tail -40
 
       # Only the remapped jar. build/libs also holds a sources jar, and an
       # artifact containing two jars is an invitation to install the wrong one
