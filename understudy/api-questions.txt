@@ -23,3 +23,13 @@
 # For drawing the selection box in the world while marking out a site.
 net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 20
 
+
+# For crafting without a person clicking the grid. handlePlaceRecipe fills the
+# crafting grid from the recipe book, which is the only route that does not
+# involve working out where each ingredient goes in a 3x3.
+net.minecraft.client.multiplayer.MultiPlayerGameMode handlePlaceRecipe
+net.minecraft.client.ClientRecipeBook 25
+net.minecraft.world.item.crafting.display.RecipeDisplayId 12
+net.minecraft.client.gui.screens.inventory.InventoryScreen 15
+net.minecraft.world.inventory.CraftingMenu 20
+net.minecraft.client.player.LocalPlayer getRecipeBook

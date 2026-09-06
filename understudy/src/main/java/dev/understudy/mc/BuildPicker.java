@@ -2,6 +2,7 @@ package dev.understudy.mc;
 
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Catalog;
+import dev.understudy.core.build.Schematic;
 import dev.understudy.core.build.Materials;
 import dev.understudy.core.build.Preview;
 import dev.understudy.core.craft.Catalogue;
@@ -11,6 +12,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -39,11 +42,37 @@ public final class BuildPicker extends Screen {
     /** Called with the chosen design, size and materials once the player commits. */
     private final Chosen onChoose;
 
-    /** What the menu hands back: everything needed to build the thing. */
+    /** What the menu hands back: a finished blueprint, however it was arrived at. */
     public interface Chosen {
-        void accept(Catalog.Entry entry, int size, Materials.Wood wood, Materials.Stone stone);
+        void accept(Blueprint blueprint);
     }
 
+    /**
+     * One row in the list: either something this mod knows how to design, or a
+     * schematic somebody dropped in the folder.
+     *
+     * An import has no size and no materials — it is already made of what it is
+     * made of — so those controls simply do not apply to it.
+     */
+    private sealed interface Option {
+        String label();
+    }
+
+    private record Designed(Catalog.Entry entry) implements Option {
+        @Override
+        public String label() {
+            return entry.name();
+        }
+    }
+
+    private record Imported(Path file, Blueprint blueprint, String note) implements Option {
+        @Override
+        public String label() {
+            return blueprint == null ? file.getFileName().toString() : blueprint.name();
+        }
+    }
+
+    private final List<Option> options = new ArrayList<>();
     private int selected;
     private int size;
     private int woodIndex;
@@ -57,21 +86,35 @@ public final class BuildPicker extends Screen {
         this.inventory = inventory;
         this.onChoose = onChoose;
         this.size = Catalog.entries().get(0).defaultSize();
+        for (Catalog.Entry entry : Catalog.entries()) options.add(new Designed(entry));
+        // Imports are read when the menu opens, not held between openings, so a
+        // file dropped in the folder while the game is running is simply there.
+        for (Path file : Imports.list()) {
+            try {
+                Schematic.Result result = Imports.load(file);
+                options.add(new Imported(file, result.blueprint(),
+                        String.join(" · ", result.notes())));
+            } catch (Exception error) {
+                // A file that will not read is still listed, with the reason, so
+                // it is obvious which one is the problem rather than it silently
+                // not appearing.
+                options.add(new Imported(file, null, "could not read: " + error.getMessage()));
+            }
+        }
     }
 
     @Override
     protected void init() {
         int listX = 16;
         int listY = 44;
-        List<Catalog.Entry> entries = Catalog.entries();
-        for (int i = 0; i < entries.size(); i++) {
+        for (int i = 0; i < options.size(); i++) {
             int index = i;
-            addRenderableWidget(Button.builder(Component.literal(entries.get(i).name()),
+            addRenderableWidget(Button.builder(Component.literal(shorten(options.get(i).label())),
                             button -> select(index))
                     .bounds(listX, listY + i * 24, 120, 20).build());
         }
 
-        int controlsY = listY + entries.size() * 24 + 16;
+        int controlsY = listY + options.size() * 24 + 16;
         addRenderableWidget(Button.builder(Component.literal("-"), button -> resize(-1))
                 .bounds(listX, controlsY, 24, 20).build());
         addRenderableWidget(Button.builder(Component.literal("+"), button -> resize(1))
@@ -94,14 +137,21 @@ public final class BuildPicker extends Screen {
 
     private void select(int index) {
         selected = index;
-        size = Catalog.entries().get(index).defaultSize();
+        if (options.get(index) instanceof Designed designed) {
+            size = designed.entry().defaultSize();
+        }
         refresh();
     }
 
     private void resize(int by) {
-        Catalog.Entry entry = Catalog.entries().get(selected);
-        size = Math.max(entry.minSize(), Math.min(entry.maxSize(), size + by));
+        if (!(options.get(selected) instanceof Designed designed)) return;
+        size = Math.max(designed.entry().minSize(),
+                Math.min(designed.entry().maxSize(), size + by));
         refresh();
+    }
+
+    private static String shorten(String label) {
+        return label.length() <= 17 ? label : label.substring(0, 16) + "\u2026";
     }
 
     private void cycleWood(int by) {
@@ -123,7 +173,8 @@ public final class BuildPicker extends Screen {
     }
 
     private void commit() {
-        onChoose.accept(Catalog.entries().get(selected), size, wood(), stone());
+        if (blueprint == null) return;
+        onChoose.accept(blueprint);
         onClose();
     }
 
@@ -135,8 +186,17 @@ public final class BuildPicker extends Screen {
      * strange way to spend a frame budget.
      */
     private void refresh() {
-        Catalog.Entry entry = Catalog.entries().get(selected);
-        blueprint = Catalog.build(entry, size, wood(), stone());
+        Option option = options.get(selected);
+        if (option instanceof Designed designed) {
+            blueprint = Catalog.build(designed.entry(), size, wood(), stone());
+        } else if (option instanceof Imported imported) {
+            blueprint = imported.blueprint();
+        }
+        if (blueprint == null) {
+            image = null;
+            costLine = "§c" + ((Imported) option).note();
+            return;
+        }
         image = Preview.of(blueprint);
 
         Planner.Plan plan = new Planner(Catalogue.solver())
@@ -167,7 +227,7 @@ public final class BuildPicker extends Screen {
                                    float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
-        Catalog.Entry entry = Catalog.entries().get(selected);
+        Option option = options.get(selected);
         int panelX = 148;
         int panelY = 44;
         int panelW = width - panelX - 16;
@@ -176,17 +236,23 @@ public final class BuildPicker extends Screen {
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, PANEL);
         graphics.outline(panelX, panelY, panelW, panelH, LINE);
 
-        graphics.text(font, Component.literal(entry.name()), panelX + 10, panelY + 10, TEXT);
-        graphics.text(font, Component.literal(entry.summary()), panelX + 10, panelY + 24, DIM);
-        graphics.text(font, Component.literal(
-                        "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name()),
-                panelX + 10, panelY + 38, DIM);
+        String title = option.label();
+        String summary = option instanceof Designed designed
+                ? designed.entry().summary()
+                : "imported from " + ((Imported) option).file().getFileName();
+        String detail = option instanceof Designed
+                ? "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name()
+                : ((Imported) option).note();
+
+        graphics.text(font, Component.literal(title), panelX + 10, panelY + 10, TEXT);
+        graphics.text(font, Component.literal(summary), panelX + 10, panelY + 24, DIM);
+        graphics.text(font, Component.literal(detail), panelX + 10, panelY + 38, DIM);
 
         drawPreview(graphics, panelX + 10, panelY + 56, panelW - 20, panelH - 96);
         graphics.text(font, Component.literal(costLine), panelX + 10, panelY + panelH - 26, TEXT);
 
         graphics.text(font, Component.literal(String.valueOf(size)), 16 + 40,
-                44 + Catalog.entries().size() * 24 + 22, TEXT);
+                44 + options.size() * 24 + 22, TEXT);
     }
 
     /**

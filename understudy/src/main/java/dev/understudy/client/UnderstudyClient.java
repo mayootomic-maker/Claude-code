@@ -5,8 +5,6 @@ import dev.understudy.core.survive.Guardian;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.core.build.Blueprint;
-import dev.understudy.core.build.Catalog;
-import dev.understudy.core.build.Materials;
 import dev.understudy.mc.BuildPicker;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.Hud;
@@ -165,9 +163,7 @@ public final class UnderstudyClient implements ClientModInitializer {
      * are different questions, and the second one can only be answered while
      * looking at the world rather than at a menu.
      */
-    private static void siteFor(Catalog.Entry entry, int size,
-                                Materials.Wood wood, Materials.Stone stone) {
-        Blueprint blueprint = Catalog.build(entry, size, wood, stone);
+    private static void siteFor(Blueprint blueprint) {
         marker.start(blueprint, (plan, origin) -> {
             if (build != null) build.start(plan, origin);
         });
