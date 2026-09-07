@@ -133,6 +133,22 @@ jobs:
           set -o pipefail
           ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
 
+      # Only the remapped jar. build/libs also holds a sources jar, and an
+      # artifact containing two jars is an invitation to install the wrong one
+      # — which is indistinguishable, in game, from the mod being broken.
+      - name: Show what was built
+        run: ls -la build/libs/
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: understudy-mod
+          path: |
+            understudy/build/libs/*.jar
+            !understudy/build/libs/*-sources.jar
+          if-no-files-found: error
+
+      #
       # Minecraft 26 ships unobfuscated but undocumented, so the real names are
       # in the jar and the only cost of reading them is asking. api-questions.txt
       # holds whatever the code does not yet know; this answers all of it on
@@ -140,6 +156,12 @@ jobs:
       #
       # It runs even on a green build. Making it conditional on failure meant
       # the only way to ask a question was to break the build first.
+      #
+      # And it runs near the end, after the jar is uploaded, which is not
+      # tidiness. The
+      # log viewer returns the tail of a run and nothing else, so a dump in the
+      # middle is a dump that cannot be read — which is exactly what happened to
+      # the render answers twice, costing two rounds to learn nothing.
       - name: Answer the open API questions
         if: always()
         continue-on-error: true
@@ -161,26 +183,13 @@ jobs:
             esac
           done
 
-      # Compiler errors go last, after every diagnostic, so that whatever else
-      # gets cut from a long log, the errors do not.
+      # Compiler errors are the very last thing in the log, after the API dump
+      # and everything else. The log viewer shows the tail and nothing else, so
+      # "last" is the only position that cannot be cut — and on a red build the
+      # errors are what is needed, ahead of every other diagnostic.
       - name: The errors, again, at the end
         if: failure()
         continue-on-error: true
         run: |
           grep -E '^\s*(/home.*error:|[0-9]+ errors?|error:)' /tmp/build.log \
             | sed 's|.*/understudy/src/|src/|' | tail -40
-
-      # Only the remapped jar. build/libs also holds a sources jar, and an
-      # artifact containing two jars is an invitation to install the wrong one
-      # — which is indistinguishable, in game, from the mod being broken.
-      - name: Show what was built
-        run: ls -la build/libs/
-
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: understudy-mod
-          path: |
-            understudy/build/libs/*.jar
-            !understudy/build/libs/*-sources.jar
-          if-no-files-found: error
