@@ -168,4 +168,15 @@ class CombatTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("a baby of anything is something you cannot outrun")
+    void babiesAreFast() {
+        // The one case where the kind alone gives the wrong answer, and the one
+        // that actually kills people: an adult zombie is outrun by walking, and
+        // a baby one is outrun by nobody.
+        Foe baby = new Foe("zombie", 2, true, true);
+        assertNotEquals(Stance.FLEE, Combat.decide(List.of(baby), 0.2, SWORD, CHARGED, 4).stance(),
+                "tried to run from a baby zombie");
+    }
 }

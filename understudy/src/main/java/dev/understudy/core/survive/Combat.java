@@ -169,7 +169,10 @@ public final class Combat {
                     target.kind() + " is not a fight, at any health");
         }
 
-        boolean cornered = cannotOutrun(target.kind());
+        // A baby of anything is faster than you, whatever the adult is. It is
+        // the one case where the kind alone gives the wrong answer, and it is
+        // also the one that kills people: a baby zombie is outrun by nobody.
+        boolean cornered = cannotOutrun(target.kind()) || target.baby();
         int engaged = countEngaged(foes, underAttack > 0);
 
         if (engaged > OVERWHELMED && !cornered) {

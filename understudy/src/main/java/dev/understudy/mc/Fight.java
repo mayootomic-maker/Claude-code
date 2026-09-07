@@ -293,7 +293,7 @@ public final class Fight {
         return rng == null ? spread / 2 : rng.intRange(0, spread);
     }
 
-    /** Once per situation, not once per tick. */
+    /** What Safety puts on the overlay; it does the once-per-situation part. */
     private static void say(String line) {
         lastSaid = line;
     }
