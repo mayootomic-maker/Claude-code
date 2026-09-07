@@ -28,12 +28,9 @@ public final class Worlds {
      */
     public static String key(Minecraft client) {
         if (client.level == null) return "unknown";
-        // The key's own toString rather than its identifier, because the
-        // accessor that returns one is renamed in this version and guessing at
-        // it costs a build. It is stable within a version, which is all this
-        // needs to be — and when the jar names the real accessor, this is the
-        // one line that changes.
-        return where(client) + "-" + client.level.dimension();
+        // identifier(), not location(): ResourceLocation became Identifier in
+        // this version and the accessor that returns one was renamed with it.
+        return where(client) + "-" + client.level.dimension().identifier().getPath();
     }
 
     private static String where(Minecraft client) {
