@@ -188,7 +188,8 @@ public final class Safety {
                         return true;
                     }
                     default -> {
-                        announce(Fight.describe(), "dealing with it");
+                        String what = Fight.describe();
+                        announce(what.isEmpty() ? verdict.reason() : what, "dealing with it");
                         return true;
                     }
                 }

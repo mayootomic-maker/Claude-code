@@ -6,6 +6,7 @@ import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.memory.Atlas;
+import dev.understudy.core.sort.Worth;
 import dev.understudy.core.path.Spiral;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -252,9 +253,16 @@ public final class GatherTask {
         // Nowhere to put it. Mining on would drop everything on the floor and
         // the count this job measures itself by would never move again, which
         // is a loop rather than a job.
+        //
+        // Stopping used to be the whole answer, which is not what a person does
+        // — they glance at the bag, throw out the two stacks of cobblestone
+        // they picked up on the way down, and carry on. So that is tried first,
+        // and stopping is what happens when there is genuinely nothing spare.
         if (!Hotbar.roomFor(player, wanted.item())) {
             releaseMining();
-            stop("your inventory is full — nothing else will fit");
+            if (!makeRoom(player)) {
+                stop("inventory full and nothing in it worth throwing away");
+            }
             return;
         }
 
@@ -540,6 +548,32 @@ public final class GatherTask {
                 + makeIt.actions().size() + " steps)");
         plan.addAll(step, makeIt.actions());
         attempted = false;
+        return true;
+    }
+
+    /**
+     * Throw out the least missed thing in the bag.
+     *
+     * Deliberately narrow: only genuinely plentiful stone and dirt, only whole
+     * spare stacks of it, and never anything the running plan asked for. Worth
+     * decides all of that; this only presses the button, and says what went, so
+     * a bag that comes home lighter is never a mystery.
+     */
+    private boolean makeRoom(LocalPlayer player) {
+        Set<String> needed = new HashSet<>();
+        for (int i = step; i < plan.size(); i++) {
+            Planner.Action action = plan.get(i);
+            if (action instanceof Planner.Collect collect) {
+                needed.add(collect.item());
+            } else if (action instanceof Planner.Make make) {
+                needed.add(make.item());
+                needed.addAll(make.recipe().inputs().keySet());
+            }
+        }
+        String spare = Worth.leastMissed(Carried.contents(player), needed);
+        if (spare == null || !Hotbar.hold(client, spare)) return false;
+        report.accept("bag full — dropping the " + spare + " to make room");
+        player.drop(true);
         return true;
     }
 
