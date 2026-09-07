@@ -75,6 +75,13 @@ public final class GatherTask {
      * break happens somewhere inconvenient, which is the whole problem.
      */
     private static final double NEARLY_WORN = 0.1;
+    /**
+     * How often to check the kit, in ticks.
+     *
+     * Rarely, because it costs a right-click and a hand: doing it every tick
+     * would interrupt the swing it is meant to protect.
+     */
+    private static final int UPKEEP_EVERY = 200;
 
     /** Close enough to a remembered fight that it is probably the same one. */
     private static final double TROUBLE_RANGE = 24.0;
@@ -107,6 +114,7 @@ public final class GatherTask {
     private int miningTicks;
     private int aiming;
     private int sinceScan;
+    private int untilUpkeep;
     private int gathered;
     private String waitingOn;
     private boolean attempted;
@@ -303,6 +311,16 @@ public final class GatherTask {
         // A seam at y minus fifty is dark and things spawn in it, and one
         // skeleton ends the whole job. This is cheaper than that.
         if (Torchlight.keepLit(client, player)) return;
+
+        // Looking after itself used to happen only between jobs, because that
+        // is where the autopilot lives — so a two-hour gather ran through three
+        // nights bare-headed with a full set of iron in the bag. A job that
+        // runs for hours has to do its own upkeep.
+        if (--untilUpkeep <= 0) {
+            untilUpkeep = UPKEEP_EVERY;
+            if (Fight.wearTheBest(client, player)) return;
+        }
+        if (Bedtime.tick(client, player, report)) return;
 
         // A tool about to break, while standing on the stone a new one is made
         // of. Replacing it here is the same recovery the break would force,

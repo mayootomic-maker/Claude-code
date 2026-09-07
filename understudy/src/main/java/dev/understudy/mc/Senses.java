@@ -1,6 +1,8 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.survive.Armoury;
+import dev.understudy.core.survive.Combat;
 import dev.understudy.core.sort.Category;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -53,6 +55,11 @@ public final class Senses {
                 carried.getOrDefault("torch", 0) > 0,
                 free, hostiles,
                 nearest == Double.MAX_VALUE ? Double.MAX_VALUE : Math.sqrt(nearest),
+                // What it would fight with, and what it would be hit in. The
+                // agenda used to reason about threats without either, which is
+                // how it ended up deciding to stand and fight bare-handed.
+                Combat.bestWeaponDps(carried),
+                Armoury.pointsOf(Fight.wornBy(player)),
                 carried, job);
     }
 }

@@ -73,6 +73,8 @@ public final class Agenda {
      * @param freeSlots     empty inventory slots
      * @param threatsNear   hostiles within a dozen blocks
      * @param nearestThreat distance to the closest one, large when there are none
+     * @param weaponDps     damage per second of the best thing in the bag
+     * @param armourPoints  armour worn, out of twenty
      * @param carried       what is in the inventory, by name
      * @param job           what was asked for, or null when nothing was
      */
@@ -80,6 +82,7 @@ public final class Agenda {
                             int food, boolean carryingFood,
                             int light, boolean carryingTorch,
                             int freeSlots, int threatsNear, double nearestThreat,
+                            double weaponDps, int armourPoints,
                             Map<String, Integer> carried, Job job) {}
 
     /**
@@ -123,6 +126,8 @@ public final class Agenda {
      * shot in the back for two hundred blocks.
      */
     private static final double THREAT_CLOSE = 6.0;
+    /** Bare hands. Anything at or below this is not a weapon. */
+    private static final double UNARMED = 1.0;
 
     /**
      * The one question.
@@ -152,6 +157,16 @@ public final class Agenda {
                     "on " + heartsOf(now) + " hearts with nothing to eat");
         }
         if (now.threatsNear() > 0 && now.nearestThreat() <= THREAT_CLOSE) {
+            // Whether "deal with it" is even on offer depends on what is in the
+            // hand, and the agenda could not see that at all — so it would
+            // gravely decide to stand and fight a zombie bare-handed. Combat
+            // knows better and would flee; the two saying different things
+            // about the same moment is worse than either.
+            if (now.weaponDps() <= UNARMED) {
+                return new Decision(Act.RETREAT, "",
+                        "something " + Math.round(now.nearestThreat())
+                                + " blocks away and nothing to fight it with");
+            }
             return new Decision(Act.DEFEND, "",
                     "something " + Math.round(now.nearestThreat())
                             + " blocks away — that first, not an errand");
@@ -199,6 +214,8 @@ public final class Agenda {
         lines.add("hunger " + now.food() + (now.carryingFood() ? " (food carried)" : " (no food)"));
         lines.add("light " + now.light() + (now.light() < DARK ? " — spawns here" : ""));
         lines.add(now.freeSlots() + " free slots");
+        lines.add(String.format("carrying a weapon worth %.0f a second, wearing %d/%d armour",
+                now.weaponDps(), now.armourPoints(), 20));
         lines.add(now.threatsNear() + " hostiles near"
                 + (now.threatsNear() > 0
                         ? ", closest " + Math.round(now.nearestThreat()) + " blocks"

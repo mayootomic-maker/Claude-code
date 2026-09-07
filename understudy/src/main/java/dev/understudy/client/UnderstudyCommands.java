@@ -96,9 +96,14 @@ public final class UnderstudyCommands {
             dispatcher.register(literal("get")
                     .then(argument("item", StringArgumentType.word())
                             .suggests((context, builder) -> {
+                                // Complete after a plus too, so a list can be
+                                // typed the same way a single name is.
                                 String typed = builder.getRemaining().toLowerCase();
+                                int plus = typed.lastIndexOf('+');
+                                String done = plus < 0 ? "" : typed.substring(0, plus + 1);
+                                String partial = typed.substring(plus + 1);
                                 for (String item : Planner.obtainable()) {
-                                    if (item.startsWith(typed)) builder.suggest(item);
+                                    if (item.startsWith(partial)) builder.suggest(done + item);
                                 }
                                 return builder.buildFuture();
                             })
@@ -265,10 +270,23 @@ public final class UnderstudyCommands {
             say(source, "not in a world yet");
             return 0;
         }
-        String item = rawItem.toLowerCase().replace("minecraft:", "");
+        // Several things at once, joined with a plus. Not a convenience: the
+        // planner costs them together, so the pickaxe, the crafting table and
+        // the trip underground that iron and coal both need are paid for once
+        // instead of twice. Asking for them one at a time is two trips down the
+        // same tunnel.
+        java.util.LinkedHashMap<String, Integer> wants = new java.util.LinkedHashMap<>();
+        for (String each : rawItem.toLowerCase().replace("minecraft:", "").split("\\+")) {
+            if (!each.isBlank()) wants.merge(each, count, Integer::sum);
+        }
+        if (wants.isEmpty()) {
+            say(source, "nothing named");
+            return 0;
+        }
+        String item = String.join(" and ", wants.keySet());
 
         Map<String, Integer> have = Carried.contents(source.getPlayer());
-        Planner.Plan plan = new Planner(Catalogue.solver()).plan(Map.of(item, count), have);
+        Planner.Plan plan = new Planner(Catalogue.solver()).plan(wants, have);
 
         // Anything with a depth means a tunnel, and a tunnel at y=-59 is pitch
         // black and full of things that spawn in it. Asking for torches in the
@@ -280,7 +298,7 @@ public final class UnderstudyCommands {
             // no use to anybody.
             java.util.LinkedHashMap<String, Integer> lit = new java.util.LinkedHashMap<>();
             lit.put("torch", TORCHES_FOR_A_DIG);
-            lit.put(item, count);
+            lit.putAll(wants);
             Planner.Plan withLight = new Planner(Catalogue.solver()).plan(lit, have);
             if (withLight.possible()) plan = withLight;
         }
@@ -585,6 +603,7 @@ public final class UnderstudyCommands {
         say(source, "/build house|hut|tower|storage|manor [size] — build it");
         say(source, "/plan house [size] — what it would take, without building");
         say(source, "/get <item> [n] — go and get it, however that has to happen");
+        say(source, "/get iron_ingot+coal 8 — several at once, planned as one trip");
         say(source, "/sort — put your things in the right chests (/sort all includes your kit)");
         say(source, "/understudy profile — what I have learned about how you play");
         say(source, "/understudy test — check what is working and what is not");
