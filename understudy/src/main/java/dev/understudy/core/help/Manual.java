@@ -77,7 +77,8 @@ public final class Manual {
                     new Entry("/understudy why", "what it thinks is going on, and why"),
                     new Entry("/understudy auto [item] [n]", "decide for itself what to do next"),
                     new Entry("/understudy auto off", "stop deciding for itself"),
-                    new Entry("/understudy speed [how]", "steady, brisk or flat out"),
+                    new Entry("/understudy speed [how]",
+                            "steady, brisk, or flat out — which is visibly a mod"),
                     new Entry("/project [which]", "an objective: kit, camp, base, enchanter"))),
 
             new Section("look", "Looking at it", List.of(

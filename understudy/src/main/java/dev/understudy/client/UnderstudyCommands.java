@@ -700,6 +700,11 @@ public final class UnderstudyCommands {
                         + option.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
                         + " — " + option.describe + ", " + option.blocksPerSecond() + " blocks/s");
             }
+            // The gap between three and a hundred and sixty is the head, not a
+            // counter, and saying so is the difference between a setting people
+            // understand and one they assume is broken.
+            say(source, "the two slow ones turn to look at each block, which is "
+                    + "what the rate is; flat out snaps the view instead");
             say(source, "/understudy speed <steady|brisk|flat_out>");
             return 1;
         }

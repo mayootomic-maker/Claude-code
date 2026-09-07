@@ -136,6 +136,37 @@ public final class Aim {
         return wrapped - 180.0;
     }
 
+    /**
+     * Put the head there this instant, with no spring and no reaction time.
+     *
+     * The one deliberate exception to everything this class is for, and it
+     * exists because the alternative was a setting that did not work. A build
+     * waits for the head before every block, and the spring settles in about a
+     * third of a second — so however many blocks a tick the speed setting
+     * allowed, the real rate was two or three a second at every setting, and
+     * "flat out" was indistinguishable from "steady". Flat out is described as
+     * "like a mod" because that is exactly what it is: it gives up looking like
+     * a person in exchange for going roughly fifty times faster. Nothing else
+     * in the mod may call this.
+     */
+    static void snapAt(LocalPlayer player, Vec3 target) {
+        double dx = target.x - player.getX();
+        double dy = target.y - (player.getY() + player.getEyeHeight());
+        double dz = target.z - player.getZ();
+        double flat = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float pitch = (float) -Math.toDegrees(Math.atan2(dy, flat));
+        player.setYRot(yaw);
+        player.setXRot(pitch);
+        wantYaw = yaw;
+        wantPitch = pitch;
+        asked = false;
+        // The spring is moved with it rather than left behind, or the first
+        // tick after the build ends swings the view back to wherever the
+        // careful half thought the head was.
+        if (look != null) look.reset(yaw, pitch);
+    }
+
     /** Hands off — the view is the player's again. */
     public static void release(LocalPlayer player) {
         asked = false;

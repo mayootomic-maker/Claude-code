@@ -40,32 +40,51 @@ public final class BuildTask {
     private static final double REACH = 4.0;
 
     /**
-     * How hard to go at it.
+     * How fast to build, and whether to keep looking like a person while doing it.
      *
-     * The old rate was one block every four ticks, which is five a second and
-     * about what a person does. That is the right default for a server, where
-     * anything faster is a thing a person cannot do and a thing a server can
-     * see. It is the wrong default for someone who wants their house now, so it
-     * is a choice rather than a constant, and the middle one — ten a second, a
-     * fast clicker — is where it starts.
+     * The blocks-a-tick numbers were never the real limit and it took a
+     * stopwatch to notice. Every placement waits for the head to be pointing at
+     * the block, the head is a spring that settles in about a third of a
+     * second, and two blocks side by side in arm's reach are twenty or thirty
+     * degrees apart — so all three settings placed two or three blocks a second
+     * and "flat out" was, in practice, identical to "steady".
+     *
+     * So the setting is now about the head rather than about a counter. The two
+     * human speeds still turn to look at what they are doing and are capped by
+     * that, which is a real cap and is what the advertised rate says. Flat out
+     * snaps the view instead — no spring, no reaction time — which is visibly a
+     * mod to anyone watching and is roughly fifty times quicker.
      */
     public enum Speed {
-        STEADY("steady, like a person", 1, 4),
-        BRISK("brisk, like a fast one", 2, 2),
-        FLAT_OUT("flat out, like a mod", 8, 1);
+        STEADY("steady, like a person", 1, 4, true, 2),
+        BRISK("brisk, like a fast one", 2, 2, true, 3),
+        FLAT_OUT("flat out, like a mod", 8, 1, false, 160);
 
         public final String describe;
         final int perTick;
         final int cooldown;
+        /** Whether to wait for the head to turn, which is the whole difference. */
+        final boolean turnsItsHead;
+        private final int aboutPerSecond;
 
-        Speed(String describe, int perTick, int cooldown) {
+        Speed(String describe, int perTick, int cooldown, boolean turnsItsHead,
+              int aboutPerSecond) {
             this.describe = describe;
             this.perTick = perTick;
             this.cooldown = cooldown;
+            this.turnsItsHead = turnsItsHead;
+            this.aboutPerSecond = aboutPerSecond;
         }
 
+        /**
+         * What it actually places, not what the counters would allow.
+         *
+         * perTick * 20 / cooldown is the mechanical ceiling and for the two
+         * human speeds it is off by a factor of seven, because the head-turn
+         * they wait for is slower than the counter they are throttled by.
+         */
         public int blocksPerSecond() {
-            return perTick * 20 / cooldown;
+            return aboutPerSecond;
         }
     }
 
@@ -296,8 +315,15 @@ public final class BuildTask {
         // failed placement. Three ticks of turning would otherwise use up the
         // three attempts and skip the block entirely, which would have turned
         // "looks more human" into "builds with holes in it".
-        Aim.at(player, target);
-        if (!Aim.onTarget()) return false;
+        if (speed.turnsItsHead) {
+            Aim.at(player, target);
+            if (!Aim.onTarget()) return false;
+        } else {
+            // Flat out is the setting that says it does not care how this
+            // looks, and waiting a third of a second per block for a spring is
+            // the only reason it was not faster than the other two.
+            Aim.snapAt(player, target);
+        }
 
         if (!Hotbar.holdOrConjure(client, next.block())) {
             missing.merge(next.block(), 1, Integer::sum);
