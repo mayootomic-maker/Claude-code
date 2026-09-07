@@ -13,6 +13,7 @@ import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
+import dev.understudy.mc.Aim;
 import dev.understudy.mc.Ghosts;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
@@ -123,8 +124,13 @@ public final class UnderstudyClient implements ClientModInitializer {
                     // session. getStringUUID is on Entity and is stable; the game
                     // profile's accessors are not — GameProfile became a record.
                     Rng rng = new Rng(client.player.getStringUUID());
+                    // One head for the whole mod, seeded the same way, so every
+                    // turn it makes — walking, mining, placing, opening a chest
+                    // — moves like the same person rather than like a machine
+                    // between the bits that were done carefully.
+                    Aim.begin(rng, client.player);
                     safety = new Safety(UnderstudyClient::warn);
-                    travel = new TravelTask(client, profile, rng, UnderstudyClient::tell);
+                    travel = new TravelTask(client, profile, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
@@ -193,6 +199,11 @@ public final class UnderstudyClient implements ClientModInitializer {
                 gather.tick();
                 build.tick();
                 sort.tick();
+
+                // Every task has now said where it would like to look. Turn the
+                // head once, here, so there is one movement per tick rather
+                // than several writers fighting over the same two floats.
+                Aim.tick(client.player);
             } catch (Throwable error) {
                 onTickFailure(error);
             }
@@ -396,6 +407,7 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     private static void letGo() {
         Keys.releaseAll();
+        Aim.release(Minecraft.getInstance().player);
         Minecraft client = Minecraft.getInstance();
         if (client.gameMode != null) client.gameMode.stopDestroyBlock();
         if (safety != null) safety.reset();

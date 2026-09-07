@@ -5,7 +5,6 @@ import dev.understudy.core.path.Pursuit;
 import dev.understudy.core.path.Smoother;
 import dev.understudy.core.path.Step;
 import dev.understudy.human.Look;
-import dev.understudy.human.Rng;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -29,9 +28,14 @@ import java.util.List;
  * turned at a fixed number of degrees per tick, and it looked exactly as bad as
  * that description sounds. Three things fix it, and none of them are here:
  * Smoother takes the staircase out of the path, Pursuit aims at a point further
- * along it rather than at the next block, and Look turns the view like a mass on
+ * along it rather than at the next block, and Aim turns the view like a mass on
  * a spring instead of a stepper motor. What is left in this file is deciding
  * which keys that implies.
+ *
+ * The head belongs to Aim rather than to this file, and that matters even
+ * though the walk was the one place already doing it properly: during a build
+ * the walker wants to look down the path while the builder wants to look at the
+ * block, and two writers in one tick is a view that shakes.
  */
 public final class Walker {
 
@@ -42,7 +46,6 @@ public final class Walker {
     private static final double SPRINT_MIN_REMAINING = 6;
 
     private final Minecraft client;
-    private final Look look;
     private List<Step> path = List.of();
     private int index;
     private int stuckTicks;
@@ -55,12 +58,8 @@ public final class Walker {
     private BlockPos opening;
     private int openTicks;
 
-    public Walker(Minecraft client, Rng rng) {
+    public Walker(Minecraft client) {
         this.client = client;
-        LocalPlayer player = client.player;
-        this.look = new Look(rng,
-                player == null ? 0 : player.getYRot(),
-                player == null ? 0 : player.getXRot());
     }
 
     /**
@@ -81,8 +80,7 @@ public final class Walker {
         this.index = 0;
         this.stuckTicks = 0;
         this.lastProgress = Double.MAX_VALUE;
-        LocalPlayer player = client.player;
-        if (player != null) look.reset(player.getYRot(), player.getXRot());
+        Aim.release(client.player);
     }
 
     public boolean done() {
@@ -161,11 +159,9 @@ public final class Walker {
         // further down when there is a step to take.
         double wantedPitch = dy < -0.5 ? 22 : 8;
 
-        look.tick(wantedYaw, wantedPitch);
-        player.setYRot((float) look.yaw());
-        player.setXRot((float) look.pitch());
+        Aim.at(wantedYaw, wantedPitch);
 
-        double offCourse = Math.abs(Look.wrap(wantedYaw - look.yaw()));
+        double offCourse = Math.abs(Look.wrap(wantedYaw - Aim.yaw()));
         // Walking forward while facing the wrong way is how you scrape along
         // walls and end up in the corner of a room. Turn first.
         boolean forward = offCourse < STOP_AND_TURN_DEGREES;
@@ -401,9 +397,7 @@ public final class Walker {
         double dy = at.getY() + 0.5 - (player.getY() + player.getEyeHeight());
         double dz = at.getZ() + 0.5 - player.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
-        look.tick(Math.toDegrees(Math.atan2(dz, dx)) - 90.0,
+        Aim.at(Math.toDegrees(Math.atan2(dz, dx)) - 90.0,
                 -Math.toDegrees(Math.atan2(dy, horizontal)));
-        player.setYRot((float) look.yaw());
-        player.setXRot((float) look.pitch());
     }
 }

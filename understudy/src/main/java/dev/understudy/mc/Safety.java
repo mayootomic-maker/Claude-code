@@ -165,7 +165,8 @@ public final class Safety {
                 announce(verdict.reason(), "surfacing");
                 releaseMovement();
                 // Look up and swim: holding jump is what rises in water.
-                player.setXRot(-70f);
+                // Look up to swim up, through the same head as everything else.
+                Aim.at(player.getYRot(), -70);
                 Keys.set(client.options.keyJump, true);
                 Keys.set(client.options.keyUp, true);
                 return true;

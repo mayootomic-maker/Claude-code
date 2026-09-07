@@ -3,7 +3,6 @@ package dev.understudy.mc;
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.path.PathFinder;
 import dev.understudy.core.path.Step;
-import dev.understudy.human.Rng;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -45,10 +44,10 @@ public final class TravelTask {
     private int plannedTick;
     private boolean mustDig;
 
-    public TravelTask(Minecraft client, PlayerProfile profile, Rng rng, Consumer<String> report) {
+    public TravelTask(Minecraft client, PlayerProfile profile, Consumer<String> report) {
         this.client = client;
         this.profile = profile;
-        this.walker = new Walker(client, rng);
+        this.walker = new Walker(client);
         this.report = report;
     }
 

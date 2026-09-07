@@ -249,6 +249,13 @@ public final class BuildTask {
             return false;
         }
 
+        // Look at it first, and — importantly — do not let the turn count as a
+        // failed placement. Three ticks of turning would otherwise use up the
+        // three attempts and skip the block entirely, which would have turned
+        // "looks more human" into "builds with holes in it".
+        Aim.at(player, target);
+        if (!Aim.onTarget()) return false;
+
         if (!Hotbar.hold(client, next.block())) {
             missing.merge(next.block(), 1, Integer::sum);
             index++;
@@ -397,8 +404,10 @@ public final class BuildTask {
             Vec3 hit = Vec3.atCenterOf(reference).add(
                     face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
 
-            look(player, hit);
-            if (facing != null) player.setYRot(facing.yaw());
+            // Face the block, and for something with a front — stairs, a door —
+            // face the way it has to be placed instead.
+            if (facing != null) Aim.at(facing.yaw(), 0);
+            else look(player, hit);
             BlockHitResult result = new BlockHitResult(hit, face, reference, false);
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, result);
             player.swing(InteractionHand.MAIN_HAND);
@@ -408,13 +417,9 @@ public final class BuildTask {
         return false;
     }
 
+    /** A request rather than a snap; Aim turns the head. */
     private void look(LocalPlayer player, Vec3 at) {
-        double dx = at.x - player.getX();
-        double dy = at.y - (player.getY() + player.getEyeHeight());
-        double dz = at.z - player.getZ();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setXRot((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
+        Aim.at(player, at);
     }
 
     /** A spot beside the target that is worth standing in to reach it. */

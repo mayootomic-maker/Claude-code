@@ -231,8 +231,7 @@ public final class SortTask {
         Vec3 hit = Vec3.atCenterOf(chest);
         double dx = hit.x - player.getX();
         double dz = hit.z - player.getZ();
-        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setXRot(20f);
+        Aim.at(player, Vec3.atCenterOf(chests.get(chestIndex)));
         if (client.gameMode != null) {
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
                     new BlockHitResult(hit, Direction.UP, chest, false));

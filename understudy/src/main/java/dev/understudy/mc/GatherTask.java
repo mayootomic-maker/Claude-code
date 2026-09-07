@@ -36,6 +36,8 @@ public final class GatherTask {
 
     /** Close enough to break a block. Vanilla reach is a little over four. */
     private static final double REACH = 4.2;
+    /** Ticks to wait for the head to come round before swinging anyway. */
+    private static final int AIM_PATIENCE = 12;
     /** Give up on a block that will not break in fifteen seconds. */
     private static final int MAX_MINING_TICKS = 300;
     /** Re-scan for a target no more than this often; a full scan is not free. */
@@ -79,6 +81,7 @@ public final class GatherTask {
     private BlockPos target;
     private Direction face = Direction.UP;
     private int miningTicks;
+    private int aiming;
     private int sinceScan;
     private int gathered;
     private String waitingOn;
@@ -278,7 +281,16 @@ public final class GatherTask {
 
     private void mine(LocalPlayer player) {
         face = faceToward(player, target);
-        lookAt(player, target);
+        Aim.at(player, target);
+        // Look at it before hitting it. Swinging at a block the view has not
+        // reached yet is the single most obviously non-human thing a mod does,
+        // and the turn costs two ticks.
+        //
+        // Bounded, because "wait until it is looking at it" is a stall the
+        // moment anything stops the head settling, and a mod that quietly
+        // stops mining is worse than one that swings a fraction early.
+        if (!Aim.onTarget() && ++aiming < AIM_PATIENCE) return;
+        aiming = 0;
 
         if (miningTicks == 0) {
             client.gameMode.startDestroyBlock(target, face);
@@ -501,12 +513,4 @@ public final class GatherTask {
         return Direction.UP;
     }
 
-    private void lookAt(LocalPlayer player, BlockPos at) {
-        double dx = at.getX() + 0.5 - player.getX();
-        double dy = at.getY() + 0.5 - (player.getY() + player.getEyeHeight());
-        double dz = at.getZ() + 0.5 - player.getZ();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setXRot((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
-    }
 }

@@ -90,12 +90,11 @@ final class Placement {
                 new BlockHitResult(hit, Direction.UP, at, false));
     }
 
+    /**
+     * Ask to look there. It is a request now rather than a snap: Aim owns the
+     * view and turns the head over a few ticks the way a person does.
+     */
     static void lookAt(LocalPlayer player, Vec3 at) {
-        double dx = at.x - player.getX();
-        double dy = at.y - (player.getY() + player.getEyeHeight());
-        double dz = at.z - player.getZ();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        player.setYRot((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        player.setXRot((float) -Math.toDegrees(Math.atan2(dy, horizontal)));
+        Aim.at(player, at);
     }
 }
