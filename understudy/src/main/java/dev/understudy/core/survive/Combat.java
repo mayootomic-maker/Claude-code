@@ -486,6 +486,18 @@ public final class Combat {
         return bestWeapon != null ? bestWeapon : bestTool;
     }
 
+    /**
+     * Damage per second of the best thing in the bag.
+     *
+     * The one-number version of the loadout, for callers that only want to know
+     * whether there is anything to fight with — the agenda asks exactly that
+     * and nothing else.
+     */
+    public static double bestWeaponDps(Map<String, Integer> carried) {
+        String best = bestWeapon(carried);
+        return best == null ? FISTS : dpsOf(best);
+    }
+
     /** Made for fighting, as opposed to pressed into it. */
     public static boolean isWeapon(String item) {
         return item.endsWith("_sword") || item.equals("trident") || item.equals("mace");
