@@ -32,8 +32,14 @@
 #     can ask whether the fire is out instead of inferring it from a stopwatch
 #   KeyMapping.setDown(boolean) is unchanged and still in net.minecraft.client
 
-# For drawing the selection box in the world while marking out a site.
-net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 20
+# For the holographic blueprint: ghost boxes in the world where each block is
+# going to go. Nothing in this mod draws in the world yet, and 26 reworked the
+# render pipeline, so all four of these are needed before a line of it is
+# written — the event to hook, what it hands you, and what draws a wire box.
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 24
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext 22
+net.minecraft.client.renderer.ShapeRenderer 14
+net.minecraft.client.renderer.RenderType lines
 
 
 # For crafting without a person clicking the grid. handlePlaceRecipe fills the

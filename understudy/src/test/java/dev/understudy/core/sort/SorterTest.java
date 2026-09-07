@@ -137,22 +137,75 @@ class SorterTest {
                 chest(3, 20, "redstone", 40));
         Map<String, Integer> haul = inventory("cobblestone", 64, "raw_gold", 12, "repeater", 4);
 
-        Map<Integer, Category> first = Sorter.plan(haul, chests, true).assignment();
-        Map<Integer, Category> second = Sorter.plan(haul, chests, true).assignment();
+        Map<Integer, List<Category>> first = Sorter.plan(haul, chests, true).assignment();
+        Map<Integer, List<Category>> second = Sorter.plan(haul, chests, true).assignment();
         assertEquals(first, second);
     }
 
     @Test
-    @DisplayName("says what it could not place instead of dumping it anywhere")
-    void reportsUnplaced() {
-        // One chest, three categories. Two of them have nowhere to go, and
-        // scattering them at random would be worse than saying so.
+    @DisplayName("one chest takes everything rather than one category and a shrug")
+    void fewerChestsThanCategories() {
+        // This used to place one category and report the other two as having
+        // nowhere to go, which is true of a rule that gives each chest a single
+        // category and useless to somebody with one chest. Everything that fits
+        // goes in.
         Plan plan = Sorter.plan(
                 inventory("cobblestone", 64, "iron_ingot", 30, "redstone", 20),
                 List.of(chest(1, 27)), true);
 
-        assertEquals(1, plan.moves().size());
-        assertEquals(2, plan.unplaced().size());
+        assertEquals(3, plan.moves().size(), "left things behind with room to spare");
+        assertTrue(plan.unplaced().isEmpty(), plan.unplaced().toString());
+    }
+
+    @Test
+    @DisplayName("keeps things together: ore goes with the valuables, not the bread")
+    void groupsRelatedCategories() {
+        // Two chests, four categories. Which two share matters — putting the
+        // diamonds in with the ore is a base you can find things in; putting
+        // them in with the wheat is a jumble.
+        Plan plan = Sorter.plan(
+                inventory("raw_iron", 30, "diamond", 4, "oak_planks", 64, "bread", 12),
+                List.of(chest(1, 27), chest(2, 27)), true);
+
+        int ores = chestOf(plan, "raw_iron");
+        int valuables = chestOf(plan, "diamond");
+        assertEquals(ores, valuables, "split the ore from the valuables: " + plan.assignment());
+    }
+
+    @Test
+    @DisplayName("spills into another chest rather than stopping at a full one")
+    void overflowsRatherThanGivingUp() {
+        // The ore chest has one slot and there are two kinds of ore. The second
+        // one has to go somewhere, and the chest next to it is empty.
+        Plan plan = Sorter.plan(
+                inventory("raw_iron", 30, "raw_copper", 30),
+                List.of(chest(1, 1, "raw_gold", 40), chest(2, 27)), true);
+
+        assertEquals(2, plan.moves().size(), "stopped at the full chest: " + plan.unplaced());
+        assertTrue(plan.unplaced().isEmpty());
+    }
+
+    @Test
+    @DisplayName("keeps the best pickaxe and puts the other three away")
+    void keepsOnlyTheBestOfEachKind() {
+        Map<String, Integer> carried = inventory(
+                "diamond_pickaxe", 1, "stone_pickaxe", 3, "wooden_pickaxe", 1,
+                "iron_sword", 1, "bread", 8);
+        java.util.Set<String> keeping = Sorter.keepBack(carried);
+
+        assertTrue(keeping.contains("diamond_pickaxe"), "gave away the good one");
+        assertFalse(keeping.contains("stone_pickaxe"), "kept the spares");
+        assertFalse(keeping.contains("wooden_pickaxe"));
+        assertTrue(keeping.contains("iron_sword"), "only one sword, and it stays");
+        assertTrue(keeping.contains("bread"), "never leave without food");
+    }
+
+    private static int chestOf(Plan plan, String item) {
+        return plan.moves().stream()
+                .filter(move -> move.item().equals(item))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("never placed " + item))
+                .chestId();
     }
 
     @Test

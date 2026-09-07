@@ -51,7 +51,8 @@ public final class SortTask {
 
     private Phase phase = Phase.IDLE;
     private final List<BlockPos> chests = new ArrayList<>();
-    private final Map<Integer, Category> assignment = new LinkedHashMap<>();
+    private final Map<Integer, List<Category>> assignment = new LinkedHashMap<>();
+    private java.util.Set<String> keeping = java.util.Set.of();
     private int chestIndex;
     private int waited;
     private int cooldown;
@@ -110,9 +111,12 @@ public final class SortTask {
         for (BlockPos pos : BlockPos.withinManhattan(here, SEARCH_RADIUS, SEARCH_RADIUS / 2, SEARCH_RADIUS)) {
             BlockState state = client.level.getBlockState(pos);
             String name = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
-            if (name.endsWith("chest") || name.endsWith("barrel")) {
-                chests.add(pos.immutable());
-            }
+            if (!name.endsWith("chest") && !name.endsWith("barrel")) continue;
+            // The two halves of a double chest are two blocks and one container.
+            // Counting both gave them different categories, each of which then
+            // filled the same box with the other's things.
+            if (halfOfOneAlreadyFound(pos)) continue;
+            chests.add(pos.immutable());
         }
         if (chests.isEmpty()) {
             phase = Phase.IDLE;
@@ -125,16 +129,21 @@ public final class SortTask {
         for (int i = 0; i < chests.size(); i++) {
             views.add(new Sorter.ChestView(i, peek(chests.get(i)), 27));
         }
-        Sorter.Plan plan = Sorter.plan(carrying(player), views, keepKit);
+        Map<String, Integer> carried = carrying(player);
+        Sorter.Plan plan = Sorter.plan(carried, views, keepKit);
         assignment.putAll(plan.assignment());
         unplaced.addAll(plan.unplaced());
+        // Worked out once, from the whole inventory, so the best pickaxe stays
+        // and the three worse ones go. Deciding it per stack cannot see that.
+        keeping = keepKit ? Sorter.keepBack(carried) : java.util.Set.of();
 
         if (plan.isEmpty()) {
             phase = Phase.IDLE;
             report.accept("nothing to put away");
             return;
         }
-        report.accept("sorting into " + assignment.size() + " chests");
+        report.accept("sorting " + plan.itemsMoved() + " items into "
+                + assignment.size() + (assignment.size() == 1 ? " chest" : " chests"));
         phase = Phase.WALK;
     }
 
@@ -157,6 +166,24 @@ public final class SortTask {
             }
         }
         return out;
+    }
+
+    /**
+     * Whether the other half of this chest is already on the list.
+     *
+     * Only chests pair up, and only along one axis, so the two blocks either
+     * side are the whole question.
+     */
+    private boolean halfOfOneAlreadyFound(BlockPos pos) {
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            if (chests.contains(pos.relative(direction))) {
+                String neighbour = BuiltInRegistries.BLOCK
+                        .getKey(client.level.getBlockState(pos.relative(direction)).getBlock())
+                        .getPath();
+                if (neighbour.endsWith("chest")) return true;
+            }
+        }
+        return false;
     }
 
     private Map<String, Integer> carrying(LocalPlayer player) {
@@ -225,8 +252,8 @@ public final class SortTask {
             phase = Phase.WALK;
             return;
         }
-        Category wanted = assignment.get(chestIndex);
-        if (wanted == null) {
+        List<Category> wanted = assignment.get(chestIndex);
+        if (wanted == null || wanted.isEmpty()) {
             phase = Phase.CLOSE;
             return;
         }
@@ -236,9 +263,8 @@ public final class SortTask {
             Slot s = handler.slots.get(slot);
             String name = Hotbar.nameOf(s.getItem());
             if (name == null) continue;
-            Category category = Category.of(name);
-            if (category != wanted) continue;
-            if (keepKit && Sorter.keep(name, category)) continue;
+            if (!wanted.contains(Category.of(name))) continue;
+            if (keeping.contains(name)) continue;
 
             if (client.gameMode != null) {
                 client.gameMode.handleContainerInput(handler.containerId, slot, 0,
