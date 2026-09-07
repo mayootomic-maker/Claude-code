@@ -144,25 +144,28 @@ class DesignsTest {
     }
 
     @Test
-    @DisplayName("works away from the door, so it cannot wall itself into a corner")
-    void buildOrderRetreatsToTheDoor() {
-        Blueprint bp = Designs.house(9, 9, 4, PALETTE, OAK, BRICK);
-        List<Placement> order = bp.buildOrder();
-
-        // Within the first wall course, the blocks nearest the entrance must be
-        // placed last — that is what leaves a way out at every point.
-        // y = 2 rather than 1: the bottom course of every wall is now a base
-        // course of masonry, so the first course that is timber is the second.
-        double firstDistance = -1;
-        double lastDistance = -1;
-        for (Placement p : order) {
-            if (p.y() != 2 || p.role() != Role.WALL) continue;
-            double d = Math.hypot(p.x() - bp.entranceX(), p.z() - bp.entranceZ());
-            if (firstDistance < 0) firstDistance = d;
-            lastDistance = d;
+    @DisplayName("leaves the doorway open, so it can always get out")
+    void theDoorwayIsNeverBuiltOver() {
+        // This replaces a test that asserted the wall course was laid furthest
+        // from the door first. That did keep a way out, but it did it by
+        // ordering, and the ordering it forced was the reason the builder spent
+        // its day crossing the site — a symmetrical house has two walls the
+        // same distance from the door, so it alternated between them.
+        //
+        // The guarantee is better without it. Nothing is ever placed in the
+        // doorway at standing height, in any design, so the way out exists from
+        // the first course to the last whatever order the blocks go in. That is
+        // the property worth holding, and it does not cost a single step.
+        for (String id : Catalog.ids()) {
+            Blueprint bp = Catalog.build(id, Catalog.byId(id).defaultSize(), OAK, BRICK);
+            for (Placement p : bp.placements()) {
+                boolean inTheDoorway = p.x() == bp.entranceX() && p.z() == bp.entranceZ()
+                        && p.y() >= bp.entranceY() && p.y() <= bp.entranceY() + 1;
+                assertFalse(inTheDoorway,
+                        id + " puts " + p.block() + " in its own doorway at "
+                                + p.x() + "," + p.y() + "," + p.z());
+            }
         }
-        assertTrue(firstDistance > lastDistance,
-                "started at the door and worked outward: " + firstDistance + " -> " + lastDistance);
     }
 
     @Test

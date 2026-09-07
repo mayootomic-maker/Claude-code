@@ -24,11 +24,17 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * Builds a blueprint, one block per few ticks, from where it stands.
+ * Builds a blueprint, from as few places to stand as it can manage.
  *
- * The order comes from the blueprint, which rises layer by layer and works away
- * from the door. The only thing this adds is the physical business of being
- * close enough: it walks to each block it cannot reach and places from there.
+ * The order comes from the blueprint, which rises layer by layer and sweeps
+ * back and forth within each one. What this adds is the physical business of
+ * being close enough — and doing that well is most of what makes a build quick.
+ *
+ * The rule is not "walk to each block". It is: place everything you can reach,
+ * and when you cannot reach the next one, walk to the spot that reaches the
+ * most of what is still to come. One walk then pays for dozens of placements.
+ * Walking to whichever block was next, one block at a time, is what it used to
+ * do, and it is why a house took an hour.
  *
  * A block it cannot place is deferred rather than fatal. Optional pieces —
  * windows, furniture, torches — are skipped outright if the material ran out,
@@ -36,7 +42,14 @@ import java.util.function.Consumer;
  */
 public final class BuildTask {
 
-    /** Maximum reach for placing; the game allows a little more. */
+    /**
+     * Maximum reach for placing, eye to block centre.
+     *
+     * The game allows 4.5 in survival and more in creative. Four is inside both
+     * with room to spare, which matters because a placement attempted from too
+     * far away is not refused politely — it is silently dropped, retried three
+     * times and then skipped, and a skipped block is a hole in the wall.
+     */
     private static final double REACH = 4.0;
 
     /**
@@ -304,10 +317,10 @@ public final class BuildTask {
             }
         }
 
-        double distance = Math.sqrt(player.blockPosition().distSqr(target));
-        if (distance > REACH) {
-            // Stand next to it rather than trying to place from across the room.
-            travel.start(standingSpotFor(target));
+        if (!inReach(player.blockPosition(), target)) {
+            // Stand somewhere it can work from, rather than next to this one
+            // block and then somewhere else for the next.
+            travel.start(stationFor(player, target));
             return false;
         }
 
@@ -388,8 +401,8 @@ public final class BuildTask {
      */
     private boolean clear(LocalPlayer player, BlockPos target) {
         if (client.gameMode == null) return false;
-        if (player.blockPosition().distSqr(target) > REACH * REACH) {
-            travel.start(standingSpotFor(target));
+        if (!inReach(player.blockPosition(), target)) {
+            travel.start(stationFor(player, target));
             return false;
         }
         if (!target.equals(clearing)) {
@@ -533,24 +546,101 @@ public final class BuildTask {
     }
 
     /** A spot beside the target that is worth standing in to reach it. */
-    private BlockPos standingSpotFor(BlockPos target) {
-        List<BlockPos> candidates = new ArrayList<>();
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                if (dx == 0 && dz == 0) continue;
-                candidates.add(target.offset(dx, 0, dz));
-                candidates.add(target.offset(dx, 1, dz));
-            }
-        }
+    /**
+     * Whether a block can be worked on from a given place to stand.
+     *
+     * Measured eye to block centre, and used both by the live check and by the
+     * chooser below — which matters more than the number does. When the chooser
+     * used one rule and the check another, the chooser would send it somewhere
+     * the check then rejected, and it walked again.
+     */
+    private static boolean inReach(BlockPos from, BlockPos target) {
+        double dx = (from.getX() + 0.5) - (target.getX() + 0.5);
+        double dy = (from.getY() + EYE_HEIGHT) - (target.getY() + 0.5);
+        double dz = (from.getZ() + 0.5) - (target.getZ() + 0.5);
+        return dx * dx + dy * dy + dz * dz <= REACH * REACH;
+    }
+
+    /** Standing eye height. The hands work from here, not from the feet. */
+    private static final double EYE_HEIGHT = 1.62;
+    /** How far around a block to look for somewhere to stand. */
+    private static final int STATION_RADIUS = 4;
+    /**
+     * How far down the queue to look when choosing where to stand.
+     *
+     * The whole point of the change: a spot is worth standing on for what it
+     * lets you do next, not only for the one block that sent you there. Sixty
+     * is about two rows of a house — far enough that a good spot wins, near
+     * enough that the order has not moved on to another wall.
+     */
+    private static final int LOOK_AHEAD = 60;
+
+    /**
+     * Somewhere to stand that is worth walking to.
+     *
+     * The old version took the first standable block it found scanning a fixed
+     * five-by-five box, which meant it always chose the same corner of that box
+     * regardless of where the player already was or what was coming next. Every
+     * block out of arm's reach became its own walk, to a spot two blocks the
+     * wrong side of the target, and the next block sent it back. That is what
+     * the routes looked like from outside, and it is why a house took an hour.
+     *
+     * This picks the spot that reaches the most of the work still ahead, and
+     * among equals the one nearest to where the feet already are. One walk then
+     * pays for dozens of placements instead of one.
+     */
+    private BlockPos stationFor(LocalPlayer player, BlockPos target) {
         ClientBlockView view = new ClientBlockView(client.level);
-        for (BlockPos candidate : candidates) {
-            if (view.passable(candidate.getX(), candidate.getY(), candidate.getZ())
-                    && view.passable(candidate.getX(), candidate.getY() + 1, candidate.getZ())
-                    && view.solid(candidate.getX(), candidate.getY() - 1, candidate.getZ())) {
-                return candidate;
+        BlockPos from = player.blockPosition();
+
+        // The work this spot would have to serve, in the order it will be done.
+        List<BlockPos> upcoming = new ArrayList<>();
+        for (int i = index; i < queue.size() && upcoming.size() < LOOK_AHEAD; i++) {
+            Blueprint.Placement p = queue.get(i);
+            upcoming.add(origin.offset(p.x(), p.y(), p.z()));
+        }
+
+        BlockPos best = null;
+        int bestReached = -1;
+        double bestDistance = Double.MAX_VALUE;
+
+        for (int dx = -STATION_RADIUS; dx <= STATION_RADIUS; dx++) {
+            for (int dz = -STATION_RADIUS; dz <= STATION_RADIUS; dz++) {
+                // Down a full reach, not one block. The old box looked only
+                // level with the target and one above it, so for anything above
+                // ankle height — which is most of a building — there was no
+                // standable spot in it at all on open ground, and it fell
+                // through to a fallback that was itself in mid-air. It was
+                // walking towards a point nobody could stand on, arriving
+                // underneath it, and doing the same thing again for the next
+                // block. That is what the routes looked like.
+                for (int dy = -(int) Math.ceil(REACH); dy <= 2; dy++) {
+                    BlockPos spot = target.offset(dx, dy, dz);
+                    if (!inReach(spot, target) || !standable(view, spot)) continue;
+
+                    int reached = 0;
+                    for (BlockPos block : upcoming) {
+                        if (inReach(spot, block)) reached++;
+                    }
+                    double walk = from.distSqr(spot);
+                    if (reached > bestReached || (reached == bestReached && walk < bestDistance)) {
+                        best = spot;
+                        bestReached = reached;
+                        bestDistance = walk;
+                    }
+                }
             }
         }
-        return target.offset(1, 0, 0);
+        // Nowhere in the whole box is standable — a build over water, or out on
+        // a ledge. Next to it and one up is the guess a person would make, and
+        // the walker will tell us if it cannot get there.
+        return best != null ? best : target.offset(1, 1, 0);
+    }
+
+    private static boolean standable(ClientBlockView view, BlockPos spot) {
+        return view.passable(spot.getX(), spot.getY(), spot.getZ())
+                && view.passable(spot.getX(), spot.getY() + 1, spot.getZ())
+                && view.solid(spot.getX(), spot.getY() - 1, spot.getZ());
     }
 
     public String status() {
