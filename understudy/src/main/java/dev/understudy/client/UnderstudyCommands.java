@@ -15,6 +15,7 @@ import dev.understudy.mc.Carried;
 import dev.understudy.mc.Senses;
 import dev.understudy.mc.EnchantTask;
 import dev.understudy.mc.Fight;
+import dev.understudy.mc.Remote;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.HuntTask;
 import dev.understudy.mc.BuildTask;
@@ -31,6 +32,7 @@ import net.minecraft.client.player.LocalPlayer;
 import dev.understudy.core.sort.Category;
 import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.mind.Project;
+import dev.understudy.core.remote.Command;
 
 import java.util.List;
 import java.io.IOException;
@@ -122,6 +124,13 @@ public final class UnderstudyCommands {
             // An objective rather than a task. Everything else in this mod is
             // something to do; this is something to have achieved, and it works
             // out the doing for itself.
+            // The control panel. Off until asked for, on the loopback address
+            // unless asked otherwise, and a fresh token every time.
+            dispatcher.register(literal("panel")
+                    .executes(context -> panel(context.getSource(), false))
+                    .then(literal("network").executes(context -> panel(context.getSource(), true)))
+                    .then(literal("off").executes(context -> panelOff(context.getSource()))));
+
             dispatcher.register(literal("project")
                     .executes(context -> projects(context.getSource()))
                     .then(argument("which", StringArgumentType.word())
@@ -354,6 +363,28 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /**
+     * Start the panel and hand over the address.
+     *
+     * The token is in the link, so opening it is the whole of getting in and
+     * there is nothing to type. It is regenerated every time this is run, which
+     * means an address shared and regretted stops working the moment the panel
+     * is restarted.
+     */
+    private static int panel(FabricClientCommandSource source, boolean toTheNetwork) {
+        if (!Remote.start(toTheNetwork, line -> say(source, line))) return 0;
+        say(source, "open that in a browser — the token is in the link");
+        if (!toTheNetwork) {
+            say(source, "only this machine can reach it; /panel network opens it to your house");
+        }
+        return 1;
+    }
+
+    private static int panelOff(FabricClientCommandSource source) {
+        Remote.stop(line -> say(source, line));
+        return 1;
+    }
+
     private static int openPicker(FabricClientCommandSource source) {
         // Asking for new work is as clear a resume as there is.
         UnderstudyClient.resume();
@@ -381,11 +412,23 @@ public final class UnderstudyCommands {
      * the gatherer already knows how to go and do each step. This is the door.
      */
     private static int get(FabricClientCommandSource source, String rawItem, int count) {
+        return getFor(line -> say(source, line), source.getPlayer(), rawItem, count);
+    }
+
+    /**
+     * The whole of /get, with somewhere to report to.
+     *
+     * Split out so the panel runs the same code rather than its own copy of it.
+     * Two ways to ask for the same thing that plan it differently is the sort
+     * of difference nobody finds until it matters.
+     */
+    public static int getFor(java.util.function.Consumer<String> say, LocalPlayer player,
+                             String rawItem, int count) {
         // Asking for new work is as clear a resume as there is.
         UnderstudyClient.resume();
         GatherTask gather = UnderstudyClient.gather();
-        if (gather == null || source.getPlayer() == null) {
-            say(source, "not in a world yet");
+        if (gather == null || player == null) {
+            say.accept("not in a world yet");
             return 0;
         }
         // Several things at once, joined with a plus. Not a convenience: the
@@ -398,12 +441,12 @@ public final class UnderstudyCommands {
             if (!each.isBlank()) wants.merge(each, count, Integer::sum);
         }
         if (wants.isEmpty()) {
-            say(source, "nothing named");
+            say.accept("nothing named");
             return 0;
         }
         String item = String.join(" and ", wants.keySet());
 
-        Map<String, Integer> have = Carried.contents(source.getPlayer());
+        Map<String, Integer> have = Carried.contents(player);
         Planner.Plan plan = new Planner(Catalogue.solver(), UnderstudyClient.measured()).plan(wants, have);
 
         // Anything with a depth means a tunnel, and a tunnel at y=-59 is pitch
@@ -422,20 +465,20 @@ public final class UnderstudyCommands {
         }
 
         if (!plan.possible()) {
-            say(source, "no way to get " + String.join(", ", plan.shortfall().keySet())
+            say.accept("no way to get " + String.join(", ", plan.shortfall().keySet())
                     + " — /get with no name lists what it can");
             return 0;
         }
         if (plan.actions().isEmpty()) {
-            say(source, "you already have " + count + " " + item);
+            say.accept("you already have " + count + " " + item);
             return 1;
         }
 
-        say(source, String.format("%d %s: %s", count, item,
+        say.accept(String.format("%d %s: %s", count, item,
                 plan.seconds() < 90
                         ? Math.round(plan.seconds()) + " seconds"
                         : Math.round(plan.seconds() / 60) + " minutes"));
-        for (String line : plan.summary()) say(source, "  " + line);
+        for (String line : plan.summary()) say.accept("  " + line);
         gather.start(plan, null);
         return 1;
     }
@@ -721,6 +764,94 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /**
+     * What the panel asked for, done here on the client thread.
+     *
+     * A switch over a validated verb rather than a command string: there is no
+     * text anywhere in this path, so there is nothing to inject into. Every arm
+     * calls the same thing the matching command does, which is the point — two
+     * ways to ask for something that behave differently is a difference nobody
+     * finds until it matters.
+     */
+    public static void remote(Command.Action action) {
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null) return;
+        java.util.function.Consumer<String> say = UnderstudyClient::tell;
+
+        switch (action.what()) {
+            case STOP -> UnderstudyClient.stopAll("stopped from the panel");
+            case PAUSE -> UnderstudyClient.pause();
+            case RESUME -> UnderstudyClient.resume();
+            case GET -> getFor(say, player, action.name(), action.count());
+            case SORT -> {
+                UnderstudyClient.resume();
+                if (UnderstudyClient.sort() != null) UnderstudyClient.sort().start(true);
+            }
+            case TRAVEL -> {
+                UnderstudyClient.resume();
+                if (UnderstudyClient.travel() != null) {
+                    UnderstudyClient.travel().start(
+                            new BlockPos(action.x(), action.y(), action.z()));
+                }
+            }
+            case PROJECT -> {
+                Project.Plan plan = Project.byId(action.name());
+                if (plan == null) say.accept("no project called " + action.name());
+                else if (UnderstudyClient.autopilot() != null) {
+                    UnderstudyClient.resume();
+                    UnderstudyClient.autopilot().start(plan);
+                }
+            }
+            case BUILD -> {
+                Catalog.Entry entry = Catalog.byId(action.name());
+                BuildTask task = UnderstudyClient.build();
+                if (entry == null || task == null) {
+                    say.accept("no design called " + action.name());
+                } else {
+                    UnderstudyClient.resume();
+                    int size = action.count() > 0 ? action.count() : entry.defaultSize();
+                    Materials.Wood wood = Materials.woodNamed(
+                            UnderstudyClient.profile().favouriteWood());
+                    task.start(Catalog.build(entry, size, wood,
+                                    Materials.stoneNamed("stone brick")),
+                            player.blockPosition().offset(3, 0, 3));
+                }
+            }
+            case AUTO -> {
+                if (UnderstudyClient.autopilot() != null) {
+                    UnderstudyClient.resume();
+                    UnderstudyClient.autopilot().start(action.name(),
+                            Math.max(1, action.count()));
+                }
+            }
+            case AUTO_OFF -> {
+                if (UnderstudyClient.autopilot() != null) UnderstudyClient.autopilot().stop();
+            }
+            case ENCHANT -> {
+                EnchantTask task = UnderstudyClient.enchant();
+                if (task == null) return;
+                UnderstudyClient.resume();
+                String item = action.name().isEmpty()
+                        ? bestWorthEnchanting(Carried.contents(player)) : action.name();
+                if (item == null) say.accept("nothing on you is worth an enchant");
+                else task.start(item);
+            }
+            case SPEED -> {
+                for (BuildTask.Speed speed : BuildTask.Speed.values()) {
+                    if (speed.name().equalsIgnoreCase(action.name())) {
+                        BuildTask.speed(speed);
+                        say.accept("building " + speed.describe);
+                    }
+                }
+            }
+            case HUD -> {
+                Hud.setEnabled(!Hud.enabled());
+                say.accept("overlay " + (Hud.enabled() ? "on" : "off"));
+            }
+        }
+    }
+
     private static int help(FabricClientCommandSource source) {
         say(source, "/travel <x> <y> <z> — walk there");
         say(source, "/build house|hut|tower|storage|manor [size] — build it");
@@ -733,6 +864,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy chatfix — repair chat settings that hide messages");
         say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
+        say(source, "/panel — a control panel in your browser; /panel network for your phone");
         say(source, "/project — objectives it can be handed: kit, camp, base, enchanter");
         say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");

@@ -22,6 +22,8 @@ import dev.understudy.mc.Fight;
 import dev.understudy.mc.Ghosts;
 import dev.understudy.mc.HuntTask;
 import dev.understudy.mc.Remembered;
+import dev.understudy.mc.Remote;
+import dev.understudy.mc.Snapshot;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
@@ -106,6 +108,16 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static boolean greeted;
     private static boolean reportedFailure;
     private static boolean wasWorking;
+    /**
+     * The last things it said, for the panel to show.
+     *
+     * A ring rather than a list: this runs for hours and the panel only ever
+     * shows the tail, so keeping every line would be a slow leak in service of
+     * something nobody looks at.
+     */
+    private static final java.util.ArrayDeque<String> said = new java.util.ArrayDeque<>();
+    private static final int REMEMBERED_LINES = 60;
+    private static int untilSnapshot;
 
     @Override
     public void onInitializeClient() {
@@ -302,6 +314,11 @@ public final class UnderstudyClient implements ClientModInitializer {
                 // head once, here, so there is one movement per tick rather
                 // than several writers fighting over the same two floats.
                 Aim.tick(client.player);
+
+                // And the panel: drain what it asked for and publish what it
+                // should see. Both happen here, on the client thread, because
+                // this is the only thread allowed to touch any of it.
+                serveThePanel(client);
             } catch (Throwable error) {
                 onTickFailure(error);
             }
@@ -475,6 +492,54 @@ public final class UnderstudyClient implements ClientModInitializer {
         stopAll();
     }
 
+    /**
+     * The panel's whole contact with the game.
+     *
+     * One place, on the client thread, once a tick: take what it asked for and
+     * hand back what it should see. Nothing on a socket thread ever reaches
+     * past this.
+     */
+    private static void serveThePanel(Minecraft client) {
+        if (!Remote.running()) return;
+
+        dev.understudy.core.remote.Command.Action asked;
+        while ((asked = Remote.next()) != null) {
+            try {
+                UnderstudyCommands.remote(asked);
+            } catch (Throwable refused) {
+                warn("the panel asked for something that went wrong: " + refused);
+            }
+        }
+
+        if (untilSnapshot-- > 0) return;
+        untilSnapshot = Remote.REFRESH_TICKS;
+        Remote.publish(Snapshot.of(client, client.player, atlas, measured, thisJob,
+                List.copyOf(said), paused, doingNow(), whyNow(),
+                safety == null ? "" : dev.understudy.mc.Fight.describe(),
+                autopilot == null ? List.of() : autopilot.progress(), working()));
+    }
+
+    /** One line for what it is up to, in the order that answers the question. */
+    private static String doingNow() {
+        if (hunt != null && hunt.running()) return hunt.status();
+        if (gather != null && gather.running()) return gather.status();
+        if (build != null && build.running()) return build.status();
+        if (sort != null && sort.running()) return sort.status();
+        if (enchant != null && enchant.running()) return enchant.status();
+        if (travel != null && travel.running()) return travel.status();
+        if (autopilot != null && autopilot.on()) return "auto: " + autopilot.goal();
+        return "idle";
+    }
+
+    private static String whyNow() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null) return "";
+        Agenda.Decision decision = agenda.next(
+                dev.understudy.mc.Senses.read(client, client.player, currentJob(),
+                        damageRecently()));
+        return decision.describe();
+    }
+
     public static PlayerProfile profile() {
         return profile;
     }
@@ -591,6 +656,12 @@ public final class UnderstudyClient implements ClientModInitializer {
         Hud.setStatus("");
     }
 
+    /** Keep the tail of what it has said, for the panel. */
+    private static void remember(String line) {
+        said.addLast(line);
+        while (said.size() > REMEMBERED_LINES) said.removeFirst();
+    }
+
     public static boolean paused() {
         return paused;
     }
@@ -627,6 +698,7 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     public static void tell(String message) {
         LOG.info("[chat] {}", message);
+        remember(message);
         Hud.say(message);
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {
@@ -637,6 +709,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     /** For things that went wrong: the same channels, marked as a problem. */
     public static void warn(String message) {
         LOG.warn("[chat] {}", message);
+        remember(message);
         Hud.warn(message);
         Minecraft client = Minecraft.getInstance();
         if (client.player != null) {

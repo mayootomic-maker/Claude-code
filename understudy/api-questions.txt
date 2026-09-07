@@ -101,6 +101,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # knows it is dark out without a clock. Player has no startSleeping, so going to
 # bed is a right-click on the bed like any other block.
 
+# Opening a browser from the game, so /panel needs no copy and paste at all.
+net.minecraft.Util openUri
+
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
