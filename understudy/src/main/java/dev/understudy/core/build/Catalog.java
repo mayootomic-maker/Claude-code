@@ -62,15 +62,30 @@ public final class Catalog {
     /** Build the blueprint an entry describes, at a size and in a material. */
     public static Blueprint build(Entry entry, int size, Materials.Wood wood,
                                   Materials.Stone stone) {
+        return build(entry, size, wood, stone, Designs.paletteOf(wood, stone));
+    }
+
+    /**
+     * The same, with the palette chosen separately.
+     *
+     * Two sources rather than one, and they are not redundant. The palette says
+     * what the flat surfaces are made of, and can be overridden by what the
+     * player actually builds with; the wood and stone say which *family* the
+     * shaped pieces come from, which a palette of block names cannot express —
+     * "oak_planks" does not tell you that the matching stair is oak_stairs and
+     * the matching one for bricks is brick_stairs without the s.
+     */
+    public static Blueprint build(Entry entry, int size, Materials.Wood wood,
+                                  Materials.Stone stone, Map<Blueprint.Role, String> palette) {
         int clamped = Math.max(entry.minSize(), Math.min(entry.maxSize(), size));
-        Map<Blueprint.Role, String> palette = Designs.paletteOf(wood, stone);
         return switch (entry.id()) {
-            case "hut" -> Designs.hut(clamped, palette);
+            case "hut" -> Designs.hut(clamped, palette, wood, stone);
             // Depth follows width at roughly the proportions of a room you would
             // actually live in, rather than a square box.
-            case "house" -> Designs.house(clamped, Math.max(5, clamped * 3 / 4), 4, palette);
-            case "tower" -> Designs.tower(clamped, 5, palette);
-            case "storage" -> Designs.storage(clamped, palette);
+            case "house" -> Designs.house(clamped, Math.max(5, clamped * 3 / 4), 4, palette,
+                    wood, stone);
+            case "tower" -> Designs.tower(clamped, 5, palette, wood, stone);
+            case "storage" -> Designs.storage(clamped, palette, wood, stone);
             case "manor" -> Manor.build(clamped, wood, stone);
             default -> throw new IllegalArgumentException("no design called " + entry.id());
         };

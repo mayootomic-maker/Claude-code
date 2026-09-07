@@ -179,9 +179,6 @@ public final class UnderstudyCommands {
             return 0;
         }
 
-        Map<Blueprint.Role, String> palette = Designs.paletteFrom(
-                profile.buildingBlocks(6), Designs.defaultPalette());
-
         Catalog.Entry entry = Catalog.byId(what.toLowerCase());
         if (entry == null && what.equalsIgnoreCase("shelter")) entry = Catalog.byId("hut");
         if (entry == null && what.equalsIgnoreCase("chests")) entry = Catalog.byId("storage");
@@ -189,8 +186,14 @@ public final class UnderstudyCommands {
             say(source, "I can build: " + String.join(", ", Catalog.ids()));
             return 0;
         }
-        Blueprint blueprint = Catalog.build(entry, size,
-                Materials.woodNamed(profile.favouriteWood()), Materials.stoneNamed("stone brick"));
+        Materials.Wood wood = Materials.woodNamed(profile.favouriteWood());
+        Materials.Stone stone = Materials.stoneNamed("stone brick");
+        // What you actually build with wins over the default, which is the
+        // whole point of watching: a base of deepslate should not get an oak
+        // house dropped in the middle of it. Only the flat surfaces move — the
+        // shaped pieces have to stay in a family that has stairs and slabs.
+        Blueprint blueprint = Catalog.build(entry, size, wood, stone,
+                Designs.paletteFrom(profile.buildingBlocks(6), Designs.paletteOf(wood, stone)));
 
         say(source, blueprint.name() + ": " + blueprint.blockCount() + " blocks");
 
@@ -517,16 +520,11 @@ public final class UnderstudyCommands {
             say(source, "not in a world yet");
             return 0;
         }
-        Agenda.Job job = null;
-        GatherTask gather = UnderstudyClient.gather();
-        BuildTask build = UnderstudyClient.build();
-        TravelTask travel = UnderstudyClient.travel();
-        if (gather != null && gather.running()) job = Agenda.Job.of("gathering");
-        else if (build != null && build.running()) job = Agenda.Job.of("building");
-        else if (travel != null && travel.running()) job = Agenda.Job.of("travelling");
-        else if (UnderstudyClient.autopilot() != null && UnderstudyClient.autopilot().on()) {
-            job = Agenda.Job.of(UnderstudyClient.autopilot().goal());
-        }
+        // Asked of whatever is running, which is the only thing that knows what
+        // it still needs. Naming the job in a string here — which is what this
+        // used to do — is why the agenda's "go and make a pickaxe" branch had
+        // never once fired in a real game.
+        Agenda.Job job = UnderstudyClient.currentJob();
 
         Agenda.Situation now = Senses.read(Minecraft.getInstance(), player, job,
                 UnderstudyClient.damageRecently());
@@ -545,7 +543,10 @@ public final class UnderstudyCommands {
      * the outside they are the same twenty minutes.
      */
     private static int timing(FabricClientCommandSource source) {
-        for (String line : UnderstudyClient.timings().summary()) say(source, line);
+        say(source, "the last job:");
+        for (String line : UnderstudyClient.jobTimings().summary()) say(source, "  " + line);
+        say(source, "this session:");
+        for (String line : UnderstudyClient.timings().summary()) say(source, "  " + line);
         return 1;
     }
 
@@ -566,8 +567,9 @@ public final class UnderstudyCommands {
 
     private static int help(FabricClientCommandSource source) {
         say(source, "/travel <x> <y> <z> — walk there");
-        say(source, "/build house|hut|tower|storage [size] — build it");
+        say(source, "/build house|hut|tower|storage|manor [size] — build it");
         say(source, "/plan house [size] — what it would take, without building");
+        say(source, "/get <item> [n] — go and get it, however that has to happen");
         say(source, "/sort — put your things in the right chests (/sort all includes your kit)");
         say(source, "/understudy profile — what I have learned about how you play");
         say(source, "/understudy test — check what is working and what is not");
@@ -576,7 +578,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
         say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");
-        say(source, "/understudy atlas — everywhere it has seen anything");
+        say(source, "/understudy atlas — everywhere it has seen anything, kept between sessions");
         say(source, "/understudy timing — where the time actually goes");
         say(source, "/build imports — where to put models and what it makes of them");
         say(source, "/understudy stop — stop everything, at once (or just press a movement key)");

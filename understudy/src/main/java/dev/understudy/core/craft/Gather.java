@@ -35,12 +35,17 @@ package dev.understudy.core.craft;
  *                    come to you: without this the gatherer looks around, sees
  *                    no diamond on the surface, and says so — which is true and
  *                    useless. With it, it knows where to go and dig.
+ * @param hunted      whether `from` names animals rather than blocks. The one
+ *                    bit the gatherer cannot infer: "cow" is not a block, and a
+ *                    gatherer that scans the world for one finds nothing and
+ *                    reports, truthfully and uselessly, that there is no cow
+ *                    anywhere. With it, the same plan step goes hunting.
  * @param from        the blocks that drop it. Usually one name, but iron comes
  *                    out of both iron_ore and deepslate_iron_ore, and a gatherer
  *                    that only knows the first walks past half the ore it sees.
  */
 public record Gather(String item, int amount, double digSeconds, double findSeconds,
-                     int perTrip, String tool, int toolUses, int bestY,
+                     int perTrip, String tool, int toolUses, int bestY, boolean hunted,
                      java.util.List<String> from) {
 
     /** Found at whatever height you are already at: wood, sand, animals. */
@@ -62,13 +67,13 @@ public record Gather(String item, int amount, double digSeconds, double findSeco
     public static Gather byHand(String item, double digSeconds, double findSeconds, int perTrip,
                                 String... from) {
         return new Gather(item, 1, digSeconds, findSeconds, perTrip, null, 0, ANYWHERE,
-                blocks(item, from));
+                false, blocks(item, from));
     }
 
     public static Gather with(String item, double digSeconds, double findSeconds, int perTrip,
                               String tool, int toolUses, String... from) {
         return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses, ANYWHERE,
-                blocks(item, from));
+                false, blocks(item, from));
     }
 
     /**
@@ -81,7 +86,25 @@ public record Gather(String item, int amount, double digSeconds, double findSeco
     public static Gather deep(String item, double digSeconds, double findSeconds, int perTrip,
                               String tool, int toolUses, int bestY, String... from) {
         return new Gather(item, 1, digSeconds, findSeconds, perTrip, tool, toolUses, bestY,
-                blocks(item, from));
+                false, blocks(item, from));
+    }
+
+    /**
+     * Something that has to be killed rather than broken.
+     *
+     * The mod could not do this at all until it could fight, which is why the
+     * only honest thing it could say about food was that food was your problem.
+     * Now that it can, meat is a source like any other and the planner treats it
+     * as one: "get eight cooked beef" is two hunts and a furnace, worked out the
+     * same way as eight iron ingots.
+     *
+     * perTrip is low on purpose. A cow yields a couple of beef and then you have
+     * to go and find another cow, which is exactly what the field is for.
+     */
+    public static Gather hunt(String item, int amount, double killSeconds, double findSeconds,
+                              int perTrip, String... animals) {
+        return new Gather(item, amount, killSeconds, findSeconds, perTrip, null, 0, ANYWHERE,
+                true, java.util.List.of(animals));
     }
 
     /** Most things drop from the block of the same name; the rest say so. */

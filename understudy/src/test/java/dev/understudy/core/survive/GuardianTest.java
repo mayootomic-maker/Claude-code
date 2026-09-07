@@ -81,15 +81,29 @@ class GuardianTest {
     }
 
     @Test
-    void retreatsFromAHostileOnlyWhenHurt() {
+    void handsAHostileToTheCombatLayerRatherThanFleeing() {
+        // The old rule was "stop when hurt, otherwise carry on regardless",
+        // which meant a skeleton at full health was ignored until it had done
+        // half the health bar, and then answered by standing still. Whether
+        // this fight is worth having is Combat's question now; the Guardian's
+        // job is only to say that there is one.
         Vitals close = new Vitals(20, 20, 20, true, 300, 300,
                 false, false, false, 0, 1, 3);
-        assertFalse(new Guardian().check(close).interrupts(),
-                "a skeleton nearby at full health is a fight, not a crisis");
+        assertEquals(Guardian.Action.FIGHT, new Guardian().check(close).action());
 
         Vitals closeAndHurt = new Vitals(10, 20, 20, true, 300, 300,
                 false, false, false, 0, 1, 3);
-        assertEquals(Guardian.Action.FLEE, new Guardian().check(closeAndHurt).action());
+        assertEquals(Guardian.Action.FIGHT, new Guardian().check(closeAndHurt).action(),
+                "being hurt is a reason to fight well, not a reason to freeze");
+    }
+
+    @Test
+    void nearDeathWithNothingAttackingStillStops() {
+        // The abort rule has to survive the combat layer being in front of it:
+        // three hearts and nothing in sight is a walk home, not a fight.
+        Vitals dying = new Vitals(4, 20, 20, true, 300, 300,
+                false, false, false, 0, 0, 999);
+        assertEquals(Guardian.Action.ABORT, new Guardian().check(dying).action());
     }
 
     @Test

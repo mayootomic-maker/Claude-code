@@ -55,6 +55,21 @@ public final class Catalogue {
                 Gather.byHand("gravel", 0.9, 12.0, 32),
                 Gather.byHand("clay_ball", 0.9, 60.0, 16, "clay"),
                 Gather.byHand("sugar_cane", 0.0, 25.0, 6),
+                // Wheat off a field, so bread is reachable without a farm. A
+                // wild patch is rarer than grass and there is only so much of
+                // it, which is what the low perTrip says.
+                Gather.byHand("wheat", 0.0, 90.0, 6),
+
+                // Meat. Nothing here could hunt until it could fight, so the
+                // only honest thing the autopilot could say about food was that
+                // food was your problem. The kill is a handful of seconds; the
+                // walk to find the next animal is nearly all of the cost, which
+                // is why findSeconds dwarfs the rest and perTrip is two.
+                Gather.hunt("beef", 2, 6.0, 40.0, 2, "cow"),
+                Gather.hunt("porkchop", 2, 6.0, 45.0, 2, "pig"),
+                Gather.hunt("mutton", 2, 6.0, 45.0, 2, "sheep"),
+                Gather.hunt("chicken", 1, 4.0, 45.0, 1, "chicken"),
+                Gather.hunt("rabbit", 1, 5.0, 120.0, 1, "rabbit"),
                 // Wool: shearing is instant once the sheep is found, which is
                 // the entire cost.
                 Gather.byHand("white_wool", 0.0, 45.0, 3, "white_wool"),
@@ -136,6 +151,17 @@ public final class Catalogue {
                 Recipe.table("bookshelf", 1, 3.0, "oak_planks", 6, "book", 3),
                 Recipe.table("book", 1, 3.0, "paper", 3, "leather", 1),
                 Recipe.table("paper", 3, 3.0, "sugar_cane", 3),
+                Recipe.table("bread", 1, 3.0, "wheat", 3),
+
+                // Cooking. Raw meat feeds you badly and cooked meat feeds you
+                // well, and the difference is one furnace the mod already knows
+                // how to load — so "get eight cooked beef" is two hunts and a
+                // smelt, planned exactly like eight iron ingots.
+                Recipe.smelt("cooked_beef", "beef", 10.0),
+                Recipe.smelt("cooked_porkchop", "porkchop", 10.0),
+                Recipe.smelt("cooked_mutton", "mutton", 10.0),
+                Recipe.smelt("cooked_chicken", "chicken", 10.0),
+                Recipe.smelt("cooked_rabbit", "rabbit", 10.0),
 
                 Recipe.table("wooden_pickaxe", 1, 3.0, "oak_planks", 3, "stick", 2),
                 Recipe.table("wooden_axe", 1, 3.0, "oak_planks", 3, "stick", 2),

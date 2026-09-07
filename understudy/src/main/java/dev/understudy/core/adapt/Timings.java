@@ -27,6 +27,15 @@ public final class Timings {
         SEARCHING,
         /** Swinging at a block. */
         MINING,
+        /**
+         * Swinging at something that swings back.
+         *
+         * Its own bucket rather than folded into mining, because it is the one
+         * category the player can act on directly: a job that spent half its
+         * time fighting wants better armour or a different route, not a faster
+         * pathfinder.
+         */
+        FIGHTING,
         /** Putting a block down. */
         PLACING,
         /** In a menu: crafting, smelting, a chest. */

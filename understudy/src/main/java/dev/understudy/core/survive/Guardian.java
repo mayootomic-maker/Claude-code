@@ -19,6 +19,12 @@ import java.util.Deque;
  * outcome is. Lava beats low health because lava kills in about a second and
  * low health can be walked away from.
  *
+ * On fighting. This used to answer every hostile with "stop and hand back the
+ * controls", which sounds cautious and is not: it loses an hour of unattended
+ * work to one zombie, and it stands still in front of the mobs that are faster
+ * than you. The Guardian now says only that something is here; Combat decides
+ * what to do about it, and running away is one of its answers.
+ *
  * It is stateful on purpose: losing four hearts in a second and sitting at
  * fourteen hearts are the same instantaneous reading and call for opposite
  * responses, and only a history can tell them apart.
@@ -34,6 +40,15 @@ public final class Guardian {
         SURFACE,
         /** Move away from what is hurting you, now. */
         FLEE,
+        /**
+         * Deal with the thing that is attacking, rather than standing there.
+         *
+         * The Guardian deliberately does not decide whether the fight is worth
+         * having — that is Combat's question, and it needs to know what is in
+         * your hand and what the mob is. This says only that there is something
+         * here and it is now the most urgent thing.
+         */
+        FIGHT,
         /** Stand still and do nothing — mid-fall, or the situation is resolving. */
         HOLD,
         /** Give up the task entirely and hand back control. */
@@ -91,20 +106,29 @@ public final class Guardian {
         if (vitals.inWater() && vitals.airFraction() < AIR_RESERVE) {
             return new Verdict(Action.SURFACE, "running out of air");
         }
+        if (vitals.onFire() && vitals.healthFraction() < FLEE_HEALTH) {
+            return new Verdict(Action.FLEE, "on fire");
+        }
+        // Something is here. This comes before the low-health abort on purpose,
+        // and the ordering is the whole point of having a combat layer at all:
+        // stopping at three hearts is the right answer to a long walk and the
+        // wrong one to a spider, which is faster than you and will simply eat
+        // the character standing still with its hands off the controls. Combat
+        // decides whether this particular fight is worth having, and answers
+        // "run" when running is actually available.
+        if (vitals.hostilesNear() > 0 && vitals.nearestHostile() < HOSTILE_CLOSE) {
+            return new Verdict(Action.FIGHT, "hostile " + Math.round(vitals.nearestHostile())
+                    + " blocks away");
+        }
         if (vitals.healthFraction() < ABORT_HEALTH) {
             return new Verdict(Action.ABORT,
                     "health down to " + hearts(vitals) + " hearts — stopping");
         }
+        // Losing health fast with nothing visible doing it: drowning in a wall,
+        // standing in a fire that is out of the scan, falling down a shaft. No
+        // target means nothing to fight, so the honest answer is still to stop.
         if (damageInWindow() >= BURST_DAMAGE) {
             return new Verdict(Action.FLEE, "taking damage fast");
-        }
-        if (vitals.onFire() && vitals.healthFraction() < FLEE_HEALTH) {
-            return new Verdict(Action.FLEE, "on fire");
-        }
-        if (vitals.hostilesNear() > 0 && vitals.nearestHostile() < HOSTILE_CLOSE
-                && vitals.healthFraction() < FLEE_HEALTH) {
-            return new Verdict(Action.FLEE, "hostile " + Math.round(vitals.nearestHostile())
-                    + " blocks away and health is low");
         }
         // Eating last of the interruptions: it is the only one that is a chore
         // rather than an emergency, and it should not pre-empt getting out of

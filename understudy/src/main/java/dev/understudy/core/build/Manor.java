@@ -259,9 +259,16 @@ public final class Manor {
         draft.set(doorX + 1, 3, 0, "torch", Role.LIGHT, true);
     }
 
-    /** A covered step outside the door, so the entrance is somewhere and not just a hole. */
+    /**
+     * A covered porch outside the door, so the entrance is somewhere and not
+     * just a hole.
+     *
+     * Nothing goes in the cell directly in front of the door. That cell is the
+     * blueprint's own entrance — the one you have to stand in to walk through —
+     * and it used to hold a stair, which meant the manor reported a way in that
+     * it had blocked itself.
+     */
     private static void porch(Draft draft, int doorX, Materials.Wood wood, Materials.Stone stone) {
-        draft.facing(doorX, 1, 0, stone.stairs(), Role.ACCENT, NORTH_SLOPE);
         draft.set(doorX - 1, 1, 0, wood.fence(), Role.ACCENT, true);
         draft.set(doorX + 1, 1, 0, wood.fence(), Role.ACCENT, true);
         draft.set(doorX - 1, 2, 0, wood.fence(), Role.ACCENT, true);

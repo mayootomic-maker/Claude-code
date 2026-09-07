@@ -115,6 +115,18 @@ public final class Atlas {
         return byPlace.size();
     }
 
+    /**
+     * Everything, oldest first.
+     *
+     * Order matters here rather than being incidental: it is the order the
+     * eviction rule uses, so writing it out and reading it back has to preserve
+     * which sightings are the old ones. A memory that comes back from disk with
+     * its ages shuffled forgets the wrong things for the rest of the session.
+     */
+    public List<Sighting> all() {
+        return new ArrayList<>(byPlace.values());
+    }
+
     /** Every kind of thing remembered, with how many of each. */
     public Map<String, Integer> summary() {
         Map<String, Integer> out = new LinkedHashMap<>();

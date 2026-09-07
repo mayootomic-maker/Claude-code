@@ -7,7 +7,9 @@ import dev.understudy.core.sort.Category;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -37,6 +39,17 @@ public final class Autopilot {
     private static final int INTERVAL = 60;
     /** Keep this many of the things that make a session possible. */
     private static final int WANT_TORCHES = 16;
+    /**
+     * Meals in the bag before setting off.
+     *
+     * Eight cooked anything is most of a hunger bar twice over, which is about
+     * as long as a job runs. Fewer means hunting again halfway through; more
+     * means hunting instead of working.
+     */
+    private static final int WANT_MEALS = 8;
+    /** What it hunts and cooks when the bag is empty, in preference order. */
+    private static final List<String> MEALS =
+            List.of("cooked_beef", "cooked_porkchop", "cooked_mutton", "bread");
     /** The tool everything else needs before it needs anything else. */
     private static final String BASIC_TOOL = "stone_pickaxe";
 
@@ -112,6 +125,7 @@ public final class Autopilot {
 
         switch (decision.act()) {
             case RETREAT -> say(decision.because());
+            case DEFEND -> say(decision.because());
             case EAT -> { /* the guardian eats; this stays out of its way */ }
             case LIGHT -> Torchlight.keepLit(client, player);
             case UNLOAD -> {
@@ -140,11 +154,18 @@ public final class Autopilot {
             wanted.put(BASIC_TOOL, 1);
         } else if (carried.getOrDefault("torch", 0) < WANT_TORCHES) {
             wanted.put("torch", WANT_TORCHES);
-        } else if (!hasFood(carried)) {
-            // Nothing here farms or hunts, so this is the honest limit of
-            // looking after itself. Say so once rather than trying and failing.
-            say("no food and no way to get any on its own — that one is yours");
-            return;
+        } else if (countFood(carried) < WANT_MEALS) {
+            // It can hunt now, so this is no longer the limit it used to be:
+            // the planner treats meat as a source like any other and works out
+            // the walk, the kill and the furnace by itself. Which meal depends
+            // on what is actually reachable — beef needs cows, bread needs a
+            // wheat field, and neither is guaranteed to be where you are.
+            String meal = reachableMeal(carried);
+            if (meal == null) {
+                say("no way to get food where it is standing — that one is yours");
+                return;
+            }
+            wanted.put(meal, WANT_MEALS);
         } else if (goalItem != null && carried.getOrDefault(goalItem, 0) < goalCount) {
             wanted.put(goalItem, goalCount);
         }
@@ -165,12 +186,56 @@ public final class Autopilot {
         gather.start(plan, null);
     }
 
-    private static boolean hasFood(Map<String, Integer> carried) {
-        return carried.keySet().stream().anyMatch(item -> Category.of(item) == Category.FOOD);
+    /**
+     * The first meal on the list the planner can actually see a route to.
+     *
+     * In preference order rather than by cost: cooked meat is the best food in
+     * the early game by a distance, and bread is the fallback for somewhere
+     * with nothing to hunt.
+     */
+    private String reachableMeal(Map<String, Integer> carried) {
+        for (String meal : MEALS) {
+            if (new Planner(Catalogue.solver()).plan(Map.of(meal, WANT_MEALS), carried).possible()) {
+                return meal;
+            }
+        }
+        return null;
     }
 
-    private Agenda.Job standingJob() {
-        return goalItem == null ? null : Agenda.Job.of(goalCount + " " + goalItem);
+    /** How many meals are in the bag, of whatever kind. */
+    private static int countFood(Map<String, Integer> carried) {
+        int total = 0;
+        for (Map.Entry<String, Integer> held : carried.entrySet()) {
+            if (Category.of(held.getKey()) == Category.FOOD) total += held.getValue();
+        }
+        return total;
+    }
+
+    /**
+     * The standing goal, with what it will take to reach it.
+     *
+     * The needs are what makes the agenda's EQUIP and FETCH branches mean
+     * anything: with an empty list they could never fire, so the mod had a
+     * decision layer that could veto and never ask for a tool. The planner
+     * already works out the tools on the way to the goal, so this is reading
+     * them off a plan it was going to build anyway.
+     */
+    public Agenda.Job standingJob() {
+        if (goalItem == null) return null;
+        String what = goalCount + " " + goalItem;
+        LocalPlayer player = client.player;
+        if (player == null) return Agenda.Job.of(what);
+
+        Planner.Plan plan = new Planner(Catalogue.solver())
+                .plan(Map.of(goalItem, goalCount), Carried.contents(player));
+        List<String> tools = new ArrayList<>();
+        for (Planner.Action action : plan.actions()) {
+            if (action instanceof Planner.Collect collect
+                    && collect.tool() != null && !tools.contains(collect.tool())) {
+                tools.add(collect.tool());
+            }
+        }
+        return new Agenda.Job(what, tools, List.of(goalItem));
     }
 
     private boolean busy() {

@@ -18,12 +18,15 @@ import java.util.function.Consumer;
  * where it is tested against situations that would be miserable to stage in a
  * real game, and this file only knows how to read a health bar and press a key.
  *
- * On fleeing. When something is actively hurting you, this stops the task and
- * gives you back the controls rather than running somewhere of its own choosing.
- * That is deliberate. A retreat picked by a mod that cannot see what hit it is
- * as likely to run off a ledge or into the next cave as away from anything, and
- * "it killed me while escaping" is a worse failure than "it stopped and told
- * you". Stopping is the safe move, and it is the one that is honestly available.
+ * On hostiles. This used to stop the task and hand back the controls, full
+ * stop, on the reasoning that a retreat picked by a mod that cannot see what hit
+ * it is as likely to run off a ledge as away from anything. That reasoning was
+ * sound about *retreating* and wrong about the situation: the third option is to
+ * kill the thing, which is what a player does, and which does not require
+ * knowing the terrain at all. So a hostile now goes to Combat, which fights when
+ * fighting is the better answer and still says "stop" when it is not — including
+ * the case the old code got backwards, where the mob is faster than you and
+ * standing still with your hands off the controls is the losing move.
  *
  * "Gives you back the controls" is meant literally, and getting it wrong is
  * worse than not having a guardian at all. Two rules make it true. It runs only
@@ -44,6 +47,14 @@ public final class Safety {
     private final Consumer<String> report;
     private int eatingTicks;
     private String lastReported = "";
+    /**
+     * Whether the last verdict ended with the mod standing down.
+     *
+     * The caller needs to know this and cannot read it off the verdict any
+     * more: a FIGHT can end either way, and which way it ended is Combat's
+     * answer rather than the Guardian's.
+     */
+    private boolean standingDown;
 
     public Safety(Consumer<String> report) {
         this.report = report;
@@ -65,7 +76,14 @@ public final class Safety {
         guardian.reset();
         eatingTicks = 0;
         lastReported = "";
+        standingDown = false;
+        Fight.reset();
         Keys.releaseAll();
+    }
+
+    /** Whether the task should be stopped outright after this tick. */
+    public boolean standingDown() {
+        return standingDown;
     }
 
     /**
@@ -149,10 +167,31 @@ public final class Safety {
             return true;
         }
 
+        standingDown = false;
         switch (verdict.action()) {
             case CONTINUE -> {
                 lastReported = "";
+                Fight.reset();
                 return false;
+            }
+            case FIGHT -> {
+                Fight.Outcome outcome = Fight.defend(client, player, guardian.damageInWindow());
+                switch (outcome) {
+                    case CLEAR -> {
+                        lastReported = "";
+                        return false;
+                    }
+                    case DISENGAGE -> {
+                        standingDown = true;
+                        releaseMovement();
+                        announce(Fight.describe(), "stopping");
+                        return true;
+                    }
+                    default -> {
+                        announce(Fight.describe(), "dealing with it");
+                        return true;
+                    }
+                }
             }
             case EAT -> {
                 if (startEating(client, player)) {
@@ -176,6 +215,7 @@ public final class Safety {
                 return true;
             }
             case FLEE, ABORT -> {
+                standingDown = true;
                 releaseMovement();
                 announce(verdict.reason(), "stopping");
                 return true;

@@ -47,10 +47,11 @@ public final class Planner {
      *              wherever you are. The step carries it because the plan is
      *              what knows which of several sources was chosen.
      */
-    public record Collect(String item, int count, double seconds, String tool, int bestY)
-            implements Action {
+    public record Collect(String item, int count, double seconds, String tool, int bestY,
+                          boolean hunted) implements Action {
         @Override
         public String describe() {
+            if (hunted) return "hunt for " + count + " " + item;
             return "gather " + count + " " + item + (tool == null ? "" : " (needs " + tool + ")");
         }
     }
@@ -137,7 +138,8 @@ public final class Planner {
                 Gather gather = chosen.getOrDefault(made.getKey(), cost.viaGather());
                 int blocks = ceilDiv(made.getValue(), gather.amount());
                 actions.add(new Collect(made.getKey(), blocks * gather.amount(),
-                        blocks * gather.seconds(), gather.tool(), gather.bestY()));
+                        blocks * gather.seconds(), gather.tool(), gather.bestY(),
+                        gather.hunted()));
             } else if (cost.viaRecipe() != null) {
                 Recipe recipe = cost.viaRecipe();
                 int batches = ceilDiv(made.getValue(), recipe.count());

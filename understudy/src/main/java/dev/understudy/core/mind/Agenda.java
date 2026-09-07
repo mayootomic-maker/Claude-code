@@ -35,6 +35,16 @@ public final class Agenda {
         IDLE,
         /** Get away and stop working — something is actively hurting us. */
         RETREAT,
+        /**
+         * Something hostile is close enough to matter. Deal with it before
+         * starting anything new.
+         *
+         * Distinct from RETREAT, which is what happens when the fight is
+         * already going badly. This is the one that stops the autopilot
+         * cheerfully setting off on a two-hundred-block errand with a skeleton
+         * four blocks behind it.
+         */
+        DEFEND,
         /** Eat. */
         EAT,
         /** Put a light down. */
@@ -62,13 +72,14 @@ public final class Agenda {
      * @param carryingTorch whether there is a torch to place
      * @param freeSlots     empty inventory slots
      * @param threatsNear   hostiles within a dozen blocks
+     * @param nearestThreat distance to the closest one, large when there are none
      * @param carried       what is in the inventory, by name
      * @param job           what was asked for, or null when nothing was
      */
     public record Situation(double health, double maxHealth, double damageTaken,
                             int food, boolean carryingFood,
                             int light, boolean carryingTorch,
-                            int freeSlots, int threatsNear,
+                            int freeSlots, int threatsNear, double nearestThreat,
                             Map<String, Integer> carried, Job job) {}
 
     /**
@@ -103,6 +114,15 @@ public final class Agenda {
     private static final int DARK = 8;
     /** Fewer free slots than this and the next haul has nowhere to go. */
     private static final int NEARLY_FULL = 2;
+    /**
+     * Close enough that it is about you.
+     *
+     * Deliberately shorter than the scan radius. A skeleton across a cavern is
+     * something to know about; a skeleton six blocks away is the thing you are
+     * doing next, and setting off on an errand instead is how a mod gets you
+     * shot in the back for two hundred blocks.
+     */
+    private static final double THREAT_CLOSE = 6.0;
 
     /**
      * The one question.
@@ -130,6 +150,11 @@ public final class Agenda {
         if (hurt(now)) {
             return new Decision(Act.RETREAT, "",
                     "on " + heartsOf(now) + " hearts with nothing to eat");
+        }
+        if (now.threatsNear() > 0 && now.nearestThreat() <= THREAT_CLOSE) {
+            return new Decision(Act.DEFEND, "",
+                    "something " + Math.round(now.nearestThreat())
+                            + " blocks away — that first, not an errand");
         }
 
         // Nothing is on fire. Now the things that quietly ruin the next hour.
@@ -174,7 +199,10 @@ public final class Agenda {
         lines.add("hunger " + now.food() + (now.carryingFood() ? " (food carried)" : " (no food)"));
         lines.add("light " + now.light() + (now.light() < DARK ? " — spawns here" : ""));
         lines.add(now.freeSlots() + " free slots");
-        lines.add(now.threatsNear() + " hostiles near");
+        lines.add(now.threatsNear() + " hostiles near"
+                + (now.threatsNear() > 0
+                        ? ", closest " + Math.round(now.nearestThreat()) + " blocks"
+                        : ""));
         Job job = now.job();
         lines.add(job == null ? "no standing job" : "job: " + job.what());
         if (job != null) {

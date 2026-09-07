@@ -13,18 +13,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PreviewTest {
 
+    /** One wood and one masonry, so a design's shape is what varies in a test. */
+    private static final Materials.Wood OAK = Materials.woodNamed("oak");
+    private static final Materials.Stone BRICK = Materials.stoneNamed("stone brick");
+
     private static Blueprint house() {
-        return Designs.house(9, 7, 4, Designs.defaultPalette());
+        return Designs.house(9, 7, 4, Designs.defaultPalette(), OAK, BRICK);
     }
 
     @Test
     void drawsSomethingForEveryDesign() {
         Map<Blueprint.Role, String> palette = Designs.defaultPalette();
         for (Blueprint blueprint : List.of(
-                Designs.hut(5, palette),
-                Designs.house(9, 7, 4, palette),
-                Designs.tower(12, 5, palette),
-                Designs.storage(6, palette))) {
+                Designs.hut(5, palette, OAK, BRICK),
+                Designs.house(9, 7, 4, palette, OAK, BRICK),
+                Designs.tower(12, 5, palette, OAK, BRICK),
+                Designs.storage(6, palette, OAK, BRICK))) {
             Preview.Image image = Preview.of(blueprint);
             assertFalse(image.isEmpty(), blueprint.name() + " rendered nothing");
             assertTrue(image.width() > 0 && image.height() > 0);
@@ -59,16 +63,16 @@ class PreviewTest {
         Map<Blueprint.Role, String> wood = Designs.defaultPalette();
         Map<Blueprint.Role, String> stone = Designs.paletteFrom(
                 List.of("stone_bricks", "cobblestone"), Designs.defaultPalette());
-        Set<Integer> woodColours = coloursOf(Preview.of(Designs.house(9, 7, 4, wood)));
-        Set<Integer> stoneColours = coloursOf(Preview.of(Designs.house(9, 7, 4, stone)));
+        Set<Integer> woodColours = coloursOf(Preview.of(Designs.house(9, 7, 4, wood, OAK, BRICK)));
+        Set<Integer> stoneColours = coloursOf(Preview.of(Designs.house(9, 7, 4, stone, OAK, BRICK)));
         assertFalse(woodColours.equals(stoneColours),
                 "changing the palette should change the picture");
     }
 
     @Test
     void growsWithTheBuilding() {
-        Preview.Image small = Preview.of(Designs.house(5, 5, 3, Designs.defaultPalette()));
-        Preview.Image large = Preview.of(Designs.house(16, 12, 6, Designs.defaultPalette()));
+        Preview.Image small = Preview.of(Designs.house(5, 5, 3, Designs.defaultPalette(), OAK, BRICK));
+        Preview.Image large = Preview.of(Designs.house(16, 12, 6, Designs.defaultPalette(), OAK, BRICK));
         assertTrue(large.width() > small.width());
         assertTrue(large.height() > small.height());
     }
@@ -90,7 +94,7 @@ class PreviewTest {
         // in the roof builds a house you can be rained on inside, and the
         // preview is the only place anybody would notice before it is built.
         for (int[] dims : new int[][]{{9, 7, 4}, {7, 7, 3}, {12, 9, 5}, {5, 5, 3}, {24, 24, 8}}) {
-            Blueprint blueprint = Designs.house(dims[0], dims[1], dims[2], Designs.defaultPalette());
+            Blueprint blueprint = Designs.house(dims[0], dims[1], dims[2], Designs.defaultPalette(), OAK, BRICK);
             int lowest = blueprint.placements().stream()
                     .filter(p -> p.role() == Blueprint.Role.FLOOR)
                     .mapToInt(Blueprint.Placement::y).min().orElseThrow();

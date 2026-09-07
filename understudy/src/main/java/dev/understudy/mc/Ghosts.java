@@ -4,7 +4,6 @@ import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Hologram;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
@@ -30,10 +29,11 @@ import java.util.List;
  * built already offset: a box at its true world coordinates would be drawn as
  * far from you as you are from the origin.
  *
- * The offset uses the player's eye rather than the camera, which is the same
- * point in first person and a couple of blocks out in third. Asking the render
- * context for the camera is the right answer and is the next question in the
- * list; this is honest about being an approximation rather than silently one.
+ * The offset used to use the player's eye, which is the camera in first person
+ * and a couple of blocks out in third — so the whole blueprint slid sideways the
+ * moment you pressed F5, which reads as broken rather than as an approximation.
+ * It asks the game renderer where the camera actually is now, which is the same
+ * point the pose stack was built from, and the two agree in every view.
  */
 public final class Ghosts {
     private Ghosts() {}
@@ -85,25 +85,24 @@ public final class Ghosts {
     public static void register() {
         LevelRenderEvents.BEFORE_GIZMOS.register(context -> {
             if (showing == null || origin == null) return;
-            LocalPlayer player = Minecraft.getInstance().player;
-            if (player == null) return;
+            if (Minecraft.getInstance().player == null) return;
 
-            Vec3 eye = player.getEyePosition();
+            Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
             List<Hologram.Ghost> ghosts = Hologram.of(showing,
                     origin.getX(), origin.getY(), origin.getZ(),
-                    placed, next, eye.x, eye.y, eye.z, showDone);
+                    placed, next, camera.x, camera.y, camera.z, showDone);
 
             for (Hologram.Ghost ghost : ghosts) {
                 // Offset by the camera here rather than pushing a translation:
                 // the box is built from doubles anyway, so this is the same
                 // arithmetic in one place instead of two.
                 VoxelShape box = Shapes.box(
-                        ghost.x() - eye.x + INSET,
-                        ghost.y() - eye.y + INSET,
-                        ghost.z() - eye.z + INSET,
-                        ghost.x() - eye.x + 1 - INSET,
-                        ghost.y() - eye.y + 1 - INSET,
-                        ghost.z() - eye.z + 1 - INSET);
+                        ghost.x() - camera.x + INSET,
+                        ghost.y() - camera.y + INSET,
+                        ghost.z() - camera.z + INSET,
+                        ghost.x() - camera.x + 1 - INSET,
+                        ghost.y() - camera.y + 1 - INSET,
+                        ghost.z() - camera.z + 1 - INSET);
                 context.submitNodeCollector().submitShapeOutline(
                         context.poseStack(), box, RenderTypes.lines(),
                         ghost.argb(), LINE_WIDTH, false);

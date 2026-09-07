@@ -4,6 +4,7 @@ import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
+import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.path.Spiral;
 import net.minecraft.client.Minecraft;
@@ -73,6 +74,7 @@ public final class GatherTask {
     private final TravelTask travel;
     private final CraftTask craft;
     private final SmeltTask smelt;
+    private final HuntTask hunt;
     private final Consumer<String> report;
 
     private List<Planner.Action> plan = new ArrayList<>();
@@ -98,12 +100,13 @@ public final class GatherTask {
     private final Set<String> fetched = new HashSet<>();
 
     public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
-                      Atlas atlas, Consumer<String> report) {
+                      HuntTask hunt, Atlas atlas, Consumer<String> report) {
         this.atlas = atlas;
         this.client = client;
         this.travel = travel;
         this.craft = craft;
         this.smelt = smelt;
+        this.hunt = hunt;
         this.report = report;
     }
 
@@ -136,6 +139,7 @@ public final class GatherTask {
         if (!running) return;
         running = false;
         onDone = null; // a cancelled gather must not go on to build
+        hunt.stop(null);
         plan = new ArrayList<>();
         target = null;
         releaseMining();
@@ -150,12 +154,34 @@ public final class GatherTask {
     }
 
     /**
+     * The standing job, as the agenda understands it.
+     *
+     * Only tools are listed, and that is the whole distinction: fetching the
+     * materials is what this task *is*, so naming them as things it still needs
+     * would have the agenda forever telling it to go and get what it is already
+     * going to get. A missing pickaxe is different in kind — it stops the job
+     * dead, and it is the case the EQUIP branch exists for.
+     */
+    public Agenda.Job job() {
+        if (!running || step >= plan.size()) return null;
+        List<String> tools = new ArrayList<>();
+        for (int i = step; i < plan.size(); i++) {
+            if (plan.get(i) instanceof Planner.Collect collect
+                    && collect.tool() != null && !tools.contains(collect.tool())) {
+                tools.add(collect.tool());
+            }
+        }
+        return new Agenda.Job(plan.get(step).describe(), tools, List.of());
+    }
+
+    /**
      * What this tick is going to be spent on.
      *
      * Reported rather than measured inside, so the accounting happens once in
      * the tick loop and every tick lands in exactly one bucket.
      */
     public Timings.Phase phase() {
+        if (hunt.running()) return hunt.phase();
         if (travel.running()) return Timings.Phase.TRAVELLING;
         if (craft.running() || smelt.running()) return Timings.Phase.HANDLING;
         if (target != null) return aiming > 0 ? Timings.Phase.AIMING : Timings.Phase.MINING;
@@ -229,6 +255,20 @@ public final class GatherTask {
         if (!Hotbar.roomFor(player, wanted.item())) {
             releaseMining();
             stop("your inventory is full — nothing else will fit");
+            return;
+        }
+
+        // Meat is not a block. The hunt is a task of its own for the same
+        // reason crafting and smelting are: it takes several seconds and many
+        // ticks, and the plan simply waits for it the way it waits for a furnace.
+        if (wanted.hunted()) {
+            if (hunt.running()) return;
+            releaseMining();
+            target = null;
+            if (!hunt.start(wanted)) {
+                report.accept("nothing here knows how to get " + wanted.item() + " — moving on");
+                step++;
+            }
             return;
         }
 

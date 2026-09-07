@@ -16,7 +16,10 @@ import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Aim;
 import dev.understudy.mc.Autopilot;
+import dev.understudy.mc.Fight;
 import dev.understudy.mc.Ghosts;
+import dev.understudy.mc.HuntTask;
+import dev.understudy.mc.Remembered;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
@@ -67,12 +70,23 @@ public final class UnderstudyClient implements ClientModInitializer {
      * entirely fixable, and they look identical from the outside.
      */
     private static final Timings timings = new Timings();
+    /**
+     * The same accounting, but for one job rather than the session.
+     *
+     * "Too slow" is answered by the shape of a single job — nineteen minutes of
+     * walking and one of mining is a different complaint from the reverse — and
+     * a session total blurs a gather and a build together until neither is
+     * legible. This one is cleared when work starts and read out when it stops,
+     * so the answer arrives without anyone having to know to ask.
+     */
+    private static final Timings thisJob = new Timings();
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
     private static GatherTask gather;
     private static CraftTask craft;
     private static SmeltTask smelt;
+    private static HuntTask hunt;
     private static Autopilot autopilot;
     private static Safety safety;
     private static Marker marker;
@@ -80,6 +94,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static boolean paused;
     private static boolean greeted;
     private static boolean reportedFailure;
+    private static boolean wasWorking;
 
     @Override
     public void onInitializeClient() {
@@ -118,6 +133,12 @@ public final class UnderstudyClient implements ClientModInitializer {
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.level == null) {
+                if (greeted) {
+                    // Left the world. Write the memory out now rather than
+                    // hoping the process gets a chance to later.
+                    Remembered.flush(atlas, UnderstudyClient::tell);
+                    Remembered.left();
+                }
                 greeted = false;
                 return;
             }
@@ -130,6 +151,10 @@ public final class UnderstudyClient implements ClientModInitializer {
                 greet();
                 Hud.tick();
                 profile.tick();
+                // What it has seen, kept across sessions. Loaded on arrival and
+                // written out on a timer, because the moment you quit is the one
+                // moment you cannot count on getting.
+                Remembered.tick(client, atlas, UnderstudyClient::tell);
                 if (travel == null) {
                     // Seeded from the account, so the character walks the same way every
                     // session. getStringUUID is on Entity and is stable; the game
@@ -140,13 +165,16 @@ public final class UnderstudyClient implements ClientModInitializer {
                     // — moves like the same person rather than like a machine
                     // between the bits that were done carefully.
                     Aim.begin(rng, client.player);
+                    Fight.begin(rng);
                     safety = new Safety(UnderstudyClient::warn);
                     travel = new TravelTask(client, profile, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
-                    gather = new GatherTask(client, travel, craft, smelt, atlas, UnderstudyClient::tell);
+                    hunt = new HuntTask(client, travel, UnderstudyClient::tell);
+                    gather = new GatherTask(client, travel, craft, smelt, hunt, atlas,
+                            UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                     autopilot = new Autopilot(client, gather, sort, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
@@ -198,10 +226,22 @@ public final class UnderstudyClient implements ClientModInitializer {
                     // is doing four hearts a second.
                     Guardian.Verdict verdict = safety.check(client);
                     if (safety.act(client, verdict)) {
-                        if (verdict.action() == Guardian.Action.ABORT
-                                || verdict.action() == Guardian.Action.FLEE) {
-                            stopEverything();
+                        // Whether this ends the job is no longer readable off
+                        // the verdict: a hostile goes to Combat, and Combat
+                        // answers either "deal with it" or "this one is not
+                        // worth having". Safety knows which happened.
+                        if (safety.standingDown()) stopEverything();
+                        // Counted, not lost. Time spent fighting used to fall
+                        // out of the accounting entirely, because the tick
+                        // returns here — so a job that was half combat looked
+                        // like a job that was inexplicably slow.
+                        if (verdict.action() == Guardian.Action.FIGHT) {
+                            timings.spent(Timings.Phase.FIGHTING);
+                            thisJob.spent(Timings.Phase.FIGHTING);
                         }
+                        // The head still has to turn, or a fight is fought with
+                        // the view frozen wherever the last task left it.
+                        Aim.tick(client.player);
                         return;
                     }
                 }
@@ -209,6 +249,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 travel.tick();
                 craft.tick();
                 smelt.tick();
+                hunt.tick();
                 gather.tick();
                 build.tick();
                 sort.tick();
@@ -217,7 +258,16 @@ public final class UnderstudyClient implements ClientModInitializer {
                 // describes what they actually did rather than what they were
                 // about to do, and only while something is running — an idle
                 // mod has no time to account for.
-                if (working()) timings.spent(phaseNow());
+                boolean busy = working();
+                if (busy) {
+                    if (!wasWorking) thisJob.clear();
+                    Timings.Phase phase = phaseNow();
+                    timings.spent(phase);
+                    thisJob.spent(phase);
+                } else if (wasWorking) {
+                    reportJobTime();
+                }
+                wasWorking = busy;
 
                 // Thinking for itself goes after the tasks and before the
                 // head turns: it only ever acts when nothing else is, so it
@@ -325,6 +375,24 @@ public final class UnderstudyClient implements ClientModInitializer {
      * In the order that answers "what is it doing" the way you would: the thing
      * with its hands on something beats the thing walking to it.
      */
+    /**
+     * Say where the time went, once, when a job of any length finishes.
+     *
+     * Not on demand, because nobody thinks to ask afterwards, and the moment a
+     * job ends is exactly when the shape of it is interesting. Short jobs say
+     * nothing: a twenty-second errand has no shape worth a line of chat.
+     */
+    private static void reportJobTime() {
+        if (thisJob.totalTicks() < 20 * 60) return;
+        Timings.Phase worst = null;
+        for (Timings.Phase phase : Timings.Phase.values()) {
+            if (worst == null || thisJob.ticksIn(phase) > thisJob.ticksIn(worst)) worst = phase;
+        }
+        tell(String.format("that took %.0f minutes, mostly %s (%.0f%%) — /understudy timing",
+                thisJob.totalTicks() / 1200.0, worst.name().toLowerCase(),
+                100 * thisJob.shareOf(worst)));
+    }
+
     private static Timings.Phase phaseNow() {
         if (gather != null && gather.running()) return gather.phase();
         if (build != null && build.running()) return build.phase();
@@ -337,7 +405,8 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
-        return (travel != null && travel.running())
+        return (hunt != null && hunt.running())
+                || (travel != null && travel.running())
                 || (build != null && build.running())
                 || (sort != null && sort.running())
                 || (gather != null && gather.running())
@@ -398,6 +467,26 @@ public final class UnderstudyClient implements ClientModInitializer {
         return timings;
     }
 
+    /** How the job that just ran, or is running now, spent its time. */
+    public static Timings jobTimings() {
+        return thisJob;
+    }
+
+    /**
+     * What the mod is doing, as the agenda understands it.
+     *
+     * Assembled from whichever task is running rather than described in one
+     * place, because only the task itself knows what it still needs — and the
+     * EQUIP and FETCH branches of the agenda were dead until something told it.
+     */
+    public static Agenda.Job currentJob() {
+        if (gather != null && gather.running()) return gather.job();
+        if (build != null && build.running()) return build.job();
+        if (travel != null && travel.running()) return Agenda.Job.of("travelling");
+        if (autopilot != null && autopilot.on()) return autopilot.standingJob();
+        return null;
+    }
+
     public static Atlas atlas() {
         return atlas;
     }
@@ -440,6 +529,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (marker != null) marker.cancel();
         if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);
+        if (hunt != null) hunt.stop(null);
         if (build != null) build.stop(why);
         if (sort != null) sort.stop(why);
         if (craft != null) craft.stop();

@@ -73,6 +73,30 @@ net.minecraft.client.Minecraft Screen screen
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
+# COMBAT. The mod could not fight at all until now, so none of these have ever
+# been used from this code. Each is one line of Fight.java.
+net.minecraft.client.multiplayer.MultiPlayerGameMode attack
+net.minecraft.world.entity.player.Player getAttackStrengthScale
+net.minecraft.core.registries.BuiltInRegistries ENTITY_TYPE
+net.minecraft.world.entity.Entity onGround
+net.minecraft.world.entity.LivingEntity isBaby
+
+# WHICH WORLD THIS IS. The atlas is now saved per world, and keying it wrong
+# means a map that confidently points at ore in a save you have never played.
+# All of these are in Worlds.java and nowhere else.
+net.minecraft.world.level.Level dimension
+net.minecraft.resources.ResourceKey location
+net.minecraft.client.Minecraft getSingleplayerServer
+net.minecraft.client.Minecraft getCurrentServer
+net.minecraft.client.multiplayer.ServerData 20
+net.minecraft.server.MinecraftServer getWorldData
+
+# NIGHT. The last thing the autopilot cannot do for itself is go to bed, and
+# Level.getDayTime() is gone. Whatever replaced it is what a sleep rule needs.
+net.minecraft.world.level.Level getSkyDarken
+net.minecraft.client.multiplayer.ClientLevel 25
+net.minecraft.world.entity.player.Player startSleeping
+
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
@@ -83,9 +107,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 #   Shapes.box(x1,y1,z1,x2,y2,z2) — the box
 #   RenderTypes.lines() — the plural holder class, as suspected
 #
-# One approximation left in it, deliberately and visibly: the boxes are offset
-# by the player's eye, which is the camera in first person and a couple of
-# blocks out in third. The render context should be able to say where the
-# camera actually is.
+# The eye-instead-of-camera approximation is gone: it asks the game renderer
+# for the camera directly. These confirm that route, and name the one the
+# render context itself offers in case the renderer's changes.
+net.minecraft.client.renderer.GameRenderer getMainCamera
+net.minecraft.client.Camera getPosition
 net.fabricmc.fabric.api.client.rendering.v1.level.AbstractLevelRenderContext 20
-net.minecraft.client.renderer.state.level.CameraRenderState 14

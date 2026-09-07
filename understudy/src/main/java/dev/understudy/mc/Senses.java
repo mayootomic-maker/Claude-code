@@ -33,12 +33,14 @@ public final class Senses {
         }
 
         int hostiles = 0;
+        double nearest = Double.MAX_VALUE;
         if (client.level != null) {
             for (Entity entity : client.level.entitiesForRendering()) {
-                if (entity instanceof Monster && entity.isAlive()
-                        && player.distanceToSqr(entity) < NEARBY) {
-                    hostiles++;
-                }
+                if (!(entity instanceof Monster) || !entity.isAlive()) continue;
+                double distanceSqr = player.distanceToSqr(entity);
+                if (distanceSqr >= NEARBY) continue;
+                hostiles++;
+                nearest = Math.min(nearest, distanceSqr);
             }
         }
 
@@ -49,6 +51,8 @@ public final class Senses {
                 client.level == null ? 15
                         : client.level.getMaxLocalRawBrightness(player.blockPosition()),
                 carried.getOrDefault("torch", 0) > 0,
-                free, hostiles, carried, job);
+                free, hostiles,
+                nearest == Double.MAX_VALUE ? Double.MAX_VALUE : Math.sqrt(nearest),
+                carried, job);
     }
 }

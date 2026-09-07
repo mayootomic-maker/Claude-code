@@ -1,6 +1,7 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.adapt.Timings;
+import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Facing;
 import net.minecraft.world.level.block.state.BlockState;
@@ -165,6 +166,29 @@ public final class BuildTask {
         Ghosts.hide();
         queue = List.of();
         if (why != null) report.accept(why);
+    }
+
+    /**
+     * The standing job, as the agenda understands it.
+     *
+     * The materials are the blocks still to go in that are not to hand — which
+     * is the one case where carrying on is pointless and going to get something
+     * is not. Optional pieces are left out on purpose: a build that skips a
+     * decorative slab is still a finished build, and stopping to fetch one is
+     * not what a person would do.
+     */
+    public Agenda.Job job() {
+        if (!running) return null;
+        LocalPlayer player = client.player;
+        List<String> short_ = new ArrayList<>();
+        for (int i = index; i < queue.size(); i++) {
+            Blueprint.Placement placement = queue.get(i);
+            if (placement.optional() || short_.contains(placement.block())) continue;
+            if (player == null || Hotbar.count(player, placement.block()) == 0) {
+                short_.add(placement.block());
+            }
+        }
+        return new Agenda.Job("building", List.of(), short_);
     }
 
     public Timings.Phase phase() {

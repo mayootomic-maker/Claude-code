@@ -1,5 +1,6 @@
 package dev.understudy.core.craft;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -363,5 +364,49 @@ class PlannerTest {
         assertTrue(indexOf(steps, "torch") >= 0, steps.toString());
         assertTrue(indexOf(steps, "torch") < indexOf(steps, "diamond"),
                 "torches after the dig: " + steps);
+    }
+
+    @Test
+    @DisplayName("food is something it can go and get, not something you have to provide")
+    void plansAMeal() {
+        // The honest limit of the old autopilot was one line: "no food and no
+        // way to get any on its own — that one is yours". Nothing could fight,
+        // so nothing could hunt. With a combat layer, meat is a source like any
+        // other and the planner costs it the same way.
+        Planner.Plan meal = new Planner(Catalogue.solver())
+                .plan(Map.of("cooked_beef", 8), Map.of());
+        assertTrue(meal.possible(), "no route to a cooked steak: " + meal.shortfall());
+
+        boolean hunts = meal.actions().stream()
+                .anyMatch(a -> a instanceof Planner.Collect c && c.hunted() && c.item().equals("beef"));
+        assertTrue(hunts, "planned to cook beef without going and getting any");
+
+        boolean cooks = meal.actions().stream()
+                .anyMatch(a -> a instanceof Planner.Make m && m.item().equals("cooked_beef"));
+        assertTrue(cooks, "planned to eat it raw");
+    }
+
+    @Test
+    @DisplayName("a hunt says so, so the gatherer does not go looking for a cow-shaped block")
+    void huntsAreMarkedAsHunts() {
+        // Everything else in a plan is a block you break. "cow" is not a block,
+        // and a gatherer that scans the world for one finds nothing and reports,
+        // truthfully and uselessly, that there is no cow anywhere.
+        Planner.Plan meat = new Planner(Catalogue.solver()).plan(Map.of("beef", 4), Map.of());
+        Planner.Collect step = (Planner.Collect) meat.actions().get(0);
+        assertTrue(step.hunted());
+        assertTrue(step.describe().startsWith("hunt"));
+        assertEquals(List.of("cow"), Planner.sourcesOf("beef"));
+
+        Planner.Plan stone = new Planner(Catalogue.solver())
+                .plan(Map.of("cobblestone", 4), Map.of("stone_pickaxe", 1));
+        assertFalse(((Planner.Collect) stone.actions().get(0)).hunted());
+    }
+
+    @Test
+    @DisplayName("bread is the fallback where there is nothing to hunt")
+    void plansBread() {
+        Planner.Plan bread = new Planner(Catalogue.solver()).plan(Map.of("bread", 8), Map.of());
+        assertTrue(bread.possible(), "no route to bread: " + bread.shortfall());
     }
 }
