@@ -20,6 +20,11 @@ import dev.understudy.mc.SelfTest;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.client.player.LocalPlayer;
+import dev.understudy.core.sort.Category;
+import dev.understudy.core.mind.Agenda;
 
 import java.util.List;
 import java.io.IOException;
@@ -119,6 +124,8 @@ public final class UnderstudyCommands {
                             guarded(context.getSource(), "understudy test",
                                     () -> selfTest(context.getSource()))))
                     .then(literal("hud").executes(context -> toggleHud(context.getSource())))
+                    .then(literal("why").executes(context -> why(context.getSource())))
+                    .then(literal("atlas").executes(context -> atlas(context.getSource())))
                     .then(literal("speed")
                             .executes(context -> speed(context.getSource(), null))
                             .then(argument("how", StringArgumentType.word())
@@ -458,6 +465,80 @@ public final class UnderstudyCommands {
         return 0;
     }
 
+    /**
+     * What it thinks is going on, and what it would do about it.
+     *
+     * A decision you cannot interrogate is indistinguishable from a bug. This
+     * is the difference between trusting the thing and watching it: when it
+     * walks off mid-build, this says whether that was hunger, a skeleton, or a
+     * full inventory.
+     */
+    private static int why(FabricClientCommandSource source) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null || Minecraft.getInstance().level == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        for (String line : UnderstudyClient.agenda().reasoning(situationNow(player))) {
+            say(source, line);
+        }
+        return 1;
+    }
+
+    /**
+     * Read the world into the one record the agenda reasons over.
+     *
+     * Everything here is a live reading rather than a remembered one, because
+     * a decision made on a stale health value is worse than no decision.
+     */
+    private static Agenda.Situation situationNow(LocalPlayer player) {
+        Minecraft client = Minecraft.getInstance();
+        Map<String, Integer> carried = Carried.contents(player);
+
+        int free = 0;
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            if (player.getInventory().getItem(slot).isEmpty()) free++;
+        }
+        int hostiles = 0;
+        for (Entity entity : client.level.entitiesForRendering()) {
+            if (entity instanceof Monster && entity.isAlive() && player.distanceToSqr(entity) < 144) {
+                hostiles++;
+            }
+        }
+
+        GatherTask gather = UnderstudyClient.gather();
+        BuildTask build = UnderstudyClient.build();
+        TravelTask travel = UnderstudyClient.travel();
+        Agenda.Job job = null;
+        if (gather != null && gather.running()) job = Agenda.Job.of("gathering");
+        else if (build != null && build.running()) job = Agenda.Job.of("building");
+        else if (travel != null && travel.running()) job = Agenda.Job.of("travelling");
+
+        return new Agenda.Situation(
+                player.getHealth(), player.getMaxHealth(),
+                UnderstudyClient.damageRecently(),
+                player.getFoodData().getFoodLevel(),
+                carried.keySet().stream().anyMatch(item -> Category.of(item) == Category.FOOD),
+                client.level.getMaxLocalRawBrightness(player.blockPosition()),
+                carried.getOrDefault("torch", 0) > 0,
+                free, hostiles, carried, job);
+    }
+
+    /** Everywhere it has seen anything, which is the part a person cannot do. */
+    private static int atlas(FabricClientCommandSource source) {
+        Map<String, Integer> seen = UnderstudyClient.atlas().summary();
+        if (seen.isEmpty()) {
+            say(source, "nothing remembered yet — it fills up as it looks around");
+            return 1;
+        }
+        say(source, UnderstudyClient.atlas().size() + " places remembered:");
+        seen.entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                .limit(12)
+                .forEach(entry -> say(source, "  " + entry.getValue() + " x " + entry.getKey()));
+        return 1;
+    }
+
     private static int help(FabricClientCommandSource source) {
         say(source, "/travel <x> <y> <z> — walk there");
         say(source, "/build house|hut|tower|storage [size] — build it");
@@ -468,6 +549,8 @@ public final class UnderstudyCommands {
         say(source, "/understudy chatfix — repair chat settings that hide messages");
         say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
+        say(source, "/understudy why — what it thinks is going on and what it would do");
+        say(source, "/understudy atlas — everywhere it has seen anything");
         say(source, "/build imports — where to put models and what it makes of them");
         say(source, "/understudy stop — stop everything, at once (or just press a movement key)");
         say(source, "/understudy pause — hold it there; /understudy resume carries on");

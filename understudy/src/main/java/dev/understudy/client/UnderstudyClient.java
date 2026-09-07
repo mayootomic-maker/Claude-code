@@ -1,6 +1,8 @@
 package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.core.memory.Atlas;
+import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.survive.Guardian;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
@@ -44,6 +46,15 @@ public final class UnderstudyClient implements ClientModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 
     private static PlayerProfile profile;
+    /**
+     * What it has seen and what it decides, kept for the session.
+     *
+     * Both outlive every task on purpose: a memory that is cleared when a job
+     * ends is not a memory, and the point of the agenda is that it can be asked
+     * why at any moment, not only while something is running.
+     */
+    private static final Atlas atlas = new Atlas();
+    private static final Agenda agenda = new Agenda();
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
@@ -113,7 +124,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
-                    gather = new GatherTask(client, travel, craft, smelt, UnderstudyClient::tell);
+                    gather = new GatherTask(client, travel, craft, smelt, atlas, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                 }
 
@@ -316,6 +327,19 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     public static PlayerProfile profile() {
         return profile;
+    }
+
+    /** Health lost recently, or zero before anything is watching. */
+    public static double damageRecently() {
+        return safety == null ? 0 : safety.damageRecently();
+    }
+
+    public static Atlas atlas() {
+        return atlas;
+    }
+
+    public static Agenda agenda() {
+        return agenda;
     }
 
     public static TravelTask travel() {

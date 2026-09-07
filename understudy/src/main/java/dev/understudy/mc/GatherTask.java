@@ -3,6 +3,7 @@ package dev.understudy.mc;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
+import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.path.Spiral;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -55,6 +56,13 @@ public final class GatherTask {
     private static final int MAX_LEGS = 14;
     /** Deep enough that it is dark and things spawn. */
     private static final int DARK_BELOW = 40;
+    /**
+     * How far it is worth walking to something remembered.
+     *
+     * Beyond this a fresh tunnel finds ore sooner than the walk takes, and the
+     * memory is likelier to be stale anyway.
+     */
+    private static final int REMEMBERED_RANGE = 400;
     /** The four compass headings a strip mine can run along. */
     private static final int[][] LEGS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
 
@@ -78,6 +86,7 @@ public final class GatherTask {
     private Runnable onDone;
     private int legs;
     private int heading;
+    private final Atlas atlas;
     private int scanCursor;
     private BlockPos scanBuried;
     private List<Block> wantedBlocks = List.of();
@@ -85,7 +94,8 @@ public final class GatherTask {
     private final Set<String> fetched = new HashSet<>();
 
     public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
-                      Consumer<String> report) {
+                      Atlas atlas, Consumer<String> report) {
+        this.atlas = atlas;
         this.client = client;
         this.travel = travel;
         this.craft = craft;
@@ -232,6 +242,10 @@ public final class GatherTask {
             if (target == null) {
                 // Still walking or digging somewhere it might be: let that finish.
                 if (travel.running()) return;
+                // Nothing in range, but it may have been seen before. Walking
+                // to a vein noticed twenty minutes ago beats digging a fresh
+                // tunnel, and is the one thing here a person cannot do.
+                if (goToRemembered(player, wanted)) return;
                 if (prospect(player, wanted)) return;
                 report.accept("no " + wanted.item() + " anywhere around here"
                         + (wanted.bestY() == Gather.ANYWHERE
@@ -275,6 +289,7 @@ public final class GatherTask {
 
         if (client.level.getBlockState(target).isAir()) {
             gathered++;
+            atlas.forget(target.getX(), target.getY(), target.getZ());
             releaseMining();
             target = null;
             sinceScan = 0; // the next one is probably right here
@@ -321,6 +336,10 @@ public final class GatherTask {
             int[] offset = offsets.get(scanCursor++);
             BlockPos at = from.offset(offset[0], offset[1], offset[2]);
             if (!isWanted(at)) continue;
+            // Write it down. The scan looks at a third of a million blocks and
+            // used to keep the one it wanted; the other thirteen veins it saw
+            // on the way are exactly what makes the next trip quick.
+            atlas.saw(wantedFor, at.getX(), at.getY(), at.getZ(), client.level.getGameTime());
             // Exposed wins outright — it is reachable by walking. A buried one
             // is worth a tunnel, but only once nothing better turns up, so it
             // is remembered rather than returned.
@@ -372,6 +391,33 @@ public final class GatherTask {
         BlockState state = client.level.getBlockState(at);
         if (state.isAir()) return false;
         return wantedBlocks.contains(state.getBlock());
+    }
+
+    /**
+     * Head for somewhere this was seen before.
+     *
+     * Only worth it if the memory is nearer than a strip mine is long; beyond
+     * that, digging where you stand finds ore sooner than walking across the
+     * world to a vein someone may since have taken.
+     */
+    private boolean goToRemembered(LocalPlayer player, Planner.Collect wanted) {
+        BlockPos here = player.blockPosition();
+        Atlas.Sighting seen = atlas.nearest(wanted.item(), here.getX(), here.getY(), here.getZ());
+        if (seen == null) return false;
+        double away = seen.distanceTo(here.getX(), here.getY(), here.getZ());
+        if (away > REMEMBERED_RANGE) return false;
+
+        // Believe it only until it is disproved. If the block is loaded and is
+        // not what was remembered, the memory is wrong and goes now rather than
+        // sending the walk there again next time.
+        BlockPos at = new BlockPos(seen.x(), seen.y(), seen.z());
+        if (client.level.hasChunk(at.getX() >> 4, at.getZ() >> 4) && !isWanted(at)) {
+            atlas.forget(at.getX(), at.getY(), at.getZ());
+            return false;
+        }
+        report.accept("remembered " + wanted.item() + " " + Math.round(away) + " blocks away");
+        travel.start(at.above(), true);
+        return true;
     }
 
     /**

@@ -68,6 +68,17 @@ public final class Safety {
         Keys.releaseAll();
     }
 
+    /**
+     * Health lost in the last couple of seconds.
+     *
+     * The Guardian already keeps this window because a sudden four hearts and a
+     * steady fourteen are the same instantaneous reading and call for opposite
+     * responses. The agenda wants the same number for the same reason.
+     */
+    public double damageRecently() {
+        return guardian.damageInWindow();
+    }
+
     public Vitals read(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null) return Vitals.healthy();
