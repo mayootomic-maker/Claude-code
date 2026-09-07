@@ -76,17 +76,15 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
-# The holographic blueprint, last three. Settled, and it is enough to write it:
-#   OrderedSubmitNodeCollector.submitShapeOutline(PoseStack, VoxelShape,
-#     RenderType, int, float, boolean) — a shape drawn as an outline in a
-#     colour, which is a wire box, which is a hologram
-#   RenderType moved to net.minecraft.client.renderer.rendertype
-#   SimpleGizmoCollector.add(Gizmo) -> GizmoProperties, and Gizmos has
-#     billboardText factories, so gizmos are for debug labels rather than for
-#     drawing a building — submitShapeOutline is the better door after all
+# The holographic blueprint. Everything is settled except one name:
+#   submitShapeOutline(PoseStack, VoxelShape, RenderType, int, float, boolean)
+#   Shapes.box(x1,y1,z1,x2,y2,z2) -> VoxelShape, so the box itself is easy
+#   beforeGizmos(LevelRenderContext) is the hook, and the context gives both
+#     the collector and the pose stack
 #
-# Three greps, because head -N shows the first lines of a class and those are
-# the ones a long log cuts. Grepping a member never has that problem.
-net.minecraft.client.renderer.rendertype.RenderType lines
-net.minecraft.world.phys.shapes.Shapes box
-net.minecraft.gizmos.Gizmos box
+# What is missing is which RenderType to hand it. The class exists in its new
+# package and has no member matching "lines" at all, so the line types are
+# somewhere else — either static factories on it under another name, or a
+# plural holder class, which is a shape Mojang has used before.
+net.minecraft.client.renderer.rendertype.RenderType static
+net.minecraft.client.renderer.rendertype.RenderTypes lines
