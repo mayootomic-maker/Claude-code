@@ -13,6 +13,7 @@ import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Autopilot;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.Senses;
+import dev.understudy.mc.Fight;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.HuntTask;
 import dev.understudy.mc.BuildTask;
@@ -540,6 +541,11 @@ public final class UnderstudyCommands {
         for (String line : UnderstudyClient.agenda().reasoning(now)) {
             say(source, line);
         }
+        // And, when there is one, the fight — which is a separate question with
+        // its own reasoning, and the one you most want to interrogate, because
+        // it is the one whose wrong answer gets you killed.
+        String fight = Fight.describe();
+        if (!fight.isEmpty()) say(source, "fight: " + fight);
         return 1;
     }
 

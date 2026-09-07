@@ -65,6 +65,10 @@ public final class Catalogue {
                 // food was your problem. The kill is a handful of seconds; the
                 // walk to find the next animal is nearly all of the cost, which
                 // is why findSeconds dwarfs the rest and perTrip is two.
+                // Leather is the other half of a cow, and it is the difference
+                // between fighting in a shirt and fighting in something. Early
+                // on it is the only armour there is.
+                Gather.hunt("leather", 1, 6.0, 40.0, 2, "cow"),
                 Gather.hunt("beef", 2, 6.0, 40.0, 2, "cow"),
                 Gather.hunt("porkchop", 2, 6.0, 45.0, 2, "pig"),
                 Gather.hunt("mutton", 2, 6.0, 45.0, 2, "sheep"),
@@ -152,6 +156,35 @@ public final class Catalogue {
                 Recipe.table("book", 1, 3.0, "paper", 3, "leather", 1),
                 Recipe.table("paper", 3, 3.0, "sugar_cane", 3),
                 Recipe.table("bread", 1, 3.0, "wheat", 3),
+
+                // Something to fight with. A sword is three ingredients and it
+                // is the difference between a zombie costing two hearts and
+                // costing eight, so the autopilot makes one before it makes
+                // anything else it is not standing in.
+                Recipe.table("wooden_sword", 1, 3.0, "oak_planks", 2, "stick", 1),
+                Recipe.table("stone_sword", 1, 3.0, "cobblestone", 2, "stick", 1),
+                Recipe.table("iron_sword", 1, 3.0, "iron_ingot", 2, "stick", 1),
+                Recipe.table("diamond_sword", 1, 3.0, "diamond", 2, "stick", 1),
+                // Wood and one iron, and it turns a skeleton from a problem
+                // into a nuisance.
+                Recipe.table("shield", 1, 3.0, "oak_planks", 6, "iron_ingot", 1),
+
+                // Armour, in the two materials that are actually reachable: a
+                // cow's worth of leather on the first day, and iron once there
+                // is a pickaxe. Eighty per cent damage reduction is the single
+                // largest thing that can be crafted for a fight.
+                Recipe.table("leather_helmet", 1, 3.0, "leather", 5),
+                Recipe.table("leather_chestplate", 1, 3.0, "leather", 8),
+                Recipe.table("leather_leggings", 1, 3.0, "leather", 7),
+                Recipe.table("leather_boots", 1, 3.0, "leather", 4),
+                Recipe.table("iron_helmet", 1, 3.0, "iron_ingot", 5),
+                Recipe.table("iron_chestplate", 1, 3.0, "iron_ingot", 8),
+                Recipe.table("iron_leggings", 1, 3.0, "iron_ingot", 7),
+                Recipe.table("iron_boots", 1, 3.0, "iron_ingot", 4),
+                Recipe.table("diamond_helmet", 1, 3.0, "diamond", 5),
+                Recipe.table("diamond_chestplate", 1, 3.0, "diamond", 8),
+                Recipe.table("diamond_leggings", 1, 3.0, "diamond", 7),
+                Recipe.table("diamond_boots", 1, 3.0, "diamond", 4),
 
                 // Cooking. Raw meat feeds you badly and cooked meat feeds you
                 // well, and the difference is one furnace the mod already knows

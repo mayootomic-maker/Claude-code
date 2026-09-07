@@ -73,6 +73,14 @@ net.minecraft.client.Minecraft Screen screen
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
+# COMBAT, round two: armour, shields, bows and circling. Each of these is one
+# line of Fight.java and none of them has ever been called from this code.
+net.minecraft.client.Options keySprint
+net.minecraft.client.multiplayer.MultiPlayerGameMode useItem
+net.minecraft.world.entity.LivingEntity getHealth
+net.minecraft.world.entity.LivingEntity getItemBySlot
+net.minecraft.world.entity.EquipmentSlot 20
+
 # COMBAT: all answered and all in use.
 #   MultiPlayerGameMode.attack(Player, Entity)
 #   Player.getAttackStrengthScale(float) — the swing charge the fight waits for

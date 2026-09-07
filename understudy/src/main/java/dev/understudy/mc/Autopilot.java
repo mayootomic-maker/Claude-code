@@ -3,6 +3,8 @@ package dev.understudy.mc;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.survive.Armoury;
+import dev.understudy.core.survive.Combat;
 import dev.understudy.core.sort.Category;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -53,6 +55,23 @@ public final class Autopilot {
             List.of("cooked_beef", "cooked_porkchop", "cooked_mutton", "bread");
     /** The tool everything else needs before it needs anything else. */
     private static final String BASIC_TOOL = "stone_pickaxe";
+    /** Pickaxes that count as having one, best last. */
+    private static final List<String> PICKAXES =
+            List.of("stone_pickaxe", "iron_pickaxe", "diamond_pickaxe", "netherite_pickaxe");
+    /** Swords it will make for itself, in the order it can reach them. */
+    private static final List<String> SWORDS =
+            List.of("iron_sword", "stone_sword", "wooden_sword");
+    /**
+     * Armour worth stopping to make, and the order to try.
+     *
+     * Iron first because it is more than twice the protection and the mod is
+     * already mining iron for everything else; leather is the first-day answer
+     * and needs a cow rather than a mine. Chest and legs before head and feet:
+     * that is where two thirds of the points are.
+     */
+    private static final List<String> ARMOUR = List.of(
+            "iron_chestplate", "iron_leggings", "iron_helmet", "iron_boots",
+            "leather_chestplate", "leather_leggings", "leather_helmet", "leather_boots");
 
     private final Minecraft client;
     private final GatherTask gather;
@@ -135,6 +154,12 @@ public final class Autopilot {
                 sort.start(true);
             }
             case EQUIP, FETCH, WORK, IDLE -> {
+                // Put on whatever is already in the bag before anything else,
+                // every time it thinks. It costs one right-click, it is the
+                // largest single thing that changes how a fight goes, and the
+                // mod used to carry a full set of iron while trading hits with
+                // a zombie in a shirt.
+                if (Fight.wearTheBest(client, player)) return;
                 // The night before the errand. Sleeping through it is eight
                 // seconds and removes every hostile in it, which no amount of
                 // fighting well does — and phantoms, which nothing here can
@@ -147,19 +172,33 @@ public final class Autopilot {
     /**
      * Get the next thing that is missing, in the order a person would.
      *
-     * A tool before the things it digs; light and food before a long job,
-     * because running out of either halfway is what turns an hour of work into
-     * a walk home. The standing goal comes last, which looks backwards and is
-     * not: a goal pursued without a pickaxe is a goal you fail slowly.
+     * A tool before the things it digs; something to fight with and something
+     * to be hit in before a night; light and food before a long job, because
+     * running out of either halfway is what turns an hour of work into a walk
+     * home. The standing goal comes last, which looks backwards and is not: a
+     * goal pursued without a pickaxe is a goal you fail slowly.
+     *
+     * The sword and the armour are new and they are not decoration. Everything
+     * above them in this list is about getting work done; those two are the
+     * difference between the work surviving the night and the character not.
      */
     private void fetchWhateverIsMissing(LocalPlayer player) {
         Map<String, Integer> carried = Carried.contents(player);
 
+        String armour = missingArmour(player, carried);
         Map<String, Integer> wanted = new LinkedHashMap<>();
-        if (carried.getOrDefault(BASIC_TOOL, 0) == 0
-                && carried.getOrDefault("iron_pickaxe", 0) == 0
-                && carried.getOrDefault("diamond_pickaxe", 0) == 0) {
+        if (!hasAny(carried, PICKAXES)) {
             wanted.put(BASIC_TOOL, 1);
+        } else if (Combat.bestWeapon(carried) == null
+                || !Combat.isWeapon(Combat.bestWeapon(carried))) {
+            String sword = firstReachable(SWORDS, carried);
+            if (sword == null) {
+                say("nothing to fight with and no way to make one yet");
+                return;
+            }
+            wanted.put(sword, 1);
+        } else if (armour != null) {
+            wanted.put(armour, 1);
         } else if (carried.getOrDefault("torch", 0) < WANT_TORCHES) {
             wanted.put("torch", WANT_TORCHES);
         } else if (countFood(carried) < WANT_MEALS) {
@@ -192,6 +231,43 @@ public final class Autopilot {
 
         say("getting " + String.join(", ", wanted.keySet()));
         gather.start(plan, null);
+    }
+
+    private static boolean hasAny(Map<String, Integer> carried, List<String> any) {
+        for (String item : any) if (carried.getOrDefault(item, 0) > 0) return true;
+        return false;
+    }
+
+    /**
+     * The next piece of armour worth going and making.
+     *
+     * One at a time, best-first, and only if the slot is empty or has something
+     * worse in it — so a session that starts in leather upgrades to iron a piece
+     * at a time rather than deciding it is dressed and stopping.
+     */
+    private String missingArmour(LocalPlayer player, Map<String, Integer> carried) {
+        Map<Armoury.Slot, String> worn = Fight.wornBy(player);
+        Map<Armoury.Slot, String> best = Armoury.bestSet(carried);
+        for (String want : ARMOUR) {
+            Armoury.Piece piece = Armoury.of(want);
+            Armoury.Piece have = Armoury.of(best.getOrDefault(piece.slot(),
+                    worn.get(piece.slot())));
+            if (have != null && have.points() >= piece.points()) continue;
+            if (new Planner(Catalogue.solver()).plan(Map.of(want, 1), carried).possible()) {
+                return want;
+            }
+        }
+        return null;
+    }
+
+    /** The first of these the planner can actually see a route to. */
+    private String firstReachable(List<String> options, Map<String, Integer> carried) {
+        for (String option : options) {
+            if (new Planner(Catalogue.solver()).plan(Map.of(option, 1), carried).possible()) {
+                return option;
+            }
+        }
+        return null;
     }
 
     /**

@@ -116,7 +116,12 @@ public final class Guardian {
         // the character standing still with its hands off the controls. Combat
         // decides whether this particular fight is worth having, and answers
         // "run" when running is actually available.
-        if (vitals.hostilesNear() > 0 && vitals.nearestHostile() < HOSTILE_CLOSE) {
+        // Close enough to be about you, or far enough to be shooting at you.
+        // The distance gate alone missed the whole of the second case: a
+        // skeleton at fifteen blocks is not "near", and standing there being
+        // shot while the gate says everything is fine is the worst of both.
+        if (vitals.hostilesNear() > 0
+                && (vitals.nearestHostile() < HOSTILE_CLOSE || damageInWindow() > 0)) {
             return new Verdict(Action.FIGHT, "hostile " + Math.round(vitals.nearestHostile())
                     + " blocks away");
         }

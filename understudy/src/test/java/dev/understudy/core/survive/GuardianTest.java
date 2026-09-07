@@ -113,4 +113,26 @@ class GuardianTest {
         guardian.reset();
         assertEquals(0, guardian.damageInWindow());
     }
+
+    @Test
+    void aDistantThingShootingAtYouIsStillAFight() {
+        // The distance gate alone said a skeleton at fifteen blocks was not a
+        // situation, so the mod stood in the open being shot and carried on
+        // mining. Losing health with something in sight is a fight wherever it
+        // is standing.
+        Guardian guardian = new Guardian();
+        guardian.check(new Vitals(20, 20, 20, true, 300, 300,
+                false, false, false, 0, 1, 15));
+        Guardian.Verdict shot = guardian.check(new Vitals(16, 20, 20, true, 300, 300,
+                false, false, false, 0, 1, 15));
+        assertEquals(Guardian.Action.FIGHT, shot.action());
+    }
+
+    @Test
+    void aDistantThingDoingNothingIsNot() {
+        Vitals watched = new Vitals(20, 20, 20, true, 300, 300,
+                false, false, false, 0, 1, 15);
+        assertFalse(new Guardian().check(watched).interrupts(),
+                "stopped work over a skeleton across a cavern");
+    }
 }
