@@ -43,13 +43,28 @@ materials, at a size this is not going to build. This shows the exact structure
 that will be placed, in the palette it will use, and it redraws when you change
 either.
 
-Pick one, then point at where it should stand and crouch. Crouching rather than
-clicking, because a click already means something — left breaks the block you
-are aiming at, right places one — and a site picker that mines a hole while you
-choose where to put the house is not a site picker.
+Pick one, then drag out the plot: tap crouch at one corner, look to the far
+corner, press Enter. Crouching rather than clicking, because a click already
+means something — left breaks the block you are aiming at, right places one —
+and a site picker that mines a hole while you choose where to put the house is
+not a site picker.
+
+**The plot decides the size.** Drag a bigger rectangle and you get a bigger
+house, regenerated to the largest that fits and turned to lie the same way
+round as the ground you dragged. `R` turns it a quarter by hand, and Page Up
+and Page Down lift it off the ground. An imported schematic is the one thing
+that cannot resize — it is the size somebody saved it at, and resampling a
+structure damages it rather than scaling it — so it says so instead of offering
+a control that would lie.
 
 Then it goes and does the whole thing: works out what is missing, mines it,
 crafts it, and builds. Nothing else typed in between.
+
+**Take the controls at any time.** Move, look around or open a chest and it
+lets go at once, keeping the plan; it picks the work back up after ten seconds
+of you doing nothing at all. Its own walking and its own head-turning do not
+count as you — which sounds obvious and is the thing that took two goes to get
+right.
 
 **Materials.** Eight woods and seven masonries, as coordinated sets — choosing
 spruce moves the planks, logs, stairs, slabs, fences, door and trapdoor
@@ -66,6 +81,10 @@ ones it cannot, swims when there is no way round, and re-plans as terrain loads.
 
 **`/sort`** — puts everything in the nearest chests by category, and keeps
 putting each thing where it put it last.
+
+**Every command** is in [COMMANDS.md](COMMANDS.md), which is generated from the
+same list `/understudy help` and the control panel read, so the three cannot
+drift apart.
 
 ## Not getting you killed
 

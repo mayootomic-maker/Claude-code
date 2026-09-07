@@ -143,4 +143,18 @@ net.minecraft.client.Minecraft Screen
 # Which is where it should be — it is the same state the pose stack was built
 # from, so the hologram cannot drift from the frame it is drawn into.
 #
-# Nothing open.
+# TEXT THAT FITS THE SCREEN. The overlay above the hotbar is drawn centred and
+# is never wrapped by the game, so a long line runs off both edges — which is
+# what "some texts just go out of the screen" was. Fitting it needs the font's
+# own measurement and the scaled width of the window, and both names are worth
+# confirming rather than guessing.
+net.minecraft.client.gui.Font width
+com.mojang.blaze3d.platform.Window getGuiScaledWidth
+
+# CHAT, the settings that actually decide whether a message can be read. The
+# four the chat fix already knows about are about whether chat *appears*; these
+# are about whether it is legible once it does, which is the complaint.
+net.minecraft.client.Options chatWidth
+net.minecraft.client.Options chatHeight
+net.minecraft.client.Options chatDelay
+net.minecraft.client.Options chatLineSpacing

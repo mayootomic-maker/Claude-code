@@ -3,6 +3,7 @@ package dev.understudy.mc;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Schematic;
+import dev.understudy.core.build.Sized;
 import dev.understudy.core.build.Materials;
 import dev.understudy.core.build.Preview;
 import dev.understudy.core.adapt.Measured;
@@ -43,9 +44,17 @@ public final class BuildPicker extends Screen {
     /** Called with the chosen design, size and materials once the player commits. */
     private final Chosen onChoose;
 
-    /** What the menu hands back: a finished blueprint, however it was arrived at. */
+    /**
+     * What the menu hands back.
+     *
+     * A {@link Sized} rather than a finished blueprint, so the plot you then
+     * drag on the ground can still decide how big the thing is. The menu's own
+     * size control stays — it is how you say what you want before you have a
+     * plot in mind, and it is the only control an import has, since a schematic
+     * is the size it was saved at.
+     */
     public interface Chosen {
-        void accept(Blueprint blueprint);
+        void accept(Sized design);
     }
 
     /**
@@ -182,12 +191,16 @@ public final class BuildPicker extends Screen {
             // A model's size is how tall it comes out. Under about eight blocks
             // nothing recognisable survives, and past a hundred it is a project
             // rather than a build.
-            size = Math.max(8, Math.min(120, size + by * 4));
+            size = Math.max(MODEL_MIN, Math.min(MODEL_MAX, size + by * 4));
         } else {
             return;
         }
         refresh();
     }
+
+    /** Under this nothing recognisable survives voxelising; over it, it is a project. */
+    private static final int MODEL_MIN = 8;
+    private static final int MODEL_MAX = 120;
 
     private void toggleSolid() {
         solid = !solid;
@@ -228,8 +241,47 @@ public final class BuildPicker extends Screen {
 
     private void commit() {
         if (blueprint == null) return;
-        onChoose.accept(blueprint);
+        onChoose.accept(sized());
         onClose();
+    }
+
+    /**
+     * The choice, plus how to make it again at another size.
+     *
+     * The settings are read once, here, and captured — the menu is about to
+     * close, and a maker that read its fields later would be reading fields
+     * belonging to a screen nobody is looking at.
+     */
+    private Sized sized() {
+        Option option = options.get(selected);
+        int turnsNow = turns;
+        boolean flipped = upsideDown;
+        if (option instanceof Designed designed) {
+            Catalog.Entry entry = designed.entry();
+            Materials.Wood w = wood();
+            Materials.Stone st = stone();
+            return Sized.of(blueprint,
+                    n -> Catalog.build(entry, n, w, st).turned(turnsNow, flipped),
+                    entry.minSize(), entry.maxSize());
+        }
+        if (option instanceof Imported imported && imported.model()) {
+            boolean solidNow = solid;
+            String planks = wood().planks();
+            return Sized.of(blueprint, n -> {
+                try {
+                    return Imports.loadModel(imported.file(), n, solidNow, planks)
+                            .blueprint().turned(turnsNow, flipped);
+                } catch (Exception error) {
+                    // A model that read once and will not read again at another
+                    // size is not a reason to lose the one that did read.
+                    return blueprint;
+                }
+            }, MODEL_MIN, MODEL_MAX);
+        }
+        // A schematic is the size somebody saved it at. Resampling a structure
+        // is not scaling it, it is damaging it, so this one genuinely cannot be
+        // resized and says so rather than offering a control that would lie.
+        return Sized.fixed(blueprint);
     }
 
     /**

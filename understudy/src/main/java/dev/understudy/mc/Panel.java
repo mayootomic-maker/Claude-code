@@ -25,7 +25,41 @@ final class Panel {
     private Panel() {}
 
     static String html() {
-        return PAGE;
+        if (page == null) page = PAGE.replace("<!--COMMANDS-->", commands());
+        return page;
+    }
+
+    private static String page;
+
+    /**
+     * The command list, built from the same source the in-game help reads.
+     *
+     * Written into the page here rather than fetched by the browser because it
+     * never changes while the game is running, and a panel that works with the
+     * network cable out should not need a request to tell you what to type.
+     */
+    private static String commands() {
+        StringBuilder out = new StringBuilder();
+        for (dev.understudy.core.help.Manual.Section section
+                : dev.understudy.core.help.Manual.sections()) {
+            out.append("<h3>").append(escape(section.title())).append("</h3><div class=\"rows\">");
+            for (dev.understudy.core.help.Manual.Entry entry : section.entries()) {
+                out.append("<div class=\"row\"><code>").append(escape(entry.usage()))
+                        .append("</code><span>").append(escape(entry.what()))
+                        .append("</span></div>");
+            }
+            out.append("</div>");
+        }
+        out.append("<p class=\"hint\">");
+        for (String note : dev.understudy.core.help.Manual.NOTES) {
+            out.append(escape(note)).append(' ');
+        }
+        out.append("</p>");
+        return out.toString();
+    }
+
+    private static String escape(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private static final String PAGE = """
@@ -121,6 +155,12 @@ h2::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--ed
 .doing.fighting{border-left-color:var(--bad);background:linear-gradient(135deg,#22100f,#150c0c)}
 .doing.fighting .what{color:#ff9a9a;text-shadow:0 0 14px #ff5b5b44}
 
+.help h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--go);
+  margin:12px 0 4px}
+.help h3:first-child{margin-top:0}
+.help .row{align-items:baseline;gap:10px}
+.help code{font-family:var(--mono);font-size:11px;color:#e8f2ee;white-space:nowrap}
+.help .row span{color:var(--dim);text-align:right}
 .tabs{display:flex;gap:2px;margin-bottom:10px;flex-wrap:wrap}
 .tabs button{flex:1;min-width:72px;padding:7px 6px;font-size:11px}
 .tabs button[aria-selected=true]{background:#1d302a;color:var(--go);
@@ -233,6 +273,7 @@ kbd{font-family:var(--mono);font-size:10px;background:#0b100f;border:1px solid v
         <button role="tab" data-pane="project" aria-selected="false">Project</button>
         <button role="tab" data-pane="go" aria-selected="false">Travel</button>
         <button role="tab" data-pane="more" aria-selected="false">More</button>
+        <button role="tab" data-pane="help" aria-selected="false">Commands</button>
       </div>
 
       <div class="pane on" id="pane-get">
@@ -288,6 +329,10 @@ kbd{font-family:var(--mono);font-size:10px;background:#0b100f;border:1px solid v
           </select>
           <button id="speedGo">Set</button>
         </div>
+      </div>
+
+      <div class="pane" id="pane-help">
+        <div class="help"><!--COMMANDS--></div>
       </div>
     </section>
 

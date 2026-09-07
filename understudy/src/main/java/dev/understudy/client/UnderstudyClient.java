@@ -5,6 +5,7 @@ import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.mind.Touched;
 import dev.understudy.core.survive.Guardian;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
@@ -117,8 +118,6 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     private static final dev.understudy.core.mind.Handover handover =
             new dev.understudy.core.mind.Handover();
-    private static float lastYaw;
-    private static float lastPitch;
     private static double lastX;
     private static double lastY;
     private static double lastZ;
@@ -349,6 +348,13 @@ public final class UnderstudyClient implements ClientModInitializer {
                 serveThePanel(client);
             } catch (Throwable error) {
                 onTickFailure(error);
+            } finally {
+                // Last thing, on every way out of the tick — including the
+                // early returns and the one that just threw. Aim compares the
+                // next tick's view against this, so a tick that skipped it
+                // would leave a stale mark and read the mod's own next turn as
+                // a hand on the mouse.
+                Aim.settled(client.player);
             }
         });
 
@@ -383,8 +389,12 @@ public final class UnderstudyClient implements ClientModInitializer {
      * are different questions, and the second one can only be answered while
      * looking at the world rather than at a menu.
      */
-    private static void siteFor(Blueprint blueprint) {
-        marker.start(blueprint, UnderstudyClient::gatherThenBuild);
+    public static void siteFor(dev.understudy.core.build.Sized design) {
+        if (marker == null) {
+            tell("not in a world yet");
+            return;
+        }
+        marker.start(design, UnderstudyClient::gatherThenBuild);
     }
 
     /**
@@ -464,25 +474,44 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static boolean touchedAnything(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null) return false;
+
         // A container being open counts as doing something: standing at a chest
         // sorting items is exactly the moment when walking off underneath
         // somebody would be worst. Asked as "is a container open" rather than
         // "is a screen open" because this version renamed the screen field and
         // the container menu is the case that actually matters.
-        if (player.containerMenu != player.inventoryMenu) return true;
+        boolean container = player.containerMenu != player.inventoryMenu;
 
-        boolean looked = Math.abs(player.getYRot() - lastYaw) > 0.35
-                || Math.abs(player.getXRot() - lastPitch) > 0.35;
-        boolean walked = !Keys.holding()
-                && player.position().distanceToSqr(lastX, lastY, lastZ) > 0.0016;
+        // Measured from where Aim left the view at the end of the last tick,
+        // not from the last tick's reading. Those are different numbers the
+        // moment the mod is turning its own head, and the difference was the
+        // whole bug — see core.mind.Touched.
+        double viewMoved = Aim.movedSinceSettled(player);
 
-        lastYaw = player.getYRot();
-        lastPitch = player.getXRot();
+        double dx = player.getX() - lastX;
+        double dz = player.getZ() - lastZ;
+        // Horizontal only. Falling, a lift of water and being shoved by a mob
+        // are not you deciding to go somewhere, and counting them would leave
+        // the countdown unable to finish while any of it was happening.
+        double movedFlat = Math.sqrt(dx * dx + dz * dz);
         lastX = player.getX();
         lastY = player.getY();
         lastZ = player.getZ();
 
-        return handOnTheControls(client) || looked || walked;
+        return Touched.by(container, handOnTheControls(client), viewMoved, movedFlat,
+                modIsMoving());
+    }
+
+    /**
+     * Whether the character is under way because of the mod.
+     *
+     * True from the moment it has a job until it is genuinely stopped, not
+     * merely between key presses: a walk is a stream of taps with coasting in
+     * between, and asking "is a key down right now" says no in the gaps. While
+     * the controls are yours it is false, which is what makes the wait exact.
+     */
+    private static boolean modIsMoving() {
+        return !paused && !handover.holding() && (Keys.holding() || working());
     }
 
     /**
@@ -756,8 +785,18 @@ public final class UnderstudyClient implements ClientModInitializer {
         letGo();
     }
 
+    /**
+     * Carry on now, whoever stopped it.
+     *
+     * The hold is cleared as well as the pause. Typing resume while the mod is
+     * counting down its ten seconds of stillness is an unambiguous "I have
+     * finished, go on" — and without this the tick returned at the hold every
+     * time and the command did nothing at all, which looked exactly like the
+     * mod having crashed.
+     */
     public static void resume() {
         paused = false;
+        handover.reset();
     }
 
     /**

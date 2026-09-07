@@ -24,6 +24,12 @@ import java.util.Deque;
  *
  * The overlay fades after a few seconds, so a long-running status is re-sent
  * from the tick loop; a one-off message wins until it has had its time.
+ *
+ * It is drawn centred and the game never wraps it, so a line that is wider than
+ * the window runs off both edges at once and loses its beginning as well as its
+ * end. Nothing in the game trims it for you. So every line is measured against
+ * the window here and cut to fit, with an ellipsis so a cut is visible rather
+ * than silent — and the full text has already gone to chat, which does wrap.
  */
 public final class Hud {
 
@@ -97,6 +103,32 @@ public final class Hud {
         } else {
             return;
         }
-        client.player.sendOverlayMessage(Component.literal("§8[§bunderstudy§8] §r" + text));
+        client.player.sendOverlayMessage(
+                Component.literal(fit(client, "§8[§bunderstudy§8] §r" + text)));
+    }
+
+    /** Room for the line, in scaled pixels, with a margin off each edge. */
+    private static final int MARGIN = 16;
+
+    /**
+     * The same line, cut to the width of the window.
+     *
+     * Measured with the game's own font rather than counted in characters: at
+     * GUI scale 4 on a small window there is room for about thirty characters,
+     * and at scale 1 on a wide one there is room for two hundred, so any fixed
+     * limit is wrong on most machines. A colour code left dangling at the cut
+     * would swallow the ellipsis, so a trailing section sign goes with it.
+     */
+    static String fit(Minecraft client, String text) {
+        if (client.font == null || client.getWindow() == null) return text;
+        int room = client.getWindow().getGuiScaledWidth() - MARGIN * 2;
+        if (room <= 0 || client.font.width(text) <= room) return text;
+
+        String ellipsis = "…";
+        int keep = text.length();
+        while (keep > 0 && client.font.width(text.substring(0, keep) + ellipsis) > room) keep--;
+        String cut = text.substring(0, keep);
+        if (cut.endsWith("§")) cut = cut.substring(0, cut.length() - 1);
+        return cut + ellipsis;
     }
 }

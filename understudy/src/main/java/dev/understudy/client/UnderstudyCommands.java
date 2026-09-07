@@ -5,6 +5,8 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.understudy.core.adapt.PlayerProfile;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Schematic;
+import dev.understudy.core.build.Sized;
+import dev.understudy.core.help.Manual;
 import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Designs;
 import dev.understudy.core.build.Materials;
@@ -174,7 +176,18 @@ public final class UnderstudyCommands {
                     .then(literal("resume").executes(context -> resume(context.getSource())))
                     .then(literal("status").executes(context -> status(context.getSource())))
                     .then(literal("profile").executes(context -> profile(context.getSource())))
-                    .then(literal("help").executes(context -> help(context.getSource())))
+                    .then(literal("help")
+                            .executes(context -> help(context.getSource(), null))
+                            .then(argument("topic", StringArgumentType.word())
+                                    .suggests((context, builder) -> {
+                                        String typed = builder.getRemaining().toLowerCase();
+                                        for (String id : Manual.topics()) {
+                                            if (id.startsWith(typed)) builder.suggest(id);
+                                        }
+                                        return builder.buildFuture();
+                                    })
+                                    .executes(context -> help(context.getSource(),
+                                            StringArgumentType.getString(context, "topic")))))
                     .then(literal("chatfix").executes(context ->
                             guarded(context.getSource(), "understudy chatfix",
                                     () -> chatFix(context.getSource()))))
@@ -202,7 +215,7 @@ public final class UnderstudyCommands {
                                             StringArgumentType.getString(context, "how")))))
                     // Bare /understudy lists the commands rather than the
                     // status: someone typing it is usually asking what exists.
-                    .executes(context -> help(context.getSource())));
+                    .executes(context -> help(context.getSource(), null)));
         });
     }
 
@@ -235,21 +248,23 @@ public final class UnderstudyCommands {
             return 0;
         }
 
-        Catalog.Entry entry = Catalog.byId(what.toLowerCase());
-        if (entry == null && what.equalsIgnoreCase("shelter")) entry = Catalog.byId("hut");
-        if (entry == null && what.equalsIgnoreCase("chests")) entry = Catalog.byId("storage");
-        if (entry == null) {
+        Catalog.Entry found = Catalog.byId(what.toLowerCase());
+        if (found == null && what.equalsIgnoreCase("shelter")) found = Catalog.byId("hut");
+        if (found == null && what.equalsIgnoreCase("chests")) found = Catalog.byId("storage");
+        if (found == null) {
             say(source, "I can build: " + String.join(", ", Catalog.ids()));
             return 0;
         }
+        final Catalog.Entry entry = found;
         Materials.Wood wood = Materials.woodNamed(profile.favouriteWood());
         Materials.Stone stone = Materials.stoneNamed("stone brick");
         // What you actually build with wins over the default, which is the
         // whole point of watching: a base of deepslate should not get an oak
         // house dropped in the middle of it. Only the flat surfaces move — the
         // shaped pieces have to stay in a family that has stairs and slabs.
-        Blueprint blueprint = Catalog.build(entry, size, wood, stone,
-                Designs.paletteFrom(profile.buildingBlocks(6), Designs.paletteOf(wood, stone)));
+        Map<Blueprint.Role, String> palette =
+                Designs.paletteFrom(profile.buildingBlocks(6), Designs.paletteOf(wood, stone));
+        Blueprint blueprint = Catalog.build(entry, size, wood, stone, palette);
 
         say(source, blueprint.name() + ": " + blueprint.blockCount() + " blocks");
 
@@ -280,8 +295,14 @@ public final class UnderstudyCommands {
             say(source, "busy travelling — /understudy stop first");
             return 0;
         }
-        // Build in front of where you are standing, not on top of you.
-        task.start(blueprint, source.getPlayer().blockPosition().offset(2, 0, 2));
+        // Named on the command line or picked from the menu, where it goes is
+        // the same question and gets the same answer: drag out the plot and
+        // look at it before a single block is placed. Dropping it two blocks
+        // diagonally from your feet was quick to write and put a great many
+        // houses through the side of a hill.
+        UnderstudyClient.siteFor(Sized.of(blueprint,
+                n -> Catalog.build(entry, n, wood, stone, palette),
+                entry.minSize(), entry.maxSize()));
         return 1;
     }
 
@@ -581,9 +602,16 @@ public final class UnderstudyCommands {
         Minecraft client = Minecraft.getInstance();
         ChatFix.Result result = ChatFix.repair(client);
         if (!result.changedAnything()) {
-            say(source, "chat settings were already fine:");
+            say(source, "every chat setting is already right:");
             for (String line : ChatFix.describe(client)) say(source, "  " + line);
-            say(source, "so if you cannot see other players, it is the server, not your client");
+            // Being told "nothing was wrong" and left there is what made this
+            // command feel like it was fixing something other than the problem.
+            // If the settings are fine then the problem is one of two other
+            // things, and both are worth naming.
+            say(source, "so if you still cannot read what I say, it is one of these:");
+            say(source, "  other players missing — the server, not your client");
+            say(source, "  my own lines cut off — long ones are trimmed to the "
+                    + "window now, and the whole line is always in chat");
             return 1;
         }
         say(source, "fixed:");
@@ -869,28 +897,40 @@ public final class UnderstudyCommands {
         }
     }
 
-    private static int help(FabricClientCommandSource source) {
-        say(source, "/travel <x> <y> <z> — walk there");
-        say(source, "/build house|hut|tower|storage|manor [size] — build it");
-        say(source, "/plan house [size] — what it would take, without building");
-        say(source, "/get <item> [n] — go and get it, however that has to happen");
-        say(source, "/get iron_ingot+coal 8 — several at once, planned as one trip");
-        say(source, "/sort — put your things in the right chests (/sort all includes your kit)");
-        say(source, "/understudy profile — what I have learned about how you play");
-        say(source, "/understudy test — check what is working and what is not");
-        say(source, "/understudy chatfix — repair chat settings that hide messages");
-        say(source, "/understudy hud — toggle the on-screen overlay");
-        say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
-        say(source, "/panel — a control panel in your browser; /panel network for your phone");
-        say(source, "/project — objectives it can be handed: kit, camp, base, enchanter");
-        say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
-        say(source, "/understudy why — what it thinks is going on and what it would do");
-        say(source, "/understudy atlas — everywhere it has seen anything, kept between sessions");
-        say(source, "/enchant [item] — at a table with fifteen shelves, and only then");
-        say(source, "/understudy timing — where the time actually goes");
-        say(source, "/build imports — where to put models and what it makes of them");
-        say(source, "/understudy stop — stop everything, at once (or just press a movement key)");
-        say(source, "/understudy pause — hold it there; /understudy resume carries on");
+    /**
+     * The command list, a section at a time.
+     *
+     * All of it at once is twenty-eight lines, which in a chat window that
+     * holds ten is a list whose top has already scrolled away by the time it
+     * has finished printing. So the bare command prints the sections and the
+     * handful of things people actually want, and a topic prints one section
+     * in full. The whole thing is also in the panel, where it can be read
+     * without a scrollback, and in COMMANDS.md.
+     */
+    private static int help(FabricClientCommandSource source, String topic) {
+        if (topic != null) {
+            Manual.Section section = Manual.section(topic);
+            if (section == null) {
+                say(source, "no section called " + topic + " — try "
+                        + String.join(", ", Manual.topics()));
+                return 0;
+            }
+            say(source, "§b" + section.title());
+            for (String line : Manual.lines(section)) say(source, "  " + line);
+            return 1;
+        }
+
+        say(source, "§bUnderstudy — /understudy help <topic> for all of one kind");
+        for (Manual.Section section : Manual.sections()) {
+            say(source, "  §b" + section.id() + " §7— " + section.title().toLowerCase(
+                    java.util.Locale.ROOT) + " (" + section.entries().size() + ")");
+        }
+        say(source, "§bthe ones people want first");
+        say(source, "  /build §7— pick a design, then drag out where it goes");
+        say(source, "  /get <item> [n] §7— go and get it, however that has to happen");
+        say(source, "  /understudy auto §7— decide for itself what to do next");
+        say(source, "  /panel §7— all of this in a browser, including this list");
+        for (String note : Manual.NOTES) say(source, "§7" + note);
         return 1;
     }
 
