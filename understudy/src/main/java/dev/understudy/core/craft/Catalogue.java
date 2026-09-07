@@ -157,6 +157,12 @@ public final class Catalogue {
                 Recipe.table("paper", 3, 3.0, "sugar_cane", 3),
                 Recipe.table("bread", 1, 3.0, "wheat", 3),
 
+                // The enchanting setup. It is the largest permanent speed gain
+                // in the game — roughly double the mining rate, for every block
+                // after it — and the mod could not so much as make the table.
+                Recipe.table("enchanting_table", 1, 5.0,
+                        "obsidian", 4, "diamond", 2, "book", 1),
+
                 // Something to fight with. A sword is three ingredients and it
                 // is the difference between a zombie costing two hearts and
                 // costing eight, so the autopilot makes one before it makes

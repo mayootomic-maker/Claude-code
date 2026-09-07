@@ -16,6 +16,7 @@ import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Aim;
 import dev.understudy.mc.Autopilot;
+import dev.understudy.mc.EnchantTask;
 import dev.understudy.mc.Fight;
 import dev.understudy.mc.Ghosts;
 import dev.understudy.mc.HuntTask;
@@ -87,6 +88,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static CraftTask craft;
     private static SmeltTask smelt;
     private static HuntTask hunt;
+    private static EnchantTask enchant;
     private static Autopilot autopilot;
     private static Safety safety;
     private static Marker marker;
@@ -173,6 +175,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     craft = new CraftTask(client, UnderstudyClient::tell);
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
                     hunt = new HuntTask(client, travel, UnderstudyClient::tell);
+                    enchant = new EnchantTask(client, UnderstudyClient::tell);
                     gather = new GatherTask(client, travel, craft, smelt, hunt, atlas,
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
@@ -261,6 +264,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 craft.tick();
                 smelt.tick();
                 hunt.tick();
+                enchant.tick();
                 gather.tick();
                 build.tick();
                 sort.tick();
@@ -417,6 +421,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
         return (hunt != null && hunt.running())
+                || (enchant != null && enchant.running())
                 || (travel != null && travel.running())
                 || (build != null && build.running())
                 || (sort != null && sort.running())
@@ -522,6 +527,10 @@ public final class UnderstudyClient implements ClientModInitializer {
         return hunt;
     }
 
+    public static EnchantTask enchant() {
+        return enchant;
+    }
+
     /** Stop whatever is going on. */
     /**
      * Stop. All of it, at once, and let go of the world.
@@ -545,6 +554,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);
         if (hunt != null) hunt.stop(null);
+        if (enchant != null) enchant.stop(null);
         if (build != null) build.stop(why);
         if (sort != null) sort.stop(why);
         if (craft != null) craft.stop();

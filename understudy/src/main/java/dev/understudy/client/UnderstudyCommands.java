@@ -13,6 +13,7 @@ import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Autopilot;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.Senses;
+import dev.understudy.mc.EnchantTask;
 import dev.understudy.mc.Fight;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.HuntTask;
@@ -113,6 +114,27 @@ public final class UnderstudyCommands {
                                     .executes(context -> get(context.getSource(),
                                             StringArgumentType.getString(context, "item"),
                                             IntegerArgumentType.getInteger(context, "count"))))));
+
+            // Explicit, never automatic. An item gets one enchant at a table
+            // ever, so this is the one thing in the mod whose mistakes cannot
+            // be undone — which is exactly why it should be asked for.
+            dispatcher.register(literal("enchant")
+                    .executes(context -> enchant(context.getSource(), null))
+                    .then(argument("item", StringArgumentType.word())
+                            .suggests((context, builder) -> {
+                                String typed = builder.getRemaining().toLowerCase();
+                                for (String item : Carried.contents(
+                                        Minecraft.getInstance().player).keySet()) {
+                                    if (item.startsWith(typed)
+                                            && dev.understudy.core.craft.Enchanting
+                                                    .worthEnchanting(item)) {
+                                        builder.suggest(item);
+                                    }
+                                }
+                                return builder.buildFuture();
+                            })
+                            .executes(context -> enchant(context.getSource(),
+                                    StringArgumentType.getString(context, "item")))));
 
             dispatcher.register(literal("sort")
                     .executes(context -> sort(context.getSource(), true))
@@ -234,6 +256,47 @@ public final class UnderstudyCommands {
         // Build in front of where you are standing, not on top of you.
         task.start(blueprint, source.getPlayer().blockPosition().offset(2, 0, 2));
         return 1;
+    }
+
+    /**
+     * Enchant something, or say why not.
+     *
+     * With no name it takes the best tool or weapon being carried, which is
+     * almost always what was meant — and which is also the item you would least
+     * like it to get wrong, so everything it does is announced first.
+     */
+    private static int enchant(FabricClientCommandSource source, String rawItem) {
+        UnderstudyClient.resume();
+        EnchantTask task = UnderstudyClient.enchant();
+        if (task == null || source.getPlayer() == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        String item = rawItem == null
+                ? bestWorthEnchanting(Carried.contents(source.getPlayer()))
+                : rawItem.toLowerCase().replace("minecraft:", "");
+        if (item == null) {
+            say(source, "nothing on you is worth an enchant");
+            return 0;
+        }
+        return task.start(item) ? 1 : 0;
+    }
+
+    /** The dearest thing in the bag a table would do something for. */
+    private static String bestWorthEnchanting(Map<String, Integer> carried) {
+        String best = null;
+        double bestWorth = 0;
+        for (String item : carried.keySet()) {
+            if (!dev.understudy.core.craft.Enchanting.worthEnchanting(item)) continue;
+            double worth = dev.understudy.core.survive.Combat.dpsOf(item)
+                    + (item.startsWith("netherite_") ? 20 : item.startsWith("diamond_") ? 15
+                            : item.startsWith("iron_") ? 8 : 1);
+            if (worth > bestWorth) {
+                bestWorth = worth;
+                best = item;
+            }
+        }
+        return best;
     }
 
     private static int openPicker(FabricClientCommandSource source) {
@@ -613,6 +676,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");
         say(source, "/understudy atlas — everywhere it has seen anything, kept between sessions");
+        say(source, "/enchant [item] — at a table with fifteen shelves, and only then");
         say(source, "/understudy timing — where the time actually goes");
         say(source, "/build imports — where to put models and what it makes of them");
         say(source, "/understudy stop — stop everything, at once (or just press a movement key)");

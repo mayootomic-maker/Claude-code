@@ -87,6 +87,13 @@ net.minecraft.world.item.ItemStack isDamageableItem
 net.minecraft.world.item.ItemStack getDamageValue
 net.minecraft.world.item.ItemStack getMaxDamage
 
+# ENCHANTING. The largest permanent speed gain in the game and the mod could
+# not so much as make the table. These are every name EnchantTask reaches for.
+net.minecraft.world.inventory.EnchantmentMenu 25
+net.minecraft.world.entity.player.Player experienceLevel
+net.minecraft.client.multiplayer.MultiPlayerGameMode handleInventoryButtonClick
+net.minecraft.world.inventory.AbstractContainerMenu getSlot
+
 # COMBAT: all answered and all in use.
 #   MultiPlayerGameMode.attack(Player, Entity)
 #   Player.getAttackStrengthScale(float) — the swing charge the fight waits for
