@@ -464,7 +464,12 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static boolean touchedAnything(Minecraft client) {
         LocalPlayer player = client.player;
         if (player == null) return false;
-        if (client.screen != null) return true;
+        // A container being open counts as doing something: standing at a chest
+        // sorting items is exactly the moment when walking off underneath
+        // somebody would be worst. Asked as "is a container open" rather than
+        // "is a screen open" because this version renamed the screen field and
+        // the container menu is the case that actually matters.
+        if (player.containerMenu != player.inventoryMenu) return true;
 
         boolean looked = Math.abs(player.getYRot() - lastYaw) > 0.35
                 || Math.abs(player.getXRot() - lastPitch) > 0.35;

@@ -110,18 +110,19 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 net.minecraft.network.chat.ClickEvent 20
 net.minecraft.network.chat.Style withClickEvent
 
-# CREATIVE. A build in creative placed nothing at all, because the builder asked
-# the inventory for blocks a creative player does not carry. These are what
-# conjuring one costs.
-net.minecraft.world.entity.player.Player getAbilities
-net.minecraft.world.entity.player.Abilities instabuild
-net.minecraft.client.multiplayer.MultiPlayerGameMode handleCreativeModeItemAdd
-net.minecraft.world.item.Item getDefaultMaxStackSize
-
-# ENTER, which Minecraft has no keybinding for — the one key that can confirm a
-# site without also mining, placing or moving anything.
-com.mojang.blaze3d.platform.InputConstants isKeyDown
-net.minecraft.client.Minecraft getWindow
+# CREATIVE: answered and in use. Player.getAbilities() -> Abilities with a public
+# boolean instabuild; MultiPlayerGameMode.handleCreativeModeItemAdd(ItemStack, int);
+# Item.getDefaultMaxStackSize(). A build in creative placed nothing at all before
+# these, because the builder asked an empty inventory for six thousand blocks.
+#
+# ENTER: InputConstants.isKeyDown takes the Window itself, not the handle it
+# wraps, and Minecraft.getWindow() returns one.
+#
+# Still open: the current-screen field, renamed in this version. Not needed for
+# the handover — a container being open is the case that matters and
+# player.containerMenu answers it — but worth knowing before something reaches
+# for it again.
+net.minecraft.client.Minecraft Screen
 
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.

@@ -194,8 +194,10 @@ public final class Marker {
      * cannot mine anything, place anything or move you.
      */
     private boolean enterDown() {
-        if (client.getWindow() == null) return false;
-        long window = client.getWindow().getWindow();
+        // isKeyDown takes the Window itself in this version, not the handle it
+        // wraps — which is the tidier of the two and the one I guessed wrong.
+        com.mojang.blaze3d.platform.Window window = client.getWindow();
+        if (window == null) return false;
         return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_ENTER)
                 || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_KP_ENTER);
     }
