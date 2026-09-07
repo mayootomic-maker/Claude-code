@@ -22,6 +22,19 @@ import type { Song } from '../format/types'
  */
 const PRE_ROLL_SECONDS = 0.5
 
+/**
+ * How far ahead of the render position notes are created.
+ *
+ * Building every note's nodes before rendering starts is the obvious way to
+ * write this and it is quadratic: the graph ends up holding one voice per note
+ * in the whole song, and every 128-frame quantum walks all of them. Measured on
+ * the demo song, thirty-two bars took fifty seconds and eight bars took three.
+ * Suspending the render on a timer to build the next second, and unhooking
+ * voices that have finished, makes the cost proportional to how much is
+ * actually sounding at once.
+ */
+const CHUNK_SECONDS = 1
+
 export interface RenderOptions {
   sampleRate?: number
   /** Render only part of the song, in beats. */
@@ -75,8 +88,33 @@ export async function renderSong(song: Song, options: RenderOptions = {}): Promi
   const preRoll = preRollFrames / sampleRate
   const timeFor = (beat: number): number => preRoll + Math.max(0, (beat - fromBeat) * secondsPerBeat)
 
-  for (const note of notes) {
-    scheduler.start(note, timeFor(note.at), note.length * secondsPerBeat)
+  const endOfRender = (keptFrames + preRollFrames) / sampleRate
+  let placed = 0
+
+  /** Creates the voices for every note starting inside a window. */
+  const fill = (fromSeconds: number, toSeconds: number): void => {
+    while (placed < notes.length) {
+      const note = notes[placed]!
+      const at = timeFor(note.at)
+      if (at >= toSeconds) break
+      if (at >= fromSeconds) scheduler.start(note, at, note.length * secondsPerBeat)
+      placed++
+    }
+  }
+
+  fill(0, CHUNK_SECONDS * 2)
+
+  // Every suspension point has to be registered before rendering begins.
+  const quantum = 128 / sampleRate
+  for (let boundary = CHUNK_SECONDS; boundary < endOfRender; boundary += CHUNK_SECONDS) {
+    const at = Math.round(boundary / quantum) * quantum
+    if (at <= 0 || at >= endOfRender) continue
+    void context.suspend(at).then(() => {
+      fill(at, at + CHUNK_SECONDS * 2)
+      scheduler.prune(at)
+      options.onProgress?.(Math.min(0.99, at / endOfRender))
+      void context.resume()
+    })
   }
 
   // Automation is scheduled in full rather than in windows: offline there is no

@@ -16,6 +16,16 @@ export interface VoiceHandle {
   readonly endsAt: number
   /** Start the release stage, for a key being let go or a choke group firing. */
   release(at: number): void
+  /**
+   * Unhooks the voice's nodes from the graph.
+   *
+   * Live, the `ended` event does this on its own. Offline it never fires until
+   * rendering has finished, so every note a song contains would still be in the
+   * graph at the last bar and each render quantum would walk all of them — a
+   * cost that grows with the square of the song's length. The scheduler calls
+   * this once a voice's time is past.
+   */
+  dispose(): void
 }
 
 export interface NoteRequest {
@@ -93,16 +103,18 @@ function releaseEnvelope(param: AudioParam, envelope: Envelope, at: number): num
   return end
 }
 
-function disconnectWhenDone(source: AudioScheduledSourceNode, nodes: AudioNode[]): void {
-  source.addEventListener('ended', () => {
-    for (const node of nodes) {
-      try {
-        node.disconnect()
-      } catch {
-        // Already gone; a voice torn down twice is not an error worth surfacing.
-      }
+function disconnectAll(nodes: readonly AudioNode[]): void {
+  for (const node of nodes) {
+    try {
+      node.disconnect()
+    } catch {
+      // Already gone; a voice torn down twice is not an error worth surfacing.
     }
-  })
+  }
+}
+
+function disconnectWhenDone(source: AudioScheduledSourceNode, nodes: AudioNode[]): void {
+  source.addEventListener('ended', () => disconnectAll(nodes))
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +278,7 @@ function synthVoice(
         }
       }
     },
+    dispose: () => disconnectAll(owned),
   }
 }
 
@@ -331,6 +344,7 @@ function fmVoice(
         // Already stopped.
       }
     },
+    dispose: () => disconnectAll(owned),
   }
 }
 
@@ -504,6 +518,7 @@ function drumVoice(
         }
       }
     },
+    dispose: () => disconnectAll(owned),
   }
 }
 
@@ -575,6 +590,7 @@ function samplerVoice(
         // Already stopped.
       }
     },
+    dispose: () => disconnectAll([source, amplitude]),
   }
 }
 

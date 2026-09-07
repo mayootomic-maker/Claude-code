@@ -118,9 +118,16 @@ export class NoteScheduler {
     this.mono.clear()
   }
 
-  /** Forgets voices that have finished, so the list does not grow all night. */
+  /**
+   * Unhooks voices whose sound is over. The margin is there so a voice is never
+   * cut while its last exponential ramp is still audible.
+   */
   prune(now: number): void {
     if (this.live.length === 0) return
-    this.live = this.live.filter((voice) => voice.handle.endsAt > now)
+    const cutoff = now - 0.08
+    const finished = this.live.filter((voice) => voice.handle.endsAt <= cutoff)
+    if (finished.length === 0) return
+    for (const voice of finished) voice.handle.dispose()
+    this.live = this.live.filter((voice) => voice.handle.endsAt > cutoff)
   }
 }
