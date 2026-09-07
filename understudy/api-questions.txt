@@ -101,14 +101,13 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 #   Shapes.box(x1,y1,z1,x2,y2,z2) — the box
 #   RenderTypes.lines() — the plural holder class, as suspected
 #
-# The one approximation left, and one name from being exact. Both routes to the
-# camera are now known and neither position accessor is:
-#   GameRenderer.mainCamera() -> net.minecraft.client.Camera   (no "get" prefix,
-#     which is why the first guess did not compile)
-#   AbstractLevelRenderContext.levelState() -> LevelRenderState, which has a
-#     public CameraRenderState cameraRenderState field
-# Whichever of these two carries the camera's world position is the whole fix,
-# and the render-state route is the better one: it is the same state the pose
-# stack was built from, so it cannot disagree with it.
-net.minecraft.client.renderer.state.level.CameraRenderState public
-net.minecraft.client.Camera public
+# Answered, and the approximation is gone. Three wrong names on the way, all of
+# them the obvious guess:
+#   GameRenderer.getMainCamera does not exist; it is mainCamera(), and private
+#     field aside, its Camera has no position accessor at all
+#   the position lives on the render state now:
+#     context.levelState().cameraRenderState.pos  is a public Vec3
+# Which is where it should be — it is the same state the pose stack was built
+# from, so the hologram cannot drift from the frame it is drawn into.
+#
+# Nothing open.

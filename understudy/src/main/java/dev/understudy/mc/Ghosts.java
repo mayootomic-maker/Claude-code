@@ -3,8 +3,6 @@ package dev.understudy.mc;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Hologram;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
@@ -30,15 +28,19 @@ import java.util.List;
  * built already offset: a box at its true world coordinates would be drawn as
  * far from you as you are from the origin.
  *
- * The offset uses the player's eye, which is the camera in first person and a
- * couple of blocks out in third. It is an approximation and it is a stated one.
+ * The offset comes from the frame's own camera state, so it is exact in every
+ * view rather than only in first person. Getting there took three wrong names:
+ * this version has no GameRenderer.getMainCamera, its Camera has no position
+ * accessor at all, and the position now lives on the render state — a public
+ * Vec3 pos on the CameraRenderState hanging off the LevelRenderState the
+ * context hands over. Which is the right place for it to be, and the reason
+ * this cannot drift: it is the same state the pose stack was built from, so
+ * the two cannot disagree about where the camera is.
  *
- * Asking the renderer directly was the obvious fix and does not compile: this
- * version's GameRenderer has no getMainCamera and there is no net.minecraft
- * .client.Camera to call getPosition on. What the jar does say is that the
- * render context can hand over the GameRenderer and a LevelRenderState, so the
- * camera is reachable through one of those — the open question is which member,
- * and that is at the bottom of api-questions.txt.
+ * The earlier version offset by the player's eye. That is the camera in first
+ * person and a couple of blocks from it in third, so the whole blueprint slid
+ * sideways the moment you pressed F5 — which reads as broken rather than as
+ * an approximation.
  */
 public final class Ghosts {
     private Ghosts() {}
@@ -90,10 +92,7 @@ public final class Ghosts {
     public static void register() {
         LevelRenderEvents.BEFORE_GIZMOS.register(context -> {
             if (showing == null || origin == null) return;
-            LocalPlayer player = Minecraft.getInstance().player;
-            if (player == null) return;
-
-            Vec3 camera = player.getEyePosition();
+            Vec3 camera = context.levelState().cameraRenderState.pos;
             List<Hologram.Ghost> ghosts = Hologram.of(showing,
                     origin.getX(), origin.getY(), origin.getZ(),
                     placed, next, camera.x, camera.y, camera.z, showDone);
