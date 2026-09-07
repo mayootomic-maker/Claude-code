@@ -241,4 +241,65 @@ class SorterTest {
             assertFalse(category.label().isBlank());
         }
     }
+
+    @Test
+    @DisplayName("never sends a chest more than it can hold")
+    void respectsRealCapacity() {
+        // The bug this was found by: space was charged one slot per *kind* of
+        // item, so six hundred and forty cobblestone counted as one slot and a
+        // chest with two free slots was sent nine hundred and sixty items. The
+        // server refuses that, so the items stay in your pockets while the mod
+        // reports a tidy base.
+        Sorter.Plan plan = Sorter.plan(
+                new java.util.LinkedHashMap<>(Map.of("cobblestone", 640, "dirt", 320)),
+                List.of(new Sorter.ChestView(0, Map.of("cobblestone", 64), 2),
+                        new Sorter.ChestView(1, Map.of(), 27)),
+                true);
+
+        Map<Integer, Integer> into = new java.util.TreeMap<>();
+        for (Sorter.Move move : plan.moves()) into.merge(move.chestId(), move.count(), Integer::sum);
+        assertTrue(into.getOrDefault(0, 0) <= 2 * 64,
+                "sent " + into.get(0) + " items into two free slots");
+        assertEquals(960, into.values().stream().mapToInt(Integer::intValue).sum(),
+                "lost some of the pile splitting it up");
+        assertTrue(plan.unplaced().isEmpty());
+    }
+
+    @Test
+    @DisplayName("fills the room left in a stack that is already there")
+    void usesThePartialStack() {
+        // A chest holding forty cobblestone takes twenty-four more for nothing,
+        // which is most of why "the ore chest has room" is true in practice.
+        assertEquals(24, Sorter.fitsIn("cobblestone", 100, 40, 0));
+        assertEquals(0, Sorter.slotsFor("cobblestone", 24, 40));
+        assertEquals(1, Sorter.slotsFor("cobblestone", 25, 40));
+    }
+
+    @Test
+    @DisplayName("knows what does not stack to sixty-four")
+    void knowsTheStackSizes() {
+        assertEquals(64, Sorter.stackSize("cobblestone"));
+        assertEquals(64, Sorter.stackSize("arrow"));
+        assertEquals(16, Sorter.stackSize("ender_pearl"));
+        assertEquals(16, Sorter.stackSize("oak_sign"));
+        assertEquals(16, Sorter.stackSize("white_bed"));
+        assertEquals(1, Sorter.stackSize("diamond_pickaxe"));
+        assertEquals(1, Sorter.stackSize("water_bucket"));
+        assertEquals(1, Sorter.stackSize("shield"));
+
+        // Sixteen to a slot means a chest holds a quarter as many.
+        assertEquals(16 * 3, Sorter.fitsIn("ender_pearl", 100, 0, 3));
+    }
+
+    @Test
+    @DisplayName("says what would not fit rather than pretending it did")
+    void reportsWhatIsLeftOver() {
+        Sorter.Plan plan = Sorter.plan(
+                new java.util.LinkedHashMap<>(Map.of("cobblestone", 640)),
+                List.of(new Sorter.ChestView(0, Map.of(), 1)),
+                true);
+        assertEquals(64, plan.itemsMoved(), "put more than one slot's worth in one slot");
+        assertTrue(plan.unplaced().contains("cobblestone"),
+                "silently dropped five hundred and seventy-six cobblestone");
+    }
 }

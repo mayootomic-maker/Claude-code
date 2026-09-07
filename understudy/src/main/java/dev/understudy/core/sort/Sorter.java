@@ -269,54 +269,115 @@ public final class Sorter {
         Map<Integer, Integer> space = new LinkedHashMap<>();
         for (ChestView chest : chests) space.put(chest.id(), chest.freeSlots());
 
+        Map<Integer, Map<String, Integer>> held = new LinkedHashMap<>();
+        for (ChestView chest : chests) held.put(chest.id(), new LinkedHashMap<>(chest.contents()));
+
         List<Move> moves = new ArrayList<>();
         List<String> unplaced = new ArrayList<>();
 
         for (Map.Entry<String, Integer> entry : inventory.entrySet()) {
             String item = entry.getKey();
-            int count = entry.getValue();
-            if (count <= 0 || keeping.contains(item)) continue;
+            int left = entry.getValue();
+            if (left <= 0 || keeping.contains(item)) continue;
             Category category = Category.of(item);
 
-            Integer chestId = null;
-            for (Integer candidate : homes.getOrDefault(category, List.of())) {
-                if (space.getOrDefault(candidate, 0) > 0) {
-                    chestId = candidate;
-                    break;
-                }
+            // Its own chests first, then anywhere with room, splitting the pile
+            // across as many as it takes. A whole stack going to one chest
+            // "because that is where ore lives" is how a chest with two free
+            // slots ends up being sent six hundred cobblestone — which the
+            // server simply refuses, and the items stay in your pockets while
+            // the mod reports a tidy base.
+            List<Integer> order = new ArrayList<>(homes.getOrDefault(category, List.of()));
+            for (ChestView chest : chests) {
+                if (!order.contains(chest.id())) order.add(chest.id());
             }
-            if (chestId == null) {
-                // Its own chests are full. Anywhere with room beats leaving it
-                // in your pockets, and the chest is recorded as holding this
-                // category too so the rest of the stack follows it rather than
-                // scattering one item per chest.
-                chestId = spillTo(chests, space);
-                if (chestId != null) {
+
+            for (Integer chestId : order) {
+                if (left <= 0) break;
+                int free = space.getOrDefault(chestId, 0);
+                if (free <= 0) continue;
+                int fits = fitsIn(item, left, held.get(chestId).getOrDefault(item, 0), free);
+                if (fits <= 0) continue;
+
+                moves.add(new Move(item, fits, chestId, category));
+                int before = held.get(chestId).getOrDefault(item, 0);
+                held.get(chestId).merge(item, fits, Integer::sum);
+                space.merge(chestId, -slotsFor(item, fits, before), Integer::sum);
+                left -= fits;
+
+                // Record where it went, so the rest of the pile follows it
+                // rather than scattering one stack per chest.
+                if (!assignment.getOrDefault(chestId, List.of()).contains(category)) {
                     homes.computeIfAbsent(category, c -> new ArrayList<>()).add(chestId);
                     assignment.computeIfAbsent(chestId, id -> new ArrayList<>()).add(category);
                 }
             }
-            if (chestId == null) {
-                unplaced.add(item);
-                continue;
-            }
-            moves.add(new Move(item, count, chestId, category));
-            space.merge(chestId, -1, Integer::sum);
+            if (left > 0) unplaced.add(item);
         }
 
         return new Plan(moves, unplaced, assignment);
     }
 
-    private static Integer spillTo(List<ChestView> chests, Map<Integer, Integer> space) {
-        Integer best = null;
-        int most = 0;
-        for (ChestView chest : chests) {
-            int free = space.getOrDefault(chest.id(), 0);
-            if (free > most) {
-                most = free;
-                best = chest.id();
-            }
-        }
-        return best;
+    /**
+     * How many of an item fit in a chest with this many free slots.
+     *
+     * Two things make this more than a division. A stack that is already in
+     * there has room left in it — a chest holding forty cobblestone takes
+     * twenty-four more for nothing — and not everything stacks to sixty-four.
+     * Getting either wrong means sending a chest more than it can hold, which
+     * the server refuses: the items stay in your pockets and the mod cheerfully
+     * reports a tidy base.
+     */
+    static int fitsIn(String item, int wanted, int alreadyThere, int freeSlots) {
+        int stack = stackSize(item);
+        int roomInPartial = alreadyThere % stack == 0 ? 0 : stack - alreadyThere % stack;
+        return Math.min(wanted, roomInPartial + freeSlots * stack);
     }
+
+    /** Slots consumed by adding `count` to a chest that already holds `alreadyThere`. */
+    static int slotsFor(String item, int count, int alreadyThere) {
+        int stack = stackSize(item);
+        int roomInPartial = alreadyThere % stack == 0 ? 0 : stack - alreadyThere % stack;
+        int overflow = Math.max(0, count - roomInPartial);
+        return (overflow + stack - 1) / stack;
+    }
+
+    /**
+     * How many of this go in one slot.
+     *
+     * The exceptions are a list because they are a list in the game: there is
+     * no rule that says a snowball stacks to sixteen and a snow block to
+     * sixty-four, and deriving one gets both wrong.
+     */
+    public static int stackSize(String item) {
+        Category category = Category.of(item);
+        if (category == Category.TOOLS || category == Category.WEAPONS
+                || category == Category.ARMOUR) {
+            // Arrows and rockets are filed as weapons and do stack.
+            if (!item.equals("arrow") && !item.equals("firework_rocket")) return 1;
+        }
+        if (SINGLES.contains(item) || item.endsWith("_bucket") || item.endsWith("_boat")
+                || item.endsWith("_minecart")) {
+            return 1;
+        }
+        if (SIXTEENS.contains(item) || item.endsWith("_sign") || item.endsWith("_banner")
+                || item.endsWith("_bed") || item.endsWith("_egg")) {
+            return 16;
+        }
+        return 64;
+    }
+
+    /** One to a slot: buckets, boats, saddles, anything with contents of its own. */
+    private static final Set<String> SINGLES = Set.of(
+            "bucket", "water_bucket", "lava_bucket", "milk_bucket", "powder_snow_bucket",
+            "saddle", "cake", "minecart", "chest_minecart", "furnace_minecart",
+            "hopper_minecart", "tnt_minecart", "written_book", "writable_book",
+            "enchanted_book", "shield", "elytra", "totem_of_undying", "flint_and_steel",
+            "shears", "fishing_rod", "carrot_on_a_stick", "warped_fungus_on_a_stick");
+
+    /** Sixteen to a slot. */
+    private static final Set<String> SIXTEENS = Set.of(
+            "ender_pearl", "snowball", "egg", "honey_bottle", "armor_stand",
+            "oak_door", "spruce_door", "birch_door", "jungle_door", "acacia_door",
+            "dark_oak_door", "mangrove_door", "cherry_door", "iron_door", "bamboo_door");
 }
