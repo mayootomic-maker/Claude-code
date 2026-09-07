@@ -113,11 +113,10 @@ public final class Hud {
     /**
      * The same line, cut to the width of the window.
      *
-     * Measured with the game's own font rather than counted in characters: at
-     * GUI scale 4 on a small window there is room for about thirty characters,
-     * and at scale 1 on a wide one there is room for two hundred, so any fixed
-     * limit is wrong on most machines. A colour code left dangling at the cut
-     * would swallow the ellipsis, so a trailing section sign goes with it.
+     * Measured and cut with the game's own font rather than counted in
+     * characters: at GUI scale 4 on a small window there is room for about
+     * thirty characters, and at scale 1 on a wide one there is room for two
+     * hundred, so any fixed limit is wrong on most machines.
      */
     static String fit(Minecraft client, String text) {
         if (client.font == null || client.getWindow() == null) return text;
@@ -125,9 +124,8 @@ public final class Hud {
         if (room <= 0 || client.font.width(text) <= room) return text;
 
         String ellipsis = "…";
-        int keep = text.length();
-        while (keep > 0 && client.font.width(text.substring(0, keep) + ellipsis) > room) keep--;
-        String cut = text.substring(0, keep);
+        String cut = client.font.plainSubstrByWidth(text, room - client.font.width(ellipsis));
+        // A colour code left dangling at the cut would swallow the ellipsis.
         if (cut.endsWith("§")) cut = cut.substring(0, cut.length() - 1);
         return cut + ellipsis;
     }

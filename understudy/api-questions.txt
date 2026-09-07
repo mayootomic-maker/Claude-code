@@ -103,12 +103,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
 # Opening a browser needed no Minecraft API in the end — java.awt.Desktop, and
 # the platform's own opener where that is missing, which is what every launcher
-# has always done. What is still worth having is a *clickable* chat line, since
-# Minecraft chat cannot be copied from and that is what made the first version
-# of /panel awkward. ClickEvent became a sealed interface of records somewhere
-# around 1.21.5; these say what it looks like now.
-net.minecraft.network.chat.ClickEvent 20
-net.minecraft.network.chat.Style withClickEvent
+# has always done. Answered on the way past: ClickEvent is an interface with an
+# action() and a CODEC, and Style.withClickEvent(ClickEvent) is unchanged, so a
+# clickable chat line is still available if one is ever wanted.
 
 # CREATIVE: answered and in use. Player.getAbilities() -> Abilities with a public
 # boolean instabuild; MultiPlayerGameMode.handleCreativeModeItemAdd(ItemStack, int);
@@ -118,11 +115,11 @@ net.minecraft.network.chat.Style withClickEvent
 # ENTER: InputConstants.isKeyDown takes the Window itself, not the handle it
 # wraps, and Minecraft.getWindow() returns one.
 #
-# Still open: the current-screen field, renamed in this version. Not needed for
-# the handover — a container being open is the case that matters and
-# player.containerMenu answers it — but worth knowing before something reaches
-# for it again.
-net.minecraft.client.Minecraft Screen
+# The current-screen field stays open and is now asked twice with no answer:
+# grepping Minecraft for "Screen" turns up setScreenAndShow, disconnect and
+# clearClientLevel, and no accessor for what is on screen now. It may simply not
+# be reachable any more. Nothing needs it — a container being open is the case
+# that matters and player.containerMenu answers it — so it is not asked again.
 
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
@@ -143,18 +140,17 @@ net.minecraft.client.Minecraft Screen
 # Which is where it should be — it is the same state the pose stack was built
 # from, so the hologram cannot drift from the frame it is drawn into.
 #
-# TEXT THAT FITS THE SCREEN. The overlay above the hotbar is drawn centred and
-# is never wrapped by the game, so a long line runs off both edges — which is
-# what "some texts just go out of the screen" was. Fitting it needs the font's
-# own measurement and the scaled width of the window, and both names are worth
-# confirming rather than guessing.
-net.minecraft.client.gui.Font width
-com.mojang.blaze3d.platform.Window getGuiScaledWidth
-
-# CHAT, the settings that actually decide whether a message can be read. The
-# four the chat fix already knows about are about whether chat *appears*; these
-# are about whether it is legible once it does, which is the complaint.
-net.minecraft.client.Options chatWidth
-net.minecraft.client.Options chatHeight
-net.minecraft.client.Options chatDelay
-net.minecraft.client.Options chatLineSpacing
+# TEXT THAT FITS THE SCREEN: answered and in use. The overlay above the hotbar
+# is drawn centred and never wrapped by the game, so a long line ran off both
+# edges — which is what "some texts just go out of the screen" was.
+#   Font.width(String) and Window.getGuiScaledWidth() measure it
+#   Font.plainSubstrByWidth(String, int) does the cut, so Hud does not have to
+#     walk the string a character at a time
+#
+# CHAT: answered and in use. The four the chat fix already knew about decide
+# whether chat *appears*; these decide whether it is legible once it does, which
+# was the actual complaint. All OptionInstance<Double>:
+#   chatWidth(), chatHeightUnfocused(), chatHeightFocused(), chatDelay(),
+#   chatLineSpacing()
+#
+# Nothing open.
