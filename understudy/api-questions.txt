@@ -76,11 +76,20 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
-# For the holographic blueprint: ghost boxes in the world where each block is
-# going to go. Nothing in this mod draws in the world yet, and 26 reworked the
-# render pipeline, so all four of these are needed before a line of it is
-# written — the event to hook, what it hands you, and what draws a wire box.
-net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 24
-net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext 22
-net.minecraft.client.renderer.ShapeRenderer 14
-net.minecraft.client.renderer.RenderType lines
+# The holographic blueprint, round two. What the last dump settled:
+#   LevelRenderEvents is real, and its events are START_MAIN,
+#     AFTER_OPAQUE_TERRAIN, COLLECT_SUBMITS, AFTER_SOLID_FEATURES,
+#     AFTER_TRANSLUCENT_FEATURES, BEFORE_BLOCK_OUTLINE, BEFORE_GIZMOS,
+#     BEFORE/AFTER_TRANSLUCENT_TERRAIN, END_MAIN
+#   LevelRenderContext gives submitNodeCollector() and poseStack(), so 26
+#     renders by submitting nodes to a collector rather than by writing
+#     vertices — which changes what a hologram even is
+#   ShapeRenderer is gone, and RenderType has no member matching "lines"
+#
+# So: what can be submitted, what the event hands over, and — given there is a
+# BEFORE_GIZMOS event — whether debug shapes have their own home now.
+net.minecraft.client.renderer.SubmitNodeCollector 30
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents$BeforeGizmos 8
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelTerrainRenderContext 16
+net.minecraft.client.renderer.RenderType 30
+net.minecraft.client.renderer.LevelRenderer Gizmo
