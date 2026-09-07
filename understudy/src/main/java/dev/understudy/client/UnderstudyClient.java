@@ -14,6 +14,7 @@ import dev.understudy.mc.Carried;
 import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.Aim;
+import dev.understudy.mc.Autopilot;
 import dev.understudy.mc.Ghosts;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
@@ -63,6 +64,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static GatherTask gather;
     private static CraftTask craft;
     private static SmeltTask smelt;
+    private static Autopilot autopilot;
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
@@ -137,6 +139,8 @@ public final class UnderstudyClient implements ClientModInitializer {
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
                     gather = new GatherTask(client, travel, craft, smelt, atlas, UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
+                    autopilot = new Autopilot(client, gather, sort, agenda,
+                            UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
 
                 // Take the controls and it lets go of them. No command, no key
@@ -199,6 +203,11 @@ public final class UnderstudyClient implements ClientModInitializer {
                 gather.tick();
                 build.tick();
                 sort.tick();
+
+                // Thinking for itself goes after the tasks and before the
+                // head turns: it only ever acts when nothing else is, so it
+                // must see the state the tasks have left behind.
+                autopilot.tick(client.player);
 
                 // Every task has now said where it would like to look. Turn the
                 // head once, here, so there is one movement per tick rather
@@ -350,6 +359,10 @@ public final class UnderstudyClient implements ClientModInitializer {
         return safety == null ? 0 : safety.damageRecently();
     }
 
+    public static Autopilot autopilot() {
+        return autopilot;
+    }
+
     public static Atlas atlas() {
         return atlas;
     }
@@ -390,6 +403,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         paused = false;
         pickerWanted = false;
         if (marker != null) marker.cancel();
+        if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);
         if (build != null) build.stop(why);
         if (sort != null) sort.stop(why);

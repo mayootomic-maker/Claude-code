@@ -10,7 +10,9 @@ import dev.understudy.core.build.Designs;
 import dev.understudy.core.build.Materials;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
+import dev.understudy.mc.Autopilot;
 import dev.understudy.mc.Carried;
+import dev.understudy.mc.Senses;
 import dev.understudy.mc.GatherTask;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
@@ -125,6 +127,16 @@ public final class UnderstudyCommands {
                                     () -> selfTest(context.getSource()))))
                     .then(literal("hud").executes(context -> toggleHud(context.getSource())))
                     .then(literal("why").executes(context -> why(context.getSource())))
+                    .then(literal("auto")
+                            .executes(context -> auto(context.getSource(), null, 0))
+                            .then(literal("off").executes(context -> autoOff(context.getSource())))
+                            .then(argument("what", StringArgumentType.word())
+                                    .executes(context -> auto(context.getSource(),
+                                            StringArgumentType.getString(context, "what"), 16))
+                                    .then(argument("count", IntegerArgumentType.integer(1, 2304))
+                                            .executes(context -> auto(context.getSource(),
+                                                    StringArgumentType.getString(context, "what"),
+                                                    IntegerArgumentType.getInteger(context, "count"))))))
                     .then(literal("atlas").executes(context -> atlas(context.getSource())))
                     .then(literal("speed")
                             .executes(context -> speed(context.getSource(), null))
@@ -473,56 +485,56 @@ public final class UnderstudyCommands {
      * walks off mid-build, this says whether that was hunger, a skeleton, or a
      * full inventory.
      */
+    /**
+     * Let it get on with things.
+     *
+     * With no argument it keeps itself going — a pickaxe, torches, and putting
+     * things away when it runs out of room. With an item it works toward that
+     * as well. It will not do anything outside that list, which is the point:
+     * an autopilot that improvises is one you never leave running.
+     */
+    private static int auto(FabricClientCommandSource source, String what, int count) {
+        Autopilot autopilot = UnderstudyClient.autopilot();
+        if (autopilot == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        UnderstudyClient.resume();
+        autopilot.start(what == null ? null : what.toLowerCase().replace("minecraft:", ""), count);
+        return 1;
+    }
+
+    private static int autoOff(FabricClientCommandSource source) {
+        Autopilot autopilot = UnderstudyClient.autopilot();
+        if (autopilot != null) autopilot.stop();
+        return 1;
+    }
+
     private static int why(FabricClientCommandSource source) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null || Minecraft.getInstance().level == null) {
             say(source, "not in a world yet");
             return 0;
         }
-        for (String line : UnderstudyClient.agenda().reasoning(situationNow(player))) {
+        Agenda.Job job = null;
+        GatherTask gather = UnderstudyClient.gather();
+        BuildTask build = UnderstudyClient.build();
+        TravelTask travel = UnderstudyClient.travel();
+        if (gather != null && gather.running()) job = Agenda.Job.of("gathering");
+        else if (build != null && build.running()) job = Agenda.Job.of("building");
+        else if (travel != null && travel.running()) job = Agenda.Job.of("travelling");
+        else if (UnderstudyClient.autopilot() != null && UnderstudyClient.autopilot().on()) {
+            job = Agenda.Job.of(UnderstudyClient.autopilot().goal());
+        }
+
+        Agenda.Situation now = Senses.read(Minecraft.getInstance(), player, job,
+                UnderstudyClient.damageRecently());
+        for (String line : UnderstudyClient.agenda().reasoning(now)) {
             say(source, line);
         }
         return 1;
     }
 
-    /**
-     * Read the world into the one record the agenda reasons over.
-     *
-     * Everything here is a live reading rather than a remembered one, because
-     * a decision made on a stale health value is worse than no decision.
-     */
-    private static Agenda.Situation situationNow(LocalPlayer player) {
-        Minecraft client = Minecraft.getInstance();
-        Map<String, Integer> carried = Carried.contents(player);
-
-        int free = 0;
-        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-            if (player.getInventory().getItem(slot).isEmpty()) free++;
-        }
-        int hostiles = 0;
-        for (Entity entity : client.level.entitiesForRendering()) {
-            if (entity instanceof Monster && entity.isAlive() && player.distanceToSqr(entity) < 144) {
-                hostiles++;
-            }
-        }
-
-        GatherTask gather = UnderstudyClient.gather();
-        BuildTask build = UnderstudyClient.build();
-        TravelTask travel = UnderstudyClient.travel();
-        Agenda.Job job = null;
-        if (gather != null && gather.running()) job = Agenda.Job.of("gathering");
-        else if (build != null && build.running()) job = Agenda.Job.of("building");
-        else if (travel != null && travel.running()) job = Agenda.Job.of("travelling");
-
-        return new Agenda.Situation(
-                player.getHealth(), player.getMaxHealth(),
-                UnderstudyClient.damageRecently(),
-                player.getFoodData().getFoodLevel(),
-                carried.keySet().stream().anyMatch(item -> Category.of(item) == Category.FOOD),
-                client.level.getMaxLocalRawBrightness(player.blockPosition()),
-                carried.getOrDefault("torch", 0) > 0,
-                free, hostiles, carried, job);
-    }
 
     /** Everywhere it has seen anything, which is the part a person cannot do. */
     private static int atlas(FabricClientCommandSource source) {
@@ -549,6 +561,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy chatfix — repair chat settings that hide messages");
         say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
+        say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");
         say(source, "/understudy atlas — everywhere it has seen anything");
         say(source, "/build imports — where to put models and what it makes of them");
