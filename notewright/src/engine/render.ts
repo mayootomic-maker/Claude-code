@@ -8,7 +8,8 @@
  */
 import { buildGraph, resolveTarget } from './graph'
 import { NoteScheduler } from './schedule'
-import { automationValueAt, beatToSeconds, buildTimeline } from './sequencer'
+import { applyDuck } from './player'
+import { automationValueAt, beatToSeconds, buildTimeline, duckBeats } from './sequencer'
 import { dbToGain } from './audio'
 import type { Song } from '../format/types'
 
@@ -115,6 +116,16 @@ export async function renderSong(song: Song, options: RenderOptions = {}): Promi
       options.onProgress?.(Math.min(0.99, at / endOfRender))
       void context.resume()
     })
+  }
+
+  for (const [trackId, beats] of duckBeats(song, timeline)) {
+    const track = song.tracks.find((candidate) => candidate.id === trackId)
+    const nodes = graph.tracks.get(trackId)
+    if (!track?.duck || !nodes) continue
+    for (const beat of beats) {
+      if (beat < fromBeat || beat >= toBeat) continue
+      applyDuck(nodes.duck.gain, timeFor(beat), track.duck.amount, track.duck.release)
+    }
   }
 
   // Automation is scheduled in full rather than in windows: offline there is no

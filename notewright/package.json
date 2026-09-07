@@ -2,7 +2,7 @@
   "name": "notewright",
   "version": "0.1.0",
   "private": true,
-  "description": "A music studio you can read. Browser DAW whose songs are plain, diffable text.",
+  "description": "A beat maker built around 808s and hi-hat rolls, whose songs are plain text",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -17,13 +17,18 @@
     "check:songs": "node e2e/song-check.mjs",
     "check:drums": "node e2e/drum-balance.mjs",
     "verify": "npm run typecheck && npm test && npm run build && npm run check:engine && npm run check:songs && npm run e2e",
-    "render": "node scripts/render.mjs"
+    "render": "node scripts/render.mjs",
+    "analyse": "node scripts/analyse.mjs",
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "preact": "^10.24.3"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^26.5.0",
     "playwright-core": "^1.48.0",
     "typescript": "^5.6.3",
@@ -32,10 +37,10 @@
   },
   "keywords": [
     "daw",
-    "music",
+    "trap",
+    "808",
+    "beat-maker",
     "web-audio",
-    "sequencer",
-    "synthesizer",
-    "open-source"
+    "sequencer"
   ]
 }

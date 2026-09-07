@@ -8,6 +8,7 @@
 import type {
   DrumLane,
   DrumsInstrument,
+  Eight808Instrument,
   Effect,
   EffectType,
   Envelope,
@@ -86,6 +87,24 @@ export function defaultDrumKit(): DrumsInstrument {
   }
 }
 
+/**
+ * A usable 808 out of the box: deep, with a short drop and enough drive to be
+ * heard on a laptop speaker. Tuned by ear against a reference and then checked
+ * by measuring where its energy sits.
+ */
+export function default808(): Eight808Instrument {
+  return {
+    type: '808',
+    drop: 14,
+    dropTime: 0.035,
+    glide: 0.06,
+    drive: 0.45,
+    tone: 2600,
+    amplitudeEnvelope: envelope(0.004, 1.1, 0.55, 0.12),
+    gain: 0,
+  }
+}
+
 export function defaultSampler(): SamplerInstrument {
   return {
     type: 'sampler',
@@ -111,6 +130,8 @@ export function defaultInstrument(type: InstrumentType): Instrument {
       return defaultDrumKit()
     case 'sampler':
       return defaultSampler()
+    case '808':
+      return default808()
   }
 }
 
@@ -157,5 +178,6 @@ export function defaultTrack(id: string, name: string, instrument: Instrument, i
     solo: false,
     sends: { delay: 0, reverb: 0 },
     automation: [],
+    duck: null,
   }
 }

@@ -60,6 +60,54 @@ try {
         return { name: section.name, bars: section.bars, rms: Math.sqrt(sum / count), peak }
       })
 
+      // Where the energy sits. In this genre that is not a detail: a reference
+      // trap record measured two thirds of its energy below 150Hz, and a beat
+      // that lands at a quarter is a different kind of music however good the
+      // notes are.
+      const bands = [[20, 60], [60, 150], [150, 400], [400, 2000], [2000, 6000], [6000, 20000]]
+      const share = bands.map(() => 0)
+      const size = 2048
+      const step = Math.floor(rate / 8)
+      const hann = new Float32Array(size)
+      for (let i = 0; i < size; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1))
+      const re = new Float32Array(size)
+      const im = new Float32Array(size)
+      const transform = () => {
+        for (let i = 1, j = 0; i < size; i++) {
+          let bit = size >> 1
+          for (; j & bit; bit >>= 1) j ^= bit
+          j ^= bit
+          if (i < j) { const tr = re[i]; re[i] = re[j]; re[j] = tr; const ti = im[i]; im[i] = im[j]; im[j] = ti }
+        }
+        for (let len = 2; len <= size; len <<= 1) {
+          const ang = (-2 * Math.PI) / len
+          const wr = Math.cos(ang), wi = Math.sin(ang)
+          for (let i = 0; i < size; i += len) {
+            let cr = 1, ci = 0
+            for (let k = 0; k < len / 2; k++) {
+              const ur = re[i + k], ui = im[i + k]
+              const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci
+              const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr
+              re[i + k] = ur + vr; im[i + k] = ui + vi
+              re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi
+              const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr
+            }
+          }
+        }
+      }
+      for (let start = 0; start + size < data.length; start += step) {
+        for (let i = 0; i < size; i++) { re[i] = data[start + i] * hann[i]; im[i] = 0 }
+        transform()
+        for (let k = 1; k < size / 2; k++) {
+          const freq = (k * rate) / size
+          const power = re[k] * re[k] + im[k] * im[k]
+          for (let b = 0; b < bands.length; b++) {
+            if (freq >= bands[b][0] && freq < bands[b][1]) { share[b] += power; break }
+          }
+        }
+      }
+      const total = share.reduce((a, b) => a + b, 0) || 1
+
       const rewritten = window.harness.serialiseSong(song)
       const reparsed = window.harness.parseSongText(rewritten)
       const stable = reparsed.value ? window.harness.serialiseSong(reparsed.value) === rewritten : false
@@ -75,6 +123,7 @@ try {
         stats,
         sections,
         stable,
+        bands: bands.map((range, index) => ({ lo: range[0], hi: range[1], share: share[index] / total })),
         rewrittenIssues: reparsed.issues ?? [],
       }
     }, source)
@@ -107,6 +156,16 @@ try {
           `${db.toFixed(1).padStart(6)} dB rms   peak ${section.peak.toFixed(3)}`,
       )
     }
+
+    const lowShare = (result.bands[0]?.share ?? 0) + (result.bands[1]?.share ?? 0)
+    console.log('     where the energy sits:')
+    for (const band of result.bands) {
+      console.log(
+        `       ${String(band.lo).padStart(5)}-${String(band.hi).padEnd(5)} Hz ` +
+          `${(band.share * 100).toFixed(1).padStart(5)}%  ${'#'.repeat(Math.round(band.share * 60))}`,
+      )
+    }
+    console.log(`       below 150 Hz: ${(lowShare * 100).toFixed(1)}%`)
   }
 
   report.section('The exported file decodes back to the audio')

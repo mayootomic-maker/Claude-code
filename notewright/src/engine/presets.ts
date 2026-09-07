@@ -6,7 +6,7 @@
  * something worth much more: a song file that still sounds the same in a year,
  * on a machine that has never seen this preset list.
  */
-import { defaultDrumKit, defaultFm, defaultSampler, defaultSynth, envelope } from '../format/defaults'
+import { default808, defaultDrumKit, defaultFm, defaultSampler, defaultSynth, envelope } from '../format/defaults'
 import type { Instrument } from '../format/types'
 
 export interface Preset {
@@ -34,7 +34,77 @@ function kit(changes: (base: ReturnType<typeof defaultDrumKit>) => void): Instru
   return base
 }
 
+function eight808(changes: (base: ReturnType<typeof default808>) => void): Instrument {
+  const base = default808()
+  changes(base)
+  return base
+}
+
+/** Sets one lane of a kit by id, leaving the rest of the kit alone. */
+function lane(
+  base: ReturnType<typeof defaultDrumKit>,
+  id: string,
+  changes: Partial<ReturnType<typeof defaultDrumKit>['lanes'][number]>,
+): void {
+  const target = base.lanes.find((candidate) => candidate.id === id)
+  if (target) Object.assign(target, changes)
+}
+
 export const PRESETS: readonly Preset[] = [
+  // --- 808 ------------------------------------------------------------------
+  {
+    id: 'eight-oh-eight-deep',
+    name: '808 — Deep',
+    group: '808',
+    instrument: eight808((base) => {
+      base.drop = 12
+      base.dropTime = 0.045
+      base.glide = 0.07
+      base.drive = 0.32
+      base.tone = 2100
+      base.amplitudeEnvelope = envelope(0.004, 1.8, 0.62, 0.16)
+    }),
+  },
+  {
+    id: 'eight-oh-eight-distorted',
+    name: '808 — Distorted',
+    group: '808',
+    instrument: eight808((base) => {
+      base.drop = 16
+      base.dropTime = 0.03
+      base.glide = 0.06
+      base.drive = 0.82
+      base.tone = 3600
+      base.amplitudeEnvelope = envelope(0.003, 1.2, 0.5, 0.12)
+    }),
+  },
+  {
+    id: 'eight-oh-eight-punch',
+    name: '808 — Short Punch',
+    group: '808',
+    instrument: eight808((base) => {
+      base.drop = 22
+      base.dropTime = 0.018
+      base.glide = 0.04
+      base.drive = 0.5
+      base.tone = 2800
+      base.amplitudeEnvelope = envelope(0.002, 0.45, 0.18, 0.08)
+    }),
+  },
+  {
+    id: 'eight-oh-eight-glide',
+    name: '808 — Long Slide',
+    group: '808',
+    instrument: eight808((base) => {
+      base.drop = 8
+      base.dropTime = 0.05
+      base.glide = 0.16
+      base.drive = 0.4
+      base.tone = 2400
+      base.amplitudeEnvelope = envelope(0.005, 2.4, 0.75, 0.2)
+    }),
+  },
+
   // --- Bass -----------------------------------------------------------------
   {
     id: 'sub-bass',
@@ -288,6 +358,39 @@ export const PRESETS: readonly Preset[] = [
   // --- Kits -----------------------------------------------------------------
   { id: 'studio-kit', name: 'Studio Kit', group: 'Drums', instrument: defaultDrumKit() },
   {
+    id: 'trap-kit',
+    name: 'Trap Kit',
+    group: 'Drums',
+    instrument: kit((base) => {
+      // The kick is short and punchy on purpose: in this music the 808 carries
+      // the weight below 80Hz, and a long kick underneath it turns the low end
+      // into mud no amount of mixing recovers.
+      lane(base, 'kick', { tune: 48, decay: 0.26, snap: 0.85, level: 0 })
+      lane(base, 'snare', { tune: 208, decay: 0.13, snap: 0.75, level: -3 })
+      lane(base, 'clap', { tune: 1150, decay: 0.2, snap: 0.5, level: -4 })
+      lane(base, 'hat', { tune: 9800, decay: 0.024, snap: 0.9, level: -12 })
+      lane(base, 'open', { tune: 8600, decay: 0.2, snap: 0.6, level: -15 })
+      lane(base, 'rim', { tune: 520, decay: 0.032, snap: 0.95, level: -12 })
+      lane(base, 'tom', { tune: 88, decay: 0.34, snap: 0.3, level: -9 })
+      lane(base, 'ride', { tune: 6200, decay: 0.6, snap: 0.3, level: -20 })
+    }),
+  },
+  {
+    id: 'trap-kit-dark',
+    name: 'Trap Kit — Dark',
+    group: 'Drums',
+    instrument: kit((base) => {
+      lane(base, 'kick', { tune: 44, decay: 0.3, snap: 0.6, level: 0 })
+      lane(base, 'snare', { tune: 180, decay: 0.11, snap: 0.55, level: -5 })
+      lane(base, 'clap', { tune: 900, decay: 0.17, snap: 0.35, level: -5 })
+      lane(base, 'hat', { tune: 7400, decay: 0.022, snap: 0.7, level: -14 })
+      lane(base, 'open', { tune: 6800, decay: 0.18, snap: 0.45, level: -17 })
+      lane(base, 'rim', { tune: 430, decay: 0.03, snap: 0.8, level: -13 })
+      lane(base, 'tom', { tune: 76, decay: 0.4, snap: 0.2, level: -10 })
+      lane(base, 'ride', { tune: 4800, decay: 0.7, snap: 0.2, level: -22 })
+    }),
+  },
+  {
     id: 'eight-oh-eight',
     name: '808 Kit',
     group: 'Drums',
@@ -339,6 +442,64 @@ export const PRESETS: readonly Preset[] = [
       set('open', { tune: 5600, decay: 0.2, snap: 0.3, level: -15 })
       set('rim', { tune: 380, decay: 0.05, snap: 0.6, level: -11 })
       set('ride', { tune: 4200, decay: 0.6, snap: 0.2, level: -18 })
+    }),
+  },
+
+  // --- Melody over 808s -----------------------------------------------------
+  {
+    id: 'trap-bell',
+    name: 'Trap Bell',
+    group: 'Melody',
+    instrument: fm((base) => {
+      base.carrier = { wave: 'sine', ratio: 1 }
+      base.modulator = { wave: 'sine', ratio: 2.01, index: 4.2, envelope: envelope(0.001, 0.55, 0.05, 0.3) }
+      base.amplitudeEnvelope = envelope(0.002, 1.5, 0.06, 0.7)
+      base.gain = 1
+    }),
+  },
+  {
+    id: 'dark-pluck',
+    name: 'Dark Pluck',
+    group: 'Melody',
+    instrument: synth((base) => {
+      base.oscillators = [
+        { wave: 'sawtooth', level: 0.62, octave: 0, detune: -9 },
+        { wave: 'sawtooth', level: 0.38, octave: 0, detune: 11 },
+      ]
+      base.filter = { mode: 'lowpass', frequency: 620, resonance: 7, envelope: 26, keyTracking: 0.55 }
+      base.filterEnvelope = envelope(0.001, 0.2, 0.04, 0.15)
+      base.amplitudeEnvelope = envelope(0.002, 0.4, 0.1, 0.26)
+      base.unison = { voices: 3, detune: 11, width: 0.55 }
+      base.gain = -2
+    }),
+  },
+  {
+    id: 'choir-pad',
+    name: 'Choir Pad',
+    group: 'Melody',
+    instrument: synth((base) => {
+      base.oscillators = [
+        { wave: 'sawtooth', level: 0.34, octave: 0, detune: -6 },
+        { wave: 'triangle', level: 0.5, octave: 0, detune: 7 },
+      ]
+      base.noise = 0.06
+      base.filter = { mode: 'lowpass', frequency: 1200, resonance: 1.2, envelope: 12, keyTracking: 0.45 }
+      base.filterEnvelope = envelope(1.4, 2, 0.55, 1.6)
+      base.amplitudeEnvelope = envelope(0.8, 1.6, 0.8, 1.5)
+      base.lfo = { wave: 'sine', rate: 4.6, sync: null, toPitch: 0.09, toFilter: 3, toAmplitude: 0 }
+      base.unison = { voices: 4, detune: 16, width: 0.8 }
+      base.gain = -4
+    }),
+  },
+  {
+    id: 'soul-keys',
+    name: 'Soul Keys',
+    group: 'Melody',
+    instrument: fm((base) => {
+      base.carrier = { wave: 'sine', ratio: 1 }
+      base.modulator = { wave: 'triangle', ratio: 1, index: 1.9, envelope: envelope(0.002, 0.7, 0.08, 0.4) }
+      base.amplitudeEnvelope = envelope(0.004, 2.2, 0.14, 0.7)
+      base.gain = 2
     }),
   },
 

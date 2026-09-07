@@ -17,6 +17,7 @@ import {
   type ParseResult,
 } from './notation'
 import {
+  default808,
   defaultDrumKit,
   defaultEffect,
   defaultFm,
@@ -36,7 +37,9 @@ import {
   type Clip,
   type DrumLane,
   type DrumsInstrument,
+  type Duck,
   type Effect,
+  type Eight808Instrument,
   type EffectType,
   type Envelope,
   type FmInstrument,
@@ -256,9 +259,23 @@ function sampler(reader: Reader, raw: Unknown, where: string): SamplerInstrument
   }
 }
 
+function eight808(reader: Reader, raw: Unknown, where: string): Eight808Instrument {
+  const base = default808()
+  return {
+    type: '808',
+    drop: reader.number(raw['drop'], `${where}.drop`, base.drop, 0, 48),
+    dropTime: reader.number(raw['dropTime'], `${where}.dropTime`, base.dropTime, 0.001, 1),
+    glide: reader.number(raw['glide'], `${where}.glide`, base.glide, 0, 2),
+    drive: reader.number(raw['drive'], `${where}.drive`, base.drive, 0, 1),
+    tone: reader.number(raw['tone'], `${where}.tone`, base.tone, 60, 20000),
+    amplitudeEnvelope: envelope(reader, raw['amplitudeEnvelope'], `${where}.amplitudeEnvelope`, base.amplitudeEnvelope),
+    gain: reader.number(raw['gain'], `${where}.gain`, base.gain, -60, 24),
+  }
+}
+
 function instrument(reader: Reader, value: unknown, where: string): Instrument {
   const raw = reader.object(value, where)
-  const type = reader.choice(raw['type'], `${where}.type`, ['synth', 'fm', 'drums', 'sampler'] as const, 'synth')
+  const type = reader.choice(raw['type'], `${where}.type`, ['synth', 'fm', 'drums', 'sampler', '808'] as const, 'synth')
   switch (type) {
     case 'synth':
       return synth(reader, raw, where)
@@ -268,6 +285,31 @@ function instrument(reader: Reader, value: unknown, where: string): Instrument {
       return drums(reader, raw, where)
     case 'sampler':
       return sampler(reader, raw, where)
+    case '808':
+      return eight808(reader, raw, where)
+  }
+}
+
+function duck(reader: Reader, value: unknown, where: string, tracks: readonly Track[], self: string): Duck | null {
+  if (value === undefined || value === null) return null
+  const raw = reader.object(value, where)
+  const from = reader.string(raw['from'], `${where}.from`, '')
+  if (from === '') {
+    reader.note('Ducking needs a track to listen to; ignored', where, 'error')
+    return null
+  }
+  if (from === self) {
+    reader.note('A track cannot duck itself; ignored', where, 'error')
+    return null
+  }
+  if (!tracks.some((candidate) => candidate.id === from)) {
+    reader.note(`No track called "${from}", so this ducking does nothing`, where, 'error')
+  }
+  return {
+    from,
+    lane: reader.string(raw['lane'], `${where}.lane`, ''),
+    amount: reader.number(raw['amount'], `${where}.amount`, 0.6, 0, 1),
+    release: reader.number(raw['release'], `${where}.release`, 0.14, 0.01, 2),
   }
 }
 
@@ -384,7 +426,7 @@ function automation(reader: Reader, value: unknown, where: string): Automation |
   return { target, points }
 }
 
-function track(reader: Reader, value: unknown, where: string, index: number): Track {
+function track(reader: Reader, value: unknown, where: string, index: number, earlier: readonly Track[]): Track {
   const raw = reader.object(value, where)
   const id = reader.string(raw['id'], `${where}.id`, `track-${index + 1}`)
   const base = defaultTrack(id, `Track ${index + 1}`, defaultSynth(), index)
@@ -409,6 +451,7 @@ function track(reader: Reader, value: unknown, where: string, index: number): Tr
       .array(raw['automation'], `${where}.automation`)
       .map((entry, position) => automation(reader, entry, `${where}.automation[${position}]`))
       .filter((lane): lane is Automation => lane !== null),
+    duck: duck(reader, raw['duck'], `${where}.duck`, earlier, id),
   }
 }
 
@@ -545,9 +588,14 @@ export function parseSong(value: unknown): ParseResult<Song> {
     reader.note(`"${timeSignature}" is not a time signature; using 4/4`, 'timeSignature', 'error')
   }
 
-  const tracks = reader
-    .array(raw['tracks'], 'tracks')
-    .map((entry, index) => track(reader, entry, `tracks[${index}]`, index))
+  // A track can duck one that appears after it in the list, so the roster of ids
+  // is collected first. Only the ids — parsing every track twice would report
+  // every warning twice.
+  const rawTracks = reader.array(raw['tracks'], 'tracks')
+  const roster = rawTracks.map((entry, index) => ({
+    id: isObject(entry) && typeof entry['id'] === 'string' ? entry['id'] : `track-${index + 1}`,
+  })) as Track[]
+  const tracks = rawTracks.map((entry, index) => track(reader, entry, `tracks[${index}]`, index, roster))
 
   const seenTracks = new Set<string>()
   const uniqueTracks = tracks.filter((candidate) => {

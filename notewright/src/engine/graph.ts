@@ -19,6 +19,12 @@ export interface TrackNodes {
   /** Where this track's voices connect. */
   input: GainNode
   fader: GainNode
+  /**
+   * Ducking sits on its own node rather than on the fader, so that a gain
+   * automation lane and a kick-driven dip can both be active without
+   * overwriting each other's scheduled ramps.
+   */
+  duck: GainNode
   panner: StereoPannerNode
   delaySend: GainNode
   reverbSend: GainNode
@@ -105,11 +111,14 @@ export function buildGraph(context: BaseAudioContext, song: Song, options: Graph
     fader.gain.value = faderGain(track, soloed)
     const panner = context.createStereoPanner()
     panner.pan.value = clamp(track.pan, -1, 1)
+    const duck = context.createGain()
+    duck.gain.value = 1
     const trackAnalyser = analyser(context, options.meters)
 
     input.connect(chain.input)
     chain.output.connect(fader)
-    fader.connect(panner)
+    fader.connect(duck)
+    duck.connect(panner)
 
     const delaySend = context.createGain()
     delaySend.gain.value = clamp(track.sends.delay, 0, 1)
@@ -133,6 +142,7 @@ export function buildGraph(context: BaseAudioContext, song: Song, options: Graph
       id: track.id,
       input,
       fader,
+      duck,
       panner,
       delaySend,
       reverbSend,
@@ -140,7 +150,7 @@ export function buildGraph(context: BaseAudioContext, song: Song, options: Graph
       effects: chain.nodes,
       dispose: () => {
         chain.dispose()
-        for (const node of [input, fader, panner, delaySend, reverbSend, trackAnalyser]) node?.disconnect()
+        for (const node of [input, fader, duck, panner, delaySend, reverbSend, trackAnalyser]) node?.disconnect()
       },
     })
   }

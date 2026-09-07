@@ -3,18 +3,38 @@ import { App } from './ui/App'
 import { WorkbenchContext, type Workbench } from './ui/context'
 import { Store } from './state/store'
 import { AudioHost } from './state/audio'
-import { library } from './state/files'
+import { openLibrary } from './state/songs'
 import './style.css'
 
 const store = new Store()
 const audio = new AudioHost()
-const workbench: Workbench = { store, audio }
+const library = openLibrary()
+const workbench: Workbench = { store, audio, library }
 
-// Open whatever is in songs/, preferring one the URL asks for.
+// Open whatever is in the songs folder, preferring one the URL asks for.
 const wanted = new URLSearchParams(location.search).get('song')
-const entries = library()
-const chosen = entries.find((entry) => entry.name === wanted) ?? entries[0]
-if (chosen) store.loadText(chosen.source, chosen.name)
+void library.list().then((entries) => {
+  const chosen = entries.find((entry) => entry.name === wanted) ?? entries[0]
+  if (chosen && store.get().song.tracks.length === 0) store.loadText(chosen.source, chosen.name)
+})
+
+/**
+ * The desktop half of the collaboration loop: the shell watches the songs
+ * folder and tells us when a file changes. Unsaved work always wins — reloading
+ * over it would be a way to lose it.
+ */
+library.watch((entries) => {
+  const current = store.get()
+  const match = entries.find((entry) => entry.name === current.name)
+  if (!match || match.source === store.text()) return
+  if (current.dirty) {
+    store.notify(`${current.name}.song.json changed on disk, but you have unsaved changes here.`, 'error')
+    return
+  }
+  if (store.loadText(match.source, match.name)) {
+    store.notify(`Reloaded ${match.name}.song.json from disk`)
+  }
+})
 
 /**
  * A song file changing on disk swaps into the running app.
@@ -51,4 +71,4 @@ if (root) {
 
 // A small scripting surface. Useful from the console, and it is what the
 // browser tests drive rather than a separate build of the engine.
-Object.assign(window, { notewright: { store, audio } })
+Object.assign(window, { notewright: { store, audio, library } })

@@ -7,13 +7,28 @@
  * reset perfectly or the second note of a patch sounds different from the
  * first. Nodes disconnect themselves when the sound has finished.
  */
-import type { DrumLane, Envelope, FmInstrument, Instrument, SamplerInstrument, SynthInstrument } from '../format/types'
-import { clamp, dbToGain, noiseBuffer, pulseWave, SILENCE } from './audio'
+import type {
+  DrumLane,
+  Eight808Instrument,
+  Envelope,
+  FmInstrument,
+  Instrument,
+  SamplerInstrument,
+  SynthInstrument,
+} from '../format/types'
+import { clamp, dbToGain, driveCurve, noiseBuffer, pulseWave, SILENCE } from './audio'
 import { midiToFreq, noteToMidi } from './theory'
 
 export interface VoiceHandle {
   /** Absolute context time the voice stops making sound. */
   readonly endsAt: number
+  /**
+   * Bends a sounding voice to a new pitch instead of retriggering it.
+   *
+   * Only the instruments that slide provide this. Returns the new end time, or
+   * null when the voice cannot slide and the caller should start a fresh one.
+   */
+  slide?(pitch: number, at: number, hold: number): number | null
   /** Start the release stage, for a key being let go or a choke group firing. */
   release(at: number): void
   /**
@@ -35,6 +50,8 @@ export interface NoteRequest {
   when: number
   /** Seconds the note is held before its release stage. */
   hold: number
+  /** The pitch the last note on this track was at, for a glide to start from. */
+  from?: number
   /** For drum kits: which lane was struck. */
   lane?: DrumLane
   /** For samplers: the decoded audio, or null when the file is missing. */
@@ -44,7 +61,7 @@ export interface NoteRequest {
 const MIN_HOLD = 0.004
 
 function envelopeEnd(envelope: Envelope, hold: number): number {
-  return Math.max(hold, MIN_HOLD) + envelope.release
+  return Math.max(hold, MIN_HOLD) + Math.max(envelope.release, 0.005)
 }
 
 /**
@@ -53,6 +70,17 @@ function envelopeEnd(envelope: Envelope, hold: number): number {
  * Attack is linear because a linear rise from silence is what an attack sounds
  * like; decay and release are exponential because that is what a decay sounds
  * like. Mixing the two is not an inconsistency, it is the point.
+ *
+ * The case that needs care is a note ending before its own decay has finished —
+ * which is most notes on any patch with a long decay, and every short 808. The
+ * release has to start from the level the decay actually reached, so that level
+ * is computed and pinned at note-off.
+ *
+ * Scheduling a decay ramp that *ends later* than the release ramp does not do
+ * this. Web Audio interpolates between consecutive events, so a decay aimed
+ * past the release is simply discarded and the note dives from full level to
+ * silence: a six-step 808 was inaudible by its fourth step. Rendering one bar
+ * and printing its level step by step is what made that visible.
  */
 function scheduleEnvelope(
   param: AudioParam,
@@ -63,7 +91,9 @@ function scheduleEnvelope(
 ): number {
   const held = Math.max(hold, MIN_HOLD)
   const attack = Math.max(envelope.attack, 0.001)
+  const decay = Math.max(envelope.decay, 0.001)
   const sustainLevel = Math.max(peak * envelope.sustain, SILENCE)
+  const noteOff = when + held
 
   param.cancelScheduledValues(when)
   param.setValueAtTime(SILENCE, when)
@@ -71,16 +101,20 @@ function scheduleEnvelope(
   // A note shorter than its own attack should not be louder than one that got
   // to finish rising, so the peak is scaled down instead of the attack cut off.
   if (attack >= held) {
-    const reached = Math.max(peak * (held / attack), SILENCE)
-    param.linearRampToValueAtTime(reached, when + held)
+    param.linearRampToValueAtTime(Math.max(peak * (held / attack), SILENCE), noteOff)
   } else {
     param.linearRampToValueAtTime(peak, when + attack)
-    const decayEnd = when + attack + Math.max(envelope.decay, 0.001)
-    if (decayEnd < when + held) {
+    const decayEnd = when + attack + decay
+    if (decayEnd <= noteOff) {
       param.exponentialRampToValueAtTime(sustainLevel, decayEnd)
-      param.setValueAtTime(sustainLevel, when + held)
+      param.setValueAtTime(sustainLevel, noteOff)
     } else {
-      param.exponentialRampToValueAtTime(sustainLevel, decayEnd)
+      // Where an exponential decay from `peak` towards `sustainLevel` would
+      // have got to by note-off. Pinning it there keeps the curve continuous
+      // and gives the release something real to start from.
+      const progress = (noteOff - (when + attack)) / decay
+      const reached = Math.max(peak * Math.pow(sustainLevel / peak, progress), SILENCE)
+      param.exponentialRampToValueAtTime(reached, noteOff)
     }
   }
 
@@ -181,11 +215,17 @@ function synthVoice(
     for (let copy = 0; copy < unisonVoices; copy++) {
       const oscillator = context.createOscillator()
       applyWave(oscillator, spec.wave, context)
-      oscillator.frequency.value = frequency * Math.pow(2, spec.octave)
+      const target = frequency * Math.pow(2, spec.octave)
+      oscillator.frequency.value = target
       const offset = unisonVoices === 1 ? 0 : (copy / (unisonVoices - 1) - 0.5) * 2
       oscillator.detune.value = spec.detune + offset * spreadDetune
-      if (instrument.glide > 0 && instrument.mono) {
-        oscillator.frequency.setValueAtTime(oscillator.frequency.value, when)
+      // Glide starts the oscillator at the pitch the last note left off at and
+      // travels. Setting the frequency to its own value, which is what stood
+      // here before, is a no-op and made the control do nothing at all.
+      if (instrument.glide > 0 && instrument.mono && request.from !== undefined) {
+        const previous = midiToFreq(request.from) * Math.pow(2, spec.octave)
+        oscillator.frequency.setValueAtTime(previous, when)
+        oscillator.frequency.exponentialRampToValueAtTime(target, when + instrument.glide)
       }
 
       const level = context.createGain()
@@ -280,6 +320,117 @@ function synthVoice(
     },
     dispose: () => disconnectAll(owned),
   }
+}
+
+// ---------------------------------------------------------------------------
+// The 808
+// ---------------------------------------------------------------------------
+
+function eight808Voice(
+  context: BaseAudioContext,
+  destination: AudioNode,
+  instrument: Eight808Instrument,
+  request: NoteRequest,
+): VoiceHandle {
+  const { when, hold } = request
+  const owned: AudioNode[] = []
+
+  const oscillator = context.createOscillator()
+  oscillator.type = 'sine'
+  owned.push(oscillator)
+
+  const amplitude = context.createGain()
+  amplitude.gain.value = 0
+  owned.push(amplitude)
+
+  // Saturation, then a lowpass. A pure sine at 40Hz is inaudible on a phone;
+  // the harmonics the drive adds are what the listener actually hears, and the
+  // lowpass keeps them from turning into a buzz.
+  const shaper = context.createWaveShaper()
+  shaper.curve = driveCurve(context, instrument.drive)
+  shaper.oversample = '2x'
+  const tone = context.createBiquadFilter()
+  tone.type = 'lowpass'
+  tone.frequency.value = clamp(instrument.tone, 60, 20000)
+  tone.Q.value = 0.7
+  // Soft clipping raises the level, so pull back in proportion to the drive.
+  const trim = context.createGain()
+  trim.gain.value = 1 / (1 + instrument.drive * 1.5)
+  owned.push(shaper, tone, trim)
+
+  oscillator.connect(shaper)
+  shaper.connect(tone)
+  tone.connect(trim)
+  trim.connect(amplitude)
+  amplitude.connect(destination)
+
+  const target = midiToFreq(request.pitch)
+  if (request.from !== undefined && instrument.glide > 0) {
+    // A slide that had to start a new voice: begin at the old pitch, no drop.
+    oscillator.frequency.setValueAtTime(midiToFreq(request.from), when)
+    oscillator.frequency.exponentialRampToValueAtTime(target, when + instrument.glide)
+  } else if (instrument.drop > 0) {
+    oscillator.frequency.setValueAtTime(target * Math.pow(2, instrument.drop / 12), when)
+    oscillator.frequency.exponentialRampToValueAtTime(target, when + Math.max(instrument.dropTime, 0.002))
+  } else {
+    oscillator.frequency.setValueAtTime(target, when)
+  }
+
+  const peak = request.velocity * dbToGain(instrument.gain) * 0.85
+  let end = scheduleEnvelope(amplitude.gain, instrument.amplitudeEnvelope, when, peak, hold)
+  let stopAt = end + 0.03
+  oscillator.start(when)
+  oscillator.stop(stopAt)
+  disconnectWhenDone(oscillator, owned)
+
+  const handle: VoiceHandle = {
+    get endsAt() {
+      return end
+    },
+    slide(pitch: number, at: number, nextHold: number): number | null {
+      if (at >= stopAt - 0.02) return null
+      const to = midiToFreq(pitch)
+      const frequency = oscillator.frequency
+      if (typeof frequency.cancelAndHoldAtTime === 'function') frequency.cancelAndHoldAtTime(at)
+      else frequency.cancelScheduledValues(at)
+      frequency.exponentialRampToValueAtTime(to, at + Math.max(instrument.glide, 0.005))
+
+      // The envelope continues rather than restarting: a slide has no attack,
+      // which is the whole difference between a slide and a new note.
+      const gain = amplitude.gain
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(at)
+      else gain.cancelScheduledValues(at)
+      const sustain = Math.max(peak * instrument.amplitudeEnvelope.sustain, SILENCE)
+      const held = Math.max(nextHold, MIN_HOLD)
+      // The level the voice is at right now cannot be read from here, so rather
+      // than computing where its decay had got to, the decay simply finishes
+      // inside the note. No jump, and a short slid note keeps its body.
+      const decayTime = Math.min(Math.max(instrument.amplitudeEnvelope.decay, 0.01), held)
+      gain.exponentialRampToValueAtTime(sustain, at + decayTime)
+      gain.setValueAtTime(sustain, at + held)
+      end = at + held + Math.max(instrument.amplitudeEnvelope.release, 0.005)
+      gain.exponentialRampToValueAtTime(SILENCE, end)
+      gain.setValueAtTime(0, end)
+
+      stopAt = end + 0.03
+      try {
+        oscillator.stop(stopAt)
+      } catch {
+        // Already past its stop time; the caller starts a fresh voice instead.
+      }
+      return end
+    },
+    release(at: number) {
+      const released = releaseEnvelope(amplitude.gain, instrument.amplitudeEnvelope, at)
+      try {
+        oscillator.stop(released + 0.02)
+      } catch {
+        // Already stopped.
+      }
+    },
+    dispose: () => disconnectAll(owned),
+  }
+  return handle
 }
 
 // ---------------------------------------------------------------------------
@@ -614,5 +765,7 @@ export function startVoice(
     }
     case 'sampler':
       return samplerVoice(context, destination, instrument, request)
+    case '808':
+      return eight808Voice(context, destination, instrument, request)
   }
 }

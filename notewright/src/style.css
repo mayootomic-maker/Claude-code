@@ -1280,3 +1280,14 @@ input[type="range"] {
 .roll-keys {
   cursor: pointer;
 }
+
+.roll-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0a0c10;
+  pointer-events: none;
+}

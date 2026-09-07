@@ -125,6 +125,33 @@ export interface DrumsInstrument {
   gain: number
 }
 
+/**
+ * The 808.
+ *
+ * Not a synth preset — its own instrument, because it is the centre of this
+ * kind of music and because two of its defining behaviours cannot be expressed
+ * as parameters on anything else. The pitch falls at the attack, which is what
+ * makes the boom; and a note that begins while the last one is still sounding
+ * does not retrigger, it *bends* — the slide. A slide implemented by starting a
+ * second voice and cutting the first would click, because the waveform would
+ * jump. Here it retunes the oscillator that is already running.
+ */
+export interface Eight808Instrument {
+  type: '808'
+  /** Semitones the pitch falls from at the attack. Zero is a plain sub. */
+  drop: number
+  /** Seconds the drop takes. */
+  dropTime: number
+  /** Seconds a slide takes to travel between two pitches. */
+  glide: number
+  /** 0-1 saturation. Harmonics are what make a 30Hz note audible on a phone. */
+  drive: number
+  /** Hz. Lowpass after the drive, so the harmonics stay warm rather than buzzy. */
+  tone: number
+  amplitudeEnvelope: Envelope
+  gain: number
+}
+
 export interface SamplerInstrument {
   type: 'sampler'
   /** A path relative to the song, or `library:<name>` for a sample dropped into the app. */
@@ -142,7 +169,12 @@ export interface SamplerInstrument {
   gain: number
 }
 
-export type Instrument = SynthInstrument | FmInstrument | DrumsInstrument | SamplerInstrument
+export type Instrument =
+  | SynthInstrument
+  | FmInstrument
+  | DrumsInstrument
+  | SamplerInstrument
+  | Eight808Instrument
 export type InstrumentType = Instrument['type']
 
 // ---------------------------------------------------------------------------
@@ -185,6 +217,27 @@ export interface Automation {
 // Tracks, patterns, arrangement
 // ---------------------------------------------------------------------------
 
+/**
+ * Ducking, driven by the sequencer rather than by a sidechain.
+ *
+ * An 808 and a kick occupy the same two octaves and fight; every producer in
+ * this genre ducks one under the other. Web Audio has no sidechain input on its
+ * compressor, and a worklet would be a module that has to load before the first
+ * note. But the sequencer already knows exactly when the kick lands, so the
+ * dips can simply be scheduled — which is sample-accurate, renders identically
+ * every time, and costs nothing.
+ */
+export interface Duck {
+  /** The track whose hits trigger the dip. */
+  from: string
+  /** Restrict to one drum lane, usually the kick. Empty means any hit. */
+  lane: string
+  /** 0-1: how far the level drops. 0.7 is a deep, obvious pump. */
+  amount: number
+  /** Seconds to recover. */
+  release: number
+}
+
 export interface Track {
   id: string
   name: string
@@ -199,6 +252,7 @@ export interface Track {
   solo: boolean
   sends: { delay: number; reverb: number }
   automation: Automation[]
+  duck: Duck | null
 }
 
 export interface Pattern {

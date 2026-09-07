@@ -140,6 +140,47 @@ group cut each other off, the way a hi-hat pedal closes an open hat.
 
 Omit `lanes` entirely to get the default eight-lane kit.
 
+### `808`
+
+The instrument this software is built around. Not a synth preset — its own
+type, because two of its behaviours cannot be expressed as parameters on
+anything else.
+
+```json
+{
+  "type": "808",
+  "drop": 13,
+  "dropTime": 0.04,
+  "glide": 0.075,
+  "drive": 0.42,
+  "tone": 2300,
+  "amplitudeEnvelope": { "attack": 0.004, "decay": 1.7, "sustain": 0.6, "release": 0.16 }
+}
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `drop` | `14` | Semitones the pitch falls from at the attack. This is the boom. |
+| `dropTime` | `0.035` | Seconds the fall takes. |
+| `glide` | `0.06` | Seconds a slide takes to travel between two pitches. |
+| `drive` | `0.45` | 0–1 saturation. The harmonics it adds are what make a 40 Hz note audible on a phone. |
+| `tone` | `2600` | Hz. A lowpass after the drive, so the harmonics stay warm rather than buzzy. |
+
+**Slides are written as overlapping notes.** When a note begins while the last
+one is still sounding, the 808 does not retrigger — it bends. That is the same
+convention every piano roll uses for legato, so there is no extra marker on the
+note; you just make the first note long enough to reach the second.
+
+```
+"F1~14 . . .  . . . .  . . . .  . C2~3 . ."
+ └── lasts 14 steps ──────────────┘ starts on step 14: they overlap, so it slides
+```
+
+A slide implemented by starting a second voice and cutting off the first would
+click, because the waveform would jump. This retunes the oscillator that is
+already running, and the amplitude envelope carries on rather than restarting —
+which is the whole difference between a slide and a new note.
+
 ### `sampler`
 
 ```json
@@ -178,6 +219,29 @@ An array on the track, running in order before the fader. Every effect takes
 
 Note divisions: `1/32`, `1/16`, `1/8t`, `1/16d`, `1/8`, `3/16`, `1/4t`, `1/4`,
 `3/8`, `1/2`, `1/1`. A `t` suffix is a triplet, `d` is dotted.
+
+## Ducking
+
+An 808 and a kick occupy the same two octaves and fight each other. Every record
+in this genre ducks one under the other.
+
+```json
+"duck": { "from": "drums", "lane": "kick", "amount": 0.62, "release": 0.17 }
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `from` | — | The track whose hits trigger the dip. |
+| `lane` | `""` | One drum lane, usually `kick`. Empty means any hit on that track. |
+| `amount` | `0.6` | 0–1. How far the level drops. 0.7 is a deep, obvious pump. |
+| `release` | `0.14` | Seconds to recover. |
+
+This is not a sidechain compressor. Web Audio's compressor has no sidechain
+input, and a worklet would be a module that has to load before the first note
+can sound. But the sequencer already knows exactly when the kick lands, so the
+dips are simply scheduled — which is sample-accurate, renders identically every
+time, and costs nothing at all. Ducking has its own gain stage, so a `gain`
+automation lane and a dip never overwrite each other.
 
 ## Patterns
 
@@ -235,6 +299,29 @@ One character per step, keyed by lane id:
 | `o` | a ghost note, velocity 0.45 |
 | `1`–`9` | velocity in tenths |
 | `-` | hold the previous hit one step longer |
+| `d` `t` `q` `s` `e` | a roll of 2, 3, 4, 6 or 8 hits inside this one step |
+| `D` `T` `Q` `S` `E` | the same roll, accented |
+
+### Rolls
+
+A hi-hat roll is the most characteristic gesture in this music, and writing one
+as six notes on a finer grid would wreck the thing that makes these files
+readable — one character per step, in columns you can scan. So a roll is one
+character:
+
+```
+"hat": "x.x. x.q. x.x. t.q."
+```
+
+That is eighth-note hats with a four-roll on the second beat, a triplet on the
+fourth, and another four to finish. Thirteen hits, sixteen characters.
+
+The hits inside a roll ramp up in velocity — hit `i` of `n` plays at
+`base × (0.6 + 0.4 × i/(n−1))`, where the base is 0.8 for a lowercase character
+and 1.0 for a capital. The ramp is part of the notation's definition, not a
+suggestion, so reading and writing are exact inverses. A roll whose velocities
+have been edited by hand is no longer that shape, and is written out as explicit
+notes rather than rounded back into a roll it is not.
 
 ### When a pattern cannot be written as steps
 

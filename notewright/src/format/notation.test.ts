@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   beatsPerStep,
   formatLane,
+  ROLL_SIZES,
   formatNoteStream,
   parseLane,
   parseNoteStream,
@@ -192,9 +193,9 @@ describe('drum lanes', () => {
   })
 
   it('names the offending symbol rather than dropping the lane', () => {
-    const { value, issues } = parseLane('x.q.', '1/16')
+    const { value, issues } = parseLane('x.z.', '1/16')
     expect(value).toHaveLength(1)
-    expect(issues[0]!.message).toContain('q')
+    expect(issues[0]!.message).toContain('z')
   })
 
   it('round-trips, bar by bar', () => {
@@ -206,6 +207,74 @@ describe('drum lanes', () => {
   it('refuses to write a velocity its alphabet cannot express', () => {
     const odd: Note[] = [{ at: 0, pitch: 0, length: 0.25, velocity: 0.77 }]
     expect(formatLane(odd, '1/16', 4, 1)).toBeNull()
+  })
+})
+
+describe('hi-hat rolls', () => {
+  it('puts several evenly spaced hits inside one step', () => {
+    const { value, issues } = parseLane('t...', '1/16')
+    expect(issues).toEqual([])
+    expect(value).toHaveLength(3)
+    expect(value.map((note) => note.at)).toEqual([0, 0.25 / 3, 0.5 / 3])
+    expect(value.every((note) => Math.abs(note.length - 0.25 / 3) < 1e-9)).toBe(true)
+  })
+
+  it('offers the sizes a hi-hat actually rolls in', () => {
+    for (const [character, count] of Object.entries(ROLL_SIZES)) {
+      expect(parseLane(character, '1/16').value).toHaveLength(count)
+    }
+  })
+
+  it('ramps the velocity up across the roll, which is what makes it a roll', () => {
+    const { value } = parseLane('q', '1/16')
+    const velocities = value.map((note) => note.velocity)
+    expect(velocities).toEqual([0.48, 0.587, 0.693, 0.8])
+    for (let index = 1; index < velocities.length; index++) {
+      expect(velocities[index]!).toBeGreaterThan(velocities[index - 1]!)
+    }
+  })
+
+  it('rolls louder when written in capitals', () => {
+    expect(parseLane('T', '1/16').value.map((note) => note.velocity)).toEqual([0.6, 0.8, 1])
+  })
+
+  it('round-trips', () => {
+    const source = ['x... t... x..q X..d']
+    const { value } = parseLane(source, '1/16')
+    expect(formatLane(value, '1/16', 4, 1)).toEqual(source)
+  })
+
+  it('round-trips every size, in both weights', () => {
+    for (const character of Object.keys(ROLL_SIZES)) {
+      for (const written of [character, character.toUpperCase()]) {
+        const source = `${written}...`
+        const { value } = parseLane(source, '1/16')
+        expect(formatLane(value, '1/16', 4, 0.25), written).toEqual([source])
+      }
+    }
+  })
+
+  it('will not write a group that is not really a roll', () => {
+    // Three hits in a step, but bunched at the front rather than evenly spread.
+    const bunched: Note[] = [
+      { at: 0, pitch: 0, length: 0.02, velocity: 0.48 },
+      { at: 0.02, pitch: 0, length: 0.02, velocity: 0.64 },
+      { at: 0.04, pitch: 0, length: 0.02, velocity: 0.8 },
+    ]
+    expect(formatLane(bunched, '1/16', 4, 1)).toBeNull()
+  })
+
+  it('will not write a roll whose velocities were changed by hand', () => {
+    const { value } = parseLane('t...', '1/16')
+    value[1]!.velocity = 0.9
+    expect(formatLane(value, '1/16', 4, 1)).toBeNull()
+  })
+
+  it('lets a hold extend the last hit of a roll', () => {
+    const { value, issues } = parseLane('t-..', '1/16')
+    expect(issues).toEqual([])
+    expect(value).toHaveLength(3)
+    expect(value[2]!.length).toBeCloseTo(0.25 / 3 + 0.25, 9)
   })
 })
 

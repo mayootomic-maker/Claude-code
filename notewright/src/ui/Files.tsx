@@ -6,33 +6,44 @@
  * see what the file says while you edit, you can edit the file directly, and so
  * can anyone else working on it with you.
  */
-import { useState } from 'preact/hooks'
+import { useCallback, useEffect, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { Button, SelectField, TextField } from './controls'
 import { useAppState, useWorkbench } from './context'
-import { canSaveToDisk, downloadSong, exportWav, library, saveToDisk } from '../state/files'
-import { newSongNamed } from '../state/store'
+import { downloadSong, exportWav } from '../state/files'
+import type { LibraryEntry } from '../state/songs'
+import { TEMPLATES } from '../state/templates'
 import { buildTimeline, timelineDuration } from '../engine/sequencer'
 
 export function Files(): JSX.Element {
-  const { store } = useWorkbench()
+  const { store, library } = useWorkbench()
   const state = useAppState()
   const song = state.song
   const text = store.text()
-  const entries = library()
+  const [entries, setEntries] = useState<LibraryEntry[]>([])
+  const [folder, setFolder] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [bitDepth, setBitDepth] = useState<'16' | '24'>('16')
   const timeline = buildTimeline(song)
   const seconds = timelineDuration(timeline, song.tempo, 0)
 
+  const refresh = useCallback(() => {
+    void library.list().then(setEntries)
+    void library.folder().then(setFolder)
+  }, [library])
+
+  useEffect(refresh, [refresh])
+  useEffect(() => library.watch(setEntries), [library])
+
   const save = async (): Promise<void> => {
     setBusy('Saving…')
-    const error = await saveToDisk(state.name, text)
+    const error = await library.save(state.name, text)
     setBusy(null)
     if (error) store.notify(error, 'error')
     else {
       store.markSaved()
-      store.notify(`Wrote songs/${state.name}.song.json`)
+      store.notify(`Saved ${state.name}.song.json`)
+      refresh()
     }
   }
 
@@ -85,15 +96,32 @@ export function Files(): JSX.Element {
           {timeline.notes.length} notes · {Math.floor(seconds / 60)}:{String(Math.round(seconds % 60)).padStart(2, '0')}
         </p>
         <div class="row">
-          <Button tone="primary" disabled={busy !== null} onClick={() => void save()}>
-            {canSaveToDisk ? 'Save to songs/' : 'Save (needs the dev server)'}
+          <Button tone="primary" disabled={busy !== null || !library.canSave} onClick={() => void save()}>
+            Save
           </Button>
           <Button onClick={() => downloadSong(state.name, text)}>Download</Button>
+          {library.backend === 'desktop' && (
+            <Button
+              onClick={() =>
+                void library.reveal().then((error) => error && store.notify(error, 'error'))
+              }
+            >
+              Show folder
+            </Button>
+          )}
         </div>
-        {!canSaveToDisk && (
+        {folder && (
           <p class="hint">
-            This is a built copy with no dev server behind it, so saving writes a download instead of touching
-            the project folder. Run <code>npm run dev</code> to edit songs in place.
+            Songs live in <code>{folder}</code>
+            {library.backend === 'desktop'
+              ? ' — open one in any text editor and the app picks up your change while it is playing.'
+              : '.'}
+          </p>
+        )}
+        {!library.canSave && (
+          <p class="hint">
+            This is the web version, which has nowhere on your disk to write, so saving is a download. The
+            desktop app saves to a real folder you can edit by hand.
           </p>
         )}
       </section>
@@ -146,14 +174,34 @@ export function Files(): JSX.Element {
               onChange={(event) => void importFile(event.currentTarget.files)}
             />
           </label>
-          <Button
-            onClick={() => {
-              if (state.dirty && !confirm('Start a new song and lose unsaved changes?')) return
-              store.load(newSongNamed('Untitled'), 'untitled', [])
-            }}
-          >
-            New song
-          </Button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Start something</h3>
+        <p class="hint">
+          Each of these is a playable eight bars, not an empty screen: kick, clap on three, hats with a roll,
+          and an 808 that slides and ducks out of the kick's way.
+        </p>
+        <div class="list">
+          {TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              class="list-row"
+              onClick={() => {
+                if (state.dirty && !confirm('Start a new beat and lose unsaved changes?')) return
+                store.load(template.build(), 'untitled', [])
+                store.setView('arrange')
+                store.notify(`Started from ${template.name}`)
+              }}
+            >
+              <span class="grow">
+                <strong style="display:block; font-size:12.5px">{template.name}</strong>
+                <span class="hint">{template.description}</span>
+              </span>
+            </button>
+          ))}
         </div>
       </section>
 

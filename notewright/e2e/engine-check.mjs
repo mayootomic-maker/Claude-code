@@ -266,6 +266,226 @@ try {
     `L ${panRideStats.channelRms[0].toFixed(4)} R ${panRideStats.channelRms[1].toFixed(4)}`,
   )
 
+  report.section('Envelopes hold their shape')
+  // The regression this guards: a note shorter than its own decay used to have
+  // its decay discarded and dive straight to silence, so a six-step 808 was
+  // inaudible by its fourth step. Anything with a long decay was affected.
+  const envelopeShape = await page.evaluate(async () => {
+    const doc = {
+      format: 'notewright/1', title: 'e', tempo: 118, timeSignature: '4/4',
+      master: { gain: 0, limiter: false },
+      tracks: [{ id: 'b', name: 'B', gain: 0, instrument: { type: '808' } }],
+      // Six steps of note, then a gap: long decay, short note.
+      patterns: [{ id: 'p', track: 'b', bars: 1, grid: '1/16', notes: 'F1~6 . . .  . . . .  . . . .  . . . .' }],
+      sections: [{ id: 'a', name: 'A', bars: 1, clips: ['p'] }],
+    }
+    const song = window.harness.parseSongText(JSON.stringify(doc)).value
+    const buffer = await window.harness.renderSong(song, { tailSeconds: 0.1 })
+    const data = buffer.getChannelData(0)
+    const rate = buffer.sampleRate
+    const stepSeconds = 60 / 118 / 4
+    const at = (step) => {
+      const from = Math.floor(step * stepSeconds * rate)
+      const to = Math.min(data.length, Math.floor((step + 1) * stepSeconds * rate))
+      let sum = 0
+      for (let i = from; i < to; i++) sum += data[i] * data[i]
+      return Math.sqrt(sum / Math.max(1, to - from))
+    }
+    return { first: at(0), fourth: at(3), sixth: at(5), afterRelease: at(8) }
+  })
+  report.check(
+    'a note shorter than its decay is still there near its end',
+    envelopeShape.fourth > envelopeShape.first * 0.5,
+    `step 1 ${envelopeShape.first.toFixed(3)}, step 4 ${envelopeShape.fourth.toFixed(3)}`,
+  )
+  report.check(
+    'and it does stop when it is over',
+    envelopeShape.afterRelease < envelopeShape.first * 0.05,
+    `after release ${envelopeShape.afterRelease.toFixed(4)}`,
+  )
+
+  report.section('The 808')
+  const bass = await page.evaluate(async () => {
+    const build = (notes, extra = {}) => ({
+      format: 'notewright/1', title: '808', tempo: 118, timeSignature: '4/4',
+      master: { gain: 0, limiter: false },
+      tracks: [{ id: 'b', name: 'B', gain: 0, instrument: { type: '808', ...extra } }],
+      patterns: [{ id: 'p', track: 'b', bars: 1, grid: '1/16', notes }],
+      sections: [{ id: 'a', name: 'A', bars: 1, clips: ['p'] }],
+    })
+    // Dominant frequency under 200Hz in a window, by counting zero crossings of
+    // a heavily smoothed signal — enough to tell one bass note from another.
+    const pitchIn = (data, rate, fromSeconds, toSeconds) => {
+      const from = Math.floor(fromSeconds * rate)
+      const to = Math.min(data.length, Math.floor(toSeconds * rate))
+      let smoothed = 0
+      let previous = 0
+      let crossings = 0
+      for (let i = from; i < to; i++) {
+        smoothed += (data[i] - smoothed) * 0.02
+        if (previous <= 0 && smoothed > 0) crossings++
+        previous = smoothed
+      }
+      return (crossings * rate) / Math.max(1, to - from)
+    }
+    const render = async (doc) => {
+      const song = window.harness.parseSongText(JSON.stringify(doc)).value
+      const buffer = await window.harness.renderSong(song, { tailSeconds: 0.1 })
+      return { data: buffer.getChannelData(0), rate: buffer.sampleRate }
+    }
+
+    const plain = await render(build('F1~16 . . .  . . . .  . . . .  . . . .'))
+    // A slide: C2 begins while F1 is still sounding, so the voice bends.
+    const slid = await render(build('F1~9 . . .  . . . .  C2~8 . . .  . . . .'))
+    const stepped = await render(build('F1~8 . . .  . . . .  C2~8 . . .  . . . .'))
+
+    let low = 0, high = 0
+    const size = 4096
+    for (let i = 0; i < size; i++) {
+      // Crude split: compare a heavily lowpassed copy against the raw signal.
+      low += plain.data[i + 2000] * plain.data[i + 2000]
+    }
+    let smoothed = 0
+    for (let i = 0; i < size; i++) {
+      smoothed += (plain.data[i + 2000] - smoothed) * 0.05
+      high += (plain.data[i + 2000] - smoothed) ** 2
+    }
+    void low
+    void high
+
+    return {
+      steady: pitchIn(plain.data, plain.rate, 0.4, 1.6),
+      slideStart: pitchIn(slid.data, slid.rate, 0.05, 0.35),
+      slideEnd: pitchIn(slid.data, slid.rate, 0.9, 1.6),
+      steppedStart: pitchIn(stepped.data, stepped.rate, 0.05, 0.35),
+      steppedEnd: pitchIn(stepped.data, stepped.rate, 0.9, 1.6),
+    }
+  })
+  report.check(
+    'a held 808 sits on its note',
+    Math.abs(bass.steady - 43.65) < 8,
+    `${bass.steady.toFixed(1)} Hz for F1 (43.65)`,
+  )
+  report.check(
+    'an overlapping note slides the pitch up',
+    bass.slideEnd > bass.slideStart * 1.25,
+    `${bass.slideStart.toFixed(1)} Hz then ${bass.slideEnd.toFixed(1)} Hz`,
+  )
+  report.check(
+    'a non-overlapping note just retriggers at the new pitch',
+    bass.steppedEnd > bass.steppedStart * 1.25,
+    `${bass.steppedStart.toFixed(1)} Hz then ${bass.steppedEnd.toFixed(1)} Hz`,
+  )
+
+  report.section('Ducking')
+  const ducked = await page.evaluate(async () => {
+    const build = (duck) => ({
+      format: 'notewright/1', title: 'd', tempo: 118, timeSignature: '4/4',
+      master: { gain: 0, limiter: false },
+      tracks: [
+        { id: 'drums', name: 'D', gain: -60, instrument: { type: 'drums' } },
+        { id: 'b', name: 'B', gain: 0, instrument: { type: '808' }, ...(duck ? { duck } : {}) },
+      ],
+      patterns: [
+        { id: 'k', track: 'drums', bars: 1, grid: '1/16', lanes: { kick: 'x... .... x... ....' } },
+        { id: 'p', track: 'b', bars: 1, grid: '1/16', notes: 'F1~16 . . .  . . . .  . . . .  . . . .' },
+      ],
+      sections: [{ id: 'a', name: 'A', bars: 1, clips: ['k', 'p'] }],
+    })
+    const measure = async (doc) => {
+      const song = window.harness.parseSongText(JSON.stringify(doc)).value
+      const buffer = await window.harness.renderSong(song, { tailSeconds: 0.05 })
+      const data = buffer.getChannelData(0)
+      const rate = buffer.sampleRate
+      const window_ = (fromSeconds, toSeconds) => {
+        let peak = 0
+        for (let i = Math.floor(fromSeconds * rate); i < Math.floor(toSeconds * rate); i++) {
+          peak = Math.max(peak, Math.abs(data[i]))
+        }
+        return peak
+      }
+      // The second kick lands at beat 2, which at 118bpm is 1.017s.
+      return { atKick: window_(1.02, 1.07), between: window_(1.35, 1.45) }
+    }
+    return {
+      without: await measure(build(null)),
+      with: await measure(build({ from: 'drums', lane: 'kick', amount: 0.7, release: 0.15 })),
+    }
+  })
+  report.check(
+    'the 808 dips where the kick lands',
+    ducked.with.atKick < ducked.with.between * 0.75,
+    `at the kick ${ducked.with.atKick.toFixed(3)}, between ${ducked.with.between.toFixed(3)}`,
+  )
+  report.check(
+    'and does not dip without it',
+    ducked.without.atKick > ducked.without.between * 0.85,
+    `at the kick ${ducked.without.atKick.toFixed(3)}, between ${ducked.without.between.toFixed(3)}`,
+  )
+
+  report.section('Hi-hat rolls')
+  const rolls = await page.evaluate(async () => {
+    const count = async (lane) => {
+      const doc = {
+        format: 'notewright/1', title: 'r', tempo: 118, timeSignature: '4/4',
+        master: { gain: 0, limiter: false },
+        tracks: [{
+          id: 'd', name: 'D', gain: 0,
+          instrument: {
+            type: 'drums',
+            // A very short hat so the hits in a roll do not overlap each other,
+            // which would make them impossible to count by ear or by envelope.
+            lanes: [{ id: 'hat', name: 'Hat', voice: 'hat', tune: 9000, decay: 0.006, snap: 0.9, level: 0, pan: 0, choke: 0 }],
+          },
+        }],
+        patterns: [{ id: 'p', track: 'd', bars: 1, grid: '1/16', lanes: { hat: lane } }],
+        sections: [{ id: 'a', name: 'A', bars: 1, clips: ['p'] }],
+      }
+      const song = window.harness.parseSongText(JSON.stringify(doc)).value
+      const buffer = await window.harness.renderSong(song, { tailSeconds: 0.05 })
+      const data = buffer.getChannelData(0)
+
+      // A short-window envelope, then count bursts with hysteresis. Starting
+      // armed matters: otherwise the very first hit is never counted.
+      const window_ = 64
+      let peak = 0
+      const envelope = new Float32Array(Math.floor(data.length / window_))
+      for (let block = 0; block < envelope.length; block++) {
+        let sum = 0
+        for (let i = 0; i < window_; i++) sum += data[block * window_ + i] ** 2
+        envelope[block] = Math.sqrt(sum / window_)
+        peak = Math.max(peak, envelope[block])
+      }
+      let hits = 0
+      let armed = true
+      for (const level of envelope) {
+        if (armed && level > peak * 0.22) { hits++; armed = false }
+        else if (!armed && level < peak * 0.06) armed = true
+      }
+      return hits
+    }
+    return {
+      single: await count('x... .... .... ....'),
+      double: await count('d... .... .... ....'),
+      triplet: await count('t... .... .... ....'),
+      four: await count('q... .... .... ....'),
+      six: await count('s... .... .... ....'),
+      bar: await count('x.x. x.t. x.x. x.q.'),
+    }
+  })
+
+  report.check('a single step is one hit', rolls.single === 1, String(rolls.single))
+  report.check('"d" is two hits', rolls.double === 2, String(rolls.double))
+  report.check('"t" is three', rolls.triplet === 3, String(rolls.triplet))
+  report.check('"q" is four', rolls.four === 4, String(rolls.four))
+  report.check('"s" is six', rolls.six === 6, String(rolls.six))
+  report.check(
+    'a bar of eighths with two rolls in it counts up correctly',
+    // x.x. x.t. x.x. x.q. is six single hits, a triplet and a four: 6 + 3 + 4.
+    rolls.bar === 13,
+    `${rolls.bar}, expected 13`,
+  )
+
   report.section('The first beat is not swallowed')
   const firstBeat = await page.evaluate(async (source) => {
     const parsed = window.harness.parseSong(source)

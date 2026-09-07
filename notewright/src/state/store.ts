@@ -223,19 +223,6 @@ export class Store {
   }
 }
 
-export function newSongNamed(title: string): Song {
-  return parseSong({
-    format: 'notewright/1',
-    title,
-    tempo: 120,
-    timeSignature: '4/4',
-    key: 'C major',
-    tracks: [],
-    patterns: [],
-    sections: [{ id: 'section-1', name: 'A', bars: 8, clips: [] }],
-  }).value
-}
-
 /** Ids are readable so a hand-edited file stays hand-editable. */
 export function uniqueId(base: string, taken: readonly string[]): string {
   const slug = base

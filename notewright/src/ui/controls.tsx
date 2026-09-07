@@ -271,6 +271,15 @@ export function Meter(props: { level: number; wide?: boolean; tall?: boolean; la
   )
 }
 
+/**
+ * A caption beside a control.
+ *
+ * The controls below set `aria-label` on the input itself rather than relying
+ * on this wrapper. A `<label>` wrapped around a `<select>` takes its accessible
+ * name from all the text inside it — which includes every option — so a screen
+ * reader announced one of these as "Roll, Off single hits, 2 hits per step, 3
+ * triplet…". The explicit label is the whole name and nothing else.
+ */
 export function Field(props: {
   label: string
   children: JSX.Element | JSX.Element[]
@@ -297,6 +306,7 @@ export function NumberField(props: {
     <Field label={props.label}>
       <input
         type="number"
+        aria-label={props.label}
         value={draft ?? String(props.value)}
         min={props.min}
         max={props.max}
@@ -329,6 +339,7 @@ export function TextField(props: {
     <Field label={props.label}>
       <input
         type="text"
+        aria-label={props.label}
         value={props.value}
         placeholder={props.placeholder}
         onInput={(event) => props.onChange(event.currentTarget.value)}
@@ -348,7 +359,11 @@ export function SelectField<T extends string>(props: {
   )
   return (
     <Field label={props.label}>
-      <select value={props.value} onChange={(event) => props.onChange(event.currentTarget.value as T)}>
+      <select
+        aria-label={props.label}
+        value={props.value}
+        onChange={(event) => props.onChange(event.currentTarget.value as T)}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

@@ -17,9 +17,18 @@ interface LiveVoice {
   choke: number
 }
 
+/** What the last note on a track was, so the next one knows whether to slide. */
+interface Trailing {
+  handle: VoiceHandle
+  pitch: number
+  /** Context time the note was written to end at, release aside. */
+  until: number
+}
+
 export class NoteScheduler {
   private live: LiveVoice[] = []
   private mono = new Map<string, VoiceHandle>()
+  private trailing = new Map<string, Trailing>()
 
   constructor(
     private readonly context: BaseAudioContext,
@@ -32,6 +41,7 @@ export class NoteScheduler {
     if (graph !== this.graph) {
       this.live = []
       this.mono.clear()
+      this.trailing.clear()
     }
     this.graph = graph
     this.song = song
@@ -78,6 +88,17 @@ export class NoteScheduler {
     return () => handle.release(this.context.currentTime)
   }
 
+  /**
+   * Whether this note begins before the previous one on the track finished.
+   *
+   * Overlapping notes are how a slide is written in every piano roll there is,
+   * so that is what triggers one here — no separate marker on the note.
+   */
+  private slides(track: Track): boolean {
+    if (track.instrument.type === '808') return track.instrument.glide > 0
+    return track.instrument.type === 'synth' && track.instrument.mono && track.instrument.glide > 0
+  }
+
   private spawn(
     track: Track,
     destination: AudioNode,
@@ -93,6 +114,23 @@ export class NoteScheduler {
       this.live = this.live.filter((voice) => !(voice.trackId === track.id && voice.choke === lane.choke))
     }
 
+    const previous = this.trailing.get(track.id)
+    const legato = previous !== undefined && request.when < previous.until - 1e-4
+
+    if (this.slides(track) && legato) {
+      // Bend the voice that is already sounding. A slide that started a second
+      // voice and cut the first would click, because the waveform would jump.
+      const bent = previous.handle.slide?.(request.pitch, request.when, request.hold)
+      if (bent !== undefined && bent !== null) {
+        this.trailing.set(track.id, {
+          handle: previous.handle,
+          pitch: request.pitch,
+          until: request.when + request.hold,
+        })
+        return previous.handle
+      }
+    }
+
     if (track.instrument.type === 'synth' && track.instrument.mono) {
       this.mono.get(track.id)?.release(request.when)
     }
@@ -100,15 +138,24 @@ export class NoteScheduler {
     const buffer =
       track.instrument.type === 'sampler' ? (this.samples.get(track.instrument.sample) ?? null) : undefined
 
+    const glides = this.slides(track)
     const handle = startVoice(this.context, destination, track.instrument, {
       ...request,
       ...(lane ? { lane } : {}),
       ...(buffer !== undefined ? { buffer } : {}),
+      // A mono synth glides from wherever it was; an 808 only bends when the
+      // notes actually overlap, which is what a slide means in this music.
+      ...(glides && previous !== undefined && (legato || track.instrument.type === 'synth')
+        ? { from: previous.pitch }
+        : {}),
     })
     if (!handle) return null
 
     this.live.push({ handle, trackId: track.id, choke: lane?.choke ?? 0 })
     if (track.instrument.type === 'synth' && track.instrument.mono) this.mono.set(track.id, handle)
+    if (!lane) {
+      this.trailing.set(track.id, { handle, pitch: request.pitch, until: request.when + request.hold })
+    }
     return handle
   }
 
@@ -116,6 +163,7 @@ export class NoteScheduler {
     for (const voice of this.live) voice.handle.release(at)
     this.live = []
     this.mono.clear()
+    this.trailing.clear()
   }
 
   /**

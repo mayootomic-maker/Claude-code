@@ -7,7 +7,7 @@
  * when asked. That is why the groove does not stumble when the UI is busy
  * repainting a piano roll.
  */
-import { automationValueAt, buildTimeline, type ScheduledNote, type Timeline } from './sequencer'
+import { automationValueAt, buildTimeline, duckBeats, type ScheduledNote, type Timeline } from './sequencer'
 import { anySoloed, buildGraph, faderGain, readMeter, resolveTarget, type Graph } from './graph'
 import { NoteScheduler } from './schedule'
 import { clamp, dbToGain } from './audio'
@@ -41,6 +41,7 @@ export interface EngineWarning {
 export class Player {
   private graph: Graph
   private timeline: Timeline
+  private ducks: Map<string, number[]> = new Map()
   private song: Song
   private structure: string
   private samples: Map<string, AudioBuffer>
@@ -67,6 +68,7 @@ export class Player {
     this.song = song
     this.samples = samples
     this.timeline = buildTimeline(song)
+    this.ducks = duckBeats(song, this.timeline)
     this.structure = structureSignature(song)
     this.graph = buildGraph(context, song, { meters: true })
     this.voices = new NoteScheduler(context, this.graph, song, samples)
@@ -90,6 +92,7 @@ export class Player {
     const previous = this.song
     this.song = song
     this.timeline = buildTimeline(song)
+    this.ducks = duckBeats(song, this.timeline)
 
     const signature = structureSignature(song)
     if (signature !== this.structure) {
@@ -289,11 +292,24 @@ export class Player {
     }
 
     this.scheduleAutomation(fromBeat, toBeat, timeFor)
+    this.scheduleDucking(fromBeat, toBeat, timeFor)
 
     if (this.metronome) {
       const first = Math.ceil(fromBeat - 1e-9)
       for (let beat = first; beat < toBeat; beat++) {
         this.click(timeFor(beat), beat % this.timeline.beatsInBar === 0)
+      }
+    }
+  }
+
+  private scheduleDucking(fromBeat: number, toBeat: number, timeFor: (beat: number) => number): void {
+    for (const [trackId, beats] of this.ducks) {
+      const track = this.song.tracks.find((candidate) => candidate.id === trackId)
+      const nodes = this.graph.tracks.get(trackId)
+      if (!track?.duck || !nodes) continue
+      for (const beat of beats) {
+        if (beat < fromBeat || beat >= toBeat) continue
+        applyDuck(nodes.duck.gain, timeFor(beat), track.duck.amount, track.duck.release)
       }
     }
   }
@@ -363,6 +379,18 @@ export class Player {
     for (const [id, nodes] of this.graph.tracks) tracks.set(id, readMeter(nodes.analyser, this.meterScratch))
     return { tracks, master: readMeter(this.graph.master.analyser, this.meterScratch) }
   }
+}
+
+/**
+ * One dip.
+ *
+ * The ramps deliberately do not reset the gain to 1 first: a linear ramp starts
+ * from whatever the previous one left behind, so back-to-back kicks chain into
+ * each other instead of snapping back to full and clicking.
+ */
+export function applyDuck(param: AudioParam, at: number, amount: number, release: number): void {
+  param.linearRampToValueAtTime(1 - amount, at + 0.006)
+  param.linearRampToValueAtTime(1, at + 0.006 + release)
 }
 
 /** Index of the first note at or after `beat`, by binary search. */

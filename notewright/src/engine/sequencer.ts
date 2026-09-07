@@ -155,6 +155,31 @@ export function buildTimeline(song: Song): Timeline {
   return { notes, sections, totalBars: bar, totalBeats: bar * beatsInBar, beatsInBar }
 }
 
+/**
+ * The beats at which each ducked track should dip, keyed by track id.
+ *
+ * Computed from the arrangement rather than from the audio, which is what makes
+ * this exact: there is no detector to mistime, and a render is identical every
+ * time.
+ */
+export function duckBeats(song: Song, timeline: Timeline): Map<string, number[]> {
+  const result = new Map<string, number[]>()
+  for (const track of song.tracks) {
+    const duck = track.duck
+    if (!duck) continue
+    const beats: number[] = []
+    for (const note of timeline.notes) {
+      if (note.trackId !== duck.from) continue
+      if (duck.lane !== '' && note.lane !== duck.lane) continue
+      // Two hits on the same beat are one dip.
+      if (beats.length > 0 && Math.abs(beats[beats.length - 1]! - note.at) < 1e-6) continue
+      beats.push(note.at)
+    }
+    if (beats.length > 0) result.set(track.id, beats)
+  }
+  return result
+}
+
 export function secondsPerBeat(tempo: number): number {
   return 60 / tempo
 }

@@ -301,7 +301,46 @@ function chunkIntoBars(cells: readonly string[], stepsInBar: number, stepsInBeat
 // Drum lanes
 // ---------------------------------------------------------------------------
 
-/** One character per step: `.` rest, `x` hit, `X` accent, `o` ghost, `-` hold, `0`-`9` velocity in tenths. */
+/**
+ * Rolls.
+ *
+ * A hi-hat roll is the single most characteristic gesture in this music, and
+ * writing one as five separate notes on a finer grid would wreck the thing that
+ * makes these files readable — one character per step, lined up in columns you
+ * can scan. So a roll is one character: `t` is a triplet inside this step, `q`
+ * four, `s` six. The hits ramp up in velocity, which is what makes a roll sound
+ * like a roll rather than a stutter, and the ramp is part of the definition so
+ * that reading and writing are exact inverses.
+ */
+export const ROLL_SIZES: Readonly<Record<string, number>> = { d: 2, t: 3, q: 4, s: 6, e: 8 }
+
+const ROLL_CHARACTERS = Object.entries(ROLL_SIZES)
+
+/** Velocity of hit `index` of `count`, ramping from 60% of the base to it. */
+function rollVelocity(base: number, index: number, count: number): number {
+  if (count <= 1) return quantiseVelocity(base)
+  return quantiseVelocity(base * (0.6 + 0.4 * (index / (count - 1))))
+}
+
+/**
+ * The notes a roll is made of.
+ *
+ * Exported so the step editor builds rolls with exactly the shape the
+ * serializer recognises. If the editor computed its own ramp, a roll placed by
+ * clicking would fall out of the compact notation and land in the file as eight
+ * lines of note objects.
+ */
+export function rollNotes(step: number, perStep: number, count: number, base = 0.8): Note[] {
+  const spacing = perStep / count
+  return Array.from({ length: count }, (_, index) => ({
+    at: step * perStep + index * spacing,
+    pitch: 0,
+    length: spacing,
+    velocity: rollVelocity(base, index, count),
+  }))
+}
+
+/** One character per step: `.` rest, `x` hit, `X` accent, `o` ghost, `-` hold, `0`-`9` velocity in tenths, `d`/`t`/`q`/`s`/`e` rolls. */
 export function parseLane(source: string | readonly string[], grid: string): ParseResult<Note[]> {
   const issues: Issue[] = []
   const text = Array.isArray(source) ? source.join('') : String(source)
@@ -310,26 +349,46 @@ export function parseLane(source: string | readonly string[], grid: string): Par
   let step = 0
   let previous: Note | null = null
 
-  for (const char of text) {
-    if (/\s/.test(char) || char === '|') continue
-    if (char === '.' || char === '_') {
+  for (const character of text) {
+    if (/\s/.test(character) || character === '|') continue
+    if (character === '.' || character === '_') {
       previous = null
       step += 1
       continue
     }
-    if (char === '-') {
+    if (character === '-') {
       if (previous) previous.length += perStep
       else issues.push({ severity: 'warning', message: 'A hold with nothing to hold', where: `step ${step + 1}` })
       step += 1
       continue
     }
+
+    const rollCount = ROLL_SIZES[character.toLowerCase()]
+    if (rollCount !== undefined) {
+      const base = character === character.toUpperCase() ? 1 : 0.8
+      const spacing = perStep / rollCount
+      let last: Note | null = null
+      for (let index = 0; index < rollCount; index++) {
+        last = {
+          at: step * perStep + index * spacing,
+          pitch: 0,
+          length: spacing,
+          velocity: rollVelocity(base, index, rollCount),
+        }
+        notes.push(last)
+      }
+      previous = last
+      step += 1
+      continue
+    }
+
     let velocity: number
-    if (char === 'x') velocity = 0.8
-    else if (char === 'X') velocity = 1
-    else if (char === 'o') velocity = 0.45
-    else if (char >= '1' && char <= '9') velocity = Number(char) / 10
+    if (character === 'x') velocity = 0.8
+    else if (character === 'X') velocity = 1
+    else if (character === 'o') velocity = 0.45
+    else if (character >= '1' && character <= '9') velocity = Number(character) / 10
     else {
-      issues.push({ severity: 'error', message: `Unknown lane symbol "${char}"`, where: `step ${step + 1}` })
+      issues.push({ severity: 'error', message: `Unknown lane symbol "${character}"`, where: `step ${step + 1}` })
       step += 1
       previous = null
       continue
@@ -354,24 +413,75 @@ export function formatLane(
   const stepsInBar = beatsPerBar / perStep
   if (!nearlyInteger(stepsInBar)) return null
   const totalSteps = Math.round(stepsInBar) * bars
-  const cells: string[] = new Array(totalSteps).fill('.')
 
+  // Everything that starts inside one step is decided together, because a roll
+  // is several notes that have to become a single character.
+  const buckets = new Map<number, Note[]>()
   for (const note of notes) {
-    const step = note.at / perStep
-    if (!nearlyInteger(step)) return null
-    const index = Math.round(step)
+    const index = Math.floor(note.at / perStep + 1e-9)
     if (index < 0 || index >= totalSteps) return null
-    const symbol = velocitySymbol(note.velocity)
-    if (symbol === null) return null
-    cells[index] = symbol
-    const heldSteps = Math.round(note.length / perStep)
-    if (!nearlyInteger(note.length / perStep)) return null
-    for (let offset = 1; offset < heldSteps && index + offset < totalSteps; offset++) {
+    const bucket = buckets.get(index)
+    if (bucket) bucket.push(note)
+    else buckets.set(index, [note])
+  }
+
+  const cells: string[] = new Array(totalSteps).fill('.')
+  const holds: number[] = new Array(totalSteps).fill(0)
+
+  for (const [index, bucket] of buckets) {
+    bucket.sort((left, right) => left.at - right.at)
+
+    if (bucket.length === 1) {
+      const note = bucket[0]!
+      if (Math.abs(note.at - index * perStep) > EPSILON) return null
+      const symbol = velocitySymbol(note.velocity)
+      if (symbol === null) return null
+      const heldSteps = note.length / perStep
+      if (!nearlyInteger(heldSteps)) return null
+      cells[index] = symbol
+      holds[index] = Math.round(heldSteps)
+      continue
+    }
+
+    const roll = rollSymbol(bucket, index, perStep)
+    if (roll === null) return null
+    cells[index] = roll
+  }
+
+  for (let index = 0; index < totalSteps; index++) {
+    for (let offset = 1; offset < holds[index]! && index + offset < totalSteps; offset++) {
+      if (cells[index + offset] !== '.') return null
       cells[index + offset] = '-'
     }
   }
 
   return chunkIntoBars(cells, Math.round(stepsInBar), Math.round(stepsPerBeat(grid)), '')
+}
+
+/**
+ * The roll character for a group of notes inside one step, or null when they
+ * are not a roll — evenly spaced, filling the step, with the ramp that the
+ * notation defines. Anything else falls back to the explicit note form rather
+ * than being rounded into a roll it is not.
+ */
+function rollSymbol(bucket: readonly Note[], index: number, perStep: number): string | null {
+  const entry = ROLL_CHARACTERS.find(([, count]) => count === bucket.length)
+  if (!entry) return null
+  const [character, count] = entry
+  const spacing = perStep / count
+
+  for (const base of [0.8, 1]) {
+    const matches = bucket.every((note, position) => {
+      const expectedAt = index * perStep + position * spacing
+      return (
+        Math.abs(note.at - expectedAt) < EPSILON &&
+        Math.abs(note.length - spacing) < EPSILON &&
+        Math.abs(note.velocity - rollVelocity(base, position, count)) < EPSILON
+      )
+    })
+    if (matches) return base === 1 ? character.toUpperCase() : character
+  }
+  return null
 }
 
 /**

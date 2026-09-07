@@ -10,10 +10,10 @@ import { Files } from './Files'
 import { Inspector } from './Inspector'
 import { useAppState, useAudioStatus, useWorkbench } from './context'
 import { removeNotes } from '../state/actions'
-import { saveToDisk, canSaveToDisk } from '../state/files'
+
 
 export function App(): JSX.Element {
-  const { store, audio } = useWorkbench()
+  const { store, audio, library } = useWorkbench()
   const state = useAppState()
   const { status, problem } = useAudioStatus()
 
@@ -37,11 +37,11 @@ export function App(): JSX.Element {
       if (accel && event.key.toLowerCase() === 's') {
         event.preventDefault()
         void (async () => {
-          const error = await saveToDisk(store.get().name, store.text())
+          const error = await library.save(store.get().name, store.text())
           if (error) store.notify(error, 'error')
           else {
             store.markSaved()
-            store.notify(`Wrote songs/${store.get().name}.song.json`)
+            store.notify(`Saved ${store.get().name}.song.json`)
           }
         })()
         return
@@ -79,7 +79,7 @@ export function App(): JSX.Element {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [audio, store])
+  }, [audio, library, store])
 
   // A notice is a passing remark, not a dialogue box; it clears itself.
   useEffect(() => {
@@ -141,7 +141,7 @@ export function App(): JSX.Element {
         </span>
         <span>·</span>
         <span>
-          {state.dirty ? 'Unsaved changes' : canSaveToDisk ? 'Saved' : 'No changes'}
+          {state.dirty ? 'Unsaved changes' : library.canSave ? 'Saved' : 'No changes'}
           {state.undoDepth > 0 ? ` · ${state.undoDepth} undo step${state.undoDepth === 1 ? '' : 's'}` : ''}
         </span>
         {state.notice && (

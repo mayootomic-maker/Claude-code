@@ -155,6 +155,14 @@ function serialiseTrack(track: Track, index: number): Json {
 
   if (track.automation.length > 0) result['automation'] = track.automation.map(serialiseAutomation)
 
+  if (track.duck) {
+    const duck: Record<string, Json> = { from: track.duck.from }
+    if (track.duck.lane !== '') duck['lane'] = track.duck.lane
+    duck['amount'] = roundNumber(track.duck.amount)
+    duck['release'] = roundNumber(track.duck.release)
+    result['duck'] = duck
+  }
+
   return result
 }
 

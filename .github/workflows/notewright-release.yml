@@ -1,0 +1,104 @@
+# Builds the desktop app on the machines that can actually build it.
+#
+# A .dmg has to be made on macOS and an .exe on Windows, so this is the only
+# place the installers can come from. The macOS build is a universal binary —
+# one download that runs on both Apple Silicon and Intel, rather than making
+# people work out which Mac they have.
+name: Notewright — release
+
+on:
+  push:
+    tags: ['notewright-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. notewright-v0.1.0)'
+        required: true
+        default: 'notewright-v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notewright
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: notewright/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    name: ${{ matrix.label }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            label: macOS (universal .dmg)
+            args: '--target universal-apple-darwin'
+            targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          - platform: windows-latest
+            label: Windows (.exe installer)
+            args: ''
+            targets: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: notewright/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: notewright/src-tauri -> target
+
+      - name: Install dependencies
+        working-directory: notewright
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: notewright
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: 'Notewright ${{ github.event.inputs.tag || github.ref_name }}'
+          releaseBody: |
+            A trap beat maker whose songs are plain text.
+
+            **macOS** — download the `.dmg`, open it, drag Notewright to Applications.
+            The app is not signed with an Apple certificate, so the first time you
+            open it macOS will say it cannot be verified. Right-click the app and
+            choose **Open**, then confirm. You only have to do that once.
+
+            **Windows** — download and run the `.exe`. SmartScreen will warn that the
+            publisher is unknown, because the installer is not code-signed. Click
+            **More info**, then **Run anyway**.
+
+            Signing both would cost about $99/year for Apple plus a Windows
+            certificate; until that is worth paying for, these are the two clicks.
+
+            Songs are saved to **Documents/Notewright/songs** as `.song.json` files.
+            Open one in any text editor and the app picks up your change while it is
+            playing.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

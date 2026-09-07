@@ -10,7 +10,7 @@ const report = reporter()
 const SHOTS = new URL('./shots/', import.meta.url).pathname
 mkdirSync(SHOTS, { recursive: true })
 
-const songPath = new URL('../songs/night-ferry.song.json', import.meta.url).pathname
+const songPath = new URL('../songs/back-lot.song.json', import.meta.url).pathname
 const originalSong = readFileSync(songPath, 'utf8')
 
 const server = await createServer({ server: { port: 5192, strictPort: true }, logLevel: 'error' })
@@ -29,13 +29,14 @@ const songText = () => page.evaluate(() => window.notewright.store.text())
 const shot = (name) => page.screenshot({ path: `${SHOTS}${name}.png` })
 
 try {
-  await page.goto('http://localhost:5192/')
+  // Named explicitly rather than relying on which song sorts first.
+  await page.goto('http://localhost:5192/?song=back-lot')
   await page.waitForSelector('.app', { timeout: 30000 })
   await page.waitForTimeout(400)
 
   report.section('It opens')
   const opened = await state()
-  report.check('the demo song loaded', opened.song.title === 'Night Ferry', opened.song.title)
+  report.check('the demo beat loaded', opened.song.title === 'Back Lot', opened.song.title)
   report.check('with no complaints from the parser', opened.issues.length === 0, JSON.stringify(opened.issues))
   report.check('a track is already selected', opened.selection.trackId !== null, String(opened.selection.trackId))
   report.check('and so is one of its patterns', opened.selection.patternId !== null, String(opened.selection.patternId))
@@ -52,12 +53,17 @@ try {
   await page.waitForTimeout(120)
   report.check('undo puts it back', (await page.locator('.cell[data-on="true"]').count()) === cellsBefore)
 
+  const sectionsBefore = (await state()).song.sections.length
   await page.locator('.toolbar button', { hasText: 'Add section' }).first().click()
   await page.waitForTimeout(150)
-  report.check('a section can be added', (await state()).song.sections.length === 8)
+  report.check(
+    'a section can be added',
+    (await state()).song.sections.length === sectionsBefore + 1,
+    `${sectionsBefore} then ${(await state()).song.sections.length}`,
+  )
   await page.keyboard.press('Control+z')
   await page.waitForTimeout(120)
-  report.check('and undone', (await state()).song.sections.length === 7)
+  report.check('and undone', (await state()).song.sections.length === sectionsBefore)
 
   report.section('The step editor')
   await page.keyboard.press('2')
@@ -79,11 +85,11 @@ try {
   report.check('clicking a lane name starts the audio engine', (await page.evaluate(() => window.notewright.audio.status)) === 'running')
 
   report.section('The piano roll')
-  await page.locator('.track-row', { hasText: 'Bass' }).first().click()
+  await page.locator('.track-row', { hasText: '808' }).first().click()
   await page.waitForTimeout(300)
-  report.check('the bass track shows a piano roll', await page.locator('.roll-grid canvas').first().isVisible())
+  report.check('the 808 track shows a piano roll', await page.locator('.roll-grid canvas').first().isVisible())
   const bassNotes = async () =>
-    (await state()).song.patterns.find((pattern) => pattern.id === 'bass-main').notes
+    (await state()).song.patterns.find((pattern) => pattern.id === '808-a').notes
   const notesBefore = (await bassNotes()).length
   // Relative to the scroll viewport, not the canvas: the canvas is far taller
   // than the window and scrolled, so its own origin sits off-screen.
@@ -125,11 +131,45 @@ try {
   await page.keyboard.press('Control+z')
   await page.keyboard.press('Control+z')
   await page.waitForTimeout(200)
-  const undone = (await state()).song.patterns.find((pattern) => pattern.id === 'bass-main').notes.length
+  const undone = (await bassNotes()).length
   report.check('undo removes the note again', undone === notesBefore, `${undone} notes`)
 
+  report.section('Hi-hat rolls in the step editor')
+  await page.locator('.track-row', { hasText: 'Drums' }).first().click()
+  await page.waitForTimeout(250)
+  await page.locator('.pattern-tabs button', { hasText: 'drums-main' }).first().click()
+  await page.waitForTimeout(200)
+  const hatLane = async () =>
+    (await state()).song.patterns.find((pattern) => pattern.id === 'drums-main').lanes.hat.length
+  const hatsBefore = await hatLane()
+  await page.getByLabel('Roll', { exact: true }).selectOption({ label: '3 — triplet' })
+  await page.waitForTimeout(150)
+  // The fourth row of cells is the hi-hat lane; step 2 of it is empty.
+  const hatRow = page.locator('.step-lane').nth(3)
+  await hatRow.locator('.step').nth(1).click()
+  await page.waitForTimeout(200)
+  const hatsAfter = await hatLane()
+  report.check(
+    'placing a triplet writes three hits into one step',
+    hatsAfter === hatsBefore + 3,
+    `${hatsBefore} then ${hatsAfter}`,
+  )
+  // Read the pattern by name: the file has several hat lanes, and matching the
+  // first one in the text was checking a different pattern entirely.
+  const rolledLane = JSON.parse(await songText()).patterns.find((p) => p.id === 'drums-main').lanes.hat
+  report.check(
+    'and it stays one character in the file',
+    rolledLane.startsWith('xtx.'),
+    rolledLane,
+  )
+  await hatRow.locator('.step').nth(1).click()
+  await page.waitForTimeout(200)
+  report.check('clicking it again clears the whole roll', (await hatLane()) === hatsBefore)
+
   report.section('The chord tool')
-  await page.getByLabel('Place').selectOption({ label: 'Triad from the key' })
+  await page.locator('.track-row', { hasText: '808' }).first().click()
+  await page.waitForTimeout(300)
+  await page.getByLabel('Place', { exact: true }).selectOption({ label: 'Triad from the key' })
   await page.waitForTimeout(150)
   const beforeChord = (await bassNotes()).length
   await page.mouse.click(view.x + 500, view.y + 300)
@@ -152,17 +192,15 @@ try {
   )
   const inKey = await page.evaluate(
     ([pitches]) => {
-      const { song } = window.notewright.store.get()
-      const scales = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] }
-      const root = 9 // The demo song is in A minor.
-      void song
-      return pitches.every((pitch) => scales.minor.includes((((pitch - root) % 12) + 12) % 12))
+      const minor = [0, 2, 3, 5, 7, 8, 10]
+      const root = 5 // The demo beat is in F minor.
+      return pitches.every((pitch) => minor.includes((((pitch - root) % 12) + 12) % 12))
     },
     [chordPitches],
   )
   report.check('every tone belongs to the song key', inKey, chordPitches.join(', '))
 
-  await page.getByLabel('Place').selectOption({ label: 'Single note' })
+  await page.getByLabel('Place', { exact: true }).selectOption({ label: 'Single note' })
   await page.keyboard.press('Control+z')
   await page.waitForTimeout(200)
   report.check('undo takes the whole chord back out', (await bassNotes()).length <= beforeChord, `${(await bassNotes()).length} notes`)
@@ -186,7 +224,11 @@ try {
   report.section('The mixer')
   await page.keyboard.press('3')
   await page.waitForTimeout(250)
-  report.check('every track has a strip, plus the master', (await page.locator('.strip').count()) === 7)
+  report.check(
+    'every track has a strip, plus the master',
+    (await page.locator('.strip').count()) === (await state()).song.tracks.length + 1,
+    `${await page.locator('.strip').count()} strips`,
+  )
   const gainBefore = (await state()).song.tracks[0].gain
   await page.locator('.strip .fader').first().focus()
   await page.keyboard.press('ArrowDown')
@@ -203,7 +245,7 @@ try {
 
   report.section('The inspector')
   await page.keyboard.press('2')
-  await page.locator('.track-row', { hasText: 'Chords' }).first().click()
+  await page.locator('.track-row', { hasText: 'Pad' }).first().click()
   await page.waitForTimeout(250)
   const cutoffKnob = page.locator('.inspector [role="slider"][aria-label="Cutoff"]').first()
   const cutoffBefore = Number(await cutoffKnob.getAttribute('aria-valuenow'))
@@ -212,7 +254,7 @@ try {
   await page.waitForTimeout(150)
   const cutoffAfter = Number(await cutoffKnob.getAttribute('aria-valuenow'))
   report.check('a knob responds to the keyboard', cutoffAfter > cutoffBefore, `${cutoffBefore} then ${cutoffAfter}`)
-  const cutoffInDocument = (await state()).song.tracks.find((track) => track.id === 'chords').instrument.filter.frequency
+  const cutoffInDocument = (await state()).song.tracks.find((track) => track.id === 'pad').instrument.filter.frequency
   report.check(
     'and the change is in the document',
     // aria-valuenow is rounded for announcement; the document keeps full precision.
@@ -221,33 +263,56 @@ try {
   )
   await shot('05-inspector')
 
-  const effectsBefore = (await state()).song.tracks.find((track) => track.id === 'chords').effects.length
+  const effectsBefore = (await state()).song.tracks.find((track) => track.id === 'pad').effects.length
   await page.selectOption('.inspector .panel-head select[aria-label="Add an effect"]', 'reverb')
   await page.waitForTimeout(200)
   report.check(
     'an effect can be added to the rack',
-    (await state()).song.tracks.find((track) => track.id === 'chords').effects.length === effectsBefore + 1,
+    (await state()).song.tracks.find((track) => track.id === 'pad').effects.length === effectsBefore + 1,
   )
   await page.locator('.effect .mini[title="Remove"]').last().click()
   await page.waitForTimeout(150)
   report.check(
     'and removed',
-    (await state()).song.tracks.find((track) => track.id === 'chords').effects.length === effectsBefore,
+    (await state()).song.tracks.find((track) => track.id === 'pad').effects.length === effectsBefore,
   )
 
   report.section('Adding a track')
   const trackCount = (await state()).song.tracks.length
   await page.locator('.rail .panel-head .button').first().click()
   await page.waitForTimeout(150)
-  await page.locator('.rail .list-row', { hasText: 'Electric Piano' }).first().click()
+  await page.locator('.rail .list-row', { hasText: '808 — Deep' }).first().click()
   await page.waitForTimeout(200)
   const added = await state()
   report.check('the new track is there', added.song.tracks.length === trackCount + 1)
-  report.check('it is an FM instrument, from the preset', added.song.tracks.at(-1).instrument.type === 'fm')
+  report.check('it is an 808, from the preset', added.song.tracks.at(-1).instrument.type === '808')
   report.check('and it is selected', added.selection.trackId === added.song.tracks.at(-1).id)
   await page.keyboard.press('Control+z')
   await page.waitForTimeout(150)
   report.check('undo removes it', (await state()).song.tracks.length === trackCount)
+
+  report.section('Starting from a template')
+  await page.keyboard.press('4')
+  await page.waitForTimeout(300)
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.locator('.card .list-row', { hasText: 'Trap — 140' }).first().click()
+  await page.waitForTimeout(400)
+  const started = await state()
+  report.check('a template loads a beat, not an empty screen', started.song.tracks.length >= 3, `${started.song.tracks.length} tracks`)
+  report.check('at the tempo it says', started.song.tempo === 140, String(started.song.tempo))
+  report.check(
+    'with an 808 that ducks under the kick',
+    started.song.tracks.some((track) => track.instrument.type === '808' && track.duck?.lane === 'kick'),
+  )
+  report.check('and it lands on the arrangement', started.view === 'arrange')
+
+  // Back to the demo for the rest of the run.
+  await page.evaluate(async () => {
+    const entries = await window.notewright.library.list()
+    const demo = entries.find((entry) => entry.name === 'back-lot')
+    window.notewright.store.loadText(demo.source, demo.name)
+  })
+  await page.waitForTimeout(300)
 
   report.section('Playback')
   await page.keyboard.press('1')
@@ -270,22 +335,22 @@ try {
   await shot('07-files')
   const edited = await page.evaluate(() => {
     window.notewright.store.edit((song) => {
-      song.title = 'Night Ferry (driven)'
+      song.title = 'Back Lot (driven)'
     })
     return window.notewright.store.get().dirty
   })
   report.check('editing marks the document dirty', edited === true)
-  await page.locator('.card .button', { hasText: 'Save to songs/' }).first().click()
+  await page.locator('.card .button', { hasText: /^Save$/ }).first().click()
   await page.waitForTimeout(600)
   const onDisk = readFileSync(songPath, 'utf8')
-  report.check('the file on disk changed', onDisk.includes('Night Ferry (driven)'))
+  report.check('the file on disk changed', onDisk.includes('Back Lot (driven)'))
   report.check('and the document is clean again', (await state()).dirty === false)
   report.check('the saved file still parses', JSON.parse(onDisk).format === 'notewright/1')
 
   report.section('A change on disk reaches the running app')
-  writeFileSync(songPath, onDisk.replace('Night Ferry (driven)', 'Night Ferry (from disk)'), 'utf8')
+  writeFileSync(songPath, onDisk.replace('Back Lot (driven)', 'Back Lot (from disk)'), 'utf8')
   await page.waitForFunction(
-    () => window.notewright.store.get().song.title === 'Night Ferry (from disk)',
+    () => window.notewright.store.get().song.title === 'Back Lot (from disk)',
     undefined,
     { timeout: 10000 },
   ).then(

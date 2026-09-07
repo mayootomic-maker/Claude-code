@@ -9,7 +9,7 @@ import { defaultTrack, TRACK_COLOURS } from '../format/defaults'
 import { instrumentFromPreset } from '../engine/presets'
 import type { Clip, Instrument, Pattern, Section, Track } from '../format/types'
 import type { Note } from '../format/notation'
-import { beatsPerStep } from '../format/notation'
+import { beatsPerStep, rollNotes } from '../format/notation'
 import { uniqueId, type Store } from './store'
 
 export function addTrack(store: Store, presetId: string, name: string): string {
@@ -210,38 +210,55 @@ export function replaceNotes(store: Store, patternId: string, notes: Note[], his
   )
 }
 
-/** Toggles one cell of a drum lane. Velocity is snapped to what the file can write. */
-export function toggleStep(
+/**
+ * Sets one cell of a drum lane, as a single hit or as a roll.
+ *
+ * A cell is everything inside one step, not just what sits exactly on it, so
+ * clicking a step that holds a roll clears the whole roll rather than one of
+ * its hits.
+ */
+export function setStep(
   store: Store,
   patternId: string,
   laneId: string,
   step: number,
-  velocity = 0.8,
+  options: { velocity?: number; roll?: number; clear?: boolean } = {},
 ): void {
   updatePattern(store, patternId, (pattern) => {
     const perStep = beatsPerStep(pattern.grid)
     const at = step * perStep
     const lane = pattern.lanes[laneId] ?? []
-    const existing = lane.findIndex((note) => Math.abs(note.at - at) < 1e-6)
-    if (existing >= 0) lane.splice(existing, 1)
-    else lane.push({ at, pitch: 0, length: perStep, velocity })
-    lane.sort((left, right) => left.at - right.at)
-    pattern.lanes[laneId] = lane
+    const outside = lane.filter((note) => note.at < at - 1e-9 || note.at >= at + perStep - 1e-9)
+
+    if (options.clear) {
+      pattern.lanes[laneId] = outside
+      return
+    }
+
+    const roll = Math.max(1, Math.round(options.roll ?? 1))
+    const velocity = options.velocity ?? 0.8
+    const placed =
+      roll > 1
+        ? rollNotes(step, perStep, roll, velocity >= 0.95 ? 1 : 0.8)
+        : [{ at, pitch: 0, length: perStep, velocity }]
+
+    pattern.lanes[laneId] = [...outside, ...placed].sort((left, right) => left.at - right.at)
   })
 }
 
-export function setStepVelocity(
-  store: Store,
-  patternId: string,
+/** What is in a step: nothing, a single hit, or a roll of some size. */
+export function stepContents(
+  pattern: Pattern,
   laneId: string,
   step: number,
-  velocity: number,
-): void {
-  updatePattern(store, patternId, (pattern) => {
-    const perStep = beatsPerStep(pattern.grid)
-    const note = (pattern.lanes[laneId] ?? []).find((candidate) => Math.abs(candidate.at - step * perStep) < 1e-6)
-    if (note) note.velocity = velocity
-  })
+): { count: number; velocity: number } | null {
+  const perStep = beatsPerStep(pattern.grid)
+  const at = step * perStep
+  const inside = (pattern.lanes[laneId] ?? []).filter(
+    (note) => note.at >= at - 1e-9 && note.at < at + perStep - 1e-9,
+  )
+  if (inside.length === 0) return null
+  return { count: inside.length, velocity: Math.max(...inside.map((note) => note.velocity)) }
 }
 
 export function clearLane(store: Store, patternId: string, laneId: string): void {
