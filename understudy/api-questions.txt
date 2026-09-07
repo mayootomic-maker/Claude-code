@@ -76,19 +76,17 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
-# The holographic blueprint, round three, and the trail is warm. Settled:
-#   BeforeGizmos.beforeGizmos(LevelRenderContext) — the hook, exactly
-#   SubmitNodeCollector only adds order(int); the submit methods are on
-#     OrderedSubmitNodeCollector, which it extends
-#   RenderType is not in client.renderer at all any more — it moved
-#   and the find: there is a whole net.minecraft.gizmos package, with
-#     LevelRenderer.collectPerFrameRenderThreadGizmos() handing back a
-#     Gizmos$TemporaryCollection. A gizmo is what 26 calls a shape drawn in
-#     the world, which is precisely and only what a hologram is.
+# The holographic blueprint, last three. Settled, and it is enough to write it:
+#   OrderedSubmitNodeCollector.submitShapeOutline(PoseStack, VoxelShape,
+#     RenderType, int, float, boolean) — a shape drawn as an outline in a
+#     colour, which is a wire box, which is a hologram
+#   RenderType moved to net.minecraft.client.renderer.rendertype
+#   SimpleGizmoCollector.add(Gizmo) -> GizmoProperties, and Gizmos has
+#     billboardText factories, so gizmos are for debug labels rather than for
+#     drawing a building — submitShapeOutline is the better door after all
 #
-# So: what a gizmo collection will draw, and what a node collector accepts if
-# gizmos turn out to be the wrong door.
-net.minecraft.gizmos.Gizmos 34
-net.minecraft.gizmos.Gizmos$TemporaryCollection 18
-net.minecraft.gizmos.SimpleGizmoCollector 18
-net.minecraft.client.renderer.OrderedSubmitNodeCollector 26
+# Three greps, because head -N shows the first lines of a class and those are
+# the ones a long log cuts. Grepping a member never has that problem.
+net.minecraft.client.renderer.rendertype.RenderType lines
+net.minecraft.world.phys.shapes.Shapes box
+net.minecraft.gizmos.Gizmos box
