@@ -208,4 +208,66 @@ class DesignsTest {
             assertFalse(filled.contains(entrance), bp.name() + " has its entrance blocked");
         }
     }
+
+    @Test
+    @DisplayName("the manor has relief, not flat walls")
+    void wallsHaveDepth() {
+        // The difference between a house and a box with windows in it. Every
+        // projecting detail — the base course, the belt at the floor line, the
+        // sills and hoods, the eaves — lives in the margin the plinth leaves,
+        // so "does the wall have depth" is exactly "is the margin used".
+        Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1), 15,
+                Materials.wood(0), Materials.stone(0));
+
+        long projecting = manor.placements().stream()
+                .filter(p -> p.y() > 0)
+                .filter(p -> p.x() == 0 || p.x() == manor.sizeX() - 1
+                        || p.z() == 0 || p.z() == manor.sizeZ() - 1)
+                .count();
+        assertTrue(projecting > 100,
+                "the walls are flat: only " + projecting + " blocks stand proud");
+    }
+
+    @Test
+    @DisplayName("every window has a sill under it")
+    void windowsAreDressed() {
+        // A pane flush in a flat wall is a hole with glass in it. This asserts
+        // the thing that makes it read as a window rather than the presence of
+        // a particular block.
+        Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1), 15,
+                Materials.wood(0), Materials.stone(0));
+
+        java.util.Set<Integer> columns = new java.util.HashSet<>();
+        int lowestPane = Integer.MAX_VALUE;
+        for (Blueprint.Placement p : manor.placements()) {
+            if (!p.block().equals("glass_pane") || p.z() != 1) continue;
+            columns.add(p.x());
+            lowestPane = Math.min(lowestPane, p.y());
+        }
+        assertFalse(columns.isEmpty(), "no windows on the front wall at all");
+
+        for (int x : columns) {
+            int sillY = lowestPane - 1;
+            boolean dressed = manor.placements().stream()
+                    .anyMatch(p -> p.x() == x && p.z() == 0 && p.y() == sillY);
+            assertTrue(dressed, "window at x=" + x + " has no sill");
+        }
+    }
+
+    @Test
+    @DisplayName("detailing never grows the site it was marked out on")
+    void detailStaysInsideTheFootprint() {
+        // The margin is one block. A detail that projects two would build
+        // through whatever is beside the house, and the site marker would have
+        // drawn the wrong square.
+        for (int width = 11; width <= 23; width += 2) {
+            Blueprint manor = Catalog.build(Catalog.entries().get(Catalog.entries().size() - 1),
+                    width, Materials.wood(1), Materials.stone(2));
+            for (Blueprint.Placement p : manor.placements()) {
+                assertTrue(p.x() >= 0 && p.x() < manor.sizeX(), "x outside: " + p);
+                assertTrue(p.y() >= 0 && p.y() < manor.sizeY(), "y outside: " + p);
+                assertTrue(p.z() >= 0 && p.z() < manor.sizeZ(), "z outside: " + p);
+            }
+        }
+    }
 }

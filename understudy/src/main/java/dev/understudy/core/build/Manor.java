@@ -55,6 +55,15 @@ public final class Manor {
         storey(draft, w, d, deck + 1, upperTop, wood, stone, false);
         roof(draft, w, d, roofBase, wood, stone);
 
+        // The detailing, after the shell rather than woven into it. Every pass
+        // below projects into the one-block margin the plinth already leaves,
+        // so the building gains depth without the site growing.
+        baseCourse(draft, w, d, stone);
+        beltCourse(draft, w, d, deck, stone);
+        dressWindows(draft, w, d, 1, groundTop, stone);
+        dressWindows(draft, w, d, deck + 1, upperTop, stone);
+        eaves(draft, w, d, roofBase, wood);
+
         frontDoor(draft, doorX, d, wood, stone);
         porch(draft, doorX, wood, stone);
         staircase(draft, w, d, deck, wood);
@@ -115,13 +124,25 @@ public final class Manor {
         windows(draft, w, d, from, to);
     }
 
+    /**
+     * Where a window goes along a wall.
+     *
+     * Shared with the dressing, because a sill under nothing and a window with
+     * no sill are the two ways this goes wrong, and they happen the moment two
+     * places work the pattern out separately.
+     */
+    private static boolean windowAt(int along) {
+        int step = (along - 1) % 4;
+        return step == 1 || step == 2;
+    }
+
     /** Two courses of glass at eye level, between the posts. */
     private static void windows(Draft draft, int w, int d, int from, int to) {
         int sill = from + 1;
         int head = Math.min(to - 1, sill + 1);
         for (int x = 2; x < w; x++) {
             if ((x - 1) % 4 == 0) continue;
-            if ((x - 1) % 4 == 1 || (x - 1) % 4 == 2) {
+            if (windowAt(x)) {
                 for (int y = sill; y <= head; y++) {
                     draft.set(x, y, 1, "glass_pane", Role.WINDOW, true);
                     draft.set(x, y, d, "glass_pane", Role.WINDOW, true);
@@ -130,12 +151,95 @@ public final class Manor {
         }
         for (int z = 2; z < d; z++) {
             if ((z - 1) % 4 == 0) continue;
-            if ((z - 1) % 4 == 1 || (z - 1) % 4 == 2) {
+            if (windowAt(z)) {
                 for (int y = sill; y <= head; y++) {
                     draft.set(1, y, z, "glass_pane", Role.WINDOW, true);
                     draft.set(w, y, z, "glass_pane", Role.WINDOW, true);
                 }
             }
+        }
+    }
+
+    /**
+     * Masonry where the building meets the ground.
+     *
+     * Timber straight onto a plinth reads as a shed. One course of stone at the
+     * bottom of the wall is how a house that is meant to last is built, and it
+     * is the cheapest detail here by a distance: one ring of blocks.
+     */
+    private static void baseCourse(Draft draft, int w, int d, Materials.Stone stone) {
+        for (int x = 1; x <= w; x++) {
+            draft.set(x, 1, 1, stone.block(), Role.ACCENT);
+            draft.set(x, 1, d, stone.block(), Role.ACCENT);
+        }
+        for (int z = 1; z <= d; z++) {
+            draft.set(1, 1, z, stone.block(), Role.ACCENT);
+            draft.set(w, 1, z, stone.block(), Role.ACCENT);
+        }
+    }
+
+    /**
+     * A line of slabs where the floors divide, standing one block proud.
+     *
+     * Two storeys of unbroken wall is a tower block. The eye needs the join,
+     * and a projecting course is what a real building does at exactly that
+     * height — it throws a shadow, which is what actually reads at distance.
+     */
+    private static void beltCourse(Draft draft, int w, int d, int deck, Materials.Stone stone) {
+        for (int x = 0; x <= w + 1; x++) {
+            draft.set(x, deck, 0, stone.slab(), Role.ACCENT, true);
+            draft.set(x, deck, d + 1, stone.slab(), Role.ACCENT, true);
+        }
+        for (int z = 0; z <= d + 1; z++) {
+            draft.set(0, deck, z, stone.slab(), Role.ACCENT, true);
+            draft.set(w + 1, deck, z, stone.slab(), Role.ACCENT, true);
+        }
+    }
+
+    /**
+     * A sill under every window and a hood over it.
+     *
+     * A pane set flush in a flat wall is a hole with glass in it. The sill and
+     * the hood are what make it a window: both project into the margin, so the
+     * wall gains relief without the building gaining a footprint.
+     */
+    private static void dressWindows(Draft draft, int w, int d, int from, int to,
+                                     Materials.Stone stone) {
+        int sill = from + 1;
+        int head = Math.min(to - 1, sill + 1);
+        for (int x = 2; x < w; x++) {
+            if ((x - 1) % 4 == 0 || !windowAt(x)) continue;
+            draft.set(x, sill - 1, 0, stone.slab(), Role.ACCENT, true);
+            draft.set(x, sill - 1, d + 1, stone.slab(), Role.ACCENT, true);
+            draft.set(x, head + 1, 0, stone.slab(), Role.ACCENT, true);
+            draft.set(x, head + 1, d + 1, stone.slab(), Role.ACCENT, true);
+        }
+        for (int z = 2; z < d; z++) {
+            if ((z - 1) % 4 == 0 || !windowAt(z)) continue;
+            draft.set(0, sill - 1, z, stone.slab(), Role.ACCENT, true);
+            draft.set(w + 1, sill - 1, z, stone.slab(), Role.ACCENT, true);
+            draft.set(0, head + 1, z, stone.slab(), Role.ACCENT, true);
+            draft.set(w + 1, head + 1, z, stone.slab(), Role.ACCENT, true);
+        }
+    }
+
+    /**
+     * The underside of the roof overhang.
+     *
+     * The roof already reaches a block past the wall; what was missing is
+     * anything under it. A course of upside-down stairs turns a slab hanging in
+     * the air into an eave, and it is the detail that most makes a roof look
+     * built rather than placed.
+     */
+    private static void eaves(Draft draft, int w, int d, int roofBase, Materials.Wood wood) {
+        int y = roofBase - 1;
+        for (int x = 0; x <= w + 1; x++) {
+            draft.set(x, y, 0, wood.slab(), Role.ROOF, true);
+            draft.set(x, y, d + 1, wood.slab(), Role.ROOF, true);
+        }
+        for (int z = 1; z <= d; z++) {
+            draft.set(0, y, z, wood.slab(), Role.ROOF, true);
+            draft.set(w + 1, y, z, wood.slab(), Role.ROOF, true);
         }
     }
 
