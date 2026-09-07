@@ -129,61 +129,35 @@ export function snapToKey(midi: number, key: Key): number {
   return rounded
 }
 
-/** Chord qualities, as semitone offsets from the root. */
-export const CHORDS = {
-  '': [0, 4, 7],
-  maj: [0, 4, 7],
-  min: [0, 3, 7],
-  m: [0, 3, 7],
-  dim: [0, 3, 6],
-  aug: [0, 4, 8],
-  sus2: [0, 2, 7],
-  sus4: [0, 5, 7],
-  '5': [0, 7],
-  '6': [0, 4, 7, 9],
-  m6: [0, 3, 7, 9],
-  '7': [0, 4, 7, 10],
-  maj7: [0, 4, 7, 11],
-  m7: [0, 3, 7, 10],
-  mMaj7: [0, 3, 7, 11],
-  m7b5: [0, 3, 6, 10],
-  dim7: [0, 3, 6, 9],
-  '9': [0, 4, 7, 10, 14],
-  maj9: [0, 4, 7, 11, 14],
-  m9: [0, 3, 7, 10, 14],
-  add9: [0, 4, 7, 14],
-  '11': [0, 4, 7, 10, 14, 17],
-  '13': [0, 4, 7, 10, 14, 21],
-} as const satisfies Record<string, readonly number[]>
+/**
+ * A chord built from the notes of the key, stacked in thirds above a root.
+ *
+ * Thirds *of the scale*, not of the chromatic scale: on the sixth degree of a
+ * major key this gives a minor chord without anyone having to ask for one,
+ * which is why the chord tool suggests chords that belong to the song rather
+ * than a major triad the user then fixes by ear.
+ */
+export function chordFromScale(key: Key, root: number, tones = 3): number[] {
+  const intervals = SCALES[key.scale] as readonly number[]
+  const snapped = snapToKey(root, key)
+  const degree = intervals.indexOf((((snapped - key.root) % 12) + 12) % 12)
+  if (degree < 0) return [snapped]
 
-export type ChordQuality = keyof typeof CHORDS
-export const CHORD_QUALITIES = Object.keys(CHORDS).filter((name) => name !== '') as ChordQuality[]
-
-/** `"Am7"` or `"F#maj7"` at a given octave, as MIDI notes. */
-export function chordToMidi(symbol: string, octave = 3): number[] | null {
-  const match = /^([A-Ga-g][#b♯♭]*)(.*)$/.exec(symbol.trim())
-  if (!match) return null
-  const [, tonic = '', quality = ''] = match
-  const root = noteToMidi(`${tonic}${octave}`)
-  if (root === null) return null
-  const intervals = (CHORDS as Record<string, readonly number[]>)[quality]
-  if (!intervals) return null
-  return intervals.map((interval) => root + interval).filter((midi) => midi >= 0 && midi <= 127)
+  const pitches: number[] = []
+  for (let tone = 0; tone < tones; tone++) {
+    const index = degree + tone * 2
+    const wrapped = ((index % intervals.length) + intervals.length) % intervals.length
+    const octaves = Math.floor(index / intervals.length)
+    const pitch = snapped - (intervals[degree] ?? 0) + (intervals[wrapped] ?? 0) + octaves * 12
+    if (pitch >= 0 && pitch <= 127) pitches.push(pitch)
+  }
+  return pitches
 }
 
-/**
- * Triad built on a scale degree, using only notes of the key. This is what
- * makes the chord tool suggest chords that belong to the song rather than a
- * fixed major triad the user then has to fix by ear.
- */
+/** Triad on a scale degree, for naming chords by number rather than by pitch. */
 export function diatonicTriad(key: Key, degree: number, octave = 3): number[] {
   const intervals = SCALES[key.scale] as readonly number[]
-  const base = key.root + (octave + 1) * 12
-  const pick = (step: number): number => {
-    const index = degree + step
-    const wrapped = ((index % intervals.length) + intervals.length) % intervals.length
-    const octaveShift = Math.floor(index / intervals.length) * 12
-    return base + (intervals[wrapped] ?? 0) + octaveShift
-  }
-  return [pick(0), pick(2), pick(4)]
+  const wrapped = ((degree % intervals.length) + intervals.length) % intervals.length
+  const root = key.root + (octave + 1) * 12 + (intervals[wrapped] ?? 0)
+  return chordFromScale(key, root, 3)
 }

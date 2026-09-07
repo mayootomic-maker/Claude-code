@@ -10,10 +10,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { useAppState, useWorkbench } from './context'
-import { addNote, removeNotes, replaceNotes } from '../state/actions'
+import { addNotes, removeNotes, replaceNotes } from '../state/actions'
 import { beatsPerStep } from '../format/notation'
 import type { Note } from '../format/notation'
-import { isBlackKey, isInKey, midiToNote, parseKey } from '../engine/theory'
+import { chordFromScale, isBlackKey, isInKey, midiToNote, parseKey, snapToKey } from '../engine/theory'
 import { beatsPerBar, type Pattern, type Track } from '../format/types'
 import { useAnimationFrame } from './controls'
 
@@ -41,7 +41,14 @@ interface Drag {
   moved: boolean
 }
 
-export function PianoRoll(props: { pattern: Pattern; track: Track; zoom: number }): JSX.Element {
+export interface RollTools {
+  /** 1 places single notes; 3 and 4 stamp chords built from the song's key. */
+  chordTones: number
+  /** Pull every note placed or dragged onto the nearest note of the key. */
+  keepInKey: boolean
+}
+
+export function PianoRoll(props: { pattern: Pattern; track: Track; zoom: number; tools: RollTools }): JSX.Element {
   const { store, audio } = useWorkbench()
   const state = useAppState()
   const song = state.song
@@ -265,15 +272,28 @@ export function PianoRoll(props: { pattern: Pattern; track: Track; zoom: number 
     if (index < 0) {
       if (event.button === 2) return
       const length = lastLength ?? step
-      addNote(store, props.pattern.id, { at: beat, pitch, length, velocity: 0.8 })
-      // Notes are kept sorted, so the new one is not simply the last: find it
-      // by where it landed, or the selection highlights somebody else's note.
-      const written = store.get().song.patterns.find((candidate) => candidate.id === props.pattern.id)
-      const index = written?.notes.findIndex(
-        (candidate) => Math.abs(candidate.at - beat) < 1e-9 && candidate.pitch === pitch,
+      const root = props.tools.keepInKey ? snapToKey(pitch, key) : pitch
+      const pitches =
+        props.tools.chordTones > 1 ? chordFromScale(key, root, props.tools.chordTones) : [root]
+      addNotes(
+        store,
+        props.pattern.id,
+        pitches.map((member) => ({ at: beat, pitch: member, length, velocity: 0.8 })),
       )
-      store.select({ notes: index !== undefined && index >= 0 ? [index] : [] })
-      void audio.ensure(song).then((player) => player?.preview(props.track.id, pitch, 0.8))
+      // Notes are kept sorted, so a new one is not simply the last: find them
+      // by where they landed, or the selection highlights somebody else's note.
+      const written = store.get().song.patterns.find((candidate) => candidate.id === props.pattern.id)
+      const placed = pitches
+        .map((member) =>
+          written?.notes.findIndex(
+            (candidate) => Math.abs(candidate.at - beat) < 1e-9 && candidate.pitch === member,
+          ) ?? -1,
+        )
+        .filter((position) => position >= 0)
+      store.select({ notes: placed })
+      void audio.ensure(song).then((player) => {
+        for (const member of pitches) player?.preview(props.track.id, member, 0.8)
+      })
       return
     }
 
@@ -324,10 +344,11 @@ export function PianoRoll(props: { pattern: Pattern; track: Track; zoom: number 
       if (drag.kind === 'resize') {
         return { ...note, length: Math.max(step, Math.round((note.length + deltaBeats) / step) * step) }
       }
+      const moved = Math.max(0, Math.min(127, note.pitch + deltaPitch))
       return {
         ...note,
         at: Math.max(0, note.at + deltaBeats),
-        pitch: Math.max(0, Math.min(127, note.pitch + deltaPitch)),
+        pitch: props.tools.keepInKey ? snapToKey(moved, key) : moved,
       }
     })
     replaceNotes(store, props.pattern.id, next, false)

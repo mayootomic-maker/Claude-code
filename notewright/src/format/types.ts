@@ -267,15 +267,3 @@ export function beatsPerBar(timeSignature: string): number {
   const beats = (Number(count) * 4) / Number(unit)
   return Number.isFinite(beats) && beats > 0 ? beats : 4
 }
-
-export function songLengthInBars(song: Song): number {
-  return song.sections.reduce((total, section) => total + section.bars, 0)
-}
-
-export function trackById(song: Song, id: string): Track | undefined {
-  return song.tracks.find((track) => track.id === id)
-}
-
-export function patternById(song: Song, id: string): Pattern | undefined {
-  return song.patterns.find((pattern) => pattern.id === id)
-}

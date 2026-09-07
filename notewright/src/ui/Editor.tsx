@@ -1,9 +1,9 @@
 /** The Edit tab: pick a pattern, then edit it as notes or as steps. */
 import { useState } from 'preact/hooks'
 import type { JSX } from 'preact'
-import { Button, NumberField, SelectField } from './controls'
+import { Button, NumberField, SelectField, Toggle } from './controls'
 import { useAppState, useWorkbench } from './context'
-import { PianoRoll } from './PianoRoll'
+import { PianoRoll, type RollTools } from './PianoRoll'
 import { StepGrid } from './StepGrid'
 import {
   addPattern,
@@ -19,6 +19,7 @@ export function Editor(): JSX.Element {
   const state = useAppState()
   const song = state.song
   const [zoom, setZoom] = useState(1)
+  const [tools, setTools] = useState<RollTools>({ chordTones: 1, keepInKey: false })
 
   const pattern = song.patterns.find((candidate) => candidate.id === state.selection.patternId)
   const track = song.tracks.find((candidate) => candidate.id === (pattern?.track ?? state.selection.trackId))
@@ -94,6 +95,21 @@ export function Editor(): JSX.Element {
                     onInput={(event) => setZoom(Number(event.currentTarget.value))}
                   />
                 </label>
+                <SelectField
+                  label="Place"
+                  value={String(tools.chordTones)}
+                  options={[
+                    { value: '1', label: 'Single note' },
+                    { value: '3', label: 'Triad from the key' },
+                    { value: '4', label: 'Seventh from the key' },
+                  ]}
+                  onChange={(value) => setTools((current) => ({ ...current, chordTones: Number(value) }))}
+                />
+                <Toggle
+                  label={`Keep in ${song.key}`}
+                  checked={tools.keepInKey}
+                  onChange={(value) => setTools((current) => ({ ...current, keepInKey: value }))}
+                />
                 <Button title="Everything down a semitone" onClick={() => transposePattern(store, pattern.id, -1)}>
                   {'−1'}
                 </Button>
@@ -139,7 +155,9 @@ export function Editor(): JSX.Element {
       )}
 
       {pattern && track.instrument.type === 'drums' && <StepGrid pattern={pattern} track={track} />}
-      {pattern && track.instrument.type !== 'drums' && <PianoRoll pattern={pattern} track={track} zoom={zoom} />}
+      {pattern && track.instrument.type !== 'drums' && (
+        <PianoRoll pattern={pattern} track={track} zoom={zoom} tools={tools} />
+      )}
     </div>
   )
 }

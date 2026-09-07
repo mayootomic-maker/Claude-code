@@ -389,5 +389,3 @@ function velocitySymbol(velocity: number): string | null {
   return String(Math.round(tenths))
 }
 
-/** The velocity levels a drum lane can hold, for the step editor to snap to. */
-export const LANE_VELOCITIES = [0.1, 0.2, 0.3, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 1] as const

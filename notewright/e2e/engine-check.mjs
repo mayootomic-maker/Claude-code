@@ -309,23 +309,40 @@ try {
     `first ${compressedFirst.first.toFixed(3)} vs later ${compressedFirst.later.toFixed(3)}`,
   )
 
-  report.section('Rendering is deterministic')
-  const worst = await page.evaluate(async (source) => {
+  report.section('Rendering is repeatable')
+  const repeat = await page.evaluate(async (source) => {
     const parsed = window.harness.parseSong(source)
     const first = await window.harness.renderSong(parsed.value)
     const second = await window.harness.renderSong(parsed.value)
     const a = first.getChannelData(0)
     const b = second.getChannelData(0)
-    let difference = 0
-    for (let index = 0; index < a.length; index++) difference = Math.max(difference, Math.abs(a[index] - b[index]))
-    return difference
+    let worst = 0
+    let differenceEnergy = 0
+    let signalEnergy = 0
+    for (let index = 0; index < a.length; index++) {
+      const difference = a[index] - b[index]
+      if (Math.abs(difference) > worst) worst = Math.abs(difference)
+      differenceEnergy += difference * difference
+      signalEnergy += a[index] * a[index]
+    }
+    return {
+      worst,
+      relative: Math.sqrt(differenceEnergy / Math.max(signalEnergy, 1e-30)),
+    }
   }, song())
-  // Not bit-identical: Chromium sums seven or more inputs to a node in an
-  // order it does not promise, and float addition is not associative, so a
-  // unison patch lands within a few times 1e-8 of itself. That is 148 dB below
-  // full scale. The threshold is still tight enough to catch what actually
-  // matters — unseeded noise would differ by order 1.
-  report.check('two renders of one song agree to within float rounding', worst < 1e-6, `largest difference ${worst.toExponential(2)}`)
+  const relativeDb = 20 * Math.log10(Math.max(repeat.relative, 1e-30))
+  // Not bit-identical, and not expected to be. Chromium sums seven or more
+  // inputs to a node in an order it does not promise, and float addition is not
+  // associative; whichever order it picks, a resonant filter downstream rings on
+  // the difference. Measured over many runs the result is bimodal, landing at
+  // either -134 dB or -95 dB relative to the signal. Both are inaudible, and the
+  // failure this guards against -- an unseeded noise source -- would show up at
+  // around 0 dB, four orders of magnitude away.
+  report.check(
+    'two renders of one song differ only below audibility',
+    relativeDb < -80,
+    `${relativeDb.toFixed(1)} dB relative, largest single sample ${repeat.worst.toExponential(2)}`,
+  )
 
   report.section('The WAV file is well formed')
   const wav = await page.evaluate(async (source) => {

@@ -10,7 +10,7 @@ import { useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { Bank, Button, Knob, SelectField, TextField, Toggle } from './controls'
 import { useAppState, useWorkbench } from './context'
-import { removeTrack, updateTrack } from '../state/actions'
+import { moveTrack, removeTrack, updateTrack } from '../state/actions'
 import { instrumentFromPreset, PRESETS } from '../engine/presets'
 import { defaultEffect } from '../format/defaults'
 import { AUTOMATION_TARGETS } from '../engine/graph'
@@ -67,6 +67,22 @@ export function Inspector(): JSX.Element {
         <span class="swatch" style={{ background: track.colour }} />
         Track
         <span class="spacer" />
+        <button
+          type="button"
+          class="mini"
+          title="Move this track up"
+          onClick={() => moveTrack(store, track.id, -1)}
+        >
+          {'↑'}
+        </button>
+        <button
+          type="button"
+          class="mini"
+          title="Move this track down"
+          onClick={() => moveTrack(store, track.id, 1)}
+        >
+          {'↓'}
+        </button>
         <Button tone="danger" title={`Delete ${track.name} and its patterns`} onClick={() => removeTrack(store, track.id)}>
           Delete
         </Button>

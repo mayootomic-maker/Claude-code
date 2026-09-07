@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  chordToMidi,
+  chordFromScale,
   diatonicTriad,
   formatKey,
   isBlackKey,
@@ -112,21 +112,31 @@ describe('keys and scales', () => {
 })
 
 describe('chords', () => {
-  it('builds the common qualities', () => {
-    expect(chordToMidi('C', 4)).toEqual([60, 64, 67])
-    expect(chordToMidi('Am', 3)).toEqual([57, 60, 64])
-    expect(chordToMidi('G7', 3)).toEqual([55, 59, 62, 65])
-    expect(chordToMidi('Fmaj7', 3)).toEqual([53, 57, 60, 64])
+  it('stacks thirds from inside the key', () => {
+    const aMinor = parseKey('A minor')
+    expect(chordFromScale(aMinor, noteToMidi('A3')!, 3).map((m) => midiToNote(m))).toEqual(['A3', 'C4', 'E4'])
+    expect(chordFromScale(aMinor, noteToMidi('G3')!, 3).map((m) => midiToNote(m))).toEqual(['G3', 'B3', 'D4'])
+    expect(chordFromScale(aMinor, noteToMidi('E3')!, 4).map((m) => midiToNote(m))).toEqual(['E3', 'G3', 'B3', 'D4'])
   })
 
-  it('returns null for a quality it does not know', () => {
-    expect(chordToMidi('Cwobble')).toBeNull()
-    expect(chordToMidi('H7')).toBeNull()
+  it('pulls a root outside the key onto it first', () => {
+    const cMajor = parseKey('C major')
+    expect(chordFromScale(cMajor, noteToMidi('C#4')!, 3).map((m) => midiToNote(m))).toEqual(['D4', 'F4', 'A4'])
+  })
+
+  it('never leaves the key', () => {
+    const dorian = parseKey('D dorian')
+    for (let root = 40; root < 80; root++) {
+      for (const pitch of chordFromScale(dorian, root, 4)) {
+        expect(isInKey(pitch, dorian)).toBe(true)
+        expect(pitch).toBeGreaterThanOrEqual(0)
+        expect(pitch).toBeLessThanOrEqual(127)
+      }
+    }
   })
 
   it('builds triads from the key, so suggestions belong to the song', () => {
     const aMinor = parseKey('A minor')
-    // Every tone of every diatonic triad must belong to the key.
     for (let degree = 0; degree < 7; degree++) {
       for (const pitch of diatonicTriad(aMinor, degree)) {
         expect(isInKey(pitch, aMinor)).toBe(true)

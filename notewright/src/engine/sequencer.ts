@@ -163,10 +163,6 @@ export function beatToSeconds(beat: number, tempo: number): number {
   return beat * secondsPerBeat(tempo)
 }
 
-export function secondsToBeat(seconds: number, tempo: number): number {
-  return seconds / secondsPerBeat(tempo)
-}
-
 /**
  * The value of an automation lane at a given beat, with linear ramps between
  * points. Two points on the same beat are how you write an instant jump, so a

@@ -7,7 +7,7 @@
  */
 import { defaultTrack, TRACK_COLOURS } from '../format/defaults'
 import { instrumentFromPreset } from '../engine/presets'
-import type { Clip, Instrument, Pattern, Section, Song, Track } from '../format/types'
+import type { Clip, Instrument, Pattern, Section, Track } from '../format/types'
 import type { Note } from '../format/notation'
 import { beatsPerStep } from '../format/notation'
 import { uniqueId, type Store } from './store'
@@ -173,17 +173,20 @@ export function updateClip(
 // Notes
 // ---------------------------------------------------------------------------
 
-export function patternBeats(pattern: Pattern, beatsInBar: number): number {
-  return pattern.bars * beatsInBar
-}
-
 function sortNotes(notes: Note[]): void {
   notes.sort((left, right) => left.at - right.at || left.pitch - right.pitch)
 }
 
-export function addNote(store: Store, patternId: string, note: Note): void {
+/**
+ * Adds notes as one edit.
+ *
+ * Plural on purpose: stamping a chord is one action a person took, so it has to
+ * be one step to undo. Calling a singular add three times made three.
+ */
+export function addNotes(store: Store, patternId: string, notes: readonly Note[]): void {
+  if (notes.length === 0) return
   updatePattern(store, patternId, (pattern) => {
-    pattern.notes.push({ ...note })
+    for (const note of notes) pattern.notes.push({ ...note })
     sortNotes(pattern.notes)
   })
 }
@@ -253,9 +256,4 @@ export function transposePattern(store: Store, patternId: string, semitones: num
     if (pattern.notes.some((note) => note.pitch + semitones < 0 || note.pitch + semitones > 127)) return
     for (const note of pattern.notes) note.pitch += semitones
   })
-}
-
-export function trackOfPattern(song: Song, patternId: string | null): Track | undefined {
-  const pattern = song.patterns.find((candidate) => candidate.id === patternId)
-  return song.tracks.find((track) => track.id === pattern?.track)
 }

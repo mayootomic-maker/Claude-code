@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { Button, Meter, useAnimationFrame } from './controls'
 import { useAppState, useWorkbench } from './context'
-import { addTrack, removeTrack, updateTrack } from '../state/actions'
+import { addTrack, updateTrack } from '../state/actions'
 import { PRESETS, PRESET_GROUPS } from '../engine/presets'
 import type { Track } from '../format/types'
 
@@ -147,9 +147,4 @@ function PresetPicker(props: { onPick: (presetId: string, name: string) => void;
       ))}
     </div>
   )
-}
-
-export function removeSelectedTrack(store: ReturnType<typeof useWorkbench>['store']): void {
-  const id = store.get().selection.trackId
-  if (id) removeTrack(store, id)
 }

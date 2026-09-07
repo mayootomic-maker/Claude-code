@@ -11,10 +11,6 @@ export function dbToGain(db: number): number {
   return Math.pow(10, db / 20)
 }
 
-export function gainToDb(gain: number): number {
-  return 20 * Math.log10(Math.max(gain, 1e-6))
-}
-
 /** Below this an exponential ramp is silence to the ear but still legal maths. */
 export const SILENCE = 1e-4
 

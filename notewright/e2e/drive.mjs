@@ -128,6 +128,61 @@ try {
   const undone = (await state()).song.patterns.find((pattern) => pattern.id === 'bass-main').notes.length
   report.check('undo removes the note again', undone === notesBefore, `${undone} notes`)
 
+  report.section('The chord tool')
+  await page.getByLabel('Place').selectOption({ label: 'Triad from the key' })
+  await page.waitForTimeout(150)
+  const beforeChord = (await bassNotes()).length
+  await page.mouse.click(view.x + 500, view.y + 300)
+  await page.waitForTimeout(200)
+  const afterChord = await bassNotes()
+  report.check(
+    'placing a triad writes three notes at once',
+    afterChord.length === beforeChord + 3,
+    `${beforeChord} then ${afterChord.length}`,
+  )
+  const chordSelection = (await state()).selection.notes
+  const chordPitches = chordSelection.map((index) => afterChord[index].pitch).sort((a, b) => a - b)
+  report.check(
+    'and they are stacked as a chord, all on one beat',
+    chordPitches.length === 3 &&
+      new Set(chordSelection.map((index) => afterChord[index].at)).size === 1 &&
+      chordPitches[1] - chordPitches[0] >= 3 &&
+      chordPitches[2] - chordPitches[1] >= 3,
+    chordPitches.join(', '),
+  )
+  const inKey = await page.evaluate(
+    ([pitches]) => {
+      const { song } = window.notewright.store.get()
+      const scales = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] }
+      const root = 9 // The demo song is in A minor.
+      void song
+      return pitches.every((pitch) => scales.minor.includes((((pitch - root) % 12) + 12) % 12))
+    },
+    [chordPitches],
+  )
+  report.check('every tone belongs to the song key', inKey, chordPitches.join(', '))
+
+  await page.getByLabel('Place').selectOption({ label: 'Single note' })
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(200)
+  report.check('undo takes the whole chord back out', (await bassNotes()).length <= beforeChord, `${(await bassNotes()).length} notes`)
+
+  report.section('Reordering tracks')
+  const orderBefore = (await state()).song.tracks.map((track) => track.id)
+  const moving = (await state()).selection.trackId
+  const wasAt = orderBefore.indexOf(moving)
+  await page.locator('.inspector .mini[title="Move this track down"]').first().click()
+  await page.waitForTimeout(200)
+  const orderAfter = (await state()).song.tracks.map((track) => track.id)
+  report.check(
+    'the selected track moves down the list',
+    orderAfter.indexOf(moving) === wasAt + 1 && orderAfter[wasAt] === orderBefore[wasAt + 1],
+    `${moving}: ${wasAt} -> ${orderAfter.indexOf(moving)} (${orderAfter.join(' ')})`,
+  )
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(150)
+  report.check('and put back', (await state()).song.tracks.map((track) => track.id).join(' ') === orderBefore.join(' '))
+
   report.section('The mixer')
   await page.keyboard.press('3')
   await page.waitForTimeout(250)

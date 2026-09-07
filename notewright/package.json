@@ -12,8 +12,11 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "npm run build && node e2e/drive.mjs",
-    "verify": "npm run typecheck && npm run test && npm run build && npm run e2e"
+    "e2e": "node e2e/drive.mjs",
+    "check:engine": "node e2e/engine-check.mjs",
+    "check:songs": "node e2e/song-check.mjs",
+    "check:drums": "node e2e/drum-balance.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:engine && npm run check:songs && npm run e2e"
   },
   "dependencies": {
     "preact": "^10.24.3"
@@ -25,5 +28,13 @@
     "typescript": "^5.6.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
-  }
+  },
+  "keywords": [
+    "daw",
+    "music",
+    "web-audio",
+    "sequencer",
+    "synthesizer",
+    "open-source"
+  ]
 }
