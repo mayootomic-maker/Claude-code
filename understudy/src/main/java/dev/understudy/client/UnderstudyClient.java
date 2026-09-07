@@ -37,6 +37,7 @@ import java.util.List;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -108,6 +109,19 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static boolean greeted;
     private static boolean reportedFailure;
     private static boolean wasWorking;
+    /**
+     * Whose hands are on it.
+     *
+     * The rule lives in core.mind.Handover where it is tested; this half only
+     * answers "did the person do anything", which is the part that needs a game.
+     */
+    private static final dev.understudy.core.mind.Handover handover =
+            new dev.understudy.core.mind.Handover();
+    private static float lastYaw;
+    private static float lastPitch;
+    private static double lastX;
+    private static double lastY;
+    private static double lastZ;
     /**
      * The last things it said, for the panel to show.
      *
@@ -204,14 +218,28 @@ public final class UnderstudyClient implements ClientModInitializer {
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
 
-                // Take the controls and it lets go of them. No command, no key
-                // to remember, no menu: the gesture you already make when
-                // something is going wrong is to grab the keyboard, and every
-                // autopilot worth using treats that as the instruction it is.
-                // Keys knows which of them it is pressing itself, so a movement
-                // key that is down and not one of those is a hand.
-                if (working() && handOnTheControls(client)) {
-                    stopAll("you took the controls");
+                // Take the controls and it lets go of them — and keeps the
+                // plan. Stopping outright was the old rule and it was the right
+                // instinct with the wrong consequence: nudge a key forty
+                // minutes into a gather and the gather was gone. It picks the
+                // work back up once you have genuinely stopped: not merely
+                // stopped pressing keys, but stopped moving and stopped looking
+                // around, for ten unbroken seconds.
+                switch (handover.next(touchedAnything(client), working() || paused)) {
+                    case HAND_BACK -> {
+                        pause();
+                        tell("you took the controls — carrying on when you have been"
+                                + " still for ten seconds");
+                        return;
+                    }
+                    case TAKE_OVER -> {
+                        resume();
+                        tell("picking it back up");
+                    }
+                    default -> { }
+                }
+                if (handover.holding()) {
+                    Hud.setStatus("yours — " + (handover.untilTakeover() / 20 + 1) + "s");
                     return;
                 }
 
@@ -374,6 +402,16 @@ public final class UnderstudyClient implements ClientModInitializer {
         Minecraft client = Minecraft.getInstance();
         if (build == null || gather == null || client.player == null) return;
 
+        // In creative there is nothing to gather: the blocks are available for
+        // the asking, and the builder conjures each one as it reaches for it.
+        // Walking off to mine cobblestone in creative is not being careful, it
+        // is being obtuse — and it is what the first real run of this did,
+        // failing at the gather and then reporting a finished build.
+        if (dev.understudy.mc.Hotbar.creative(client.player)) {
+            build.start(blueprint, origin);
+            return;
+        }
+
         Planner.Plan needed = new Planner(Catalogue.solver(), UnderstudyClient.measured())
                 .plan(blueprint.essentialMaterials(), Carried.contents(client.player));
 
@@ -407,7 +445,39 @@ public final class UnderstudyClient implements ClientModInitializer {
                 || Keys.pressedByHand(client.options.keyLeft)
                 || Keys.pressedByHand(client.options.keyRight)
                 || Keys.pressedByHand(client.options.keyJump)
-                || Keys.pressedByHand(client.options.keyShift);
+                || Keys.pressedByHand(client.options.keyShift)
+                || Keys.pressedByHand(client.options.keyAttack)
+                || Keys.pressedByHand(client.options.keyUse);
+    }
+
+    /**
+     * Whether the person did anything at all this tick.
+     *
+     * Keys are only half of it. Looking around is the other half and it is the
+     * half that matters: standing still with the mouse moving is somebody
+     * deciding what to do, and starting to walk off underneath them is the
+     * rudest thing this mod could do.
+     *
+     * Where the character has moved is compared against where the mod believes
+     * it put them, so the mod's own walking never counts as a person walking.
+     */
+    private static boolean touchedAnything(Minecraft client) {
+        LocalPlayer player = client.player;
+        if (player == null) return false;
+        if (client.screen != null) return true;
+
+        boolean looked = Math.abs(player.getYRot() - lastYaw) > 0.35
+                || Math.abs(player.getXRot() - lastPitch) > 0.35;
+        boolean walked = !Keys.holding()
+                && player.position().distanceToSqr(lastX, lastY, lastZ) > 0.0016;
+
+        lastYaw = player.getYRot();
+        lastPitch = player.getXRot();
+        lastX = player.getX();
+        lastY = player.getY();
+        lastZ = player.getZ();
+
+        return handOnTheControls(client) || looked || walked;
     }
 
     /**
@@ -629,6 +699,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         paused = false;
         pickerWanted = false;
         if (marker != null) marker.cancel();
+        handover.reset();
         if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);
         if (hunt != null) hunt.stop(null);

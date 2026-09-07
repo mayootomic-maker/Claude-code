@@ -56,12 +56,28 @@ public final class Ghosts {
     private static int next = -1;
     private static boolean showDone = true;
 
+    /**
+     * The blueprint's own shape, worked out once.
+     *
+     * The reason this exists is a performance bug that made the mod unusable on
+     * a real import: everything below was being recomputed every frame, and
+     * "everything" included sorting the entire six-thousand-block build order
+     * and building a set of every position in it. Sixty times a second.
+     */
+    private static Hologram.Shape shape;
+    /** The last answer, and what it was an answer to. */
+    private static List<Hologram.Ghost> cached = List.of();
+    private static long cachedFor = Long.MIN_VALUE;
+
     /** Draw this blueprint standing at this corner until told otherwise. */
     public static void show(Blueprint blueprint, BlockPos at) {
         showing = blueprint;
+        shape = Hologram.shapeOf(blueprint);
         origin = at;
         placed = 0;
         next = -1;
+        cached = List.of();
+        cachedFor = Long.MIN_VALUE;
     }
 
     /** How far along, so the finished part can dim and the next can be called out. */
@@ -72,9 +88,12 @@ public final class Ghosts {
 
     public static void hide() {
         showing = null;
+        shape = null;
         origin = null;
         placed = 0;
         next = -1;
+        cached = List.of();
+        cachedFor = Long.MIN_VALUE;
     }
 
     public static boolean showing() {
@@ -86,6 +105,28 @@ public final class Ghosts {
     }
 
     /**
+     * The ghosts to draw, recomputed only when the answer could have changed.
+     *
+     * Which is: the build moved on, or the camera moved far enough that a
+     * different part of the design is near. Everything else is the same list as
+     * last frame, and handing back the same list is the difference between a
+     * six-thousand-block import being a hologram and being a slideshow.
+     */
+    private static List<Hologram.Ghost> visible(Vec3 camera) {
+        long now = key((int) camera.x >> 2, (int) camera.y >> 2, (int) camera.z >> 2)
+                ^ ((long) placed << 40) ^ ((long) next << 20) ^ (showDone ? 1 : 0);
+        if (now == cachedFor) return cached;
+        cachedFor = now;
+        cached = Hologram.of(shape, origin.getX(), origin.getY(), origin.getZ(),
+                placed, next, camera.x, camera.y, camera.z, showDone);
+        return cached;
+    }
+
+    private static long key(int x, int y, int z) {
+        return ((long) (x & 0x3FFFF) << 36) | ((long) (z & 0x3FFFF) << 18) | (y & 0x3FFFF);
+    }
+
+    /**
      * Hook the one event that runs after the world is drawn and before the
      * debug shapes, which is where something drawn over the world belongs.
      */
@@ -93,9 +134,7 @@ public final class Ghosts {
         LevelRenderEvents.BEFORE_GIZMOS.register(context -> {
             if (showing == null || origin == null) return;
             Vec3 camera = context.levelState().cameraRenderState.pos;
-            List<Hologram.Ghost> ghosts = Hologram.of(showing,
-                    origin.getX(), origin.getY(), origin.getZ(),
-                    placed, next, camera.x, camera.y, camera.z, showDone);
+            List<Hologram.Ghost> ghosts = visible(camera);
 
             for (Hologram.Ghost ghost : ghosts) {
                 // Offset by the camera here rather than pushing a translation:

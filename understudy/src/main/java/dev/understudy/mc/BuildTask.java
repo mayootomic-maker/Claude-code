@@ -299,7 +299,7 @@ public final class BuildTask {
         Aim.at(player, target);
         if (!Aim.onTarget()) return false;
 
-        if (!Hotbar.hold(client, next.block())) {
+        if (!Hotbar.holdOrConjure(client, next.block())) {
             missing.merge(next.block(), 1, Integer::sum);
             index++;
             skipped++;
@@ -405,6 +405,18 @@ public final class BuildTask {
     private void finish() {
         running = false;
         Ghosts.hide();
+        if (placed == 0) {
+            // Saying "done" over a building that never appeared is worse than
+            // saying nothing: it stops you looking for the reason, which is
+            // always right here in the numbers.
+            report.accept("built nothing — " + whyNothing());
+            if (atlas != null && client.level != null) {
+                // And it is not recorded as standing, or a project would tick
+                // off a house that does not exist.
+                report.accept("not counting that as built");
+            }
+            return;
+        }
         // Written down whether or not every optional block went in: a house
         // missing two decorative slabs is a house, and a project that refuses
         // to admit it is standing would build a second one beside it.
@@ -423,7 +435,29 @@ public final class BuildTask {
             message.append(String.join(", ", missing.keySet()));
             message.append(")");
         }
+        if (skipped > placed) {
+            message.append(" — more was skipped than placed, so it is not finished");
+        }
         report.accept(message.toString());
+    }
+
+    /**
+     * Why a build placed nothing.
+     *
+     * There are only a few reasons and they are all knowable from what the run
+     * recorded, so this is a sentence rather than a shrug.
+     */
+    private String whyNothing() {
+        if (!missing.isEmpty()) {
+            String short_ = String.join(", ", missing.keySet().stream().limit(4).toList());
+            return "nothing to build with: no " + short_
+                    + (missing.size() > 4 ? " and " + (missing.size() - 4) + " more" : "")
+                    + (Hotbar.creative(client.player)
+                            ? " (and creative could not conjure them — that is a bug, please say so)"
+                            : " — /get them first, or use /build from the menu which fetches them");
+        }
+        if (cleared > 0) return "the whole site was in the way and clearing it used the run";
+        return "nothing was reachable from where it stood";
     }
 
     /**

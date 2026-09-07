@@ -2,6 +2,7 @@ package dev.understudy.mc;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.ContainerInput;
@@ -80,6 +81,62 @@ public final class Hotbar {
         }
         return found ? best : 0;
     }
+
+    /**
+     * Whether the game is handing out blocks.
+     *
+     * In creative there is no such thing as not having something, and a builder
+     * that walks off to mine cobblestone in creative mode is not being careful,
+     * it is being obtuse.
+     */
+    public static boolean creative(LocalPlayer player) {
+        return player != null && player.getAbilities().instabuild;
+    }
+
+    /**
+     * Hold it, and in creative simply have it.
+     *
+     * This is the whole of why a build did nothing on the first real run. The
+     * builder asks for a block, `hold` cannot find one, and every placement is
+     * counted as skipped — six thousand times, in a creative world where the
+     * blocks were always available for the asking.
+     */
+    public static boolean holdOrConjure(Minecraft client, String itemName) {
+        if (hold(client, itemName)) return true;
+        LocalPlayer player = client.player;
+        if (player == null || client.gameMode == null || !creative(player)) return false;
+
+        Item item = itemNamed(itemName);
+        if (item == null) return false;
+        ItemStack stack = new ItemStack(item, item.getDefaultMaxStackSize());
+        player.getInventory().setItem(SCRATCH_SLOT, stack);
+        player.getInventory().setSelectedSlot(SCRATCH_SLOT);
+        // The server has to be told, or the stack exists on this client only and
+        // every placement is rejected — which looks exactly like the bug above.
+        client.gameMode.handleCreativeModeItemAdd(stack, HOTBAR_IN_MENU + SCRATCH_SLOT);
+        return true;
+    }
+
+    /** Where the hotbar sits in the player's own screen handler. */
+    private static final int HOTBAR_IN_MENU = 36;
+
+    /**
+     * An item by its plain name.
+     *
+     * The registry is walked and cached rather than asked for an identifier,
+     * because building one means naming a class this version renamed — and the
+     * rest of this mod already resolves blocks the same way for the same reason.
+     */
+    private static Item itemNamed(String name) {
+        if (BY_NAME.isEmpty()) {
+            for (Item item : BuiltInRegistries.ITEM) {
+                BY_NAME.put(BuiltInRegistries.ITEM.getKey(item).getPath(), item);
+            }
+        }
+        return BY_NAME.get(name);
+    }
+
+    private static final java.util.Map<String, Item> BY_NAME = new java.util.HashMap<>();
 
     /**
      * Put `itemName` in the player's hand, moving it to the hotbar if needed.

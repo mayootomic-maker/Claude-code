@@ -73,7 +73,12 @@ class HologramTest {
     void rangeLimited() {
         Blueprint manor = manor();
         assertTrue(Hologram.of(manor, 0, 0, 0, 0, -1, 5000, 70, 5000, false).isEmpty());
-        assertFalse(Hologram.of(manor, 0, 0, 0, 0, -1, 5, 70, 5, false).isEmpty());
+        // Standing in it. The old test stood seventy blocks up, which was
+        // inside the range when the range was sixty-four and is not now: it was
+        // cut to twenty-four because thousands of outlines drawn in every
+        // direction is both where the frame rate went and why it looked like
+        // x-ray vision.
+        assertFalse(Hologram.of(manor, 0, 0, 0, 0, -1, 5, 5, 5, false).isEmpty());
     }
 
     @Test
@@ -93,5 +98,33 @@ class HologramTest {
             int alpha = (ghost.argb() >>> 24) & 0xFF;
             assertTrue(alpha > 0 && alpha < 0xFF, "not translucent: alpha " + alpha);
         }
+    }
+
+    @Test
+    @DisplayName("a frame's worth of ghosts is a frame's worth, not six thousand")
+    void boundedPerFrame() {
+        // The performance bug in one number. A real import is six thousand
+        // blocks; the old ceiling was four thousand outlines, each one a shape
+        // allocated and submitted, sixty times a second.
+        Blueprint manor = manor();
+        assertTrue(Hologram.MAX_GHOSTS <= 1000,
+                "a ceiling of " + Hologram.MAX_GHOSTS + " outlines a frame is a slideshow");
+        assertTrue(Hologram.of(manor, 0, 0, 0, 0, -1, 5, 5, 5, true).size()
+                <= Hologram.MAX_GHOSTS);
+    }
+
+    @Test
+    @DisplayName("the expensive half is worked out once, not once a frame")
+    void shapeIsReusable() {
+        // buildOrder sorts the whole design and the position set is one entry
+        // per block. Neither changes while a building goes up, and both were
+        // being rebuilt every frame.
+        Blueprint manor = manor();
+        Hologram.Shape shape = Hologram.shapeOf(manor);
+        assertEquals(manor.placements().size(), shape.filled().size());
+
+        List<Hologram.Ghost> first = Hologram.of(shape, 0, 0, 0, 0, -1, 5, 5, 5, true);
+        List<Hologram.Ghost> again = Hologram.of(shape, 0, 0, 0, 0, -1, 5, 5, 5, true);
+        assertEquals(first.size(), again.size(), "the same question gave two answers");
     }
 }

@@ -25,9 +25,24 @@ public final class Hologram {
     public record Ghost(int x, int y, int z, int argb) {}
 
     /** Far enough to see the whole building, near enough not to draw a city. */
-    public static final int RANGE = 64;
+    /**
+     * How far a ghost is worth drawing.
+     *
+     * Was sixty-four, which on a six-thousand-block import meant thousands of
+     * outlines drawn through the terrain in every direction — which is both
+     * where the frame rate went and why it looked like x-ray vision. Twenty-four
+     * is the part of the build you are actually standing in.
+     */
+    public static final int RANGE = 24;
     /** Above this many boxes even a good machine starts to feel it. */
-    public static final int MAX_GHOSTS = 4_000;
+    /**
+     * A hard ceiling on how many outlines a frame may carry.
+     *
+     * Every one of these is a shape allocated and submitted, so this number is
+     * a frame-time budget rather than a matter of taste. Seven hundred fills the
+     * space around you; four thousand — the old number — is a slideshow.
+     */
+    public static final int MAX_GHOSTS = 700;
 
     /** Still to do: the plan, in the blueprint's own material colours. */
     private static final int PENDING_ALPHA = 0xB0000000;
@@ -46,16 +61,43 @@ public final class Hologram {
      * @param eyeX      where the player is, for range and for what to bother with
      * @param showDone  whether to dim in the finished blocks as well
      */
+    /**
+     * The part of the answer that depends only on the blueprint.
+     *
+     * Worked out once when a build starts rather than once a frame, which is
+     * the whole of a performance bug that made a six-thousand-block import
+     * unplayable: `buildOrder` sorts the entire design, and it was being sorted
+     * sixty times a second, alongside a fresh set of six thousand positions and
+     * a fresh list of four thousand shapes. None of that changes while a
+     * building goes up.
+     */
+    public record Shape(List<Blueprint.Placement> order, java.util.Set<Long> filled,
+                        Map<String, Integer> colours) {}
+
+    public static Shape shapeOf(Blueprint blueprint) {
+        List<Blueprint.Placement> order = blueprint.buildOrder();
+        java.util.Set<Long> filled = new java.util.HashSet<>();
+        Map<String, Integer> colours = new java.util.HashMap<>();
+        for (Blueprint.Placement p : order) {
+            filled.add(cell(p.x(), p.y(), p.z()));
+            colours.computeIfAbsent(p.block(), Palette::colourOf);
+        }
+        return new Shape(order, filled, colours);
+    }
+
     public static List<Ghost> of(Blueprint blueprint, int originX, int originY, int originZ,
                                  int placed, int nextIndex,
                                  double eyeX, double eyeY, double eyeZ, boolean showDone) {
-        List<Blueprint.Placement> order = blueprint.buildOrder();
-        Map<String, Integer> colours = new java.util.HashMap<>();
-        // Positions once, rather than a scan per neighbour test: the manor is
-        // eleven hundred blocks and six lookups each of a linear search is the
-        // difference between a frame and a stutter.
-        java.util.Set<Long> filled = new java.util.HashSet<>();
-        for (Blueprint.Placement p : order) filled.add(cell(p.x(), p.y(), p.z()));
+        return of(shapeOf(blueprint), originX, originY, originZ, placed, nextIndex,
+                eyeX, eyeY, eyeZ, showDone);
+    }
+
+    public static List<Ghost> of(Shape shape, int originX, int originY, int originZ,
+                                 int placed, int nextIndex,
+                                 double eyeX, double eyeY, double eyeZ, boolean showDone) {
+        List<Blueprint.Placement> order = shape.order();
+        Map<String, Integer> colours = shape.colours();
+        java.util.Set<Long> filled = shape.filled();
         List<Ghost> ghosts = new ArrayList<>();
 
         for (int i = 0; i < order.size() && ghosts.size() < MAX_GHOSTS; i++) {
@@ -75,8 +117,7 @@ public final class Hologram {
             if (i == nextIndex) argb = NEXT;
             else if (done) argb = PLACED;
             else {
-                argb = PENDING_ALPHA
-                        | (colours.computeIfAbsent(p.block(), Palette::colourOf) & 0xFFFFFF);
+                argb = PENDING_ALPHA | (colours.getOrDefault(p.block(), 0xFFFFFF) & 0xFFFFFF);
             }
             ghosts.add(new Ghost(x, y, z, argb));
         }
