@@ -129,6 +129,7 @@ public final class UnderstudyCommands {
             dispatcher.register(literal("panel")
                     .executes(context -> panel(context.getSource(), false))
                     .then(literal("network").executes(context -> panel(context.getSource(), true)))
+                    .then(literal("open").executes(context -> reopen(context.getSource())))
                     .then(literal("off").executes(context -> panelOff(context.getSource()))));
 
             dispatcher.register(literal("project")
@@ -373,10 +374,26 @@ public final class UnderstudyCommands {
      */
     private static int panel(FabricClientCommandSource source, boolean toTheNetwork) {
         if (!Remote.start(toTheNetwork, line -> say(source, line))) return 0;
-        say(source, "open that in a browser — the token is in the link");
-        if (!toTheNetwork) {
+        // Opened rather than printed. Minecraft's chat cannot be copied from,
+        // so a link there is a link retyped by hand — which is exactly how the
+        // first version of this went, and it is not a small annoyance when
+        // twelve characters of it are a token.
+        Remote.openInBrowser(line -> say(source, line));
+        say(source, "opening it in your browser now");
+        if (toTheNetwork) {
+            say(source, "on your phone: " + Remote.networkAddress());
+        } else {
             say(source, "only this machine can reach it; /panel network opens it to your house");
         }
+        say(source, "if nothing opened, the link is in config/understudy/panel-url.txt");
+        return 1;
+    }
+
+    /** Open it again without restarting it, so the token stays the same. */
+    private static int reopen(FabricClientCommandSource source) {
+        if (!Remote.running()) return panel(source, false);
+        Remote.openInBrowser(line -> say(source, line));
+        say(source, "opening " + Remote.address());
         return 1;
     }
 

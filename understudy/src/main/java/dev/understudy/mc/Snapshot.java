@@ -94,6 +94,11 @@ public final class Snapshot {
                 .put("light", client.level == null ? 15
                         : client.level.getMaxLocalRawBrightness(player.blockPosition()))
                 .put("dimension", Worlds.key(client))
+                // Only when the panel is open to the house. It is the one
+                // address somebody genuinely has to read off a screen and type,
+                // and a monitor is a far better thing to read it from than a
+                // chat log that has already scrolled.
+                .put("phoneLink", Remote.openToTheNetwork() ? Remote.networkAddress() : "")
                 .put("weapon", weapon == null ? "" : weapon.replace('_', ' '))
                 .put("paused", paused)
                 .put("busy", busy)

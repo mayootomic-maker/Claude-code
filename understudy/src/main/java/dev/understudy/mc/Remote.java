@@ -74,9 +74,21 @@ public final class Remote {
         return wideOpen;
     }
 
-    /** The address to type, with the token already in it. */
+    /** The address to open, with the token already in it. */
     public static String address() {
         return "http://" + (wideOpen ? hostAddress() : "127.0.0.1") + ":" + PORT + "/?k=" + token;
+    }
+
+    /**
+     * The address as it looks from another device on the same network.
+     *
+     * Shown in the panel itself rather than only in chat, because the phone
+     * case is the one where somebody really does have to read an address off a
+     * screen and type it — and a monitor is a much better thing to read it from
+     * than a scrolling chat log.
+     */
+    public static String networkAddress() {
+        return "http://" + hostAddress() + ":" + PORT + "/?k=" + token;
     }
 
     /**
@@ -217,11 +229,80 @@ public final class Remote {
         }
     }
 
-    /** Sixteen random bytes, which is more than enough for something this short-lived. */
+    /**
+     * Nine random bytes: twelve characters.
+     *
+     * Shorter than it was, deliberately. The panel opens itself and the link is
+     * written to a file, so nobody should ever type this — but "should" is
+     * doing a lot of work in that sentence, and the one case where it has to be
+     * typed is the worst one: reading it off a monitor onto a phone. Twenty-two
+     * characters made that miserable. Seventy-two bits, fresh every session, on
+     * a socket that is loopback-only unless asked otherwise, is not the weak
+     * part of this.
+     */
     private static String freshToken() {
-        byte[] bytes = new byte[16];
+        byte[] bytes = new byte[9];
         new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /**
+     * Open it in whatever browser this machine uses.
+     *
+     * The thing that made the panel awkward on the first run: Minecraft's chat
+     * cannot be copied from, so a link printed there is a link you retype by
+     * hand, twenty-two characters of token included. This removes the step
+     * entirely.
+     *
+     * Done without touching Minecraft's API at all — java.awt.Desktop where it
+     * works, and the platform's own opener where it does not, which is what
+     * every launcher has always done. On a background thread because opening a
+     * browser can take a second and the client tick is not the place to spend
+     * it.
+     */
+    public static void openInBrowser(Consumer<String> report) {
+        String link = address();
+        Thread opener = new Thread(() -> {
+            if (viaDesktop(link) || viaTheShell(link)) return;
+            report.accept("could not open a browser — the link is in "
+                    + "config/understudy/panel-url.txt");
+        }, "understudy-open");
+        opener.setDaemon(true);
+        opener.start();
+    }
+
+    private static boolean viaDesktop(String link) {
+        try {
+            java.awt.Desktop desktop = java.awt.Desktop.isDesktopSupported()
+                    ? java.awt.Desktop.getDesktop() : null;
+            if (desktop == null || !desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+                return false;
+            }
+            desktop.browse(java.net.URI.create(link));
+            return true;
+        } catch (Throwable headless) {
+            // A game with no AWT, or a Linux desktop without the bridge. Neither
+            // is a problem worth a stack trace; there is another way below.
+            return false;
+        }
+    }
+
+    private static boolean viaTheShell(String link) {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        String[] command;
+        if (os.contains("win")) {
+            command = new String[]{"rundll32", "url.dll,FileProtocolHandler", link};
+        } else if (os.contains("mac")) {
+            command = new String[]{"open", link};
+        } else {
+            command = new String[]{"xdg-open", link};
+        }
+        try {
+            new ProcessBuilder(command).start();
+            return true;
+        } catch (IOException nothingToOpenWith) {
+            return false;
+        }
     }
 
     /**

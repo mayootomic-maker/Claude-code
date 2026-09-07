@@ -173,6 +173,10 @@ input.n{flex:0 0 88px}
   padding:10px 18px;font-family:var(--mono);font-size:12px;color:var(--go);
   opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.on{opacity:1}
+.phone{margin-top:14px;padding:12px;background:#111a17;border-left:3px solid var(--cyan)}
+.phone .addr{font-family:var(--mono);font-size:16px;color:var(--cyan);word-break:break-all;
+  margin-top:4px;user-select:all;cursor:text}
+.phone .why{font-size:11.5px;color:var(--ink-dim)}
 .offline{padding:22px;text-align:center;color:var(--ink-dim);font-family:var(--mono);font-size:12px}
 .offline b{display:block;color:var(--bad);font-size:14px;margin-bottom:8px}
 kbd{font-family:var(--mono);font-size:10px;background:#0b100f;border:1px solid var(--edge-lit);
@@ -306,6 +310,10 @@ kbd{font-family:var(--mono);font-size:10px;background:#0b100f;border:1px solid v
       <h2>What things cost here</h2>
       <div id="costs"><p class="hint">It learns as it gathers.</p></div>
     </section>
+    <section class="bevel phone" id="phone" hidden>
+      <div class="why">Same panel, on your phone — same wifi:</div>
+      <div class="addr" id="phoneLink"></div>
+    </section>
   </div>
 </main>
 
@@ -426,6 +434,13 @@ function paint(state) {
     $("items").innerHTML = state.obtainable.map(i => "<option value=\\"" + esc(i) + "\\">").join("");
   }
   $("pause").textContent = state.paused ? "Resume" : "Pause";
+
+  // Only shown when the panel has been opened to the house, because that is
+  // the only time it is true — and it is the one address anybody actually has
+  // to read off a screen and type in by hand.
+  const phone = $("phone");
+  phone.hidden = !state.phoneLink;
+  if (state.phoneLink) $("phoneLink").textContent = state.phoneLink;
 }
 
 const meter = (label, share, right) =>

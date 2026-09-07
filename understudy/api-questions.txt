@@ -101,8 +101,14 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # knows it is dark out without a clock. Player has no startSleeping, so going to
 # bed is a right-click on the bed like any other block.
 
-# Opening a browser from the game, so /panel needs no copy and paste at all.
-net.minecraft.Util openUri
+# Opening a browser needed no Minecraft API in the end — java.awt.Desktop, and
+# the platform's own opener where that is missing, which is what every launcher
+# has always done. What is still worth having is a *clickable* chat line, since
+# Minecraft chat cannot be copied from and that is what made the first version
+# of /panel awkward. ClickEvent became a sealed interface of records somewhere
+# around 1.21.5; these say what it looks like now.
+net.minecraft.network.chat.ClickEvent 20
+net.minecraft.network.chat.Style withClickEvent
 
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
