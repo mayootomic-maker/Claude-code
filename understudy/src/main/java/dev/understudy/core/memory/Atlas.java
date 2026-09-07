@@ -31,6 +31,17 @@ import java.util.Map;
  */
 public final class Atlas {
 
+    /**
+     * What a remembered spot of trouble is filed under.
+     *
+     * A sighting like any other, which is the point: the atlas is already the
+     * thing that knows where everything was, and where a fight went badly is a
+     * fact about a place in exactly the same way a vein of iron is. Filing it
+     * separately would have meant a second memory that ages differently and
+     * gets saved differently for no reason.
+     */
+    public static final String TROUBLE = "trouble";
+
     /** What was seen, where, and when — the tick is the client's own count. */
     public record Sighting(String what, int x, int y, int z, long tick) {
         public double distanceTo(int fromX, int fromY, int fromZ) {
@@ -83,6 +94,23 @@ public final class Atlas {
         return known(what).stream()
                 .min(Comparator.comparingDouble(s -> s.distanceTo(fromX, fromY, fromZ)))
                 .orElse(null);
+    }
+
+    /**
+     * Whether something went wrong near here, recently enough to matter.
+     *
+     * Recency is the whole of it. A creeper went off here an hour ago is not a
+     * reason to avoid a place — whatever it was is long dead and the hole has
+     * probably been walked through since. Twenty minutes ago is a different
+     * matter, and a spawner is a place that keeps being trouble, which is
+     * exactly what several sightings in one spot means.
+     */
+    public boolean troubleNear(int x, int y, int z, double within, long now, long staleAfter) {
+        for (Sighting sighting : known(TROUBLE)) {
+            if (now - sighting.tick() > staleAfter) continue;
+            if (sighting.distanceTo(x, y, z) <= within) return true;
+        }
+        return false;
     }
 
     public List<Sighting> known(String what) {

@@ -82,6 +82,10 @@ net.minecraft.world.entity.LivingEntity getItemBySlot
 net.minecraft.world.entity.EquipmentSlot 20
 # And throwing a spare stack away, so a full bag stops ending a job.
 net.minecraft.world.entity.player.Player drop
+# And how worn a tool is, so it is replaced before it breaks rather than after.
+net.minecraft.world.item.ItemStack isDamageableItem
+net.minecraft.world.item.ItemStack getDamageValue
+net.minecraft.world.item.ItemStack getMaxDamage
 
 # COMBAT: all answered and all in use.
 #   MultiPlayerGameMode.attack(Player, Entity)

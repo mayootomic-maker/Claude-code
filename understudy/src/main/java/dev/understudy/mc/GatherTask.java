@@ -67,6 +67,26 @@ public final class GatherTask {
      * Beyond this a fresh tunnel finds ore sooner than the walk takes, and the
      * memory is likelier to be stale anyway.
      */
+    /**
+     * Life left in a tool below which it is worth replacing now.
+     *
+     * A tenth of a stone pickaxe is thirteen blocks, which is about one seam.
+     * Any earlier and it spends the session making pickaxes; any later and the
+     * break happens somewhere inconvenient, which is the whole problem.
+     */
+    private static final double NEARLY_WORN = 0.1;
+
+    /** Close enough to a remembered fight that it is probably the same one. */
+    private static final double TROUBLE_RANGE = 24.0;
+    /**
+     * Twenty minutes of game time, after which trouble stops counting.
+     *
+     * Whatever it was is long dead by then and the place is a place again. A
+     * memory of danger that never expires turns the world into somewhere the
+     * mod will not go.
+     */
+    private static final long TROUBLE_STALE = 20L * 60 * 20;
+
     private static final int REMEMBERED_RANGE = 400;
     /** The four compass headings a strip mine can run along. */
     private static final int[][] LEGS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
@@ -284,12 +304,28 @@ public final class GatherTask {
         // skeleton ends the whole job. This is cheaper than that.
         if (Torchlight.keepLit(client, player)) return;
 
+        // A tool about to break, while standing on the stone a new one is made
+        // of. Replacing it here is the same recovery the break would force,
+        // minus the walk back up out of the mine. It asks for one more than it
+        // is holding, because asking for "a pickaxe" while holding a worn one
+        // makes a planner that can count say there is nothing to do.
+        if (wanted.tool() != null && Hotbar.count(player, wanted.tool()) > 0
+                && Hotbar.lifeLeft(player, wanted.tool()) < NEARLY_WORN) {
+            int spare = Hotbar.count(player, wanted.tool()) + 1;
+            if (fetchTool(player, wanted.tool(), spare, "spare",
+                    "the " + wanted.tool() + " is nearly worn out — making another now")) {
+                return;
+            }
+        }
         if (wanted.tool() != null && !Hotbar.hold(client, wanted.tool())) {
             // Not having the tool is not a reason to stop; it is a reason to go
             // and make one. The plan thought there would be one here — it broke,
             // or a craft failed upstream — so work out what a fresh one costs
             // and put those steps in front of this one.
-            if (fetchTool(player, wanted.tool())) return;
+            if (fetchTool(player, wanted.tool(), 1, "any",
+                    "no " + wanted.tool() + " — making one first")) {
+                return;
+            }
             if (waitingOn == null) {
                 waitingOn = "no " + wanted.tool() + " to mine " + wanted.item()
                         + " with, and no way to make one";
@@ -476,10 +512,9 @@ public final class GatherTask {
      */
     private boolean goToRemembered(LocalPlayer player, Planner.Collect wanted) {
         BlockPos here = player.blockPosition();
-        Atlas.Sighting seen = atlas.nearest(wanted.item(), here.getX(), here.getY(), here.getZ());
+        Atlas.Sighting seen = pickRemembered(player, wanted, here);
         if (seen == null) return false;
         double away = seen.distanceTo(here.getX(), here.getY(), here.getZ());
-        if (away > REMEMBERED_RANGE) return false;
 
         // Believe it only until it is disproved. If the block is loaded and is
         // not what was remembered, the memory is wrong and goes now rather than
@@ -492,6 +527,40 @@ public final class GatherTask {
         report.accept("remembered " + wanted.item() + " " + Math.round(away) + " blocks away");
         travel.start(at.above(), true);
         return true;
+    }
+
+    /**
+     * The nearest remembered seam that is not somewhere a fight went badly.
+     *
+     * The mod used to walk back into the same cave, meet the same skeletons,
+     * disengage, and walk back in again — a loop that looks exactly like being
+     * stuck and is worse, because every lap costs health. The atlas already
+     * knows where the trouble was; this is it being asked.
+     *
+     * It falls back to the nearest one anyway when every candidate is somewhere
+     * bad, because refusing to go anywhere is not better than going carefully.
+     */
+    private Atlas.Sighting pickRemembered(LocalPlayer player, Planner.Collect wanted,
+                                          BlockPos here) {
+        long now = client.level.getGameTime();
+        Atlas.Sighting fallback = null;
+        for (Atlas.Sighting seen : atlas.known(wanted.item())) {
+            double away = seen.distanceTo(here.getX(), here.getY(), here.getZ());
+            if (away > REMEMBERED_RANGE) continue;
+            if (fallback == null
+                    || away < fallback.distanceTo(here.getX(), here.getY(), here.getZ())) {
+                fallback = seen;
+            }
+            if (atlas.troubleNear(seen.x(), seen.y(), seen.z(), TROUBLE_RANGE, now, TROUBLE_STALE)) {
+                continue;
+            }
+            return seen;
+        }
+        if (fallback != null) {
+            report.accept("the nearest " + wanted.item()
+                    + " is somewhere that went badly before — going anyway, carefully");
+        }
+        return fallback;
     }
 
     /**
@@ -538,14 +607,24 @@ public final class GatherTask {
      * one, the problem is not that nobody tried, and repeating the attempt for
      * the rest of the session would hide whatever the real failure is.
      */
-    private boolean fetchTool(LocalPlayer player, String tool) {
-        if (!fetched.add(tool)) return false;
+    /**
+     * Put the steps to make a tool in front of whatever is being done.
+     *
+     * @param count  how many to end up with. One when there is none; one more
+     *               than is held when the held one is nearly gone, because the
+     *               planner counts what you have and "get me a pickaxe" while
+     *               holding a pickaxe is correctly answered with nothing.
+     * @param why    which of those two cases this is, so each gets one go per
+     *               job rather than the pair of them sharing one
+     */
+    private boolean fetchTool(LocalPlayer player, String tool, int count, String why,
+                              String saying) {
+        if (!fetched.add(why + ":" + tool)) return false;
         Planner.Plan makeIt = new Planner(Catalogue.solver())
-                .plan(Map.of(tool, 1), Carried.contents(player));
+                .plan(Map.of(tool, count), Carried.contents(player));
         if (!makeIt.possible() || makeIt.actions().isEmpty()) return false;
 
-        report.accept("no " + tool + " — making one first ("
-                + makeIt.actions().size() + " steps)");
+        report.accept(saying + " (" + makeIt.actions().size() + " steps)");
         plan.addAll(step, makeIt.actions());
         attempted = false;
         return true;

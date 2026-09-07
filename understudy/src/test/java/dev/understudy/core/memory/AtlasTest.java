@@ -99,4 +99,22 @@ class AtlasTest {
         assertTrue(atlas.known("diamond_ore").isEmpty());
         assertTrue(atlas.summary().isEmpty());
     }
+
+    @Test
+    @DisplayName("remembers where a fight went badly, and forgets in due course")
+    void remembersTrouble() {
+        // The mod used to walk back into the same cave, meet the same
+        // skeletons, break off, and walk back in again. Every lap cost health
+        // and it looked exactly like being stuck.
+        Atlas atlas = new Atlas();
+        atlas.saw(Atlas.TROUBLE, 100, 40, 100, 1_000);
+
+        assertTrue(atlas.troubleNear(110, 40, 100, 24, 2_000, 24_000));
+        assertFalse(atlas.troubleNear(300, 40, 100, 24, 2_000, 24_000),
+                "a fight here made somewhere two hundred blocks away dangerous");
+
+        // And it expires. Whatever it was is long dead, and a memory of danger
+        // that never fades turns the world into somewhere the mod will not go.
+        assertFalse(atlas.troubleNear(110, 40, 100, 24, 200_000, 24_000));
+    }
 }

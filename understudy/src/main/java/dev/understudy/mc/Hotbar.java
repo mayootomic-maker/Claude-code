@@ -55,6 +55,33 @@ public final class Hotbar {
     }
 
     /**
+     * How much life is left in the best one of these, from one to nothing.
+     *
+     * Returns one for anything that does not wear out, so a caller can ask the
+     * question of everything without knowing which things have durability.
+     *
+     * This exists because the mod handled a broken pickaxe well and a nearly
+     * broken one not at all: the recovery is to work out what a fresh one costs
+     * and go and get the materials, which at the bottom of a mine means walking
+     * back up. Noticing thirty blocks earlier — while standing on the
+     * cobblestone a new one is made of — is the same recovery for none of the
+     * walk.
+     */
+    public static double lifeLeft(LocalPlayer player, String itemName) {
+        double best = 0;
+        boolean found = false;
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (!itemName.equals(nameOf(stack))) continue;
+            found = true;
+            if (!stack.isDamageableItem()) return 1;
+            double left = 1 - stack.getDamageValue() / (double) stack.getMaxDamage();
+            best = Math.max(best, left);
+        }
+        return found ? best : 0;
+    }
+
+    /**
      * Put `itemName` in the player's hand, moving it to the hotbar if needed.
      * Returns false when there is none to hold.
      */

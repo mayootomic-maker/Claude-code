@@ -230,7 +230,18 @@ public final class UnderstudyClient implements ClientModInitializer {
                         // the verdict: a hostile goes to Combat, and Combat
                         // answers either "deal with it" or "this one is not
                         // worth having". Safety knows which happened.
-                        if (safety.standingDown()) stopEverything();
+                        if (safety.standingDown()) {
+                            // Write the place down before letting go of it. A
+                            // fight that had to be broken off is a fact about
+                            // somewhere, and the mod used to walk straight back
+                            // into the same cave and break off again — a loop
+                            // that looks like being stuck and costs health
+                            // every lap.
+                            atlas.saw(Atlas.TROUBLE,
+                                    client.player.getBlockX(), client.player.getBlockY(),
+                                    client.player.getBlockZ(), client.level.getGameTime());
+                            stopEverything();
+                        }
                         // Counted, not lost. Time spent fighting used to fall
                         // out of the accounting entirely, because the tick
                         // returns here — so a job that was half combat looked
