@@ -1,6 +1,8 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.path.BlockView;
+import dev.understudy.core.path.Lean;
+import dev.understudy.core.path.Progress;
 import dev.understudy.core.path.Pursuit;
 import dev.understudy.core.path.Smoother;
 import dev.understudy.core.path.Step;
@@ -36,6 +38,15 @@ import java.util.List;
  * though the walk was the one place already doing it properly: during a build
  * the walker wants to look down the path while the builder wants to look at the
  * block, and two writers in one tick is a view that shakes.
+ *
+ * Nor is "am I stuck, and what should I try" here any more. That was the single
+ * most complained-about behaviour in the mod and it lived in the middle of this
+ * file, mixed in with key presses and Minecraft types, where it could not be
+ * tested. It is Progress and Lean now, both of which are arithmetic over
+ * positions and blocks, and both of which have a test for every rule — one of
+ * which caught a bug on the first run: the old check compared the distance to
+ * the *look-ahead point* with last tick's, so scraping along a wall at a fifth
+ * of walking speed counted as progress indefinitely.
  */
 public final class Walker {
 
@@ -48,11 +59,11 @@ public final class Walker {
     private final Minecraft client;
     private List<Step> path = List.of();
     private int index;
-    private int stuckTicks;
-    private double lastProgress = Double.MAX_VALUE;
+    private final Progress progress = new Progress();
+    private BlockPos goal = BlockPos.ZERO;
+    private boolean wantsRepath;
     private BlockPos digging;
     private int digTicks;
-    private int sidestep;
     private BlockView world;
     private boolean mayDig;
     private BlockPos opening;
@@ -78,8 +89,11 @@ public final class Walker {
         this.opening = null;
         this.openTicks = 0;
         this.index = 0;
-        this.stuckTicks = 0;
-        this.lastProgress = Double.MAX_VALUE;
+        this.goal = steps.isEmpty() ? BlockPos.ZERO
+                : new BlockPos(steps.get(steps.size() - 1).x(),
+                        steps.get(steps.size() - 1).y(), steps.get(steps.size() - 1).z());
+        this.wantsRepath = false;
+        this.progress.restart();
         Aim.release(client.player);
     }
 
@@ -87,8 +101,15 @@ public final class Walker {
         return index >= path.size();
     }
 
+    /**
+     * Whether to stop trying this route.
+     *
+     * Two different failures, and the caller wants a new path for both: one is
+     * wedged against geometry nothing here can get past, the other is walking
+     * perfectly well and getting no nearer.
+     */
     public boolean stuck() {
-        return stuckTicks > 60;
+        return progress.hopeless() || wantsRepath;
     }
 
     public Step current() {
@@ -107,7 +128,6 @@ public final class Walker {
         Keys.set(client.options.keyRight, false);
         Keys.set(client.options.keyJump, false);
         Keys.set(client.options.keySprint, false);
-        sidestep = 0;
     }
 
     public void stop() {
@@ -147,11 +167,17 @@ public final class Walker {
             return false;
         }
 
-        // Not getting closer for three seconds means something is in the way
-        // that the path did not know about.
-        if (aim.remaining() >= lastProgress - 0.01) stuckTicks++;
-        else stuckTicks = 0;
-        lastProgress = aim.remaining();
+        // What the walk is actually doing, judged on where the player has been
+        // rather than on where the aim point is: the aim point runs ahead as
+        // you walk, which is why measuring against it cannot tell walking from
+        // circling.
+        Progress.Move move = progress.next(player.getX(), player.getY(), player.getZ(),
+                Math.sqrt(player.distanceToSqr(goal.getX() + 0.5, goal.getY(), goal.getZ() + 0.5)));
+        if (move == Progress.Move.REPATH || move == Progress.Move.GIVE_UP) {
+            wantsRepath = move == Progress.Move.REPATH;
+            release();
+            return true;
+        }
 
         double wantedYaw = Math.toDegrees(Math.atan2(aim.z() - player.getZ(),
                 aim.x() - player.getX())) - 90.0;
@@ -178,36 +204,35 @@ public final class Walker {
         // this route was allowed to tunnel, costs a few seconds of mining. Both
         // beat the alternative, which is leaning on a wall until the task gives
         // up and tells you it cannot find a way somewhere it is standing.
-        if (stuckTicks > 20 && unstick(player)) return true;
+        if ((move == Progress.Move.OPEN || move == Progress.Move.DIG)
+                && unstick(player, move == Progress.Move.DIG)) {
+            return true;
+        }
 
-        boolean needsJump = step.kind() == Step.Kind.JUMP
+        Keys.set(client.options.keyJump, step.kind() == Step.Kind.JUMP
                 || (player.isInWater() && dy > -0.2)
-                || stuckTicks > 12;
-        Keys.set(client.options.keyJump, needsJump);
+                || move == Progress.Move.JUMP
+                || move == Progress.Move.LEAN_LEFT || move == Progress.Move.LEAN_RIGHT);
 
         // Jumping gets you over a step. It does nothing about a fence post you
-        // are pressed against, and pressing forward harder never has. So after
-        // a couple of seconds of no progress, lean out sideways — alternating,
-        // because whichever way the obstruction is, one of the two is past it.
-        //
-        // Only onto ground, though. Blind strafing is a fine way to unstick
-        // yourself from a fence and an excellent way to walk off the cliff you
-        // were stuck at the edge of, and the second one costs a life.
-        boolean left = false;
-        boolean right = false;
-        if (stuckTicks > 25) {
-            sidestep++;
-            boolean preferLeft = (sidestep / 12) % 2 == 0;
-            if (canStrafe(player, preferLeft)) {
-                left = preferLeft;
-                right = !preferLeft;
-            } else if (canStrafe(player, !preferLeft)) {
-                left = !preferLeft;
-                right = preferLeft;
+        // are pressed against, and pressing forward harder never has — so lean
+        // out sideways instead, onto a block that has been checked first. If
+        // neither side is somewhere to put a foot, stay put: the alternative to
+        // being stuck is not always better.
+        boolean leanLeft = false;
+        boolean leanRight = false;
+        if (move == Progress.Move.LEAN_LEFT || move == Progress.Move.LEAN_RIGHT) {
+            boolean wanted = move == Progress.Move.LEAN_LEFT;
+            if (canStrafe(player, wanted)) {
+                leanLeft = wanted;
+                leanRight = !wanted;
+            } else if (canStrafe(player, !wanted)) {
+                leanLeft = !wanted;
+                leanRight = wanted;
             }
         }
-        Keys.set(client.options.keyLeft, left);
-        Keys.set(client.options.keyRight, right);
+        Keys.set(client.options.keyLeft, leanLeft);
+        Keys.set(client.options.keyRight, leanRight);
         return true;
     }
 
@@ -221,22 +246,9 @@ public final class Walker {
      */
     private boolean canStrafe(LocalPlayer player, boolean leftward) {
         if (world == null) return false;
-        double yaw = Math.toRadians(player.getYRot());
-        // Facing south (yaw 0, +Z) your left hand points east: (cos, sin).
-        double vx = Math.cos(yaw);
-        double vz = Math.sin(yaw);
-        if (!leftward) {
-            vx = -vx;
-            vz = -vz;
-        }
-        int x = (int) Math.floor(player.getX() + vx * 0.9);
-        int y = (int) Math.floor(player.getY());
-        int z = (int) Math.floor(player.getZ() + vz * 0.9);
-
-        if (!world.known(x, y, z)) return false;
-        if (world.hazard(x, y, z) || world.hazard(x, y + 1, z)) return false;
-        if (!world.passable(x, y, z) || !world.passable(x, y + 1, z)) return false;
-        return world.solid(x, y - 1, z) || world.liquid(x, y - 1, z) || world.liquid(x, y, z);
+        int[] at = Lean.cell(player.getX(), player.getY(), player.getZ(),
+                player.getYRot(), leftward);
+        return Lean.safe(world, at[0], at[1], at[2]);
     }
 
     /**
@@ -247,7 +259,7 @@ public final class Walker {
      * route was planned as one that may tunnel, since chewing through a wall
      * you were only meant to walk past is not an improvement.
      */
-    private boolean unstick(LocalPlayer player) {
+    private boolean unstick(LocalPlayer player, boolean mayCut) {
         if (world == null || client.level == null) return false;
         BlockPos ahead = inFront(player);
 
@@ -262,10 +274,10 @@ public final class Walker {
             if (++openTicks < 5) return true;
             Placement.use(client, player, opening);
             opening = null;
-            stuckTicks = 0;
+            progress.restart();
             return true;
         }
-        if (mayDig && stuckTicks > 45) return digAt(player, ahead);
+        if (mayDig && mayCut) return digAt(player, ahead);
         return false;
     }
 
@@ -291,7 +303,7 @@ public final class Walker {
         if (block == null) {
             // Nothing to build with. Saying so through the stuck counter gets a
             // fresh search that will not plan another bridge.
-            stuckTicks = 999;
+            wantsRepath = true;
             return false;
         }
         // Stand still. Everything below this is done from a standstill.
@@ -381,7 +393,7 @@ public final class Walker {
         // step rather than standing there hitting it forever.
         if (++digTicks > 200) {
             stopDigging();
-            stuckTicks = 999;
+            wantsRepath = true;
         }
         return true;
     }
