@@ -5,6 +5,7 @@ import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.sort.Worth;
 import dev.understudy.core.path.Spiral;
@@ -122,6 +123,17 @@ public final class GatherTask {
     private int legs;
     private int heading;
     private final Atlas atlas;
+    /**
+     * What things really cost, fed back into the estimates.
+     *
+     * The gatherer is the only thing that ever finds out. Every plan it is
+     * handed is priced on guesses about how long it takes to find a seam, and
+     * this is where the guess meets the world.
+     */
+    private final Measured measured;
+    /** When the current Collect started, and how many were held then. */
+    private long stepStartedAt;
+    private int heldAtStart;
     private int scanCursor;
     private BlockPos scanBuried;
     private List<Block> wantedBlocks = List.of();
@@ -129,8 +141,9 @@ public final class GatherTask {
     private final Set<String> fetched = new HashSet<>();
 
     public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
-                      HuntTask hunt, Atlas atlas, Consumer<String> report) {
+                      HuntTask hunt, Atlas atlas, Measured measured, Consumer<String> report) {
         this.atlas = atlas;
+        this.measured = measured;
         this.client = client;
         this.travel = travel;
         this.craft = craft;
@@ -158,6 +171,7 @@ public final class GatherTask {
         this.legs = 0;
         this.heading = 0;
         this.fetched.clear();
+        this.stepStartedAt = 0;
         if (running) {
             report.accept("gathering: " + plan.size() + " steps, about "
                     + Math.round(wanted.seconds() / 60) + " minutes");
@@ -269,7 +283,15 @@ public final class GatherTask {
     }
 
     private void collect(LocalPlayer player, Planner.Collect wanted) {
+        // The clock starts when the step does, so what is recorded is the whole
+        // cost of getting the thing — the walk, the search and the digging —
+        // which is what the estimate is trying to predict.
+        if (stepStartedAt == 0 && client.level != null) {
+            stepStartedAt = client.level.getGameTime();
+            heldAtStart = Hotbar.count(player, wanted.item());
+        }
         if (Hotbar.count(player, wanted.item()) >= wanted.count()) {
+            recordWhatItCost(player, wanted);
             releaseMining();
             target = null;
             step++;
@@ -303,6 +325,7 @@ public final class GatherTask {
             target = null;
             if (!hunt.start(wanted)) {
                 report.accept("nothing here knows how to get " + wanted.item() + " — moving on");
+                stepStartedAt = 0;
                 step++;
             }
             return;
@@ -638,7 +661,7 @@ public final class GatherTask {
     private boolean fetchTool(LocalPlayer player, String tool, int count, String why,
                               String saying) {
         if (!fetched.add(why + ":" + tool)) return false;
-        Planner.Plan makeIt = new Planner(Catalogue.solver())
+        Planner.Plan makeIt = new Planner(Catalogue.solver(), measured)
                 .plan(Map.of(tool, count), Carried.contents(player));
         if (!makeIt.possible() || makeIt.actions().isEmpty()) return false;
 
@@ -656,6 +679,21 @@ public final class GatherTask {
      * decides all of that; this only presses the button, and says what went, so
      * a bag that comes home lighter is never a mystery.
      */
+    /**
+     * Tell the estimates what that actually took.
+     *
+     * Only on a step that finished by getting the thing. A step satisfied
+     * because it was already in the bag measured nothing, and a step abandoned
+     * measured something else.
+     */
+    private void recordWhatItCost(LocalPlayer player, Planner.Collect wanted) {
+        if (measured == null || client.level == null || stepStartedAt == 0) return;
+        int got = Hotbar.count(player, wanted.item()) - heldAtStart;
+        double seconds = (client.level.getGameTime() - stepStartedAt) / 20.0;
+        measured.saw(wanted.item(), seconds, got);
+        stepStartedAt = 0;
+    }
+
     private boolean makeRoom(LocalPlayer player) {
         Set<String> needed = new HashSet<>();
         for (int i = step; i < plan.size(); i++) {

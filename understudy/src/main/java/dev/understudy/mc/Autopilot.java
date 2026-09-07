@@ -1,5 +1,6 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import dev.understudy.core.build.Catalog;
@@ -106,18 +107,21 @@ public final class Autopilot {
      */
     private Project.Plan project;
     private final Atlas atlas;
+    /** What things cost here, so its own plans are priced on evidence too. */
+    private final Measured measured;
     private final BuildTask build;
     private int cooldown;
     private String lastSaid = "";
 
     public Autopilot(Minecraft client, GatherTask gather, SortTask sort, BuildTask build,
-                     Atlas atlas, Agenda agenda,
+                     Atlas atlas, Measured measured, Agenda agenda,
                      java.util.function.DoubleSupplier damageRecently, Consumer<String> report) {
         this.client = client;
         this.gather = gather;
         this.sort = sort;
         this.build = build;
         this.atlas = atlas;
+        this.measured = measured;
         this.agenda = agenda;
         this.damageRecently = damageRecently;
         this.report = report;
@@ -267,7 +271,7 @@ public final class Autopilot {
             return;
         }
 
-        Planner.Plan plan = new Planner(Catalogue.solver()).plan(wanted, carried);
+        Planner.Plan plan = new Planner(Catalogue.solver(), measured).plan(wanted, carried);
         if (!plan.possible()) {
             say("cannot work out how to get " + String.join(", ", plan.shortfall().keySet()));
             return;
@@ -300,7 +304,7 @@ public final class Autopilot {
         switch (step.kind()) {
             case GET -> {
                 Map<String, Integer> list = Project.shoppingList(project, facts);
-                Planner.Plan plan = new Planner(Catalogue.solver())
+                Planner.Plan plan = new Planner(Catalogue.solver(), measured)
                         .plan(list, Carried.contents(player));
                 if (!plan.possible()) {
                     say("cannot see a way to " + step.describe() + " from here");
@@ -347,7 +351,7 @@ public final class Autopilot {
             Armoury.Piece have = Armoury.of(best.getOrDefault(piece.slot(),
                     worn.get(piece.slot())));
             if (have != null && have.points() >= piece.points()) continue;
-            if (new Planner(Catalogue.solver()).plan(Map.of(want, 1), carried).possible()) {
+            if (new Planner(Catalogue.solver(), measured).plan(Map.of(want, 1), carried).possible()) {
                 return want;
             }
         }
@@ -357,7 +361,7 @@ public final class Autopilot {
     /** The first of these the planner can actually see a route to. */
     private String firstReachable(List<String> options, Map<String, Integer> carried) {
         for (String option : options) {
-            if (new Planner(Catalogue.solver()).plan(Map.of(option, 1), carried).possible()) {
+            if (new Planner(Catalogue.solver(), measured).plan(Map.of(option, 1), carried).possible()) {
                 return option;
             }
         }
@@ -373,7 +377,7 @@ public final class Autopilot {
      */
     private String reachableMeal(Map<String, Integer> carried) {
         for (String meal : MEALS) {
-            if (new Planner(Catalogue.solver()).plan(Map.of(meal, WANT_MEALS), carried).possible()) {
+            if (new Planner(Catalogue.solver(), measured).plan(Map.of(meal, WANT_MEALS), carried).possible()) {
                 return meal;
             }
         }
@@ -404,7 +408,7 @@ public final class Autopilot {
         LocalPlayer player = client.player;
         if (player == null) return Agenda.Job.of(what);
 
-        Planner.Plan plan = new Planner(Catalogue.solver())
+        Planner.Plan plan = new Planner(Catalogue.solver(), measured)
                 .plan(Map.of(goalItem, goalCount), Carried.contents(player));
         List<String> tools = new ArrayList<>();
         for (Planner.Action action : plan.actions()) {

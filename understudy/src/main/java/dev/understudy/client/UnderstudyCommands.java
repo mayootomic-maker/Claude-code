@@ -247,7 +247,7 @@ public final class UnderstudyCommands {
         // is missing. Knowing you are short of glass is less useful than being
         // told the sand is twenty seconds away and the furnace is not built yet.
         Map<String, Integer> carrying = Carried.contents(source.getPlayer());
-        Planner.Plan plan = new Planner(Catalogue.solver())
+        Planner.Plan plan = new Planner(Catalogue.solver(), UnderstudyClient.measured())
                 .plan(blueprint.essentialMaterials(), carrying);
 
         if (plan.actions().isEmpty() && plan.possible()) {
@@ -404,7 +404,7 @@ public final class UnderstudyCommands {
         String item = String.join(" and ", wants.keySet());
 
         Map<String, Integer> have = Carried.contents(source.getPlayer());
-        Planner.Plan plan = new Planner(Catalogue.solver()).plan(wants, have);
+        Planner.Plan plan = new Planner(Catalogue.solver(), UnderstudyClient.measured()).plan(wants, have);
 
         // Anything with a depth means a tunnel, and a tunnel at y=-59 is pitch
         // black and full of things that spawn in it. Asking for torches in the
@@ -417,7 +417,7 @@ public final class UnderstudyCommands {
             java.util.LinkedHashMap<String, Integer> lit = new java.util.LinkedHashMap<>();
             lit.put("torch", TORCHES_FOR_A_DIG);
             lit.putAll(wants);
-            Planner.Plan withLight = new Planner(Catalogue.solver()).plan(lit, have);
+            Planner.Plan withLight = new Planner(Catalogue.solver(), UnderstudyClient.measured()).plan(lit, have);
             if (withLight.possible()) plan = withLight;
         }
 
@@ -698,6 +698,11 @@ public final class UnderstudyCommands {
         for (String line : UnderstudyClient.jobTimings().summary()) say(source, "  " + line);
         say(source, "this session:");
         for (String line : UnderstudyClient.timings().summary()) say(source, "  " + line);
+        // And what it has learned things really cost here, which is the other
+        // half of the same question: where the time goes, and how much of it
+        // the estimates were expecting.
+        say(source, "what things cost in this world:");
+        for (String line : UnderstudyClient.measured().summary()) say(source, line);
         return 1;
     }
 

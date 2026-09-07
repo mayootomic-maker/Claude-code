@@ -81,8 +81,26 @@ public final class Planner {
 
     private final Solver solver;
 
-    public Planner(Solver solver) {
+    /**
+     * What has actually been observed, so the estimates stop being guesses.
+     *
+     * The dig times in the catalogue are the game's own formula and are right.
+     * The search times — how long it takes to find a seam, or a cow — are
+     * frankly guesses, and they are both the numbers that dominate a plan and
+     * the numbers it *chooses* with. A source that is slow in this particular
+     * world keeps being picked because a table written from memory says it is
+     * quick, and "about twelve minutes" keeps turning into forty.
+     */
+    private final dev.understudy.core.adapt.Measured measured;
+
+    public Planner(Solver solver, dev.understudy.core.adapt.Measured measured) {
         this.solver = solver;
+        this.measured = measured == null
+                ? dev.understudy.core.adapt.Measured.NOTHING : measured;
+    }
+
+    public Planner(Solver solver) {
+        this(solver, dev.understudy.core.adapt.Measured.NOTHING);
     }
 
     /**
@@ -138,8 +156,8 @@ public final class Planner {
                 Gather gather = chosen.getOrDefault(made.getKey(), cost.viaGather());
                 int blocks = ceilDiv(made.getValue(), gather.amount());
                 actions.add(new Collect(made.getKey(), blocks * gather.amount(),
-                        blocks * gather.seconds(), gather.tool(), gather.bestY(),
-                        gather.hunted()));
+                        blocks * gather.amount() * costPerUnit(gather),
+                        gather.tool(), gather.bestY(), gather.hunted()));
             } else if (cost.viaRecipe() != null) {
                 Recipe recipe = cost.viaRecipe();
                 int batches = ceilDiv(made.getValue(), recipe.count());
@@ -182,7 +200,9 @@ public final class Planner {
             // blocks and one for six hundred, must not leave the plan claiming
             // the small one's tool was enough for both.
             Gather already = chosen.get(item);
-            if (already == null || already.perUnit() > gather.perUnit()) chosen.put(item, gather);
+            if (already == null || costPerUnit(already) > costPerUnit(gather)) {
+                chosen.put(item, gather);
+            }
             int blocks = ceilDiv(missing, gather.amount());
             if (gather.tool() != null) {
                 // A pickaxe is worn out, not eaten. Enough of them to survive the
@@ -228,6 +248,17 @@ public final class Planner {
      * skipped, which is what stops "mine cobblestone with a stone pickaxe" being
      * considered while working out how to make the stone pickaxe.
      */
+    /**
+     * What one of these really costs, as far as anything is known.
+     *
+     * The single place the measurement enters the plan, which is why both the
+     * chosen source and the quoted time move together — a plan that costs one
+     * way and reports another is worse than one that is simply wrong.
+     */
+    private double costPerUnit(Gather gather) {
+        return measured.adjust(gather.item(), gather.perUnit());
+    }
+
     private Gather bestGather(String item, int wanted, Map<String, Solver.Cost> costs,
                               Set<String> underway) {
         List<Gather> options = solver.gathersFor(item);
@@ -244,7 +275,9 @@ public final class Planner {
             if (option.tool() != null
                     && dependsOn(option.tool(), item, costs, new HashSet<>())) continue;
             int blocks = ceilDiv(wanted, option.amount());
-            double total = blocks * option.seconds();
+            // Measured, so the choice between two ways to get something moves
+            // with the evidence too — not just the number it reports afterwards.
+            double total = blocks * option.amount() * costPerUnit(option);
             if (option.tool() != null) {
                 Solver.Cost toolCost = costs.get(option.tool());
                 if (toolCost == null || !toolCost.reachable()) continue;

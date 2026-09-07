@@ -1,6 +1,7 @@
 package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.mind.Agenda;
@@ -70,6 +71,14 @@ public final class UnderstudyClient implements ClientModInitializer {
      * game's own speed and nothing to fix, twenty minutes of walking is
      * entirely fixable, and they look identical from the outside.
      */
+    /**
+     * What things really cost in this world.
+     *
+     * Kept beside the atlas and saved with it, because it is the same kind of
+     * thing: something learned here that is worth nothing anywhere else and
+     * everything on the tenth visit.
+     */
+    private static final Measured measured = new Measured();
     private static final Timings timings = new Timings();
     /**
      * The same accounting, but for one job rather than the session.
@@ -138,7 +147,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 if (greeted) {
                     // Left the world. Write the memory out now rather than
                     // hoping the process gets a chance to later.
-                    Remembered.flush(atlas, UnderstudyClient::tell);
+                    Remembered.flush(atlas, measured, UnderstudyClient::tell);
                     Remembered.left();
                 }
                 greeted = false;
@@ -156,7 +165,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 // What it has seen, kept across sessions. Loaded on arrival and
                 // written out on a timer, because the moment you quit is the one
                 // moment you cannot count on getting.
-                Remembered.tick(client, atlas, UnderstudyClient::tell);
+                Remembered.tick(client, atlas, measured, UnderstudyClient::tell);
                 if (travel == null) {
                     // Seeded from the account, so the character walks the same way every
                     // session. getStringUUID is on Entity and is stable; the game
@@ -176,10 +185,10 @@ public final class UnderstudyClient implements ClientModInitializer {
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
                     hunt = new HuntTask(client, travel, UnderstudyClient::tell);
                     enchant = new EnchantTask(client, UnderstudyClient::tell);
-                    gather = new GatherTask(client, travel, craft, smelt, hunt, atlas,
+                    gather = new GatherTask(client, travel, craft, smelt, hunt, atlas, measured,
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
-                    autopilot = new Autopilot(client, gather, sort, build, atlas, agenda,
+                    autopilot = new Autopilot(client, gather, sort, build, atlas, measured, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
 
@@ -210,7 +219,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 if (pickerWanted) {
                     pickerWanted = false;
                     client.setScreenAndShow(new BuildPicker(
-                            Carried.contents(client.player), UnderstudyClient::siteFor));
+                            Carried.contents(client.player), measured, UnderstudyClient::siteFor));
                 }
                 marker.tick();
 
@@ -348,7 +357,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         Minecraft client = Minecraft.getInstance();
         if (build == null || gather == null || client.player == null) return;
 
-        Planner.Plan needed = new Planner(Catalogue.solver())
+        Planner.Plan needed = new Planner(Catalogue.solver(), UnderstudyClient.measured())
                 .plan(blueprint.essentialMaterials(), Carried.contents(client.player));
 
         if (needed.actions().isEmpty()) {
@@ -505,6 +514,10 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     public static Atlas atlas() {
         return atlas;
+    }
+
+    public static Measured measured() {
+        return measured;
     }
 
     public static Agenda agenda() {

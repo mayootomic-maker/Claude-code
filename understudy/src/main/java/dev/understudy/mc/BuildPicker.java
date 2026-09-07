@@ -5,6 +5,7 @@ import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Schematic;
 import dev.understudy.core.build.Materials;
 import dev.understudy.core.build.Preview;
+import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -86,7 +87,11 @@ public final class BuildPicker extends Screen {
     private String costLine = "";
     private String modelNote;
 
-    public BuildPicker(Map<String, Integer> inventory, Chosen onChoose) {
+    /** What things cost here, so the preview quotes the same number the job will. */
+    private final Measured measured;
+
+    public BuildPicker(Map<String, Integer> inventory, Measured measured, Chosen onChoose) {
+        this.measured = measured;
         super(Component.literal("Build"));
         this.inventory = inventory;
         this.onChoose = onChoose;
@@ -264,7 +269,7 @@ public final class BuildPicker extends Screen {
         blueprint = blueprint.turned(turns, upsideDown);
         image = Preview.of(blueprint);
 
-        Planner.Plan plan = new Planner(Catalogue.solver())
+        Planner.Plan plan = new Planner(Catalogue.solver(), measured)
                 .plan(blueprint.essentialMaterials(), inventory);
         if (!plan.possible()) {
             costLine = "§cmissing: " + String.join(", ", plan.shortfall().keySet());

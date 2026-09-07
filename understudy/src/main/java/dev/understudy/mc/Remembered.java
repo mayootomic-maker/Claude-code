@@ -1,5 +1,6 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.memory.AtlasFile;
 import net.fabricmc.loader.api.FabricLoader;
@@ -48,27 +49,29 @@ public final class Remembered {
      * a portal or join a different server, which is exactly when the memory
      * being carried needs swapping out.
      */
-    public static void tick(Minecraft client, Atlas atlas, Consumer<String> report) {
+    public static void tick(Minecraft client, Atlas atlas, Measured measured,
+                            Consumer<String> report) {
         if (client.level == null || client.player == null) return;
         String world = Worlds.key(client);
 
         if (!world.equals(loadedFor)) {
-            if (loadedFor != null) save(atlas, loadedFor, report);
+            if (loadedFor != null) save(atlas, measured, loadedFor, report);
             atlas.clear();
-            load(atlas, world, report);
+            measured.clear();
+            load(atlas, measured, world, report);
             loadedFor = world;
             untilSave = SAVE_EVERY;
             return;
         }
         if (untilSave-- > 0) return;
         untilSave = SAVE_EVERY;
-        save(atlas, world, report);
+        save(atlas, measured, world, report);
     }
 
     /** Write it out now — on the way out of a world, or when asked. */
-    public static void flush(Atlas atlas, Consumer<String> report) {
+    public static void flush(Atlas atlas, Measured measured, Consumer<String> report) {
         if (loadedFor == null) return;
-        save(atlas, loadedFor, report);
+        save(atlas, measured, loadedFor, report);
     }
 
     /** Forget which world was loaded, so the next tick loads afresh. */
@@ -77,38 +80,72 @@ public final class Remembered {
     }
 
     public static Path fileFor(String world) {
-        return FabricLoader.getInstance().getConfigDir()
-                .resolve("understudy")
-                .resolve("atlas-" + AtlasFile.sanitise(world) + ".txt");
+        return dirFor(world).resolve("atlas-" + AtlasFile.sanitise(world) + ".txt");
     }
 
-    private static void load(Atlas atlas, String world, Consumer<String> report) {
+    /** What things cost here, beside what is here. */
+    public static Path timesFor(String world) {
+        return dirFor(world).resolve("times-" + AtlasFile.sanitise(world) + ".txt");
+    }
+
+    private static Path dirFor(String world) {
+        return FabricLoader.getInstance().getConfigDir().resolve("understudy");
+    }
+
+    private static void load(Atlas atlas, Measured measured, String world,
+                             Consumer<String> report) {
         Path file = fileFor(world);
-        if (!Files.isReadable(file)) return;
-        try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            int taken = AtlasFile.read(atlas, world, in);
-            if (taken > 0) report.accept("remembered " + taken + " places from last time");
+        if (Files.isReadable(file)) {
+            try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                int taken = AtlasFile.read(atlas, world, in);
+                if (taken > 0) report.accept("remembered " + taken + " places from last time");
+            } catch (IOException problem) {
+                complain(report, "could not read what it remembered: " + problem.getMessage());
+            }
+        }
+        Path times = timesFor(world);
+        if (!Files.isReadable(times)) return;
+        try (Reader in = Files.newBufferedReader(times, StandardCharsets.UTF_8)) {
+            int taken = measured.read(in);
+            if (taken > 0) {
+                report.accept("and what " + taken + " of them really cost");
+            }
         } catch (IOException problem) {
-            complain(report, "could not read what it remembered: " + problem.getMessage());
+            complain(report, "could not read what things cost: " + problem.getMessage());
         }
     }
 
-    private static void save(Atlas atlas, String world, Consumer<String> report) {
-        if (atlas.size() == 0) return;
-        Path file = fileFor(world);
+    private static void save(Atlas atlas, Measured measured, String world,
+                             Consumer<String> report) {
         try {
-            Files.createDirectories(file.getParent());
-            // Written beside and moved into place, so a crash mid-write leaves
-            // the previous memory intact rather than half of a new one.
-            Path draft = file.resolveSibling(file.getFileName() + ".writing");
-            try (Writer out = Files.newBufferedWriter(draft, StandardCharsets.UTF_8)) {
-                AtlasFile.write(atlas, world, out);
+            if (atlas.size() > 0) {
+                write(fileFor(world), out -> AtlasFile.write(atlas, world, out));
             }
-            Files.move(draft, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            if (measured.size() > 0) {
+                write(timesFor(world), measured::write);
+            }
             complained = false;
         } catch (IOException problem) {
-            complain(report, "could not save what it has seen: " + problem.getMessage());
+            complain(report, "could not save what it has learned: " + problem.getMessage());
         }
+    }
+
+    /** What a Writer is handed, so both files are saved the same careful way. */
+    private interface Writes {
+        void into(Writer out) throws IOException;
+    }
+
+    /**
+     * Written beside and moved into place, so a crash mid-write leaves the
+     * previous version intact rather than half of a new one.
+     */
+    private static void write(Path file, Writes writes) throws IOException {
+        Files.createDirectories(file.getParent());
+        Path draft = file.resolveSibling(file.getFileName() + ".writing");
+        try (Writer out = Files.newBufferedWriter(draft, StandardCharsets.UTF_8)) {
+            writes.into(out);
+        }
+        Files.move(draft, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     /** Say it once. A disk that is full is full every two minutes. */
