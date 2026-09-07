@@ -42,6 +42,17 @@ public final class Atlas {
      */
     public static final String TROUBLE = "trouble";
 
+    /**
+     * What a building is filed under, with the design's name after it.
+     *
+     * "Is there a house here" has no other honest answer. The blocks are still
+     * standing, of course, but recognising a house from its blocks means
+     * knowing which of two hundred arrangements of planks is one — and the mod
+     * knows exactly when it built one, which is a much better moment to write
+     * it down than any later moment is to work it out.
+     */
+    public static final String BUILT = "built:";
+
     /** What was seen, where, and when — the tick is the client's own count. */
     public record Sighting(String what, int x, int y, int z, long tick) {
         public double distanceTo(int fromX, int fromY, int fromZ) {

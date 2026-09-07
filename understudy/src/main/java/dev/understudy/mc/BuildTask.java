@@ -1,6 +1,7 @@
 package dev.understudy.mc;
 
 import dev.understudy.core.adapt.Timings;
+import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Facing;
@@ -89,9 +90,19 @@ public final class BuildTask {
     private final Minecraft client;
     private final Consumer<String> report;
     private final TravelTask travel;
+    /**
+     * Where things have been built.
+     *
+     * A project asks "is there a house here" and the only honest answer comes
+     * from having written it down when one went up. The atlas is already the
+     * thing that remembers where everything is, and a building is a fact about
+     * a place in exactly the way a vein of iron is.
+     */
+    private final Atlas atlas;
 
     private List<Blueprint.Placement> queue = List.of();
     private BlockPos origin = BlockPos.ZERO;
+    private String building = "";
     private int index;
     private int cooldown;
     private int placed;
@@ -107,9 +118,10 @@ public final class BuildTask {
     private final Set<Long> planned = new HashSet<>();
     private final List<BlockPos> scaffolds = new ArrayList<>();
 
-    public BuildTask(Minecraft client, TravelTask travel, Consumer<String> report) {
+    public BuildTask(Minecraft client, TravelTask travel, Atlas atlas, Consumer<String> report) {
         this.client = client;
         this.travel = travel;
+        this.atlas = atlas;
         this.report = report;
     }
 
@@ -137,6 +149,7 @@ public final class BuildTask {
 
     public void start(Blueprint blueprint, BlockPos at) {
         this.origin = at;
+        this.building = blueprint.name();
         this.queue = blueprint.buildOrder();
         this.index = 0;
         this.placed = 0;
@@ -392,6 +405,13 @@ public final class BuildTask {
     private void finish() {
         running = false;
         Ghosts.hide();
+        // Written down whether or not every optional block went in: a house
+        // missing two decorative slabs is a house, and a project that refuses
+        // to admit it is standing would build a second one beside it.
+        if (atlas != null && client.level != null) {
+            atlas.saw(Atlas.BUILT + building, origin.getX(), origin.getY(), origin.getZ(),
+                    client.level.getGameTime());
+        }
         StringBuilder message = new StringBuilder("done: placed " + placed + " blocks");
         if (cleared > 0) message.append(", cleared ").append(cleared);
         if (!scaffolds.isEmpty()) {

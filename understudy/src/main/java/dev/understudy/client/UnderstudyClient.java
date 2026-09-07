@@ -170,7 +170,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     Fight.begin(rng);
                     safety = new Safety(UnderstudyClient::warn);
                     travel = new TravelTask(client, profile, UnderstudyClient::tell);
-                    build = new BuildTask(client, travel, UnderstudyClient::tell);
+                    build = new BuildTask(client, travel, atlas, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
@@ -179,7 +179,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     gather = new GatherTask(client, travel, craft, smelt, hunt, atlas,
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
-                    autopilot = new Autopilot(client, gather, sort, agenda,
+                    autopilot = new Autopilot(client, gather, sort, build, atlas, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
 

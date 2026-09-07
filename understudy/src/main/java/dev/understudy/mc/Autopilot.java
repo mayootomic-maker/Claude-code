@@ -2,7 +2,11 @@ package dev.understudy.mc;
 
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Planner;
+import dev.understudy.core.build.Catalog;
+import dev.understudy.core.build.Materials;
+import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.mind.Project;
 import dev.understudy.core.survive.Armoury;
 import dev.understudy.core.survive.Combat;
 import dev.understudy.core.sort.Category;
@@ -91,14 +95,29 @@ public final class Autopilot {
     private boolean on;
     private String goalItem;
     private int goalCount;
+    /**
+     * A whole objective rather than one item.
+     *
+     * The mod could be told to do things and never to achieve anything: get
+     * that, build this, sort those. A project is the missing level — it is
+     * handed an end state and works out the steps, checking each against what
+     * is actually true rather than against a counter, so it survives being
+     * quit, reloaded, and half-done by hand.
+     */
+    private Project.Plan project;
+    private final Atlas atlas;
+    private final BuildTask build;
     private int cooldown;
     private String lastSaid = "";
 
-    public Autopilot(Minecraft client, GatherTask gather, SortTask sort, Agenda agenda,
+    public Autopilot(Minecraft client, GatherTask gather, SortTask sort, BuildTask build,
+                     Atlas atlas, Agenda agenda,
                      java.util.function.DoubleSupplier damageRecently, Consumer<String> report) {
         this.client = client;
         this.gather = gather;
         this.sort = sort;
+        this.build = build;
+        this.atlas = atlas;
         this.agenda = agenda;
         this.damageRecently = damageRecently;
         this.report = report;
@@ -109,11 +128,30 @@ public final class Autopilot {
     }
 
     public String goal() {
+        if (project != null) return project.name();
         return goalItem == null ? "looking after itself" : goalCount + " " + goalItem;
+    }
+
+    /** Take on a whole objective. */
+    public void start(Project.Plan plan) {
+        this.on = true;
+        this.project = plan;
+        this.goalItem = null;
+        this.cooldown = 0;
+        report.accept("project: " + plan.name() + " — " + plan.summary());
+        for (String line : progress()) report.accept(line);
+    }
+
+    /** How far along, or nothing when there is no project running. */
+    public List<String> progress() {
+        LocalPlayer player = client.player;
+        if (project == null || player == null) return List.of();
+        return Project.progress(project, Senses.facts(client, player, atlas));
     }
 
     public void start(String item, int count) {
         this.on = true;
+        this.project = null;
         this.goalItem = item;
         this.goalCount = count;
         this.cooldown = 0;
@@ -124,6 +162,7 @@ public final class Autopilot {
         if (!on) return;
         on = false;
         goalItem = null;
+        project = null;
         Bedtime.reset();
         report.accept("auto off");
     }
@@ -213,6 +252,12 @@ public final class Autopilot {
                 return;
             }
             wanted.put(meal, WANT_MEALS);
+        } else if (project != null) {
+            // The project's own next step, worked out from what is true rather
+            // than from a counter — which is what lets it be picked up again
+            // after a day away, or after you built the house yourself.
+            if (!pursue(player)) return;
+            return;
         } else if (goalItem != null && carried.getOrDefault(goalItem, 0) < goalCount) {
             wanted.put(goalItem, goalCount);
         }
@@ -231,6 +276,55 @@ public final class Autopilot {
 
         say("getting " + String.join(", ", wanted.keySet()));
         gather.start(plan, null);
+    }
+
+    /**
+     * Do the next thing the project wants.
+     *
+     * The shopping list is asked for as a whole rather than one item at a time,
+     * because the planner costs a list far better: the pickaxe and the trip
+     * underground that four of the steps need get paid for once.
+     *
+     * @return whether there is anything left to do
+     */
+    private boolean pursue(LocalPlayer player) {
+        Project.Facts facts = Senses.facts(client, player, atlas);
+        Project.Objective step = Project.next(project, facts);
+        if (step == null) {
+            say(project.name() + ": done");
+            project = null;
+            return false;
+        }
+        say(step.describe() + " — " + step.why());
+
+        switch (step.kind()) {
+            case GET -> {
+                Map<String, Integer> list = Project.shoppingList(project, facts);
+                Planner.Plan plan = new Planner(Catalogue.solver())
+                        .plan(list, Carried.contents(player));
+                if (!plan.possible()) {
+                    say("cannot see a way to " + step.describe() + " from here");
+                    project = null;
+                    return false;
+                }
+                if (!plan.actions().isEmpty()) gather.start(plan, null);
+            }
+            case BUILD -> {
+                Catalog.Entry entry = Catalog.byId(step.what());
+                if (entry == null) {
+                    say("no design called " + step.what());
+                    project = null;
+                    return false;
+                }
+                // In front of where it is standing, not on top of it.
+                build.start(Catalog.build(entry, entry.defaultSize(),
+                                Materials.woodNamed(""), Materials.stoneNamed("stone brick")),
+                        player.blockPosition().offset(3, 0, 3));
+            }
+            case SORT -> sort.start(true);
+            case LIGHT -> Torchlight.keepLit(client, player);
+        }
+        return true;
     }
 
     private static boolean hasAny(Map<String, Integer> carried, List<String> any) {
@@ -323,7 +417,7 @@ public final class Autopilot {
     }
 
     private boolean busy() {
-        return gather.running() || sort.running();
+        return gather.running() || sort.running() || build.running();
     }
 
     /** Say it once. An autopilot that narrates every three seconds is noise. */

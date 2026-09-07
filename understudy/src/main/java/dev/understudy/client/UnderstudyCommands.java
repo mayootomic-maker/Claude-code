@@ -30,6 +30,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.client.player.LocalPlayer;
 import dev.understudy.core.sort.Category;
 import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.mind.Project;
 
 import java.util.List;
 import java.io.IOException;
@@ -118,6 +119,22 @@ public final class UnderstudyCommands {
             // Explicit, never automatic. An item gets one enchant at a table
             // ever, so this is the one thing in the mod whose mistakes cannot
             // be undone — which is exactly why it should be asked for.
+            // An objective rather than a task. Everything else in this mod is
+            // something to do; this is something to have achieved, and it works
+            // out the doing for itself.
+            dispatcher.register(literal("project")
+                    .executes(context -> projects(context.getSource()))
+                    .then(argument("which", StringArgumentType.word())
+                            .suggests((context, builder) -> {
+                                String typed = builder.getRemaining().toLowerCase();
+                                for (String id : Project.ids()) {
+                                    if (id.startsWith(typed)) builder.suggest(id);
+                                }
+                                return builder.buildFuture();
+                            })
+                            .executes(context -> project(context.getSource(),
+                                    StringArgumentType.getString(context, "which")))));
+
             dispatcher.register(literal("enchant")
                     .executes(context -> enchant(context.getSource(), null))
                     .then(argument("item", StringArgumentType.word())
@@ -297,6 +314,44 @@ public final class UnderstudyCommands {
             }
         }
         return best;
+    }
+
+    /** What it can be given, with how far along each already is. */
+    private static int projects(FabricClientCommandSource source) {
+        Autopilot autopilot = UnderstudyClient.autopilot();
+        if (autopilot != null && !autopilot.progress().isEmpty()) {
+            for (String line : autopilot.progress()) say(source, line);
+            return 1;
+        }
+        say(source, "give it something to achieve:");
+        for (Project.Plan plan : Project.all()) {
+            say(source, "  /project " + plan.id() + " — " + plan.name());
+            say(source, "      " + plan.summary());
+        }
+        return 1;
+    }
+
+    /**
+     * Hand it an objective and let it work out the steps.
+     *
+     * It reports what is already true before it starts, which is both the
+     * honest thing and the useful one: a project half-done by hand should say
+     * so rather than quietly skipping four steps.
+     */
+    private static int project(FabricClientCommandSource source, String which) {
+        UnderstudyClient.resume();
+        Autopilot autopilot = UnderstudyClient.autopilot();
+        if (autopilot == null || source.getPlayer() == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        Project.Plan plan = Project.byId(which);
+        if (plan == null) {
+            say(source, "no project called " + which + " — " + String.join(", ", Project.ids()));
+            return 0;
+        }
+        autopilot.start(plan);
+        return 1;
     }
 
     private static int openPicker(FabricClientCommandSource source) {
@@ -673,6 +728,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy chatfix — repair chat settings that hide messages");
         say(source, "/understudy hud — toggle the on-screen overlay");
         say(source, "/understudy speed — how fast to build (steady, brisk, flat out)");
+        say(source, "/project — objectives it can be handed: kit, camp, base, enchanter");
         say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");
         say(source, "/understudy atlas — everywhere it has seen anything, kept between sessions");

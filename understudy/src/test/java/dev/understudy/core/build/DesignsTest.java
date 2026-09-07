@@ -393,4 +393,33 @@ class DesignsTest {
         long rungs = bp.placements().stream().filter(p -> p.block().equals("ladder")).count();
         assertTrue(rungs >= 16, "only " + rungs + " rungs in a 16-block tower");
     }
+
+    @Test
+    @DisplayName("the study's shelves are where the game actually counts them")
+    void shelvesAreOnTheRing() {
+        // Not aesthetic. A bookshelf counts only two blocks from the table with
+        // air between, so a room with shelves stacked against it is a room full
+        // of decoration — the commonest way this gets built, and the reason
+        // people wonder why their table only offers level eight.
+        Blueprint study = Catalog.build("study", 9, OAK, BRICK);
+        Placement table = study.placements().stream()
+                .filter(p -> p.block().equals("enchanting_table")).findFirst().orElseThrow();
+        Set<String> filled = cells(study);
+
+        long shelves = 0;
+        for (Placement p : study.placements()) {
+            if (!p.block().equals("bookshelf")) continue;
+            shelves++;
+            int ring = Math.max(Math.abs(p.x() - table.x()), Math.abs(p.z() - table.z()));
+            assertEquals(2, ring, "shelf at the wrong distance from the table");
+
+            // And the block between has to be empty, or it does not count.
+            int betweenX = table.x() + Integer.signum(p.x() - table.x());
+            int betweenZ = table.z() + Integer.signum(p.z() - table.z());
+            assertFalse(filled.contains(betweenX + "," + p.y() + "," + betweenZ),
+                    "something between the table and a shelf at "
+                            + p.x() + "," + p.y() + "," + p.z());
+        }
+        assertEquals(15, shelves, "a table with " + shelves + " shelves is a worse table");
+    }
 }

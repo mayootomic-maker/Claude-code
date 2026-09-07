@@ -37,6 +37,10 @@ public final class Catalog {
                     6, 24, 12),
             new Entry("storage", "Storage room", "Walls of chests, lit, with room to walk between them.",
                     2, 20, 6),
+            new Entry("study", "Study",
+                    "An enchanting table with its fifteen bookshelves in the ring that "
+                            + "actually counts — not stacked against it, which does nothing.",
+                    7, 13, 9),
             new Entry("manor", "Manor",
                     "Two floors, a pitched roof and a chimney. Kitchen, workbench, table, "
                             + "beds, bookshelves and a wall of chests.",
@@ -86,6 +90,7 @@ public final class Catalog {
                     wood, stone);
             case "tower" -> Designs.tower(clamped, 5, palette, wood, stone);
             case "storage" -> Designs.storage(clamped, palette, wood, stone);
+            case "study" -> Designs.study(clamped, palette, wood, stone);
             case "manor" -> Manor.build(clamped, wood, stone);
             default -> throw new IllegalArgumentException("no design called " + entry.id());
         };

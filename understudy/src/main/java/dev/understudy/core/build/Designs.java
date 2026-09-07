@@ -327,6 +327,67 @@ public final class Designs {
         return draft.finish(doorX, 1, 0);
     }
 
+    /**
+     * A study: an enchanting table with its fifteen bookshelves in the ring
+     * that actually counts.
+     *
+     * This one has a rule the others do not, and it is not aesthetic. The game
+     * only counts a bookshelf two blocks from the table with air between — so a
+     * room full of shelves stacked against the table is a room full of
+     * decoration, which is the single most common way people build this wrong
+     * and then wonder why the table only offers level eight.
+     *
+     * Five by five inside is exactly the shape that works: the table in the
+     * middle, the shelves round the wall, and the ring between them empty.
+     */
+    public static Blueprint study(int size, Map<Role, String> p, Materials.Wood wood,
+                                  Materials.Stone stone) {
+        int s = clamp(size | 1, 7, 13); // odd, so the table centres
+        int middle = (s + 1) / 2;
+        int h = 4;
+        Draft draft = new Draft("study");
+
+        Trim.plinth(draft, s, s, stone.block());
+        draft.box(1, 0, 1, s, 0, s, p.get(Role.FLOOR), Role.FLOOR);
+        draft.shell(1, 1, 1, s, h, s, p.get(Role.WALL), Role.WALL);
+        Trim.posts(draft, s, s, 1, h, WINDOW_EVERY, p.get(Role.ACCENT));
+        Trim.baseCourse(draft, s, s, 1, stone.block());
+        Trim.windows(draft, s, s, 2, 3, WINDOW_EVERY, p.get(Role.WINDOW), middle);
+        Trim.dressWindows(draft, s, s, 2, 3, WINDOW_EVERY, stone.slab());
+        Trim.eaves(draft, s, s, h, wood.slab());
+        Trim.doorway(draft, middle, 1, p.get(Role.DOOR), stone.block());
+        Trim.gable(draft, s, s, h + 1, stone.stairs(), stone.slab(), p.get(Role.WALL));
+
+        draft.set(middle, 1, middle, "enchanting_table", Role.FURNITURE);
+
+        // The shelves go on the ring exactly two blocks from the table, in both
+        // courses, and the block between stays empty. That ring is the whole
+        // design: the game counts a bookshelf only at that distance with air in
+        // between, so a room with shelves stacked against the table is a room
+        // full of decoration — which is the commonest way this gets built and
+        // the reason people wonder why their table only offers level eight.
+        int placed = 0;
+        for (int y = 1; y <= 2 && placed < SHELVES_FOR_A_TABLE; y++) {
+            for (int dx = -SHELF_RING; dx <= SHELF_RING && placed < SHELVES_FOR_A_TABLE; dx++) {
+                for (int dz = -SHELF_RING; dz <= SHELF_RING && placed < SHELVES_FOR_A_TABLE; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != SHELF_RING) continue;
+                    if (draft.has(middle + dx, y, middle + dz)) continue;
+                    draft.set(middle + dx, y, middle + dz, "bookshelf", Role.FURNITURE);
+                    placed++;
+                }
+            }
+        }
+
+        Trim.lights(draft, s, s, 3, 3);
+        return draft.finish(middle, 1, 0);
+    }
+
+    /** Two blocks out, with air between. The game's own rule, and the whole design. */
+    private static final int SHELF_RING = 2;
+
+    /** Fifteen. Fourteen is meaningfully worse and looks identical. */
+    private static final int SHELVES_FOR_A_TABLE = 15;
+
     /** A covered step outside the door, so the entrance is somewhere. */
     private static void porch(Draft draft, int doorX, Materials.Wood wood, Materials.Stone stone) {
         draft.set(doorX - 1, 1, 0, wood.fence(), Role.ACCENT, true);
