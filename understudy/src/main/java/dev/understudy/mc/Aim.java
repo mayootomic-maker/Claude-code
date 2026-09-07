@@ -167,6 +167,11 @@ public final class Aim {
         if (look != null) look.reset(yaw, pitch);
     }
 
+    /** The same, at a block, which is what a build actually has. */
+    static void snapAt(LocalPlayer player, BlockPos block) {
+        snapAt(player, Vec3.atCenterOf(block));
+    }
+
     /** Hands off — the view is the player's again. */
     public static void release(LocalPlayer player) {
         asked = false;
