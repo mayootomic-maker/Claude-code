@@ -19,6 +19,9 @@
 #     draws it later.
 #   Screen.addRenderableWidget(T) is unchanged
 #   world.entity.monster.Monster is the base class of everything that attacks
+#   LevelReader.getMaxLocalRawBrightness(BlockPos) is the light level the game
+#     itself spawns things by — a better question than "is it night", and the
+#     reason the torch code needs no clock and no depth rule
 #   VoxelShape.max(Direction$Axis) is there, so "is this taller than a block"
 #     is measured off the collision box rather than guessed from a name list
 #   KeyMapping$Category is a class of constants now, not a string
@@ -32,14 +35,6 @@
 #     can ask whether the fire is out instead of inferring it from a stopwatch
 #   KeyMapping.setDown(boolean) is unchanged and still in net.minecraft.client
 
-# For the holographic blueprint: ghost boxes in the world where each block is
-# going to go. Nothing in this mod draws in the world yet, and 26 reworked the
-# render pipeline, so all four of these are needed before a line of it is
-# written — the event to hook, what it hands you, and what draws a wire box.
-net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 24
-net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext 22
-net.minecraft.client.renderer.ShapeRenderer 14
-net.minecraft.client.renderer.RenderType lines
 
 
 # For crafting without a person clicking the grid. handlePlaceRecipe fills the
@@ -78,14 +73,14 @@ net.minecraft.client.Minecraft Screen screen
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
-# Torches at night, not just underground. Answered so far by elimination:
-# Level has no dayTime, LevelData has getGameTime() but no day time, and
-# ClientLevel only has setTimeFromServer(long) going in. Game time would be a
-# near-enough proxy and is quietly wrong the moment anyone runs /time set, so
-# these are the two questions that would settle it honestly.
-# LightLayer.SKY and BLOCK are both still there, so the concept survives; what
-# is missing is the getter that takes one, and it is inherited, which is why
-# grepping ClientLevel for it found nothing. It lives on one of these.
-net.minecraft.world.level.LevelReader Brightness
-net.minecraft.world.level.BlockAndTintGetter Bright
-net.minecraft.world.level.Level Raw
+# LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
+# questions whose answers are wanted next go at the bottom.
+#
+# For the holographic blueprint: ghost boxes in the world where each block is
+# going to go. Nothing in this mod draws in the world yet, and 26 reworked the
+# render pipeline, so all four of these are needed before a line of it is
+# written — the event to hook, what it hands you, and what draws a wire box.
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents 24
+net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext 22
+net.minecraft.client.renderer.ShapeRenderer 14
+net.minecraft.client.renderer.RenderType lines
