@@ -57,6 +57,9 @@ Press **space** to play. Tabs are **1**–**4**: Arrange, Edit, Mix, Files. The
 Files tab shows the song's own text, live, next to the button that saves it.
 
 ```bash
+npm run render -- night-ferry           # bounce a song to WAV without opening the app
+npm run render -- night-ferry --from 25 --to 48 --bits 24
+
 npm test             # unit and property tests, in Node
 npm run e2e          # drives the whole app in a real browser
 npm run check:engine # renders audio in a browser and measures the samples
@@ -88,7 +91,9 @@ mixer and effect parameters, written as `beat:value` pairs.
 
 **Export.** Offline render to 16- or 24-bit WAV, through the same graph builder
 and the same note scheduler as live playback — which is the only way "export"
-can be trusted to sound like what you just heard.
+can be trusted to sound like what you just heard. `npm run render` does the same
+thing from a terminal, driving a headless browser rather than reimplementing the
+engine, and can bounce a bar range.
 
 Twenty-three presets across bass, keys, pads, leads, texture, kits and the
 sampler. Everything

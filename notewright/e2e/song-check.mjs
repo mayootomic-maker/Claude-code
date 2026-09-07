@@ -109,11 +109,108 @@ try {
     }
   }
 
+  report.section('The exported file decodes back to the audio')
+  // The browser-side WAV check reads back the fields it just wrote, which is
+  // circular. This decodes the bytes in Node with a parser that shares no code
+  // with the encoder, and compares what comes out against what the engine said
+  // it rendered.
+  const encoded = await page.evaluate(async (text) => {
+    const song = window.harness.parseSongText(text).value
+    const buffer = await window.harness.renderSong(song, { toBeat: 32 })
+    const stats = window.harness.analyseRender(buffer)
+    const blob = window.harness.encodeWav(buffer, 16)
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    return { stats, data: btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')) }
+  }, readFileSync(join(songsDir, files[0]), 'utf8'))
+
+  const wav = Buffer.from(encoded.data, 'base64')
+  const decoded = decodeWav(wav)
+  report.check('it is a RIFF/WAVE file', decoded.ok, decoded.reason ?? '')
+  if (decoded.ok) {
+    report.check('the chunk sizes agree with the file length', decoded.consistent, decoded.sizes)
+    report.check('44.1kHz, 16-bit, stereo', decoded.sampleRate === 44100 && decoded.bits === 16 && decoded.channels === 2)
+    report.check(
+      'its length matches the render',
+      Math.abs(decoded.seconds - encoded.stats.seconds) < 0.01,
+      `${decoded.seconds.toFixed(3)}s vs ${encoded.stats.seconds.toFixed(3)}s`,
+    )
+    report.check(
+      'and so does its level, to within a quantisation step',
+      Math.abs(decoded.peak - encoded.stats.peak) < 1 / 32767,
+      `peak ${decoded.peak.toFixed(5)} vs ${encoded.stats.peak.toFixed(5)}`,
+    )
+    report.check(
+      'the samples are not silence',
+      decoded.rms > 0.005,
+      `rms ${decoded.rms.toFixed(4)} vs ${encoded.stats.rms.toFixed(4)}`,
+    )
+  }
+
   report.section('Nothing threw')
   report.check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '))
 } finally {
   await browser.close()
   await server.close()
+}
+
+/** A RIFF/WAVE reader written from the specification, not from the encoder. */
+function decodeWav(bytes) {
+  if (bytes.length < 44) return { ok: false, reason: 'too short to be a WAV' }
+  if (bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') {
+    return { ok: false, reason: 'missing the RIFF/WAVE markers' }
+  }
+
+  let offset = 12
+  let format = null
+  let data = null
+  while (offset + 8 <= bytes.length) {
+    const id = bytes.toString('ascii', offset, offset + 4)
+    const size = bytes.readUInt32LE(offset + 4)
+    const body = offset + 8
+    if (id === 'fmt ') {
+      format = {
+        tag: bytes.readUInt16LE(body),
+        channels: bytes.readUInt16LE(body + 2),
+        sampleRate: bytes.readUInt32LE(body + 4),
+        byteRate: bytes.readUInt32LE(body + 8),
+        blockAlign: bytes.readUInt16LE(body + 12),
+        bits: bytes.readUInt16LE(body + 14),
+      }
+    } else if (id === 'data') {
+      data = { start: body, size }
+    }
+    offset = body + size + (size % 2)
+  }
+
+  if (!format || !data) return { ok: false, reason: 'no fmt or data chunk' }
+  if (format.tag !== 1) return { ok: false, reason: `format tag ${format.tag} is not PCM` }
+
+  const frames = data.size / format.blockAlign
+  let peak = 0
+  let energy = 0
+  let counted = 0
+  for (let index = 0; index + 1 < data.size; index += 2) {
+    const sample = bytes.readInt16LE(data.start + index) / 32768
+    peak = Math.max(peak, Math.abs(sample))
+    energy += sample * sample
+    counted++
+  }
+
+  return {
+    ok: true,
+    consistent:
+      bytes.readUInt32LE(4) === bytes.length - 8 &&
+      data.start + data.size === bytes.length &&
+      format.byteRate === format.sampleRate * format.blockAlign &&
+      format.blockAlign === (format.channels * format.bits) / 8,
+    sizes: `riff ${bytes.readUInt32LE(4)}, data ${data.size}, file ${bytes.length}`,
+    channels: format.channels,
+    sampleRate: format.sampleRate,
+    bits: format.bits,
+    seconds: frames / format.sampleRate,
+    peak,
+    rms: Math.sqrt(energy / Math.max(counted, 1)),
+  }
 }
 
 process.exit(report.finish() > 0 ? 1 : 0)

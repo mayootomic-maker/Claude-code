@@ -16,7 +16,8 @@
     "check:engine": "node e2e/engine-check.mjs",
     "check:songs": "node e2e/song-check.mjs",
     "check:drums": "node e2e/drum-balance.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run check:engine && npm run check:songs && npm run e2e"
+    "verify": "npm run typecheck && npm test && npm run build && npm run check:engine && npm run check:songs && npm run e2e",
+    "render": "node scripts/render.mjs"
   },
   "dependencies": {
     "preact": "^10.24.3"
