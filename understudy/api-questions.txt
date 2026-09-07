@@ -73,29 +73,24 @@ net.minecraft.client.Minecraft Screen screen
 # make. Left here in case a bindable key is ever wanted anyway.
 net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 
-# COMBAT. The mod could not fight at all until now, so none of these have ever
-# been used from this code. Each is one line of Fight.java.
-net.minecraft.client.multiplayer.MultiPlayerGameMode attack
-net.minecraft.world.entity.player.Player getAttackStrengthScale
-net.minecraft.core.registries.BuiltInRegistries ENTITY_TYPE
-net.minecraft.world.entity.Entity onGround
-net.minecraft.world.entity.LivingEntity isBaby
+# COMBAT: all answered and all in use.
+#   MultiPlayerGameMode.attack(Player, Entity)
+#   Player.getAttackStrengthScale(float) — the swing charge the fight waits for
+#   BuiltInRegistries.ENTITY_TYPE, so a mob's kind is its registry path
+#   Entity.onGround() and LivingEntity.isBaby()
 
 # WHICH WORLD THIS IS. The atlas is now saved per world, and keying it wrong
 # means a map that confidently points at ore in a save you have never played.
 # All of these are in Worlds.java and nowhere else.
-net.minecraft.world.level.Level dimension
-net.minecraft.resources.ResourceKey location
-net.minecraft.client.Minecraft getSingleplayerServer
-net.minecraft.client.Minecraft getCurrentServer
-net.minecraft.client.multiplayer.ServerData 20
-net.minecraft.server.MinecraftServer getWorldData
+# Answered: Level.dimension() -> ResourceKey<Level>; Minecraft.getSingleplayerServer()
+# -> IntegratedServer; getCurrentServer() -> ServerData with a public String ip;
+# MinecraftServer.getWorldData() -> WorldData. ResourceKey has no location():
+# whatever now returns its identifier is the last thing Worlds.java is guessing at.
+net.minecraft.resources.ResourceKey public
 
-# NIGHT. The last thing the autopilot cannot do for itself is go to bed, and
-# Level.getDayTime() is gone. Whatever replaced it is what a sleep rule needs.
-net.minecraft.world.level.Level getSkyDarken
-net.minecraft.client.multiplayer.ClientLevel 25
-net.minecraft.world.entity.player.Player startSleeping
+# NIGHT: answered. Level.getSkyDarken() is there, which is how the sleep rule
+# knows it is dark out without a clock. Player has no startSleeping, so going to
+# bed is a right-click on the bed like any other block.
 
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
@@ -107,9 +102,10 @@ net.minecraft.world.entity.player.Player startSleeping
 #   Shapes.box(x1,y1,z1,x2,y2,z2) — the box
 #   RenderTypes.lines() — the plural holder class, as suspected
 #
-# The eye-instead-of-camera approximation is gone: it asks the game renderer
-# for the camera directly. These confirm that route, and name the one the
-# render context itself offers in case the renderer's changes.
-net.minecraft.client.renderer.GameRenderer getMainCamera
-net.minecraft.client.Camera getPosition
-net.fabricmc.fabric.api.client.rendering.v1.level.AbstractLevelRenderContext 20
+# The one approximation left, and the only thing between it and being exact.
+# GameRenderer has no getMainCamera and there is no net.minecraft.client.Camera,
+# so that route is dead. AbstractLevelRenderContext does offer gameRenderer()
+# and levelState() -> LevelRenderState, so the camera position is somewhere in
+# one of these two.
+net.minecraft.client.renderer.state.level.LevelRenderState public
+net.minecraft.client.renderer.GameRenderer amera

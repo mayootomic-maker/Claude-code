@@ -31,6 +31,20 @@ final class Placement {
                 && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().equals(block);
     }
 
+    /**
+     * The same question by suffix rather than by name.
+     *
+     * Sixteen colours of bed are sixteen block names and one block as far as
+     * anything here is concerned, and listing four of them — which is what a
+     * first cut of the sleep code did — means not recognising the other twelve.
+     */
+    static boolean isAny(Minecraft client, BlockPos at, String suffix) {
+        if (client.level == null) return false;
+        BlockState state = client.level.getBlockState(at);
+        return !state.isAir()
+                && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().endsWith(suffix);
+    }
+
     /** The closest one of these within reach, or null. */
     static BlockPos nearest(Minecraft client, BlockPos from, String block) {
         BlockPos best = null;

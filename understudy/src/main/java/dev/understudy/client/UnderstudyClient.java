@@ -507,6 +507,10 @@ public final class UnderstudyClient implements ClientModInitializer {
         return sort;
     }
 
+    public static HuntTask hunt() {
+        return hunt;
+    }
+
     /** Stop whatever is going on. */
     /**
      * Stop. All of it, at once, and let go of the world.

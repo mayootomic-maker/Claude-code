@@ -14,6 +14,7 @@ import dev.understudy.mc.Autopilot;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.Senses;
 import dev.understudy.mc.GatherTask;
+import dev.understudy.mc.HuntTask;
 import dev.understudy.mc.BuildTask;
 import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;
@@ -358,7 +359,15 @@ public final class UnderstudyCommands {
             say(source, "idle");
             return 1;
         }
-        if (travel.running()) say(source, travel.status());
+        // Gathering first, and hunting before that. A gather is the thing that
+        // runs longest and starts everything else, and this used to answer
+        // "idle" throughout one — which is the single most confusing thing a
+        // status command can say while the character is visibly digging.
+        HuntTask hunt = UnderstudyClient.hunt();
+        GatherTask gather = UnderstudyClient.gather();
+        if (hunt != null && hunt.running()) say(source, hunt.status());
+        else if (gather != null && gather.running()) say(source, gather.status());
+        else if (travel.running()) say(source, travel.status());
         else if (build != null && build.running()) say(source, build.status());
         else if (sort != null && sort.running()) say(source, sort.status());
         else say(source, "idle");

@@ -22,9 +22,10 @@ import java.util.function.Consumer;
  * a task was already running, so it could veto and never choose.
  *
  * The one design decision worth stating. It has a short list of things it will
- * do unbidden — keep a pickaxe, keep torches, keep food, put things away, and
- * work toward whatever standing goal it was given — and it will not invent
- * anything outside that list. An autopilot that decides on its own to
+ * do unbidden — keep a pickaxe, keep torches, hunt and cook when the food runs
+ * out, sleep through the night, put things away, and work toward whatever
+ * standing goal it was given — and it will not invent anything outside that
+ * list. An autopilot that decides on its own to
  * redecorate your base is not a smarter autopilot, it is a worse one, and the
  * gap between "handles itself" and "does things you did not ask for" is the
  * whole difference between leaving it running and never leaving it running.
@@ -104,6 +105,7 @@ public final class Autopilot {
         if (!on) return;
         on = false;
         goalItem = null;
+        Bedtime.reset();
         report.accept("auto off");
     }
 
@@ -132,7 +134,13 @@ public final class Autopilot {
                 say("putting things away — " + decision.because());
                 sort.start(true);
             }
-            case EQUIP, FETCH, WORK, IDLE -> fetchWhateverIsMissing(player);
+            case EQUIP, FETCH, WORK, IDLE -> {
+                // The night before the errand. Sleeping through it is eight
+                // seconds and removes every hostile in it, which no amount of
+                // fighting well does — and phantoms, which nothing here can
+                // reach, arrive on the third night awake.
+                if (!Bedtime.tick(client, player, this::say)) fetchWhateverIsMissing(player);
+            }
         }
     }
 
