@@ -61,6 +61,7 @@ public final class Marker {
     public void cancel() {
         if (!active) return;
         active = false;
+        Ghosts.hide();
         blueprint = null;
         Hud.setStatus("");
         report.accept("site cancelled");
@@ -79,8 +80,10 @@ public final class Marker {
         }
 
         // The corner moves with the crosshair right up until it is taken, so
-        // what gets built is whatever was last on screen.
+        // what gets built is whatever was last on screen — and now you can see
+        // it there while you choose, rather than finding out afterwards.
         aimed = target;
+        Ghosts.show(blueprint, target.offset(-blueprint.sizeX() / 2, 1, -blueprint.sizeZ() / 2));
         if (!client.options.keyShift.isDown()) {
             held = 0;
             Hud.setStatus(String.format("%s %dx%d at %d %d %d — crouch to place",

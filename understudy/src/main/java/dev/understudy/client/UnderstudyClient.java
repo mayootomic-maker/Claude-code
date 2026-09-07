@@ -13,6 +13,7 @@ import dev.understudy.core.craft.Planner;
 import dev.understudy.mc.Carried;
 import dev.understudy.mc.CraftTask;
 import dev.understudy.mc.GatherTask;
+import dev.understudy.mc.Ghosts;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
@@ -71,6 +72,10 @@ public final class UnderstudyClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         profile = new PlayerProfile();
+        // Registered once at start-up rather than when a build begins: a render
+        // event you attach and detach is a render event you eventually forget
+        // to detach. It draws nothing until something asks it to.
+        Ghosts.register();
 
         // Commands are registered first, and every step is guarded separately.
         // Initialisation used to be a single unguarded sequence, so anything

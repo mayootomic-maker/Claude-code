@@ -152,12 +152,16 @@ public final class BuildTask {
             planned.add(pack(at.getX() + p.x(), at.getY() + p.y(), at.getZ() + p.z()));
         }
         this.clearing = null;
+        // Show it standing there while it goes up, so what is left is visible
+        // rather than something you infer from a block count in chat.
+        Ghosts.show(blueprint, at);
         report.accept("building " + blueprint.name() + ": " + queue.size() + " blocks");
     }
 
     public void stop(String why) {
         if (!running) return;
         running = false;
+        Ghosts.hide();
         queue = List.of();
         if (why != null) report.accept(why);
     }
@@ -169,6 +173,7 @@ public final class BuildTask {
             stop("lost the world");
             return;
         }
+        Ghosts.progress(index, index);
         if (travel != null && travel.running()) return; // walking to the site
         if (cooldown-- > 0) return;
 
@@ -349,6 +354,7 @@ public final class BuildTask {
 
     private void finish() {
         running = false;
+        Ghosts.hide();
         StringBuilder message = new StringBuilder("done: placed " + placed + " blocks");
         if (cleared > 0) message.append(", cleared ").append(cleared);
         if (!scaffolds.isEmpty()) {

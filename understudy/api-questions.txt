@@ -76,15 +76,16 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # LAST ON PURPOSE: the log viewer only shows the tail of a run, so the
 # questions whose answers are wanted next go at the bottom.
 #
-# The holographic blueprint. Everything is settled except one name:
-#   submitShapeOutline(PoseStack, VoxelShape, RenderType, int, float, boolean)
-#   Shapes.box(x1,y1,z1,x2,y2,z2) -> VoxelShape, so the box itself is easy
-#   beforeGizmos(LevelRenderContext) is the hook, and the context gives both
-#     the collector and the pose stack
+# The holographic blueprint is written and its every name came from here:
+#   BEFORE_GIZMOS + beforeGizmos(LevelRenderContext) — the hook
+#   context.submitNodeCollector().submitShapeOutline(poseStack, shape,
+#     RenderTypes.lines(), argb, width, flag)
+#   Shapes.box(x1,y1,z1,x2,y2,z2) — the box
+#   RenderTypes.lines() — the plural holder class, as suspected
 #
-# What is missing is which RenderType to hand it. The class exists in its new
-# package and has no member matching "lines" at all, so the line types are
-# somewhere else — either static factories on it under another name, or a
-# plural holder class, which is a shape Mojang has used before.
-net.minecraft.client.renderer.rendertype.RenderType static
-net.minecraft.client.renderer.rendertype.RenderTypes lines
+# One approximation left in it, deliberately and visibly: the boxes are offset
+# by the player's eye, which is the camera in first person and a couple of
+# blocks out in third. The render context should be able to say where the
+# camera actually is.
+net.fabricmc.fabric.api.client.rendering.v1.level.AbstractLevelRenderContext 20
+net.minecraft.client.renderer.state.level.CameraRenderState 14
