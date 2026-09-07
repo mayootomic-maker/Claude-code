@@ -1,5 +1,6 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.craft.Catalogue;
 import dev.understudy.core.craft.Gather;
 import dev.understudy.core.craft.Planner;
@@ -146,6 +147,19 @@ public final class GatherTask {
         if (step >= plan.size()) return "gathering: done";
         return "gathering: " + plan.get(step).describe()
                 + (waitingOn == null ? "" : " (" + waitingOn + ")");
+    }
+
+    /**
+     * What this tick is going to be spent on.
+     *
+     * Reported rather than measured inside, so the accounting happens once in
+     * the tick loop and every tick lands in exactly one bucket.
+     */
+    public Timings.Phase phase() {
+        if (travel.running()) return Timings.Phase.TRAVELLING;
+        if (craft.running() || smelt.running()) return Timings.Phase.HANDLING;
+        if (target != null) return aiming > 0 ? Timings.Phase.AIMING : Timings.Phase.MINING;
+        return Timings.Phase.SEARCHING;
     }
 
     public void tick() {

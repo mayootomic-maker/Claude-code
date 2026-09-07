@@ -1,5 +1,6 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.build.Blueprint;
 import dev.understudy.core.build.Facing;
 import net.minecraft.world.level.block.state.BlockState;
@@ -164,6 +165,11 @@ public final class BuildTask {
         Ghosts.hide();
         queue = List.of();
         if (why != null) report.accept(why);
+    }
+
+    public Timings.Phase phase() {
+        if (travel != null && travel.running()) return Timings.Phase.TRAVELLING;
+        return cooldown > 0 ? Timings.Phase.WAITING : Timings.Phase.PLACING;
     }
 
     public void tick() {

@@ -138,6 +138,7 @@ public final class UnderstudyCommands {
                                                     StringArgumentType.getString(context, "what"),
                                                     IntegerArgumentType.getInteger(context, "count"))))))
                     .then(literal("atlas").executes(context -> atlas(context.getSource())))
+                    .then(literal("timing").executes(context -> timing(context.getSource())))
                     .then(literal("speed")
                             .executes(context -> speed(context.getSource(), null))
                             .then(argument("how", StringArgumentType.word())
@@ -536,6 +537,18 @@ public final class UnderstudyCommands {
     }
 
 
+    /**
+     * Where the time went, so "too slow" becomes something to fix.
+     *
+     * Twenty minutes of mining is the game's own speed and nothing to do about
+     * it; twenty minutes of walking between blocks is a bug worth a day. From
+     * the outside they are the same twenty minutes.
+     */
+    private static int timing(FabricClientCommandSource source) {
+        for (String line : UnderstudyClient.timings().summary()) say(source, line);
+        return 1;
+    }
+
     /** Everywhere it has seen anything, which is the part a person cannot do. */
     private static int atlas(FabricClientCommandSource source) {
         Map<String, Integer> seen = UnderstudyClient.atlas().summary();
@@ -564,6 +577,7 @@ public final class UnderstudyCommands {
         say(source, "/understudy auto [item] [n] — get on with it; /understudy auto off");
         say(source, "/understudy why — what it thinks is going on and what it would do");
         say(source, "/understudy atlas — everywhere it has seen anything");
+        say(source, "/understudy timing — where the time actually goes");
         say(source, "/build imports — where to put models and what it makes of them");
         say(source, "/understudy stop — stop everything, at once (or just press a movement key)");
         say(source, "/understudy pause — hold it there; /understudy resume carries on");

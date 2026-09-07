@@ -1,5 +1,6 @@
 package dev.understudy.mc;
 
+import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.sort.Category;
 import dev.understudy.core.sort.Sorter;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -85,6 +86,10 @@ public final class SortTask {
         closeScreen();
         phase = Phase.IDLE;
         if (why != null) report.accept(why);
+    }
+
+    public Timings.Phase phase() {
+        return phase == Phase.WALK ? Timings.Phase.TRAVELLING : Timings.Phase.HANDLING;
     }
 
     public void tick() {

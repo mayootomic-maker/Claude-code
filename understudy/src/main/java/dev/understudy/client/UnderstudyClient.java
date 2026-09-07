@@ -1,6 +1,7 @@
 package dev.understudy.client;
 
 import dev.understudy.core.adapt.PlayerProfile;
+import dev.understudy.core.adapt.Timings;
 import dev.understudy.core.memory.Atlas;
 import dev.understudy.core.mind.Agenda;
 import dev.understudy.core.survive.Guardian;
@@ -58,6 +59,14 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     private static final Atlas atlas = new Atlas();
     private static final Agenda agenda = new Agenda();
+    /**
+     * Where the time goes, for the whole session.
+     *
+     * "Too slow" is unactionable on its own: twenty minutes of mining is the
+     * game's own speed and nothing to fix, twenty minutes of walking is
+     * entirely fixable, and they look identical from the outside.
+     */
+    private static final Timings timings = new Timings();
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
@@ -204,6 +213,12 @@ public final class UnderstudyClient implements ClientModInitializer {
                 build.tick();
                 sort.tick();
 
+                // One tick, one bucket. Recorded after the tasks have run so it
+                // describes what they actually did rather than what they were
+                // about to do, and only while something is running — an idle
+                // mod has no time to account for.
+                if (working()) timings.spent(phaseNow());
+
                 // Thinking for itself goes after the tasks and before the
                 // head turns: it only ever acts when nothing else is, so it
                 // must see the state the tasks have left behind.
@@ -304,6 +319,22 @@ public final class UnderstudyClient implements ClientModInitializer {
                 || Keys.pressedByHand(client.options.keyShift);
     }
 
+    /**
+     * Which of them to believe about this tick.
+     *
+     * In the order that answers "what is it doing" the way you would: the thing
+     * with its hands on something beats the thing walking to it.
+     */
+    private static Timings.Phase phaseNow() {
+        if (gather != null && gather.running()) return gather.phase();
+        if (build != null && build.running()) return build.phase();
+        if (sort != null && sort.running()) return sort.phase();
+        if (craft != null && craft.running()) return Timings.Phase.HANDLING;
+        if (smelt != null && smelt.running()) return Timings.Phase.HANDLING;
+        if (travel != null && travel.running()) return Timings.Phase.TRAVELLING;
+        return Timings.Phase.WAITING;
+    }
+
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
         return (travel != null && travel.running())
@@ -361,6 +392,10 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     public static Autopilot autopilot() {
         return autopilot;
+    }
+
+    public static Timings timings() {
+        return timings;
     }
 
     public static Atlas atlas() {
