@@ -155,6 +155,26 @@ the claude.ai artifact viewer there is no WebSocket and no WebRTC, so that build
 finds other players through the `room` capability instead — which only reaches
 signed-in viewers of the same organisation. For a class, send the file.
 
+## What is not tested here, said plainly
+
+Four of the five ways this runs are exercised by the tools above: solo, two
+tabs on one computer, the artifact room against a stand-in, and the rules
+themselves. **The public brokers are not.** The container this was built in
+blocks outbound WebSockets to all three of them, so the one path a class will
+actually use has never been run against a live broker from here.
+
+What that risk is, and is not. The MQTT client itself (`src/net/mqtt.js`) is
+the one already carrying `gwyf-web` in this repository against these same three
+brokers, unchanged but for its name. Everything above the transport -- the
+lobby, the sealed roles, the snapshots, the meeting -- is the same code the
+other three transports run, and it is tested. What is untested is the seam
+between them: `openMqtt` in `src/net/link.js`, about a hundred and thirty
+lines, and whether a school network lets any of the three through.
+
+So try it before the lesson, not during it: open the file on two devices and
+join a game. If the brokers are blocked the join screen says so and names the
+reason rather than hanging, and a phone hotspot is the usual way round it.
+
 ## Things it does not do, and why
 
 - **No voice chat.** A browser can do it, but a classroom cannot: fourteen open
