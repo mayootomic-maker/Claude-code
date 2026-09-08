@@ -128,7 +128,8 @@ public final class Measured {
         }
         seen.values().stream()
                 .sorted((a, b) -> Integer.compare(b.samples(), a.samples()))
-                .forEach(record -> lines.add(String.format("  %-20s %5.1fs each, %d seen",
+                .forEach(record -> lines.add(String.format(java.util.Locale.ROOT,
+                        "  %-20s %5.1fs each, %d seen",
                         record.item(), record.secondsPerUnit(), record.samples())));
         return lines;
     }

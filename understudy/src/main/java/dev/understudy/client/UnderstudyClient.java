@@ -240,7 +240,14 @@ public final class UnderstudyClient implements ClientModInitializer {
                 // work back up once you have genuinely stopped: not merely
                 // stopped pressing keys, but stopped moving and stopped looking
                 // around, for ten unbroken seconds.
-                switch (handover.next(touchedAnything(client), working() || paused)) {
+                // A paste is not interruptible and should not pretend to be.
+                // It takes a second or two and it is the only job whose halves
+                // are not a building: stopping in the middle leaves a wall and
+                // a floor and no way to tell that is not the design. So it
+                // finishes, and the handover applies from the next tick.
+                boolean atomic = paste != null && paste.running();
+                switch (handover.next(!atomic && touchedAnything(client),
+                        working() || paused)) {
                     case HAND_BACK -> {
                         pause();
                         tell("you took the controls — carrying on when you have been"
@@ -253,7 +260,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     }
                     default -> { }
                 }
-                if (handover.holding()) {
+                if (handover.holding() && !atomic) {
                     Hud.setStatus("yours — " + (handover.untilTakeover() / 20 + 1) + "s");
                     return;
                 }
@@ -262,7 +269,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 // stops acting on them. Everything the mod was holding was let
                 // go at the moment of pausing, so this is a genuine hands-off
                 // and not a very fast loop that does nothing.
-                if (paused) {
+                if (paused && !atomic) {
                     Hud.setStatus("paused — /understudy resume");
                     return;
                 }

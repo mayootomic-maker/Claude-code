@@ -86,11 +86,12 @@ public final class Timings {
             lines.add("nothing timed yet");
             return lines;
         }
-        lines.add(String.format("%.0f seconds accounted for:", total / 20.0));
+        lines.add(String.format(java.util.Locale.ROOT, "%.0f seconds accounted for:", total / 20.0));
         ticks.entrySet().stream()
                 .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
-                .forEach(entry -> lines.add(String.format("  %-11s %5.0fs  %2.0f%%",
-                        entry.getKey().name().toLowerCase(),
+                .forEach(entry -> lines.add(String.format(java.util.Locale.ROOT,
+                        "  %-11s %5.0fs  %2.0f%%",
+                        entry.getKey().name().toLowerCase(java.util.Locale.ROOT),
                         entry.getValue() / 20.0,
                         100.0 * entry.getValue() / total)));
         return lines;

@@ -91,7 +91,7 @@ public enum Category {
 
     public static Category of(String itemName) {
         if (itemName == null || itemName.isEmpty()) return MISC;
-        String name = itemName.toLowerCase();
+        String name = itemName.toLowerCase(java.util.Locale.ROOT);
         // Strip a namespace if one came along, e.g. "minecraft:oak_planks".
         int colon = name.indexOf(':');
         if (colon >= 0) name = name.substring(colon + 1);

@@ -102,8 +102,8 @@ public final class Agenda {
     public record Decision(Act act, String detail, String because) {
         public String describe() {
             return detail == null || detail.isEmpty()
-                    ? act.name().toLowerCase() + " — " + because
-                    : act.name().toLowerCase() + " " + detail + " — " + because;
+                    ? act.name().toLowerCase(java.util.Locale.ROOT) + " — " + because
+                    : act.name().toLowerCase(java.util.Locale.ROOT) + " " + detail + " — " + because;
         }
     }
 
@@ -209,12 +209,13 @@ public final class Agenda {
      */
     public List<String> reasoning(Situation now) {
         List<String> lines = new ArrayList<>();
-        lines.add(String.format("health %.0f/%.0f%s", now.health(), now.maxHealth(),
+        lines.add(String.format(java.util.Locale.ROOT, "health %.0f/%.0f%s", now.health(), now.maxHealth(),
                 hurt(now) ? " — hurt" : ""));
         lines.add("hunger " + now.food() + (now.carryingFood() ? " (food carried)" : " (no food)"));
         lines.add("light " + now.light() + (now.light() < DARK ? " — spawns here" : ""));
         lines.add(now.freeSlots() + " free slots");
-        lines.add(String.format("carrying a weapon worth %.0f a second, wearing %d/%d armour",
+        lines.add(String.format(java.util.Locale.ROOT,
+                "carrying a weapon worth %.0f a second, wearing %d/%d armour",
                 now.weaponDps(), now.armourPoints(), 20));
         lines.add(now.threatsNear() + " hostiles near"
                 + (now.threatsNear() > 0
@@ -237,7 +238,7 @@ public final class Agenda {
     }
 
     private static String heartsOf(Situation now) {
-        return String.format("%.0f", now.health() / 2);
+        return String.format(java.util.Locale.ROOT, "%.0f", now.health() / 2);
     }
 
     private static boolean has(Situation now, String item) {

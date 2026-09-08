@@ -90,6 +90,6 @@ public final class Materials {
     }
 
     private static String lower(String value) {
-        return value == null ? "" : value.toLowerCase().replace(' ', '_');
+        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
     }
 }

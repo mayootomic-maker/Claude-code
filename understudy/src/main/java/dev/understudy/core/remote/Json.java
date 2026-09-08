@@ -121,7 +121,9 @@ public final class Json {
                 case '\r' -> out.append("\\r");
                 case '\t' -> out.append("\\t");
                 default -> {
-                    if (letter < 0x20) out.append(String.format("\\u%04x", (int) letter));
+                    if (letter < 0x20) {
+                        out.append(String.format(java.util.Locale.ROOT, "\\u%04x", (int) letter));
+                    }
                     else out.append(letter);
                 }
             }

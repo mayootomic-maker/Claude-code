@@ -166,7 +166,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # INPUT ON A SCREEN. Answered: input is objects now rather than loose ints.
 #   keyPressed(net.minecraft.client.input.KeyEvent)
 #   mouseClicked(net.minecraft.client.input.MouseButtonEvent, boolean)
-# What is left is what those two carry — a key code and a position — which is
-# all the picker's arrow keys and row clicks need.
-net.minecraft.client.input.KeyEvent 20
-net.minecraft.client.input.MouseButtonEvent 20
+# Answered and in use. Both implement InputWithModifiers, so both carry
+# input() — the key or the button — and modifiers(); MouseButtonEvent adds
+# x(), y() and button(). The picker's arrow keys and row clicks are written
+# against those.
+#
+# Nothing open.

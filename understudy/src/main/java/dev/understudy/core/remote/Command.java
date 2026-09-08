@@ -94,7 +94,7 @@ public final class Command {
      */
     public static String clean(String raw) {
         if (raw == null) return null;
-        String name = raw.trim().toLowerCase();
+        String name = raw.trim().toLowerCase(java.util.Locale.ROOT);
         int colon = name.indexOf(':');
         if (colon >= 0) name = name.substring(colon + 1);
         if (name.isEmpty() || name.length() > LONGEST_NAME) return null;
@@ -118,6 +118,6 @@ public final class Command {
     /** Every verb, for the panel to discover what it may ask for. */
     public static List<String> verbs() {
         return java.util.Arrays.stream(Verb.values())
-                .map(verb -> verb.name().toLowerCase()).toList();
+                .map(verb -> verb.name().toLowerCase(java.util.Locale.ROOT)).toList();
     }
 }

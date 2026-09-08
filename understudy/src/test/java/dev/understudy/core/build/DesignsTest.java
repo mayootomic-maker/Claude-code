@@ -425,4 +425,25 @@ class DesignsTest {
         }
         assertEquals(15, shelves, "a table with " + shelves + " shelves is a worse table");
     }
+
+    /**
+     * The doorway keeps its lamps.
+     *
+     * A Draft cell holds one block, so a later call to set() on the same cell
+     * is a silent replacement — and the porch canopy used to run the full width
+     * of the porch, straight through the two cells the doorway lamps go in.
+     * Every design with a porch had an unlit door and nothing anywhere said so.
+     * That is the failure mode of a builder made of overlapping passes, and the
+     * only defence is to assert that the last pass left the earlier one alone.
+     */
+    @Test
+    @DisplayName("a lit doorway stays lit after the porch goes on")
+    void theDoorwayKeepsItsLamps() {
+        Blueprint bp = Designs.house(9, 7, 4, PALETTE, OAK, BRICK);
+        long lamps = bp.placements().stream()
+                .filter(p -> p.role() == Role.LIGHT)
+                .filter(p -> p.z() == bp.entranceZ())
+                .count();
+        assertEquals(2, lamps, "the porch has eaten the doorway lamps again");
+    }
 }

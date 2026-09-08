@@ -401,9 +401,14 @@ public final class Designs {
         draft.set(doorX + 1, 1, 0, wood.fence(), Role.ACCENT, true);
         draft.set(doorX - 1, 2, 0, wood.fence(), Role.ACCENT, true);
         draft.set(doorX + 1, 2, 0, wood.fence(), Role.ACCENT, true);
-        for (int x = doorX - 1; x <= doorX + 1; x++) {
-            draft.set(x, 3, 0, wood.slab(), Role.ROOF, true);
-        }
+        // A canopy over the door only, not across all three columns.
+        //
+        // It used to run the full width, which put a slab in the two cells the
+        // doorway's lamps go in — and a Draft cell holds one block, so the
+        // slabs simply replaced them. Every design with a porch had an unlit
+        // doorway and nothing said so. Two posts with a light on each and a
+        // canopy between them is also the better of the two to look at.
+        draft.set(doorX, 3, 0, wood.slab(), Role.ROOF, true);
     }
 
     /** Posts with a slab top and a chair either side: a table you can sit at. */

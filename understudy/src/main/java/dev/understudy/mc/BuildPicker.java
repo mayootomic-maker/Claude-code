@@ -252,12 +252,53 @@ public final class BuildPicker extends Screen {
         select(selected);
     }
 
-    // Arrow keys and clicking a row belong here and are not here yet: Screen's
-    // keyPressed and ContainerEventHandler's mouseClicked both take something
-    // other than what they used to in this version, and guessing at an input
-    // signature is how the last build went red. The two chevrons beside the
-    // list do the same job with nothing guessed at, and the real handlers go
-    // in once the jar has been asked what they look like.
+    /**
+     * Arrow keys, because a list is the one thing a keyboard is better at.
+     *
+     * Input is an object in this version rather than three loose ints, which is
+     * the shape I guessed at once and got wrong. KeyEvent and MouseButtonEvent
+     * both carry input() — the key or the button — from the interface they
+     * share, and the mouse one carries where it happened.
+     */
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        switch (event.input()) {
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_UP -> move(-1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN -> move(1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT -> resize(-1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT -> resize(1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_R -> turn();
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER ->
+                    commit();
+            default -> {
+                return super.keyPressed(event);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Clicking a row picks it.
+     *
+     * Checked before the widgets get a look in, but only inside the rail, so
+     * every button still behaves. A click on a heading or on empty space below
+     * the last row does nothing rather than picking whatever was nearest, which
+     * is the thing that makes a list feel unreliable.
+     */
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event,
+                                boolean doubled) {
+        int top = 56;
+        if (event.x() >= 14 && event.x() < RAIL - 8 && event.y() >= top) {
+            int at = rowAt((int) ((event.y() - top) / ROW));
+            if (at >= 0) {
+                selected = at;
+                select(at);
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubled);
+    }
 
     /** Which option a drawn row belongs to, or -1 for a heading or empty space. */
     private int rowAt(int row) {
@@ -453,8 +494,8 @@ public final class BuildPicker extends Screen {
 
         graphics.fill(0, 0, width, height, SHADE);
         graphics.text(font, Component.literal("Build"), 16, 20, TEXT);
-        graphics.text(font, Component.literal("pick one, set its size, then choose where it goes"),
-                16, 34, FAINT);
+        graphics.text(font, Component.literal("\u2191\u2193 choose  \u2190\u2192 size  "
+                + "R turn  \u23ce place"), 16, 34, FAINT);
         graphics.fill(16, 46, width - 16, 47, LINE);
 
         drawList(graphics);
