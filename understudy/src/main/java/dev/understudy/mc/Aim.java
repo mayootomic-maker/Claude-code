@@ -167,6 +167,22 @@ public final class Aim {
         if (look != null) look.reset(yaw, pitch);
     }
 
+    /**
+     * Point the head this way at once, for a block that cares which way it faces.
+     *
+     * Stairs, doors and trapdoors take their orientation from the player's yaw
+     * at the moment of the click rather than from the face that was clicked. So
+     * a speed that does not wait for the head cannot ask for a turn and click in
+     * the same breath — it has to have turned already, or the whole roof comes
+     * out pointing the wrong way.
+     */
+    static void snapYaw(LocalPlayer player, double yaw) {
+        player.setYRot((float) yaw);
+        wantYaw = yaw;
+        asked = false;
+        if (look != null) look.reset(yaw, player.getXRot());
+    }
+
     /** The same, at a block, which is what a build actually has. */
     static void snapAt(LocalPlayer player, BlockPos block) {
         snapAt(player, Vec3.atCenterOf(block));

@@ -127,4 +127,27 @@ class HologramTest {
         List<Hologram.Ghost> again = Hologram.of(shape, 0, 0, 0, 0, -1, 5, 5, 5, true);
         assertEquals(first.size(), again.size(), "the same question gave two answers");
     }
+
+    /**
+     * The drawing follows the builder's list, not one of its own.
+     *
+     * The fastest build setting takes blocks out of turn to save itself a walk.
+     * "Done" is the first n of a list, so a hologram deriving its own list
+     * would start shading the wrong blocks the moment that happened — dimmed
+     * ghosts over empty air, and blocks already standing still drawn as plans.
+     */
+    @Test
+    void followsTheOrderItIsGivenRatherThanDerivingOne() {
+        Blueprint plan = Catalog.build("hut", 5, Materials.woodNamed("oak"),
+                Materials.stoneNamed("stone brick"));
+        java.util.List<Blueprint.Placement> mine =
+                new java.util.ArrayList<>(plan.buildOrder());
+        Hologram.Shape shape = Hologram.shapeOf(plan, mine);
+        assertSame(mine, shape.order(), "it kept a copy instead of the list itself");
+
+        // And it stays the same list when the builder reorders it, which is the
+        // property that actually matters.
+        java.util.Collections.swap(mine, 0, mine.size() - 1);
+        assertSame(mine.get(0), shape.order().get(0));
+    }
 }

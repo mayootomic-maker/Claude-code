@@ -71,8 +71,24 @@ public final class Ghosts {
 
     /** Draw this blueprint standing at this corner until told otherwise. */
     public static void show(Blueprint blueprint, BlockPos at) {
+        show(blueprint, at, Hologram.shapeOf(blueprint));
+    }
+
+    /**
+     * Show it, following the very list the builder is working through.
+     *
+     * Not a copy of that list — the same one. The builder reorders it as it
+     * goes to save itself walking, and anything holding a copy would start
+     * drawing the wrong blocks as finished the first time it did.
+     */
+    public static void show(Blueprint blueprint, BlockPos at,
+                            List<Blueprint.Placement> order) {
+        show(blueprint, at, Hologram.shapeOf(blueprint, order));
+    }
+
+    private static void show(Blueprint blueprint, BlockPos at, Hologram.Shape prepared) {
         showing = blueprint;
-        shape = Hologram.shapeOf(blueprint);
+        shape = prepared;
         origin = at;
         placed = 0;
         next = -1;

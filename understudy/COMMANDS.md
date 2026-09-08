@@ -46,7 +46,7 @@
 | `/understudy why` | what it thinks is going on, and why |
 | `/understudy auto [item] [n]` | decide for itself what to do next |
 | `/understudy auto off` | stop deciding for itself |
-| `/understudy speed [how]` | steady, brisk, or flat out — which is visibly a mod |
+| `/understudy speed [how]` | steady, brisk, flat out, or instant |
 | `/project [which]` | an objective: kit, camp, base, enchanter |
 
 ## Looking at it

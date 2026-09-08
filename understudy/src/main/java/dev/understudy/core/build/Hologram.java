@@ -75,7 +75,23 @@ public final class Hologram {
                         Map<String, Integer> colours) {}
 
     public static Shape shapeOf(Blueprint blueprint) {
-        List<Blueprint.Placement> order = blueprint.buildOrder();
+        return shapeOf(blueprint, blueprint.buildOrder());
+    }
+
+    /**
+     * The same, over an order somebody else owns.
+     *
+     * The builder takes blocks out of turn to save itself a walk, so the order
+     * it is working through stops matching the one this would compute for
+     * itself the moment it does. "Done" here is the first n of a list, so two
+     * different lists means the finished part of the drawing is not the
+     * finished part of the building — ghosts dimmed over empty air and solid
+     * blocks still drawn as plans.
+     *
+     * Handing the list in rather than deriving it keeps them the same list,
+     * which is a stronger guarantee than keeping them in step would be.
+     */
+    public static Shape shapeOf(Blueprint blueprint, List<Blueprint.Placement> order) {
         java.util.Set<Long> filled = new java.util.HashSet<>();
         Map<String, Integer> colours = new java.util.HashMap<>();
         for (Blueprint.Placement p : order) {

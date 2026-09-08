@@ -62,42 +62,75 @@ public final class BuildTask {
      * degrees apart — so all three settings placed two or three blocks a second
      * and "flat out" was, in practice, identical to "steady".
      *
-     * So the setting is now about the head rather than about a counter. The two
+     * So the setting is about the head rather than about a counter. The two
      * human speeds still turn to look at what they are doing and are capped by
-     * that, which is a real cap and is what the advertised rate says. Flat out
-     * snaps the view instead — no spring, no reaction time — which is visibly a
-     * mod to anyone watching and is roughly fifty times quicker.
+     * that, which is a real cap and is what their advertised pace says.
+     *
+     * Flat out snaps the view instead — no spring, no reaction time — which is
+     * visibly a mod to anyone watching and is roughly fifty times quicker.
+     *
+     * Instant goes as far as the rules allow and no further, which is worth
+     * being exact about because it is not what the word suggests. It places
+     * every block it can reach, in the tick it can reach it, and it takes
+     * blocks out of turn to avoid a walk. What it cannot do is skip the walk.
+     * Every placement is an ordinary interaction with an ordinary reach check
+     * on the far side of it, so the character has to physically be within four
+     * blocks of every block of the building — and getting there is walking, at
+     * walking speed. That is the whole of what is left: thirteen short walks
+     * for a house, fifty-three for a manor, and near enough all of the clock. There is no version of this that
+     * does not have it, short of the two things this mod will not do: creative
+     * flight it has not been given, or a packet the server would be right to
+     * refuse.
      */
     public enum Speed {
-        STEADY("steady, like a person", 1, 4, true, 2),
-        BRISK("brisk, like a fast one", 2, 2, true, 3),
-        FLAT_OUT("flat out, like a mod", 8, 1, false, 160);
+        STEADY("steady, like a person", 1, 4, true, false, "about 2 a second"),
+        BRISK("brisk, like a fast one", 2, 2, true, false, "about 3 a second"),
+        FLAT_OUT("flat out, like a mod", 8, 1, false, false, "about 160 a second"),
+        INSTANT("instant — everything it can reach, the moment it can reach it",
+                512, 0, false, true, "as fast as the game will take them");
 
         public final String describe;
         final int perTick;
         final int cooldown;
         /** Whether to wait for the head to turn, which is the whole difference. */
         final boolean turnsItsHead;
-        private final int aboutPerSecond;
+        /**
+         * Whether to take a block out of turn to avoid a walk.
+         *
+         * The order is a sweep, so what is in reach is mostly the run you are
+         * on — but the course above and the one below are in reach too, and
+         * they are hundreds of places further down the queue. Left in order,
+         * it walks away and comes back for them. Allowed out of order, one
+         * stop does three courses: a house needs 13 places to stand instead of
+         * 93, a manor 53 instead of 302.
+         *
+         * Only for the instant setting. The others are pretending to be a
+         * person, and a person lays a course at a time.
+         */
+        final boolean worksAhead;
+        private final String pace;
 
         Speed(String describe, int perTick, int cooldown, boolean turnsItsHead,
-              int aboutPerSecond) {
+              boolean worksAhead, String pace) {
             this.describe = describe;
             this.perTick = perTick;
             this.cooldown = cooldown;
             this.turnsItsHead = turnsItsHead;
-            this.aboutPerSecond = aboutPerSecond;
+            this.worksAhead = worksAhead;
+            this.pace = pace;
         }
 
         /**
-         * What it actually places, not what the counters would allow.
+         * What it actually places, said in words rather than as a number.
          *
-         * perTick * 20 / cooldown is the mechanical ceiling and for the two
-         * human speeds it is off by a factor of seven, because the head-turn
-         * they wait for is slower than the counter they are throttled by.
+         * perTick * 20 / cooldown is the mechanical ceiling and it is not the
+         * truth for any of these: the two human speeds are capped seven times
+         * lower by the head-turn they wait for, and instant is not capped by
+         * placing at all — it is capped by how fast a person can walk, which
+         * is not a thing this can put a blocks-per-second number on.
          */
-        public int blocksPerSecond() {
-            return aboutPerSecond;
+        public String pace() {
+            return pace;
         }
     }
 
@@ -143,6 +176,15 @@ public final class BuildTask {
     private final Map<String, Integer> attempts = new LinkedHashMap<>();
     private final Map<String, Integer> missing = new LinkedHashMap<>();
     private BlockPos clearing;
+    /**
+     * Ticks since the build started, so the rate it managed is a measurement.
+     *
+     * Every number this mod has claimed about its own speed has been a
+     * multiplication of two constants, and every one of them has been wrong.
+     * This one is counted.
+     */
+    private int elapsed;
+    private int walkedTicks;
     private int clearTicks;
     private int cleared;
     private final List<Blueprint.Placement> deferred = new ArrayList<>();
@@ -182,12 +224,15 @@ public final class BuildTask {
     public void start(Blueprint blueprint, BlockPos at) {
         this.origin = at;
         this.building = blueprint.name();
-        this.queue = blueprint.buildOrder();
+        // Copied because working ahead swaps entries within it.
+        this.queue = new ArrayList<>(blueprint.buildOrder());
         this.index = 0;
         this.placed = 0;
         this.skipped = 0;
         this.cleared = 0;
         this.cooldown = 0;
+        this.elapsed = 0;
+        this.walkedTicks = 0;
         this.running = true;
         this.secondPass = false;
         this.attempts.clear();
@@ -201,7 +246,7 @@ public final class BuildTask {
         this.clearing = null;
         // Show it standing there while it goes up, so what is left is visible
         // rather than something you infer from a block count in chat.
-        Ghosts.show(blueprint, at);
+        Ghosts.show(blueprint, at, queue);
         report.accept("building " + blueprint.name() + ": " + queue.size() + " blocks");
     }
 
@@ -248,8 +293,12 @@ public final class BuildTask {
             stop("lost the world");
             return;
         }
+        elapsed++;
         Ghosts.progress(index, index);
-        if (travel != null && travel.running()) return; // walking to the site
+        if (travel != null && travel.running()) {
+            walkedTicks++;
+            return; // walking to the site
+        }
         if (cooldown-- > 0) return;
 
         // A build at night is a build with things spawning in it, and the
@@ -318,6 +367,13 @@ public final class BuildTask {
         }
 
         if (!inReach(player.blockPosition(), target)) {
+            // Before walking off, see whether anything else that is due can be
+            // done from right here. The sweep puts the rest of this run next in
+            // the queue, but the course above and the course below are in reach
+            // as well and are hundreds of entries away — so in strict order it
+            // walks the length of the wall three times instead of once.
+            if (speed.worksAhead && bringForwardSomethingInReach(player)) return true;
+
             // Stand somewhere it can work from, rather than next to this one
             // block and then somewhere else for the next.
             travel.start(stationFor(player, target));
@@ -464,6 +520,14 @@ public final class BuildTask {
                     client.level.getGameTime());
         }
         StringBuilder message = new StringBuilder("done: placed " + placed + " blocks");
+        if (elapsed > 20) {
+            // Measured, not advertised — and split, because which half was slow
+            // is the only actionable thing about a build that felt slow. Placing
+            // is nearly free now; if this says most of it was walking, that is
+            // the truth about the site rather than about the setting.
+            message.append(String.format(" in %ds (%.0f a second, %d%% of it walking)",
+                    elapsed / 20, placed / (elapsed / 20.0), walkedTicks * 100 / elapsed));
+        }
         if (cleared > 0) message.append(", cleared ").append(cleared);
         if (!scaffolds.isEmpty()) {
             message.append(", left ").append(scaffolds.size()).append(" props up");
@@ -529,8 +593,16 @@ public final class BuildTask {
 
             // Face the block, and for something with a front — stairs, a door —
             // face the way it has to be placed instead.
-            if (facing != null) Aim.at(facing.yaw(), 0);
-            else look(player, hit);
+            // Stairs and doors take their direction from the yaw at the moment
+            // of the click, not from the face clicked. A speed that does not
+            // wait for the head has to be facing the right way already, or
+            // every stair in the roof points wherever the last one left it.
+            if (facing != null) {
+                if (speed.turnsItsHead) Aim.at(facing.yaw(), 0);
+                else Aim.snapYaw(player, facing.yaw());
+            } else {
+                look(player, hit);
+            }
             BlockHitResult result = new BlockHitResult(hit, face, reference, false);
             client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, result);
             player.swing(InteractionHand.MAIN_HAND);
@@ -635,6 +707,36 @@ public final class BuildTask {
         // a ledge. Next to it and one up is the guess a person would make, and
         // the walker will tell us if it cannot get there.
         return best != null ? best : target.offset(1, 1, 0);
+    }
+
+    /** How far down the queue to look for something that can be done from here. */
+    private static final int WORK_AHEAD = 128;
+
+    /**
+     * Swap a block that can be done from where we stand into the next slot.
+     *
+     * Only blocks that have something to place against are eligible, which is
+     * the rule the order exists to guarantee and the one thing taking a block
+     * out of turn could break. A block with nothing beside it yet stays where
+     * it is and gets done when its neighbour arrives.
+     *
+     * The displaced block is not lost — it goes to where the chosen one came
+     * from and comes round again, by which time we are probably standing
+     * somewhere that reaches it.
+     */
+    private boolean bringForwardSomethingInReach(LocalPlayer player) {
+        BlockPos from = player.blockPosition();
+        int limit = Math.min(queue.size(), index + WORK_AHEAD);
+        for (int j = index + 1; j < limit; j++) {
+            Blueprint.Placement candidate = queue.get(j);
+            BlockPos at = origin.offset(candidate.x(), candidate.y(), candidate.z());
+            if (!inReach(from, at)) continue;
+            if (!client.level.getBlockState(at).isAir()) continue;
+            if (nothingToPlaceAgainst(at)) continue;
+            java.util.Collections.swap(queue, index, j);
+            return true;
+        }
+        return false;
     }
 
     private static boolean standable(ClientBlockView view, BlockPos spot) {

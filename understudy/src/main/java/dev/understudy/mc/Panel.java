@@ -326,6 +326,7 @@ kbd{font-family:var(--mono);font-size:10px;background:#0b100f;border:1px solid v
             <option value="steady">Build steady</option>
             <option value="brisk">Build brisk</option>
             <option value="flat_out">Build flat out</option>
+            <option value="instant">Build instant</option>
           </select>
           <button id="speedGo">Set</button>
         </div>

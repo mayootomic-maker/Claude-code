@@ -698,25 +698,33 @@ public final class UnderstudyCommands {
             for (BuildTask.Speed option : BuildTask.Speed.values()) {
                 say(source, (option == BuildTask.speed() ? "§a· " : "§8· ")
                         + option.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
-                        + " — " + option.describe + ", " + option.blocksPerSecond() + " blocks/s");
+                        + " — " + option.describe + ", " + option.pace());
             }
             // The gap between three and a hundred and sixty is the head, not a
             // counter, and saying so is the difference between a setting people
             // understand and one they assume is broken.
             say(source, "the two slow ones turn to look at each block, which is "
-                    + "what the rate is; flat out snaps the view instead");
-            say(source, "/understudy speed <steady|brisk|flat_out>");
+                    + "what the rate is; the other two do not");
+            say(source, "instant also works out of turn to save walking — but the "
+                    + "walking is what is left, and it is most of a build");
+            say(source, "/understudy speed <steady|brisk|flat_out|instant>");
             return 1;
         }
         for (BuildTask.Speed option : BuildTask.Speed.values()) {
             if (option.name().equalsIgnoreCase(how.replace(' ', '_'))) {
                 BuildTask.speed(option);
-                say(source, "building " + option.describe + " — "
-                        + option.blocksPerSecond() + " blocks a second");
+                say(source, "building " + option.describe + " — " + option.pace());
+                if (option == BuildTask.Speed.INSTANT) {
+                    // Said every time it is chosen, because the name promises
+                    // something the rules do not allow and finding that out by
+                    // watching it walk would be worse.
+                    say(source, "placing is instant; walking is not — every block "
+                            + "still has to be within reach, and that is most of the time");
+                }
                 return 1;
             }
         }
-        say(source, "no such speed — steady, brisk or flat_out");
+        say(source, "no such speed — steady, brisk, flat_out or instant");
         return 0;
     }
 
