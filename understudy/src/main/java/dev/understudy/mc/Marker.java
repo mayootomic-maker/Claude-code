@@ -109,6 +109,7 @@ public final class Marker {
                     + ", " + it.sizeY() + " tall");
             report.accept("look where you want its near corner · R turns · "
                     + "Page Up and Down raise · Enter places it");
+            report.accept("the orange arrow is the front and the green mark is the way in");
         } else {
             report.accept("aim at a corner, tap crouch, look to the far corner, Enter to place");
             report.accept("the design resizes to the square you drag — R turns it, "
@@ -204,7 +205,22 @@ public final class Marker {
             fittedTurns = quarterTurns;
         }
         Ghosts.show(turned, originFor(from, to));
+        Ghosts.facing(facingNow(wide, deep));
     }
+
+    /**
+     * Which way the front of it ends up pointing, all told.
+     *
+     * Two turns go into that and only one of them is yours. A design that
+     * resizes to the plot also turns itself to lie the same way round as the
+     * plot, and that turn used to be invisible — you dragged a rectangle, it
+     * quietly spun the house a quarter, and the first you knew was the door.
+     */
+    private int facingNow(int wide, int deep) {
+        return Math.floorMod(design.turnsFor(wide, deep) + quarterTurns, 4);
+    }
+
+    private static final String[] COMPASS = {"north", "east", "south", "west"};
 
     /**
      * The corner the blueprint's own origin goes at.
@@ -247,7 +263,8 @@ public final class Marker {
      * says so and gets out of the way.
      */
     private String placingStatus(BlockPos at) {
-        String where = turned.name() + " " + turned.sizeX() + "x" + turned.sizeZ();
+        String where = turned.name() + " " + turned.sizeX() + "x" + turned.sizeZ()
+                + " facing " + COMPASS[facingNow(0, 0)];
         if (lift != 0) where += (lift > 0 ? " +" : " ") + lift;
         int roughness = groundVaries(at);
         if (roughness < 0) return where + " · Enter";
@@ -294,6 +311,7 @@ public final class Marker {
         String note = turned.sizeX() <= wide && turned.sizeZ() <= deep
                 ? at
                 : at + " §c>" + wide + "x" + deep;
+        note += " facing " + COMPASS[facingNow(wide, deep)];
         if (lift != 0) note += (lift > 0 ? " +" : " ") + lift;
         return turned.name() + " " + note;
     }

@@ -87,6 +87,9 @@ public final class Ghosts {
     }
 
     private static void show(Blueprint blueprint, BlockPos at, Hologram.Shape prepared) {
+        // Off unless the site picker turns it on: a build under way wants the
+        // arrow gone, and it is the picker that knows which way round it ended.
+        front = -1;
         showing = blueprint;
         shape = prepared;
         origin = at;
@@ -96,6 +99,24 @@ public final class Ghosts {
         cachedFor = Long.MIN_VALUE;
     }
 
+    /**
+     * Which way the thing is pointing, drawn alongside it while it is being sited.
+     *
+     * Only while siting: once the build is under way the arrow has done its job
+     * and would be one more thing in front of what is actually happening.
+     */
+    public static void facing(int quarterTurns) {
+        front = quarterTurns;
+        cachedFor = Long.MIN_VALUE;
+    }
+
+    public static void unfaced() {
+        front = -1;
+        cachedFor = Long.MIN_VALUE;
+    }
+
+    private static int front = -1;
+
     /** How far along, so the finished part can dim and the next can be called out. */
     public static void progress(int done, int upNext) {
         placed = done;
@@ -103,6 +124,7 @@ public final class Ghosts {
     }
 
     public static void hide() {
+        front = -1;
         showing = null;
         shape = null;
         origin = null;
@@ -133,8 +155,14 @@ public final class Ghosts {
                 ^ ((long) placed << 40) ^ ((long) next << 20) ^ (showDone ? 1 : 0);
         if (now == cachedFor) return cached;
         cachedFor = now;
-        cached = Hologram.of(shape, origin.getX(), origin.getY(), origin.getZ(),
-                placed, next, camera.x, camera.y, camera.z, showDone);
+        List<Hologram.Ghost> ghosts = new java.util.ArrayList<>(
+                Hologram.of(shape, origin.getX(), origin.getY(), origin.getZ(),
+                        placed, next, camera.x, camera.y, camera.z, showDone));
+        if (front >= 0 && showing != null) {
+            ghosts.addAll(Hologram.orientation(showing, origin.getX(), origin.getY(),
+                    origin.getZ(), front));
+        }
+        cached = ghosts;
         return cached;
     }
 

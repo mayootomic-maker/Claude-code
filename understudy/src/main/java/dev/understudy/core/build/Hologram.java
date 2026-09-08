@@ -50,6 +50,57 @@ public final class Hologram {
     public static final int NEXT = 0xFFFFFFFF;
     /** Done, and dimmed almost to nothing: confirmation, not decoration. */
     public static final int PLACED = 0x30707070;
+    /** Which way it faces, and where the way in is. Read before anything else. */
+    public static final int FRONT = 0xFFFFC24D;
+    public static final int DOORWAY = 0xFF6BE38A;
+
+    /**
+     * An arrow on the ground pointing out of the front, and a mark on the door.
+     *
+     * The outline of a building tells you where it will be and nothing about
+     * which way round it is. On this mod's own designs that is the difference
+     * between a door onto your path and a door into a hillside; on an import it
+     * is the difference between the front of the house and the back of it. You
+     * cannot read it off a wireframe — every wall looks like every other wall
+     * from outside — so it is drawn.
+     *
+     * The arrow lies flat on the ground in front of the building rather than
+     * floating in the outline, because the one place there is definitely
+     * nothing else drawn is the ground outside it.
+     *
+     * @param facing which way the front points: 0 north, 1 east, 2 south, 3 west
+     */
+    public static List<Ghost> orientation(Blueprint plan, int originX, int originY, int originZ,
+                                          int facing) {
+        List<Ghost> out = new ArrayList<>();
+        int midX = originX + plan.sizeX() / 2;
+        int midZ = originZ + plan.sizeZ() / 2;
+        int stepX = switch (facing) { case 1 -> 1; case 3 -> -1; default -> 0; };
+        int stepZ = switch (facing) { case 0 -> -1; case 2 -> 1; default -> 0; };
+
+        // Start at the middle of the face it points out of, not at the middle
+        // of the building, or the arrow begins inside the walls.
+        int fromX = midX + stepX * (stepX == 0 ? 0 : plan.sizeX() / 2);
+        int fromZ = midZ + stepZ * (stepZ == 0 ? 0 : plan.sizeZ() / 2);
+
+        for (int step = 1; step <= ARROW; step++) {
+            out.add(new Ghost(fromX + stepX * step, originY, fromZ + stepZ * step, FRONT));
+        }
+        // Two barbs, across the direction of travel, at the far end.
+        int tipX = fromX + stepX * ARROW;
+        int tipZ = fromZ + stepZ * ARROW;
+        out.add(new Ghost(tipX - stepX + stepZ, originY, tipZ - stepZ + stepX, FRONT));
+        out.add(new Ghost(tipX - stepX - stepZ, originY, tipZ - stepZ - stepX, FRONT));
+
+        // And the way in, which is a fact about the design rather than about
+        // the rotation, and the thing you actually want to line up.
+        out.add(new Ghost(originX + plan.entranceX(), originY + plan.entranceY(),
+                originZ + plan.entranceZ(), DOORWAY));
+        return out;
+    }
+
+    /** Long enough to read at a distance, short enough not to be a runway. */
+    private static final int ARROW = 3;
 
     private Hologram() {}
 

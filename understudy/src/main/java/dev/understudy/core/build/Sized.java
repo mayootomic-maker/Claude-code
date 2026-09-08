@@ -84,6 +84,20 @@ public final class Sized {
      * can see it for itself by comparing the footprint it gets back. Returning
      * null would only mean the preview vanished at the moment it was needed.
      */
+    /**
+     * The quarter turns fitting a plot this shape would apply, on its own.
+     *
+     * Asked separately because the caller has to know which way round the thing
+     * ended up. A building you can see the outline of but not the front of is a
+     * building you place the wrong way round and find out about from inside,
+     * and the turn this applies is invisible unless it is handed back.
+     */
+    public int turnsFor(int wide, int deep) {
+        if (!adjustable()) return 0;
+        Blueprint best = atSize(bestSizeFor(wide, deep));
+        return needsTurning(best, wide, deep) ? 1 : 0;
+    }
+
     public Blueprint fitting(int wide, int deep) {
         // A fixed design keeps the way round it was made. Turning it to match
         // the plot is a kindness to a design that has no opinion; a schematic
@@ -91,7 +105,11 @@ public final class Sized {
         // the rectangle you dragged came out wider than it was deep is the
         // opposite of listening. R turns it, and only R.
         if (!adjustable()) return asChosen;
+        return orientedFor(atSize(bestSizeFor(wide, deep)), wide, deep);
+    }
 
+    /** The biggest size whose footprint the plot can hold, either way round. */
+    private int bestSizeFor(int wide, int deep) {
         int low = min;
         int high = max;
         int best = min;
@@ -104,7 +122,7 @@ public final class Sized {
                 high = mid - 1;
             }
         }
-        return orientedFor(atSize(best), wide, deep);
+        return best;
     }
 
     /** Whether this design fits the plot either as drawn or turned a quarter. */
@@ -122,9 +140,11 @@ public final class Sized {
      * square plot is left alone: there is nothing to match.
      */
     private static Blueprint orientedFor(Blueprint plan, int wide, int deep) {
-        if (wide == deep || plan.sizeX() == plan.sizeZ()) return plan;
-        boolean plotIsWide = wide > deep;
-        boolean planIsWide = plan.sizeX() > plan.sizeZ();
-        return plotIsWide == planIsWide ? plan : plan.turned(1, false);
+        return needsTurning(plan, wide, deep) ? plan.turned(1, false) : plan;
+    }
+
+    private static boolean needsTurning(Blueprint plan, int wide, int deep) {
+        if (wide == deep || plan.sizeX() == plan.sizeZ()) return false;
+        return (wide > deep) != (plan.sizeX() > plan.sizeZ());
     }
 }
