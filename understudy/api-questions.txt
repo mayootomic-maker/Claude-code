@@ -159,10 +159,13 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # handling — in a single-player world through the integrated server's console
 # source, which is permission level 4 whether or not cheats are on; on a real
 # server as the player, which works only if the player may run setblock.
-# These are the names both need.
-net.minecraft.server.MinecraftServer getCommands
-net.minecraft.server.MinecraftServer createCommandSourceStack
-net.minecraft.commands.Commands performPrefixedCommand
-net.minecraft.client.multiplayer.ClientPacketListener sendCommand
-net.minecraft.client.Minecraft getConnection
-net.minecraft.commands.CommandSourceStack 20
+# All answered and in use: MinecraftServer.getCommands() and
+# createCommandSourceStack(), Commands.performPrefixedCommand(source, "/..."),
+# ClientPacketListener.sendCommand(String), Minecraft.getConnection().
+#
+# INPUT ON A SCREEN. Both of these changed shape in this version and both were
+# guessed at, which cost a red build — the two things a list wants are arrow
+# keys and a click on a row, and neither can be written until these are known.
+net.minecraft.client.gui.screens.Screen keyPressed
+net.minecraft.client.gui.components.events.GuiEventListener 20
+net.minecraft.client.gui.components.events.ContainerEventHandler mouseClicked

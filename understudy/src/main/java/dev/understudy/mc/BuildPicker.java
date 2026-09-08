@@ -190,6 +190,13 @@ public final class BuildPicker extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Solid \u25a0"), b -> toggleSolid())
                 .bounds(x + 112, bottom, 56, 20).build());
 
+        // The list has no scrollbar you can drag and no row you can click yet,
+        // so it has these.
+        addRenderableWidget(Button.builder(Component.literal("\u25b2"), b -> move(-1))
+                .bounds(RAIL - 26, 54, 18, 18).build());
+        addRenderableWidget(Button.builder(Component.literal("\u25bc"), b -> move(1))
+                .bounds(RAIL - 26, height - 52, 18, 18).build());
+
         addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
                 .bounds(width - 176, bottom, 74, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Place \u2192"), b -> commit())
@@ -245,49 +252,12 @@ public final class BuildPicker extends Screen {
         select(selected);
     }
 
-    @Override
-    public boolean keyPressed(int key, int scancode, int modifiers) {
-        switch (key) {
-            case org.lwjgl.glfw.GLFW.GLFW_KEY_UP -> {
-                move(-1);
-                return true;
-            }
-            case org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN -> {
-                move(1);
-                return true;
-            }
-            case org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT -> {
-                resize(-1);
-                return true;
-            }
-            case org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT -> {
-                resize(1);
-                return true;
-            }
-            case org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER -> {
-                commit();
-                return true;
-            }
-            default -> {
-                return super.keyPressed(key, scancode, modifiers);
-            }
-        }
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int top = 56;
-        if (mouseX >= 16 && mouseX < RAIL && mouseY >= top) {
-            int row = (int) ((mouseY - top) / ROW);
-            int at = rowAt(row);
-            if (at >= 0) {
-                selected = at;
-                select(at);
-                return true;
-            }
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
+    // Arrow keys and clicking a row belong here and are not here yet: Screen's
+    // keyPressed and ContainerEventHandler's mouseClicked both take something
+    // other than what they used to in this version, and guessing at an input
+    // signature is how the last build went red. The two chevrons beside the
+    // list do the same job with nothing guessed at, and the real handlers go
+    // in once the jar has been asked what they look like.
 
     /** Which option a drawn row belongs to, or -1 for a heading or empty space. */
     private int rowAt(int row) {
@@ -483,8 +453,8 @@ public final class BuildPicker extends Screen {
 
         graphics.fill(0, 0, width, height, SHADE);
         graphics.text(font, Component.literal("Build"), 16, 20, TEXT);
-        graphics.text(font, Component.literal("\u2191\u2193 choose  \u2190\u2192 size  "
-                + "\u23ce place"), 16, 34, FAINT);
+        graphics.text(font, Component.literal("pick one, set its size, then choose where it goes"),
+                16, 34, FAINT);
         graphics.fill(16, 46, width - 16, 47, LINE);
 
         drawList(graphics);
