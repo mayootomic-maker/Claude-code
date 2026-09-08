@@ -146,6 +146,8 @@ public final class BuildTask {
 
     /** How many times a stubborn block is retried before being given up on. */
     private static final int MAX_ATTEMPTS = 3;
+    /** How many walks one block gets before it is written off as unreachable. */
+    private static final int MAX_STATION_TRIES = 4;
     /** Give up clearing a block that will not break — bedrock, or a claim. */
     private static final int MAX_CLEAR_TICKS = 200;
     /** Fluids are placed into rather than broken; nothing else is left standing. */
@@ -185,6 +187,9 @@ public final class BuildTask {
      */
     private int elapsed;
     private int walkedTicks;
+    /** The block a walk was started for, and how many times, so it cannot loop. */
+    private BlockPos walkingFor;
+    private int stationTries;
     private int clearTicks;
     private int cleared;
     private final List<Blueprint.Placement> deferred = new ArrayList<>();
@@ -233,6 +238,8 @@ public final class BuildTask {
         this.cooldown = 0;
         this.elapsed = 0;
         this.walkedTicks = 0;
+        this.walkingFor = null;
+        this.stationTries = 0;
         this.running = true;
         this.secondPass = false;
         this.attempts.clear();
@@ -296,8 +303,19 @@ public final class BuildTask {
         elapsed++;
         Ghosts.progress(index, index);
         if (travel != null && travel.running()) {
-            walkedTicks++;
-            return; // walking to the site
+            // A walk exists to get in range, not to arrive anywhere in
+            // particular, so it ends the moment the block is in range. This is
+            // not a nicety. Travel calls it arrived within ARRIVAL_SLACK of the
+            // spot, and the spot was chosen for what can be reached from the
+            // spot exactly — so it would land short, still be out of reach, ask
+            // for the same spot, be told it had arrived that instant, and do
+            // that for ever. Standing still, staring, saying nothing.
+            if (index < queue.size() && inReach(player.blockPosition(), worldPos(queue.get(index)))) {
+                travel.stop(null);
+            } else {
+                walkedTicks++;
+                return;
+            }
         }
         if (cooldown-- > 0) return;
 
@@ -374,6 +392,22 @@ public final class BuildTask {
             // walks the length of the wall three times instead of once.
             if (speed.worksAhead && bringForwardSomethingInReach(player)) return true;
 
+            // Belt and braces on the loop above: if walking for this block has
+            // not put it in reach after a few goes, it is not going to, and the
+            // one thing that must not happen is standing there trying.
+            if (target.equals(walkingFor) && ++stationTries > MAX_STATION_TRIES) {
+                index++;
+                skipped++;
+                walkingFor = null;
+                stationTries = 0;
+                report.accept("could not get near " + target.toShortString() + " — skipping it");
+                return true;
+            }
+            if (!target.equals(walkingFor)) {
+                walkingFor = target;
+                stationTries = 1;
+            }
+
             // Stand somewhere it can work from, rather than next to this one
             // block and then somewhere else for the next.
             travel.start(stationFor(player, target));
@@ -404,6 +438,8 @@ public final class BuildTask {
         if (place(player, target, next.facing())) {
             placed++;
             index++;
+            walkingFor = null;
+            stationTries = 0;
             return true;
         }
         // Nothing to click on. A block in mid-air cannot be placed at all, so
@@ -441,6 +477,11 @@ public final class BuildTask {
         if (!place(player, under, null)) return false;
         scaffolds.add(under);
         return true;
+    }
+
+    /** Where a placement sits in the world, rather than in the blueprint. */
+    private BlockPos worldPos(Blueprint.Placement p) {
+        return origin.offset(p.x(), p.y(), p.z());
     }
 
     private static long pack(int x, int y, int z) {
@@ -662,6 +703,15 @@ public final class BuildTask {
      * pays for dozens of placements instead of one.
      */
     private BlockPos stationFor(LocalPlayer player, BlockPos target) {
+        // Twice: once refusing to stand anywhere a block is due, and if there
+        // is nowhere at all — a corridor of chests, a one-block gap — again
+        // allowing it. Standing in the way is bad; having nowhere to stand and
+        // giving up on the block is worse.
+        BlockPos clear = stationFor(player, target, true);
+        return clear != null ? clear : stationFor(player, target, false);
+    }
+
+    private BlockPos stationFor(LocalPlayer player, BlockPos target, boolean keepClear) {
         ClientBlockView view = new ClientBlockView(client.level);
         BlockPos from = player.blockPosition();
 
@@ -688,7 +738,7 @@ public final class BuildTask {
                 // block. That is what the routes looked like.
                 for (int dy = -(int) Math.ceil(REACH); dy <= 2; dy++) {
                     BlockPos spot = target.offset(dx, dy, dz);
-                    if (!inReach(spot, target) || !standable(view, spot)) continue;
+                    if (!inReach(spot, target) || !standable(view, spot, keepClear)) continue;
 
                     int reached = 0;
                     for (BlockPos block : upcoming) {
@@ -703,9 +753,10 @@ public final class BuildTask {
                 }
             }
         }
-        // Nowhere in the whole box is standable — a build over water, or out on
-        // a ledge. Next to it and one up is the guess a person would make, and
-        // the walker will tell us if it cannot get there.
+        // Nowhere at all on the second pass either — a build over water, or out
+        // on a ledge. Next to it and one up is the guess a person would make,
+        // and the walker will tell us if it cannot get there.
+        if (best == null && keepClear) return null;
         return best != null ? best : target.offset(1, 1, 0);
     }
 
@@ -726,20 +777,49 @@ public final class BuildTask {
      */
     private boolean bringForwardSomethingInReach(LocalPlayer player) {
         BlockPos from = player.blockPosition();
+        // Nearest to the last one placed, not the first one found. Taking
+        // whichever came first in the queue meant consecutive blocks could be
+        // on opposite sides of the character, and it stood there whipping round
+        // between them — which is the spinning, and it is also slower, because
+        // a nearby block is a block that will still be in reach next time.
+        BlockPos anchor = index > 0 ? worldPos(queue.get(index - 1)) : from;
+        int best = -1;
+        double nearest = Double.MAX_VALUE;
         int limit = Math.min(queue.size(), index + WORK_AHEAD);
         for (int j = index + 1; j < limit; j++) {
-            Blueprint.Placement candidate = queue.get(j);
-            BlockPos at = origin.offset(candidate.x(), candidate.y(), candidate.z());
+            BlockPos at = worldPos(queue.get(j));
             if (!inReach(from, at)) continue;
             if (!client.level.getBlockState(at).isAir()) continue;
             if (nothingToPlaceAgainst(at)) continue;
-            java.util.Collections.swap(queue, index, j);
-            return true;
+            double gap = anchor.distSqr(at);
+            if (gap < nearest) {
+                nearest = gap;
+                best = j;
+            }
         }
-        return false;
+        if (best < 0) return false;
+        java.util.Collections.swap(queue, index, best);
+        return true;
     }
 
-    private static boolean standable(ClientBlockView view, BlockPos spot) {
+    /**
+     * Somewhere the character can stand, and should.
+     *
+     * The design's own blocks are excluded, both cells of them, because a
+     * character standing where a block is due is a block that cannot be placed
+     * — the game refuses to put one inside you. It used to stand in the middle
+     * of a wall it was building and then walk off and come back for the two it
+     * had been sitting on.
+     *
+     * The floor is the exception that needs no exception: floor blocks are at
+     * the bottom of the design and the feet go one above them, so standing on
+     * the finished floor of a room is allowed and always was.
+     */
+    private boolean standable(ClientBlockView view, BlockPos spot, boolean keepClear) {
+        if (keepClear && (planned.contains(pack(spot.getX(), spot.getY(), spot.getZ()))
+                || planned.contains(pack(spot.getX(), spot.getY() + 1, spot.getZ())))) {
+            return false;
+        }
         return view.passable(spot.getX(), spot.getY(), spot.getZ())
                 && view.passable(spot.getX(), spot.getY() + 1, spot.getZ())
                 && view.solid(spot.getX(), spot.getY() - 1, spot.getZ());

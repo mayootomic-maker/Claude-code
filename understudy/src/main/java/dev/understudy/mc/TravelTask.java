@@ -59,6 +59,17 @@ public final class TravelTask {
         return goal;
     }
 
+    /**
+     * How near counts as arrived.
+     *
+     * Named because it is not only this class's business. Anything that walks
+     * somewhere in order to be able to *do* something there has to know that it
+     * will be put down up to this far from where it asked for — and a caller
+     * that assumes it lands on the exact block will ask again, arrive again
+     * instantly, and stand there doing that forever.
+     */
+    public static final double ARRIVAL_SLACK = 1.8;
+
     public void start(BlockPos target) {
         start(target, false);
     }
@@ -101,7 +112,7 @@ public final class TravelTask {
         ticks++;
         BlockPos here = player.blockPosition();
 
-        if (here.closerThan(goal, 1.8)) {
+        if (here.closerThan(goal, ARRIVAL_SLACK)) {
             running = false;
             walker.stop();
             report.accept("arrived (" + (ticks / 20) + "s)");

@@ -153,4 +153,16 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 #   chatWidth(), chatHeightUnfocused(), chatHeightFocused(), chatDelay(),
 #   chatLineSpacing()
 #
-# Nothing open.
+# PASTING A BUILD. A client mod cannot make blocks appear: the server owns the
+# world, and a placement it did not authorise is a placement that does not
+# happen. The two honest routes both go through the server's own command
+# handling — in a single-player world through the integrated server's console
+# source, which is permission level 4 whether or not cheats are on; on a real
+# server as the player, which works only if the player may run setblock.
+# These are the names both need.
+net.minecraft.server.MinecraftServer getCommands
+net.minecraft.server.MinecraftServer createCommandSourceStack
+net.minecraft.commands.Commands performPrefixedCommand
+net.minecraft.client.multiplayer.ClientPacketListener sendCommand
+net.minecraft.client.Minecraft getConnection
+net.minecraft.commands.CommandSourceStack 20
