@@ -163,9 +163,10 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # createCommandSourceStack(), Commands.performPrefixedCommand(source, "/..."),
 # ClientPacketListener.sendCommand(String), Minecraft.getConnection().
 #
-# INPUT ON A SCREEN. Both of these changed shape in this version and both were
-# guessed at, which cost a red build — the two things a list wants are arrow
-# keys and a click on a row, and neither can be written until these are known.
-net.minecraft.client.gui.screens.Screen keyPressed
-net.minecraft.client.gui.components.events.GuiEventListener 20
-net.minecraft.client.gui.components.events.ContainerEventHandler mouseClicked
+# INPUT ON A SCREEN. Answered: input is objects now rather than loose ints.
+#   keyPressed(net.minecraft.client.input.KeyEvent)
+#   mouseClicked(net.minecraft.client.input.MouseButtonEvent, boolean)
+# What is left is what those two carry — a key code and a position — which is
+# all the picker's arrow keys and row clicks need.
+net.minecraft.client.input.KeyEvent 20
+net.minecraft.client.input.MouseButtonEvent 20
