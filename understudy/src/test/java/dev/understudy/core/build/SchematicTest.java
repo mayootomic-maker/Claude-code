@@ -408,4 +408,44 @@ class SchematicTest {
         assertTrue(firstHigh > order.size() / 2,
                 "reached the top course " + firstHigh + " blocks in, of " + order.size());
     }
+
+    /**
+     * A region saved from its far corner reads the same way up as one saved
+     * from its near corner.
+     *
+     * Litematica records the corner you started the selection from and a size
+     * that goes negative when the other corner is behind it — but the block
+     * array always runs from the region's lowest corner regardless. Treating
+     * Position as the origin and stepping away from it mirrors the building in
+     * x and z and stands it on its head, which is what happened to a real
+     * house: the lawn came out as the roof and every stair faced backwards.
+     *
+     * It went unnoticed because a building mirrored twice is a building rotated
+     * half a turn, which looks plausible until you try to walk in the door.
+     */
+    @Test
+    void aNegativeExtentMovesTheCornerRatherThanReversingTheReading() {
+        // Selected from (24, 27, 46) back to the origin: size is negative on
+        // every axis and the region is the cube from 0,0,0 to 24,27,46.
+        int[] corner = Schematic.lowestCorner(new int[] {-25, -28, -47}, new int[] {24, 27, 46});
+        assertEquals(0, corner[0]);
+        assertEquals(0, corner[1]);
+        assertEquals(0, corner[2]);
+    }
+
+    @Test
+    void aPositiveExtentStartsWhereItSaysItDoes() {
+        int[] corner = Schematic.lowestCorner(new int[] {25, 28, 47}, new int[] {-3, 64, 12});
+        assertEquals(-3, corner[0]);
+        assertEquals(64, corner[1]);
+        assertEquals(12, corner[2]);
+    }
+
+    @Test
+    void aMixOfSignsIsHandledOneAxisAtATime() {
+        int[] corner = Schematic.lowestCorner(new int[] {-4, 3, -2}, new int[] {10, 20, 30});
+        assertEquals(7, corner[0]);
+        assertEquals(20, corner[1]);
+        assertEquals(29, corner[2]);
+    }
 }

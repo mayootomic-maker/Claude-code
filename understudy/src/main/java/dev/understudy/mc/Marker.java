@@ -36,7 +36,7 @@ import java.util.function.Consumer;
  */
 public final class Marker {
 
-    private enum Stage { OFF, AIMING, DRAGGING, READY }
+    private enum Stage { OFF, PLACING, AIMING, DRAGGING, READY }
 
     /** Beyond this the crosshair is not really pointing anywhere in particular. */
     private static final int MAX_RANGE = 64;
@@ -54,6 +54,8 @@ public final class Marker {
     private BlockPos corner;
     private int quarterTurns;
     private int lift;
+    /** Whether this design has a size of its own, and so needs a spot rather than a plot. */
+    private boolean placing;
 
     /**
      * What the last fit was worked out from.
@@ -86,17 +88,32 @@ public final class Marker {
         this.design = plan;
         this.turned = plan.asChosen();
         this.onPlaced = placed;
-        this.stage = Stage.AIMING;
         this.anchor = null;
         this.corner = null;
         this.quarterTurns = 0;
         this.lift = 0;
         this.fittedWide = -1;
-        report.accept("aim at a corner, tap crouch, look to the far corner, Enter to place");
-        report.accept(plan.adjustable()
-                ? "the design resizes to the square you drag — R turns it, "
-                        + "Page Up and Page Down raise it"
-                : "this one is a fixed size — R turns it, Page Up and Page Down raise it");
+
+        // A drag decides a size, so a design with no size to decide should not
+        // be asking for one. A twenty-five by forty-seven schematic cannot be
+        // dragged out by looking at the ground anyway — the far corner is past
+        // the range of the crosshair — so what you got was a rectangle that
+        // meant nothing, a building that ignored it, and no way to tell where
+        // it would land until it landed.
+        this.placing = !plan.adjustable();
+        this.stage = placing ? Stage.PLACING : Stage.AIMING;
+
+        if (placing) {
+            Blueprint it = plan.asChosen();
+            report.accept("placing the " + it.name() + " — " + it.sizeX() + " by " + it.sizeZ()
+                    + ", " + it.sizeY() + " tall");
+            report.accept("look where you want its near corner · R turns · "
+                    + "Page Up and Down raise · Enter places it");
+        } else {
+            report.accept("aim at a corner, tap crouch, look to the far corner, Enter to place");
+            report.accept("the design resizes to the square you drag — R turns it, "
+                    + "Page Up and Page Down raise it");
+        }
     }
 
     public void cancel() {
@@ -127,6 +144,16 @@ public final class Marker {
         }
 
         switch (stage) {
+            case PLACING -> {
+                anchor = aimed;
+                corner = aimed;
+                preview(aimed, aimed, false);
+                Hud.setStatus(placingStatus(aimed));
+                if (enterTapped) {
+                    commit();
+                    return;
+                }
+            }
             case AIMING -> {
                 corner = aimed;
                 // Shown at the size the menu chose, not fitted: there is no
@@ -194,7 +221,12 @@ public final class Marker {
         int deep = Math.abs(to.getZ() - from.getZ()) + 1;
         int offX = Math.max(0, (wide - turned.sizeX()) / 2);
         int offZ = Math.max(0, (deep - turned.sizeZ()) / 2);
-        int ground = Math.max(from.getY(), to.getY()) + 1;
+        // One above the block you pointed at, unless the design brought its own
+        // ground — a schematic cut out of somebody's world has a slab of lawn
+        // underneath it, and putting that one above the grass leaves the whole
+        // house hovering on a layer of someone else's garden.
+        int ground = Math.max(from.getY(), to.getY())
+                + (turned.bringsItsOwnGround() ? 0 : 1);
         return new BlockPos(lowX + offX, ground + lift, lowZ + offZ);
     }
 
@@ -206,6 +238,54 @@ public final class Marker {
      * at once. The instructions were said in chat when the site opened, which
      * is where a sentence belongs; this is the readout.
      */
+    /**
+     * The one line while a fixed design is being placed.
+     *
+     * It says the two things you cannot see from the outline: how far the
+     * ground under the footprint varies, and therefore how much of the
+     * building is about to be buried or left standing on air. On flat ground it
+     * says so and gets out of the way.
+     */
+    private String placingStatus(BlockPos at) {
+        String where = turned.name() + " " + turned.sizeX() + "x" + turned.sizeZ();
+        if (lift != 0) where += (lift > 0 ? " +" : " ") + lift;
+        int roughness = groundVaries(at);
+        if (roughness < 0) return where + " · Enter";
+        if (roughness == 0) return where + " · flat · Enter";
+        return where + " · ground varies " + roughness + " · Enter";
+    }
+
+    /**
+     * How much the ground under the footprint rises and falls, in blocks.
+     *
+     * Sampled rather than measured at every column: a corner and a middle is
+     * enough to tell a lawn from a hillside, and this runs every tick while you
+     * look around. Negative when the ground is not loaded to answer with.
+     */
+    private int groundVaries(BlockPos at) {
+        if (client.level == null) return -1;
+        int low = Integer.MAX_VALUE;
+        int high = Integer.MIN_VALUE;
+        for (int dx = 0; dx <= turned.sizeX(); dx += Math.max(1, turned.sizeX() / 3)) {
+            for (int dz = 0; dz <= turned.sizeZ(); dz += Math.max(1, turned.sizeZ() / 3)) {
+                Integer top = surfaceAt(at.getX() + dx, at.getY(), at.getZ() + dz);
+                if (top == null) continue;
+                low = Math.min(low, top);
+                high = Math.max(high, top);
+            }
+        }
+        return low > high ? -1 : high - low;
+    }
+
+    /** The highest solid block near the aimed height, or null if nothing is loaded. */
+    private Integer surfaceAt(int x, int startY, int z) {
+        ClientBlockView view = new ClientBlockView(client.level);
+        for (int y = startY + 8; y > startY - 16; y--) {
+            if (view.solid(x, y, z) && view.passable(x, y + 1, z)) return y;
+        }
+        return null;
+    }
+
     private String size() {
         String at = turned.sizeX() + "x" + turned.sizeZ();
         if (anchor == null || corner == null) return turned.name() + " " + at;

@@ -70,21 +70,34 @@ public final class Paste {
      */
     private static Map<Cell, String> states(Blueprint plan, int ox, int oy, int oz) {
         Map<Cell, String> cells = new LinkedHashMap<>();
-        for (Blueprint.Placement p : plan.buildOrder()) {
+        // placements rather than buildOrder: nothing here is placed against
+        // anything, so the careful support-first ordering buys nothing and
+        // costs a graph search over every block in the design.
+        for (Blueprint.Placement p : plan.placements()) {
             int x = ox + p.x();
             int y = oy + p.y();
             int z = oz + p.z();
             String block = p.block();
             Facing facing = p.facing();
 
-            if (block.endsWith("_door") && !block.endsWith("_trapdoor")) {
+            // A door and a bed are two blocks that one click makes, so a design
+            // that names one means both. An import names both already — it was
+            // read out of a world where they existed — and inventing the second
+            // one there writes over whatever is really in that cell. In this
+            // house that was a wall sign and a trapdoor, replaced by the head
+            // end of somebody's bed. So the invention happens only when the
+            // block has not said which half it is.
+            boolean saysWhichHalf = States.value(p.properties(), "half") != null
+                    || States.value(p.properties(), "part") != null;
+
+            if (!saysWhichHalf && block.endsWith("_door") && !block.endsWith("_trapdoor")) {
                 cells.put(new Cell(x, y, z),
                         state(block, facing, States.with(p.properties(), "half", "lower")));
                 cells.put(new Cell(x, y + 1, z),
                         state(block, facing, States.with(p.properties(), "half", "upper")));
                 continue;
             }
-            if (block.endsWith("_bed")) {
+            if (!saysWhichHalf && block.endsWith("_bed")) {
                 // The foot goes where it was placed and the head one further
                 // the way it faces, which is what a click on the ground does.
                 Facing lie = facing == null ? Facing.NORTH : facing;

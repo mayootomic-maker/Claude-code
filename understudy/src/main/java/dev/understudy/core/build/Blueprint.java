@@ -256,4 +256,46 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
         double dz = p.z() - entranceZ;
         return Math.sqrt(dx * dx + dz * dz);
     }
+
+    /**
+     * Terrain blocks, for deciding whether a design brought its own ground.
+     *
+     * Not every block anyone might build a floor out of — a floor of stone
+     * bricks is a floor. These are the ones that mean "this is the world", and
+     * a design whose bottom layer is made of them was cut out of a world with
+     * the ground still attached.
+     */
+    private static final Set<String> TERRAIN = Set.of(
+            "grass_block", "dirt", "coarse_dirt", "rooted_dirt", "podzol", "mycelium",
+            "farmland", "dirt_path", "mud", "packed_mud", "clay", "moss_block",
+            "stone", "deepslate", "andesite", "diorite", "granite", "tuff", "calcite",
+            "sand", "red_sand", "gravel", "snow_block", "netherrack", "soul_sand",
+            "soul_soil", "end_stone", "sandstone", "red_sandstone");
+
+    /**
+     * Whether the bottom layer of this design is ground rather than floor.
+     *
+     * It decides one thing and it is the thing you notice: how high to put it.
+     * A design of this mod's own starts at its floor, so it goes one above the
+     * block you pointed at — stand on the grass, floor on top of the grass. A
+     * schematic somebody cut out of their world usually has a slab of the world
+     * underneath it, and putting *that* one above the ground leaves the whole
+     * building hovering with a layer of somebody else's lawn under it.
+     *
+     * Asked of the design rather than set by a switch because nobody knows the
+     * answer at the moment they would have to answer it, and getting it wrong
+     * is a building one block in the air.
+     */
+    public boolean bringsItsOwnGround() {
+        int ground = 0;
+        int floor = 0;
+        for (Placement p : placements) {
+            if (p.y() != 0) continue;
+            floor++;
+            if (TERRAIN.contains(p.block())) ground++;
+        }
+        // Most of a full bottom layer. A design with four blocks at the bottom
+        // has no bottom layer to speak of and should not be judged on it.
+        return floor >= sizeX * sizeZ / 2 && ground * 2 > floor;
+    }
 }

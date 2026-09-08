@@ -154,8 +154,23 @@ public final class Schematic {
 
             int[] size = xyz(Nbt.compound(region, "Size"));
             int[] at = xyz(Nbt.compound(region, "Position"));
-            // A region can have negative extent, meaning it grows the other way.
             int sx = Math.abs(size[0]), sy = Math.abs(size[1]), sz = Math.abs(size[2]);
+
+            // Where the block array starts, which is not where Position is.
+            //
+            // A litematica region records the corner the player started the
+            // selection from, and a size that can be negative because the other
+            // corner may be behind it. The block array, though, always runs from
+            // the region's *lowest* corner upward — the sign says where Position
+            // sits, not which way the data reads.
+            //
+            // Reading it as though Position were the origin and stepping away
+            // from it is how this file came out mirrored in x and z and stood on
+            // its head in y: the ground ended up as the top layer and every
+            // stair faced the wrong way. It was not a paste bug at all. Every
+            // import saved from the far corner has been wrong since this was
+            // written, in the builder as well.
+            int[] from = lowestCorner(size, at);
             if (sx == 0 || sy == 0 || sz == 0) continue;
 
             List<Nbt.Tag> palette = Nbt.list(region, "BlockStatePalette");
@@ -179,16 +194,26 @@ public final class Schematic {
                 int rest = index % (sx * sz);
                 int z = rest / sx;
                 int x = rest % sx;
-                // A negative extent means the region grows the other way from
-                // its corner, so the corner is the far side of it.
-                put(out, at[0] + (size[0] < 0 ? -x : x),
-                        at[1] + (size[1] < 0 ? -y : y),
-                        at[2] + (size[2] < 0 ? -z : z), block);
+                put(out, from[0] + x, from[1] + y, from[2] + z, block);
             }
         }
     }
 
     /** Read `bits` bits starting at entry `index`, crossing long boundaries. */
+    /**
+     * The corner a region's block array starts from.
+     *
+     * One line of arithmetic and the whole of the bug above, so it is out here
+     * where a test can hold it: a negative extent moves the origin to the far
+     * end, it does not reverse the reading.
+     */
+    public static int[] lowestCorner(int[] size, int[] at) {
+        return new int[] {
+                size[0] < 0 ? at[0] + size[0] + 1 : at[0],
+                size[1] < 0 ? at[1] + size[1] + 1 : at[1],
+                size[2] < 0 ? at[2] + size[2] + 1 : at[2]};
+    }
+
     private static int unpack(long[] packed, int index, int bits) {
         long start = (long) index * bits;
         int startLong = (int) (start >>> 6);

@@ -85,7 +85,12 @@ public final class Sized {
      * null would only mean the preview vanished at the moment it was needed.
      */
     public Blueprint fitting(int wide, int deep) {
-        if (!adjustable()) return orientedFor(asChosen, wide, deep);
+        // A fixed design keeps the way round it was made. Turning it to match
+        // the plot is a kindness to a design that has no opinion; a schematic
+        // has a front door and a back garden, and spinning it a quarter because
+        // the rectangle you dragged came out wider than it was deep is the
+        // opposite of listening. R turns it, and only R.
+        if (!adjustable()) return asChosen;
 
         int low = min;
         int high = max;
