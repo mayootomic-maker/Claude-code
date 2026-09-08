@@ -61,6 +61,8 @@
       toolButton('tasks', 'Tasks', () => showTasks()),
       toolButton('map', 'Map', () => showMap(false)),
       toolButton('sound', NS.audio.muted ? 'Sound off' : 'Sound on', toggleSound),
+      toolButton('chat', 'Ghost chat', showGhostChat),
+      toolButton('gear', 'Options', showOptions),
       toolButton('close', 'Leave', async () => {
         if (await NS.bits.confirm({
           title: 'Leave the round?',
@@ -129,6 +131,7 @@
     if (id === 'use') {
       if (ctx.sabotageFix) return openFix(ctx.sabotageFix);
       if (ctx.use && ctx.use.kind === 'task') return openTask(ctx.use);
+      if (ctx.use && ctx.use.kind === 'console') return openConsole(ctx.use.console);
       if (ctx.emergency) return callEmergency();
       return;
     }
@@ -286,7 +289,12 @@
   /* ---- overlays ---------------------------------------------------------- */
 
   function closeOverlay() {
-    if (overlay) { overlay.remove(); overlay = null; W.frozen = false; }
+    if (!overlay) return;
+    overlay.remove();
+    overlay = null;
+    W.frozen = false;
+    if (overlayLoop) { cancelAnimationFrame(overlayLoop); overlayLoop = null; }
+    if (overlayClose) { const fn = overlayClose; overlayClose = null; fn(); }
   }
 
   function shell(title, sub) {
@@ -304,6 +312,318 @@
     overlay = root;
     W.frozen = true;
     return box;
+  }
+
+  /* Everything in this room runs on the station's own network, which is what
+     the comms sabotage cuts. Refusing with the reason is the point: a crew
+     that finds the cameras dark should know why, because that is information. */
+  function openConsole(console) {
+    if (NS.sabotage.commsDown()) {
+      NS.bits.toast('Comms are down, so ' + console.name.toLowerCase() + ' is dead until they are fixed.', 'warn', 5);
+      return;
+    }
+    if (console.kind === 'admin') return showAdmin();
+    if (console.kind === 'cameras') return showCameras();
+    if (console.kind === 'vitals') return showVitals();
+  }
+
+  /* A map with a head count per room, and nothing else. It cannot tell you who
+     is where, which is exactly why it is worth arguing about: four people in
+     Electrical and one of them walks out is a fact, and who walked out is not. */
+  function showAdmin() {
+    const box = shell('Admin table', 'Counts only. It cannot tell you who.');
+    const wrap = el('div', { class: 'map-wrap' });
+    const canvas = el('canvas', { class: 'map-canvas' });
+    wrap.appendChild(canvas);
+    box.appendChild(wrap);
+    box.appendChild(el('p', { class: 'sheet-note', text: 'The dead are not counted.' }));
+    const ctx = canvas.getContext('2d');
+
+    live(canvas, () => {
+      const place = fitMap(canvas, wrap, ctx);
+      paintRooms(ctx, { labels: false });
+      ctx.restore();
+
+      const counts = {};
+      for (const p of W.players.values()) {
+        if (!p.alive || p.ghost || !p.connected || p.inVent) continue;
+        const room = M.roomAt(p.x, p.y);
+        if (room) counts[room.id] = (counts[room.id] || 0) + 1;
+      }
+      /* Labels are drawn after the map transform is undone, so they are the
+         same readable size on a phone and a projector rather than scaling with
+         the station. */
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const room of M.ROOMS) {
+        const n = counts[room.id] || 0;
+        const x = place.ox + room.cx * place.scale;
+        const y = place.oy + room.cy * place.scale;
+        ctx.fillStyle = 'rgba(207,217,232,0.6)';
+        ctx.font = '700 11px Archivo, system-ui, sans-serif';
+        ctx.fillText(room.name, x, y - 13);
+        ctx.fillStyle = n ? '#ffb03a' : 'rgba(141,154,177,0.35)';
+        ctx.font = '800 ' + (n ? 26 : 17) + 'px Archivo, system-ui, sans-serif';
+        ctx.fillText(String(n), x, y + 8);
+      }
+    });
+  }
+
+  /* Four corridors, live, and every camera on the station blinks while
+     somebody is here. That tell is the whole reason this is fair -- an
+     impostor who checks the housing knows whether they are being watched. */
+  function showCameras() {
+    const box = shell('Cameras', 'Four corridors. Everyone can see that you are watching.');
+    const grid = el('div', { class: 'cams' });
+    const feeds = M.CAMERAS.map((camera) => {
+      const cell = el('div', { class: 'cam' });
+      const canvas = el('canvas', { class: 'cam-canvas' });
+      cell.appendChild(canvas);
+      cell.appendChild(el('span', { class: 'cam-name', text: camera.name }));
+      cell.appendChild(el('span', { class: 'cam-live', text: 'LIVE' }));
+      grid.appendChild(cell);
+      return { camera, canvas, ctx: canvas.getContext('2d') };
+    });
+    box.appendChild(grid);
+
+    const alive = W.me && W.me.alive && !W.me.ghost;
+    if (alive) send('act', { t: 'watching', on: true });
+    onOverlayClose(() => { if (alive) send('act', { t: 'watching', on: false }); });
+
+    /* Four station blits plus every character, four times a frame, is more
+       than a phone should spend on a picture that is mostly a corridor. Twenty
+       a second is smooth enough to follow somebody walking and a third of the
+       work. */
+    let last = 0;
+    live(feeds[0].canvas, () => {
+      const now = U.now();
+      if (now - last < 48) return;
+      last = now;
+      for (const feed of feeds) paintFeed(feed);
+    });
+  }
+
+  const FEED_W = 300, FEED_H = 190;
+
+  function paintFeed(feed) {
+    const { camera, canvas, ctx } = feed;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(80, rect.width), h = Math.max(50, rect.height);
+    if (canvas.width !== Math.round(w * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#05070d';
+    ctx.fillRect(0, 0, w, h);
+
+    const look = M.toWorld(camera.look);
+    const scale = (w / FEED_W) * camera.zoom * 1.6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.clip();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-look.x, -look.y);
+
+    const station = NS.station.canvas;
+    if (station) {
+      const halfW = w / (2 * scale) + 40, halfH = h / (2 * scale) + 40;
+      const sx = U.clamp(look.x - halfW, 0, M.pixelWidth);
+      const sy = U.clamp(look.y - halfH, 0, M.pixelHeight);
+      const sw = U.clamp(halfW * 2, 1, M.pixelWidth - sx);
+      const sh = U.clamp(halfH * 2, 1, M.pixelHeight - sy);
+      const k = NS.station.scale;
+      ctx.drawImage(station, sx * k, sy * k, sw * k, sh * k, sx, sy, sw, sh);
+    }
+    for (const body of W.bodies) {
+      if (Math.abs(body.x - look.x) > 700 || Math.abs(body.y - look.y) > 500) continue;
+      NS.characters.drawBody(ctx, body);
+    }
+    const seen = [];
+    for (const p of W.players.values()) {
+      if (!p.connected || p.ghost || p.inVent || p.invisible) continue;
+      if (Math.abs(p.x - look.x) > 700 || Math.abs(p.y - look.y) > 500) continue;
+      seen.push(p);
+    }
+    seen.sort((a, b) => a.y - b.y);
+    for (const p of seen) NS.characters.drawPlayer(ctx, p, {});
+    ctx.restore();
+
+    /* A cheap tube: scanlines, a green cast and a soft edge. It reads as a
+       feed rather than as a second window onto the game, which matters --
+       looking at cameras should feel like looking at cameras. */
+    ctx.fillStyle = 'rgba(52,224,184,0.05)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    const vignette = ctx.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, h * 0.85);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /* ---- panel plumbing ----------------------------------------------------- */
+
+  let overlayLoop = null;
+  let overlayClose = null;
+
+  function onOverlayClose(fn) { overlayClose = fn; }
+
+  /* Runs a paint function every frame for as long as the panel is on screen,
+     and stops the moment it is not -- a camera feed left running behind a
+     closed panel is a phone getting warm for nothing. */
+  function live(canvas, paint) {
+    cancelAnimationFrame(overlayLoop);
+    function tick() {
+      if (!overlay || !document.body.contains(canvas)) { overlayLoop = null; return; }
+      paint();
+      overlayLoop = requestAnimationFrame(tick);
+    }
+    overlayLoop = requestAnimationFrame(tick);
+  }
+
+  function fitMap(canvas, wrap, ctx) {
+    const rect = wrap.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const pad = 10;
+    const scale = Math.min((rect.width - pad * 2) / M.pixelWidth, (rect.height - pad * 2) / M.pixelHeight);
+    if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const ox = (rect.width - M.pixelWidth * scale) / 2;
+    const oy = (rect.height - M.pixelHeight * scale) / 2;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(scale, scale);
+    return { ox, oy, scale };
+  }
+
+  function paintRooms(ctx, opts) {
+    const o = opts || {};
+    for (const hall of M.HALLS) {
+      ctx.fillStyle = 'rgba(44,54,72,0.55)';
+      ctx.fillRect(hall.x * M.TILE, hall.y * M.TILE, hall.w * M.TILE, hall.h * M.TILE);
+    }
+    for (const room of M.ROOMS) {
+      const sealed = (W.state.closedRooms || []).indexOf(room.id) >= 0;
+      ctx.fillStyle = sealed ? 'rgba(192,82,63,0.4)' : 'rgba(44,54,72,0.85)';
+      ctx.fillRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
+      ctx.strokeStyle = sealed ? '#ff3f5b' : '#3a4761';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
+      if (o.labels === false) continue;
+      ctx.fillStyle = 'rgba(207,217,232,0.72)';
+      ctx.font = '700 34px Archivo, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(room.name, room.cx, room.cy);
+    }
+  }
+
+  /* Personal, not a game setting: nobody else is affected by how loud your
+     phone is or whether you need the shapes, so these are kept on the device
+     and are changeable mid-round rather than locked to the lobby. */
+  function showOptions() {
+    const box = shell('Options', 'Yours alone. Nobody else in the game is affected.');
+    const list = el('div', { class: 'options' });
+
+    const volume = el('input', {
+      class: 'slider', type: 'range', min: '0', max: '100', step: '5',
+      value: String(Math.round(NS.audio.volume * 100)), 'aria-label': 'Volume',
+      oninput: (e) => { NS.audio.wake(); NS.audio.setVolume(Number(e.target.value) / 100); },
+    });
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Volume' }),
+      el('div', { class: 'slider-row' }, [volume, el('output', { class: 'setting-value', text: 'sound' })]),
+    ]));
+
+    const mute = el('button', {
+      class: 'toggle' + (NS.audio.muted ? '' : ' is-on'), type: 'button', role: 'switch',
+      'aria-checked': String(!NS.audio.muted), text: NS.audio.muted ? 'Off' : 'On',
+      onclick: () => {
+        toggleSound();
+        mute.classList.toggle('is-on', !NS.audio.muted);
+        mute.setAttribute('aria-checked', String(!NS.audio.muted));
+        mute.textContent = NS.audio.muted ? 'Off' : 'On';
+      },
+    });
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Sound' }), mute,
+    ]));
+
+    const on = !!U.store.get('symbols', false);
+    const symbols = el('button', {
+      class: 'toggle' + (on ? ' is-on' : ''), type: 'button', role: 'switch',
+      'aria-checked': String(on), text: on ? 'On' : 'Off',
+      onclick: () => {
+        const next = !U.store.get('symbols', false);
+        U.store.set('symbols', next);
+        NS.characters.setSymbols(next);
+        symbols.classList.toggle('is-on', next);
+        symbols.setAttribute('aria-checked', String(next));
+        symbols.textContent = next ? 'On' : 'Off';
+        preview.textContent = '';
+        preview.appendChild(NS.bits.avatar(W.me ? W.me.colorIdx : 0, W.me ? W.me.hatIdx : 0, 74));
+      },
+    });
+    const preview = el('div', { class: 'options-preview' }, [
+      NS.bits.avatar(W.me ? W.me.colorIdx : 0, W.me ? W.me.hatIdx : 0, 74),
+    ]);
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Shapes on suits' }),
+      symbols,
+      el('p', { class: 'setting-hint', text: 'A different shape per colour, so colour is never the only way to tell two people apart.' }),
+      preview,
+    ]));
+
+    list.appendChild(el('p', {
+      class: 'setting-hint',
+      text: 'Motion is already reduced automatically if your device asks for it.',
+    }));
+    box.appendChild(list);
+  }
+
+  /* Where the dead talk. The conversation exists whether or not there is a
+     meeting on, and before this there was nowhere to read it outside one --
+     so being killed meant being cut off from the only thing left to do. */
+  function showGhostChat() {
+    const box = shell('The dead', 'Only ghosts can read this.');
+    const log = el('div', { class: 'chat-log', 'aria-live': 'polite', 'aria-label': 'Ghost chat' });
+    for (const msg of NS.meeting.history) log.appendChild(NS.meeting.renderRow(msg));
+    const input = el('input', {
+      class: 'chat-input', type: 'text', maxlength: '120',
+      placeholder: 'Say something', autocomplete: 'off', 'aria-label': 'Message',
+    });
+    const form = el('form', {
+      class: 'chat-form',
+      onsubmit: (e) => {
+        e.preventDefault();
+        const text = U.cleanName(input.value, 120);
+        if (!text) return;
+        NS.meeting.send(text);
+        input.value = '';
+      },
+    }, [input, el('button', { class: 'btn btn--primary chat-send', type: 'submit', text: 'Send' })]);
+
+    const stop = NS.meeting.subscribe((msg) => {
+      if (!document.body.contains(log)) { stop(); return; }
+      log.appendChild(NS.meeting.renderRow(msg));
+      log.scrollTop = log.scrollHeight;
+    });
+    onOverlayClose(stop);
+
+    box.appendChild(el('div', { class: 'ghost-chat' }, [log, form]));
+    log.scrollTop = log.scrollHeight;
+    setTimeout(() => input.focus(), 50);
   }
 
   function showTasks() {
@@ -375,40 +695,11 @@
     box.appendChild(wrap);
 
     const ctx = canvas.getContext('2d');
-    const pad = 10;
-    function paint() {
-      const rect = wrap.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const scale = Math.min((rect.width - pad * 2) / M.pixelWidth, (rect.height - pad * 2) / M.pixelHeight);
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
-      canvas.style.width = rect.width + 'px';
-      canvas.style.height = rect.height + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      const ox = (rect.width - M.pixelWidth * scale) / 2;
-      const oy = (rect.height - M.pixelHeight * scale) / 2;
-      ctx.save();
-      ctx.translate(ox, oy);
-      ctx.scale(scale, scale);
+    let place = null;
 
-      for (const hall of M.HALLS) {
-        ctx.fillStyle = 'rgba(44,54,72,0.55)';
-        ctx.fillRect(hall.x * M.TILE, hall.y * M.TILE, hall.w * M.TILE, hall.h * M.TILE);
-      }
-      for (const room of M.ROOMS) {
-        const sealed = (W.state.closedRooms || []).indexOf(room.id) >= 0;
-        ctx.fillStyle = sealed ? 'rgba(192,82,63,0.4)' : 'rgba(44,54,72,0.85)';
-        ctx.fillRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
-        ctx.strokeStyle = sealed ? '#ff3f5b' : '#3a4761';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
-        ctx.fillStyle = 'rgba(207,217,232,0.72)';
-        ctx.font = '700 34px Archivo, system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(room.name, room.cx, room.cy);
-      }
+    live(canvas, () => {
+      place = fitMap(canvas, wrap, ctx);
+      paintRooms(ctx);
       if (!sabotageMode && !NS.sabotage.commsDown()) {
         for (const task of W.myTasks) {
           if (task.done) continue;
@@ -418,8 +709,7 @@
           ctx.beginPath(); ctx.arc(spot.x, spot.y, 17, 0, Math.PI * 2); ctx.fill();
         }
       }
-      const active = W.state.sabotage;
-      if (active) {
+      if (W.state.sabotage) {
         for (const spot of NS.sabotage.activeSpots()) {
           if (spot.done) continue;
           ctx.fillStyle = '#ff3f5b';
@@ -433,15 +723,8 @@
         ctx.beginPath(); ctx.arc(W.me.x, W.me.y, 16, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
-      wrap.__place = { ox, oy, scale };
-    }
-    paint();
-    const repaint = () => { if (overlay) paint(); };
-    window.addEventListener('resize', repaint);
-    const stop = new MutationObserver(() => {
-      if (!document.body.contains(canvas)) { window.removeEventListener('resize', repaint); stop.disconnect(); }
+      wrap.__place = place;
     });
-    stop.observe(document.body, { childList: true });
 
     if (sabotageMode) {
       canvas.addEventListener('click', (e) => {
@@ -515,6 +798,36 @@
         text: ejected.remaining === 1 ? '1 impostor remains.' : ejected.remaining + ' impostors remain.',
       }));
     }
+
+    /* Who voted for whom, revealed only now the vote is closed. Showing it
+       during the vote would turn it into a stampede; not showing it at all
+       throws away the one hard fact a meeting produces. */
+    if (!W.state.settings.anonymousVotes && ejected.votes && ejected.votes.length) {
+      const groups = new Map();
+      for (const [voter, target] of ejected.votes) {
+        if (!groups.has(target)) groups.set(target, []);
+        groups.get(target).push(voter);
+      }
+      const tally = el('div', { class: 'tally' });
+      const order = Array.from(groups.keys())
+        .sort((a, b) => groups.get(b).length - groups.get(a).length);
+      for (const target of order) {
+        const who = target === 'skip' ? null : W.players.get(target);
+        const row = el('div', { class: 'tally-row' + (target === ejected.id ? ' is-out' : '') });
+        row.appendChild(el('span', { class: 'tally-name', text: who ? who.name : 'Skipped' }));
+        const faces = el('span', { class: 'tally-faces' });
+        for (const voter of groups.get(target)) {
+          const p = W.players.get(voter);
+          faces.appendChild(p
+            ? NS.bits.avatar(p.colorIdx, p.hatIdx, 30)
+            : el('span', { class: 'tally-unknown' }));
+        }
+        row.appendChild(faces);
+        tally.appendChild(row);
+      }
+      stage.appendChild(tally);
+    }
+
     wrap.appendChild(stage);
     document.body.appendChild(wrap);
     nodes.eject = wrap;
@@ -563,6 +876,9 @@
       nodes.alert.classList.toggle('is-critical', !!def.critical);
     }
 
+    const dead = !!(me.ghost || !me.alive);
+    if (nodes.tool_chat) nodes.tool_chat.hidden = !dead;
+
     const role = C.ROLES[W.myRole || 'crewmate'];
     nodes.roleTag.hidden = !W.myRole || state.phase !== 'play';
     if (!nodes.roleTag.hidden) {
@@ -581,7 +897,10 @@
     const use = ctx.sabotageFix || ctx.use || ctx.emergency;
     show(nodes.use, playing);
     nodes.use.querySelector('.act-label').textContent =
-      ctx.sabotageFix ? 'Fix' : ctx.use ? 'Use' : ctx.emergency ? 'Meeting' : 'Use';
+      ctx.sabotageFix ? 'Fix'
+        : ctx.use && ctx.use.kind === 'console' ? ctx.use.console.kind.replace('cameras', 'Cameras')
+          .replace('admin', 'Admin').replace('vitals', 'Vitals')
+        : ctx.use ? 'Use' : ctx.emergency ? 'Meeting' : 'Use';
     nodes.use.disabled = !use || !!(ctx.emergency && !ctx.use && !ctx.sabotageFix
       && (emergenciesLeft <= 0 || cooldown.emergency > 0));
 
@@ -635,6 +954,7 @@
 
   NS.hud = {
     init, update, showRole, hideRole, showEject, hideEject, showMap, showTasks,
+    showAdmin, showCameras, showVitals, openConsole, showOptions, showGhostChat,
     setCooldown, forceCooldown, setEmergencies, setAbilitySpent, closeOverlay,
     cooldown,
     get stick() { return nodes.stick; },

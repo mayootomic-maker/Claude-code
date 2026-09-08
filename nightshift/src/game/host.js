@@ -35,8 +35,8 @@
     bodies: [], sabotage: null, meeting: null, ejected: null, winner: null,
     killCooldown: {}, abilityCooldown: {}, abilityUsed: {},
     emergenciesUsed: {}, emergencyCooldown: 0, sabotageCooldown: 0,
-    shields: {}, invisible: {}, shifted: {},
-    closedRooms: {}, revealLeft: 0, ejectLeft: 0,
+    shields: {}, invisible: {}, shifted: {}, watching: new Set(),
+    closedRooms: {}, revealLeft: 0, ejectLeft: 0, log: [], startedAt: 0,
     lastSnapshot: 0, dirty: true, seed: 1,
   };
 
@@ -62,8 +62,8 @@
     H.meeting = null; H.ejected = null; H.winner = null;
     H.killCooldown = {}; H.abilityCooldown = {}; H.abilityUsed = {};
     H.emergenciesUsed = {}; H.emergencyCooldown = 0; H.sabotageCooldown = 0;
-    H.shields = {}; H.invisible = {}; H.shifted = {};
-    H.closedRooms = {};
+    H.shields = {}; H.invisible = {}; H.shifted = {}; H.watching = new Set();
+    H.closedRooms = {}; H.log = []; H.startedAt = 0;
     M.clearDoors();
   }
 
@@ -88,12 +88,28 @@
     }
   }
 
+  /* Two people called Sam is a meeting nobody can hold: half the argument is
+     about which Sam. The second one keeps their name with a number on it, and
+     their own device tells them so rather than leaving them to notice. */
+  function uniqueName(wanted, id) {
+    const clean = U.cleanName(wanted, C.NAME_MAX) || 'Someone';
+    const taken = (name) => list().some((other) =>
+      other !== id && H.players[other].name.toLowerCase() === name.toLowerCase());
+    if (!taken(clean)) return clean;
+    for (let n = 2; n <= 20; n++) {
+      const suffix = ' ' + n;
+      const candidate = clean.slice(0, C.NAME_MAX - suffix.length) + suffix;
+      if (!taken(candidate)) return candidate;
+    }
+    return clean;
+  }
+
   function addPlayer(id, info) {
     const existing = H.players[id];
     if (existing) {
       existing.connected = true;
       if (info) {
-        if (info.n) existing.name = U.cleanName(info.n, C.NAME_MAX) || existing.name;
+        if (info.n) existing.name = uniqueName(info.n, id);
         if (Number.isFinite(info.c)) {
           existing.colorIdx = U.clamp(info.c | 0, 0, C.COLORS.length - 1);
           if (!existing.bot) yieldColour(existing.colorIdx, id);
@@ -105,17 +121,26 @@
       return existing;
     }
     if (Object.keys(H.players).length >= C.MAX_PLAYERS) return null;
-    /* Joining mid-round makes you a ghost with nothing to do, so the door is
-       shut and the join screen says why rather than dropping you in confused. */
-    if (H.phase !== 'lobby') return null;
+    /* Arriving mid-round used to be a closed door -- the code was right and
+       the round was under way, so nothing happened and the join screen sat
+       there. Now you come in as a spectator: you can walk the station, watch,
+       and talk to the other ghosts, and the next round deals you in. Being
+       able to do nothing is a fine outcome; being told nothing is not. */
+    const midRound = H.phase !== 'lobby';
     const p = {
       id,
-      name: U.cleanName(info && info.n, C.NAME_MAX) || 'Someone',
+      name: uniqueName(info && info.n, id),
       colorIdx: Number.isFinite(info && info.c) ? U.clamp(info.c | 0, 0, C.COLORS.length - 1) : 0,
       hatIdx: Number.isFinite(info && info.h) ? U.clamp(info.h | 0, 0, C.HATS.length - 1) : 0,
       key: info && info.k ? String(info.k).slice(0, 200) : null,
-      alive: true, ghost: false, bot: !!(info && info.bot), connected: true, ready: false,
+      alive: !midRound, ghost: midRound, spectator: midRound,
+      bot: !!(info && info.bot), connected: true, ready: false,
     };
+    if (midRound) {
+      /* A crew role with no tasks: counted by nothing, and safe to look up. */
+      H.roles[id] = 'crewmate';
+      H.tasks[id] = [];
+    }
     H.players[id] = p;
     H.dirty = true;
     return p;
@@ -165,11 +190,13 @@
     for (const id of ids) {
       H.players[id].alive = true;
       H.players[id].ghost = false;
+      H.players[id].spectator = false;
     }
     H.roles = R.dealRoles(ids, H.settings, rand);
     H.tasks = R.dealTasks(ids, H.settings, rand);
     for (const id of ids) H.killCooldown[id] = H.settings.killCooldown + 5;
 
+    H.startedAt = U.now();
     H.phase = 'reveal';
     H.revealLeft = REVEAL_SECONDS;
     H.dirty = true;
@@ -213,7 +240,7 @@
     profile(from, msg) {
       const p = H.players[from];
       if (!p || H.phase !== 'lobby') return;
-      if (msg.n) p.name = U.cleanName(msg.n, C.NAME_MAX) || p.name;
+      if (msg.n) p.name = uniqueName(msg.n, from);
       if (Number.isFinite(msg.c)) {
         const wanted = U.clamp(msg.c | 0, 0, C.COLORS.length - 1);
         yieldColour(wanted, from);
@@ -253,7 +280,11 @@
       task.step++;
       if (task.step >= task.steps) task.done = true;
       H.dirty = true;
-      if (station.visual && H.settings.visualTasks) {
+      /* Only the crew get the animation. A visual task is a task somebody can
+         stand and watch you finish, which is worth nothing if the person
+         faking it can play the same animation. */
+      if (station.visual && H.settings.visualTasks
+          && C.ROLES[H.roles[from] || 'crewmate'].team === 'crew') {
         send('sys', { t: 'E', e: 'visual', by: from, sid: task.sid });
       }
       checkWin();
@@ -394,6 +425,7 @@
       const def = SAB.SABOTAGES[msg.k];
       if (!def || SAB.MENU.indexOf(msg.k) < 0) return;
       H.sabotage = { kind: msg.k, remaining: def.seconds, done: def.spots.map(() => false), holds: {} };
+      record('sabotage', { name: def.name });
       H.sabotageCooldown = 25;
       send('sys', { t: 'E', e: 'sabotage', k: msg.k });
       H.dirty = true;
@@ -413,6 +445,16 @@
       }
       H.dirty = true;
       settleSabotage();
+    },
+
+    /* Somebody at the cameras makes every camera on the station blink. It is
+       the only reason watching them is fair, so it is authoritative rather
+       than drawn locally by the watcher. */
+    watching(from, msg) {
+      const p = H.players[from];
+      if (!p || !p.alive) { H.watching.delete(from); return; }
+      if (msg.on) H.watching.add(from); else H.watching.delete(from);
+      H.dirty = true;
     },
 
     vote(from, msg) {
@@ -443,12 +485,37 @@
 
   /* ---- death, meetings, endings ------------------------------------------- */
 
+  /* A short account of the round, kept so the end screen can show what
+     actually happened. Everybody spends the last ten minutes arguing from
+     fragments; this is the only moment anyone gets to see the whole thing, and
+     it is worth more than another leaderboard. Capped, because a long round
+     with bots is a lot of lines and this rides in a snapshot. */
+  function record(kind, data) {
+    if (H.log.length >= 40) return;
+    H.log.push(Object.assign({
+      k: kind,
+      t: Math.max(0, Math.round((U.now() - H.startedAt) / 1000)),
+    }, data));
+  }
+
+  function roomNameAt(x, y) {
+    const room = M.roomAt(x, y);
+    return room ? room.name : 'a corridor';
+  }
+
   function die(id, byId, x, y, facing) {
     const p = H.players[id];
     if (!p || !p.alive) return;
     p.alive = false;
     p.ghost = true;
     H.bodies.push({ id, x, y, colorIdx: p.colorIdx, hatIdx: p.hatIdx, by: byId, facing: facing || 0 });
+    const killer = H.players[byId];
+    record('kill', {
+      by: killer ? killer.name : null,
+      who: p.name,
+      where: roomNameAt(x, y),
+      self: byId === id,
+    });
     delete H.invisible[id];
     delete H.shifted[id];
     send('sys', { t: 'E', e: 'kill', by: byId, target: id, x, y });
@@ -464,6 +531,7 @@
     H.invisible = {};
     H.shifted = {};
     H.phase = 'meeting';
+    H.watching.clear();
     H.emergencyCooldown = H.settings.emergencyCooldown;
     H.meeting = {
       reason, by, bodyId,
@@ -471,6 +539,11 @@
       time: H.settings.discussionTime > 0 ? H.settings.discussionTime : H.settings.votingTime,
       votes: {},
     };
+    record('meeting', {
+      by: H.players[by] ? H.players[by].name : null,
+      reason,
+      who: bodyId && H.players[bodyId] ? H.players[bodyId].name : null,
+    });
     send('sys', { t: 'E', e: 'meeting', reason, by, body: bodyId });
     H.dirty = true;
   }
@@ -519,6 +592,12 @@
     H.ejected.remaining = list().filter((id) =>
       H.players[id].alive && H.players[id].connected
       && C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor').length;
+
+    record('eject', {
+      who: ejectedId ? H.players[ejectedId].name : null,
+      impostor: H.ejected.impostor,
+      tie: wasTie,
+    });
 
     H.phase = 'eject';
     H.ejectLeft = EJECT_SECONDS;
@@ -571,6 +650,10 @@
     if (H.emergencyCooldown > 0) H.emergencyCooldown -= dt;
     if (H.sabotageCooldown > 0) H.sabotageCooldown -= dt;
 
+    for (const id of Array.from(H.watching)) {
+      const watcher = H.players[id];
+      if (!watcher || !watcher.alive || !watcher.connected) { H.watching.delete(id); H.dirty = true; }
+    }
     for (const id in H.invisible) {
       H.invisible[id] -= dt;
       if (H.invisible[id] <= 0) { delete H.invisible[id]; H.dirty = true; send('sys', { t: 'E', e: 'vanish', by: id, on: 0 }); }
@@ -676,6 +759,7 @@
       cd: Object.keys(H.closedRooms),
       bo: H.bodies.map((b) => [b.id, Math.round(b.x), Math.round(b.y), b.colorIdx, b.hatIdx, b.facing]),
       iv: Object.keys(H.invisible),
+      cw: H.watching.size ? 1 : 0,
       sh: Object.keys(H.shifted).map((id) => [id, H.shifted[id].as]),
       mt: H.meeting ? {
         r: H.meeting.reason, by: H.meeting.by, bd: H.meeting.bodyId,
@@ -686,6 +770,7 @@
       wn: H.winner ? {
         tm: H.winner.team, rs: H.winner.reason,
         rl: list().map((id) => [id, H.roles[id] || 'crewmate']),
+        lg: H.log,
       } : null,
       rv: H.phase === 'reveal' ? Math.max(0, Math.round(H.revealLeft * 10) / 10) : 0,
     };

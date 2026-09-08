@@ -19,11 +19,23 @@
   let muted = NS.util.store.get('muted', false);
   let volume = NS.util.store.get('volume', 0.7);
 
+  /* Nothing is built until somebody has touched the page. A browser refuses to
+     start audio before a gesture and says so in the console, and the room tone
+     wants to start on its own the moment the game loads -- so the gate is here
+     rather than at each call site, and `unlock` is wired to the first real
+     touch or key press in main.js. */
+  let unlocked = false;
+  function unlock() {
+    unlocked = true;
+    wake();
+  }
+
   function wake() {
     if (ctx) {
       if (ctx.state === 'suspended') ctx.resume();
       return ctx;
     }
+    if (!unlocked) return null;
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return null;
     ctx = new Ctor();
@@ -37,6 +49,7 @@
     muted = !!v;
     NS.util.store.set('muted', muted);
     if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
+    if (hum) hum.gain.gain.setTargetAtTime(muted ? 0 : hum.level, ctx.currentTime, 0.1);
   }
   function setVolume(v) {
     volume = NS.util.clamp(Number(v) || 0, 0, 1);
@@ -136,6 +149,68 @@
     chat:     () => tone({ freq: 1180, dur: 0.05, type: 'sine', gain: 0.07 }),
   };
 
+  /* ---- the room tone ------------------------------------------------------ */
+
+  /* A station you can hear. Two detuned oscillators under a low-pass, at a
+     level you stop noticing in about ten seconds -- which is the point: you
+     notice when it changes. The lights going out drops it a fifth and opens
+     the filter, so the dark sounds different before you have finished reading
+     the banner. */
+  let hum = null;
+  function ambience(mood) {
+    const c = wake();
+    if (!c) return;
+    if (!hum) {
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 260;
+      filter.Q.value = 0.7;
+      const a = c.createOscillator();
+      const b = c.createOscillator();
+      a.type = 'sawtooth'; b.type = 'triangle';
+      a.frequency.value = 55; b.frequency.value = 82.5;
+      /* A slow wobble so it never sits perfectly still, which is what makes a
+         drone sound like a recording instead of a place. */
+      const wobble = c.createOscillator();
+      const wobbleGain = c.createGain();
+      wobble.frequency.value = 0.07;
+      wobbleGain.gain.value = 3.5;
+      wobble.connect(wobbleGain);
+      wobbleGain.connect(a.frequency);
+      a.connect(filter); b.connect(filter);
+      filter.connect(gain); gain.connect(master);
+      a.start(); b.start(); wobble.start();
+      hum = { gain, filter, a, b, level: 0 };
+    }
+    const t = c.currentTime;
+    const settings = {
+      off:     { level: 0,     freq: 260, base: 55 },
+      station: { level: 0.055, freq: 240, base: 55 },
+      dark:    { level: 0.085, freq: 520, base: 36.7 },
+      alarm:   { level: 0.075, freq: 420, base: 46 },
+    }[mood] || { level: 0, freq: 260, base: 55 };
+    hum.gain.gain.setTargetAtTime(muted ? 0 : settings.level, t, 0.6);
+    hum.filter.frequency.setTargetAtTime(settings.freq, t, 0.5);
+    hum.a.frequency.setTargetAtTime(settings.base, t, 0.5);
+    hum.b.frequency.setTargetAtTime(settings.base * 1.5, t, 0.5);
+  }
+
+  /* Somebody else's footsteps, quieter the further away they are and audible
+     through a wall on purpose. Hearing someone you cannot see is most of the
+     tension in a dark corridor, and it is information the impostor has too. */
+  function footstep(nearness) {
+    const c = wake();
+    if (!c || muted || nearness <= 0) return;
+    noise({
+      freq: 300 + Math.random() * 200,
+      dur: 0.055,
+      gain: 0.028 * nearness * nearness,
+      q: 2.6,
+    });
+  }
+
   let lastStep = 0;
   function play(name, opts) {
     const fn = SOUNDS[name];
@@ -151,7 +226,8 @@
   }
 
   NS.audio = {
-    play, wake, setMuted, setVolume,
+    play, wake, unlock, setMuted, setVolume, ambience, footstep,
+    get unlocked() { return unlocked; },
     get muted() { return muted; },
     get volume() { return volume; },
   };

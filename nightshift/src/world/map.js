@@ -115,6 +115,33 @@
     [{ room: 'storage', tx: 57, ty: 37 }, { room: 'comms', tx: 59, ty: 60 }, { room: 'o2', tx: 87, ty: 21 }],
   ];
 
+  /* The three places the crew can gather evidence rather than opinions. They
+     are the counterweight to the impostor's vents: without somewhere to check
+     a claim, a meeting is fourteen people saying "not me" and the game is a
+     coin toss.
+
+     Each is deliberately somewhere inconvenient, and each one costs you the
+     time you are standing at it -- which is what makes watching cameras a
+     decision rather than a free advantage. */
+  const CONSOLES = [
+    { id: 'admin', kind: 'admin', name: 'Admin table', hint: 'How many people are in each room',
+      room: 'admin', tx: 82, ty: 36 },
+    { id: 'cameras', kind: 'cameras', name: 'Cameras', hint: 'Four corridors, live',
+      room: 'security', tx: 27, ty: 26 },
+    { id: 'vitals', kind: 'vitals', name: 'Vitals', hint: 'Who is still alive',
+      room: 'medbay', tx: 39, ty: 21 },
+  ];
+
+  /* Where the cameras physically are, and what each one looks at. Everyone can
+     see the housings, and they blink when somebody is watching -- that tell is
+     the whole reason cameras are fair. */
+  const CAMERAS = [
+    { id: 'caf', name: 'Cafeteria', tx: 58, ty: 8, look: { tx: 63, ty: 12 }, zoom: 0.5 },
+    { id: 'upper', name: 'Upper corridor', tx: 33, ty: 14, look: { tx: 35, ty: 15 }, zoom: 0.5 },
+    { id: 'lower', name: 'Lower corridor', tx: 33, ty: 45, look: { tx: 35, ty: 46 }, zoom: 0.5 },
+    { id: 'store', name: 'Storage', tx: 70, ty: 44, look: { tx: 66, ty: 45 }, zoom: 0.5 },
+  ];
+
   /* Fixed points the sabotages hang off. Reactor and O2 need two people at
      once, which is the only thing in the game that cannot be solved alone. */
   const SABOTAGE_SPOTS = {
@@ -274,7 +301,7 @@
   }
 
   NS.map = {
-    TILE, W, H, ROOMS, HALLS, STATIONS, VENT_GROUPS, SABOTAGE_SPOTS,
+    TILE, W, H, ROOMS, HALLS, STATIONS, VENT_GROUPS, SABOTAGE_SPOTS, CONSOLES, CAMERAS,
     EMERGENCY, SPAWN, DOORS, SEALABLE, FLOOR, roomById, RADIUS,
     at, solid, solidTile, roomAt, toWorld, move, path, sealRoom, clearDoors,
     pixelWidth: W * TILE, pixelHeight: H * TILE,

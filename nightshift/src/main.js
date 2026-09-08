@@ -22,13 +22,16 @@
   const session = {
     link: null, mode: 'solo', code: '', isHost: false,
     myId: null, hostId: null, ready: false, botCount: 3,
-    connection: '', settings: C.defaults(), inGame: false,
+    /* Kept between rounds and between days: a teacher who tuned fourteen
+       dials once should not do it again next lesson. */
+    connection: '', settings: C.sanitise(U.store.get('settings', null)), inGame: false,
   };
 
   let canvas = null;
   let pendingRole = null;
   let pendingRoleSince = 0;
   let lastPhase = 'lobby';
+  let toldSpectating = false;
 
   const send = (kind, data) => { if (session.link) session.link.send(kind, data); };
 
@@ -37,6 +40,7 @@
   function boot() {
     canvas = U.$('#stage');
     NS.render.attach(canvas);
+    NS.characters.setSymbols(U.store.get('symbols', false));
     NS.secrets.init();
     NS.hud.init({ send, onLeave: leaveToTitle });
     NS.input.init({ stick: NS.hud.stick, onAction: keyAction, surface: document.body });
@@ -59,8 +63,11 @@
 
     requestAnimationFrame(frame);
     setInterval(beat, 60);
-    window.addEventListener('pointerdown', () => NS.audio.wake(), { once: true });
-    window.addEventListener('keydown', () => NS.audio.wake(), { once: true });
+    /* Captured, so the gate opens before the button handler that wants to make
+       a noise runs -- otherwise the very first click is silent. */
+    const open = () => { NS.audio.unlock(); mood = ''; };
+    window.addEventListener('pointerdown', open, { once: true, capture: true });
+    window.addEventListener('keydown', open, { once: true, capture: true });
   }
 
   function keyAction(action) {
@@ -81,7 +88,7 @@
     session.ready = asHost;
     session.connection = '';
     W.reset();
-    NS.bots.clear();
+    NS.bots.clear(NS.host);
     NS.meeting.clear();
     lastPhase = 'lobby';
 
@@ -100,6 +107,7 @@
           });
           if (mode === 'solo') NS.bots.fill(session.botCount, NS.host);
         } else {
+          heardFromHost = U.now();
           send('act', {
             t: 'hello', n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
             h: NS.screens.profile.hatIdx, k: NS.secrets.publicKey,
@@ -145,7 +153,7 @@
     NS.hud.hideEject();
     NS.meeting.hide();
     W.reset();
-    NS.bots.clear();
+    NS.bots.clear(NS.host);
     NS.fx.clear();
     NS.screens.showTitle(typeof why === 'string' ? why : null);
   }
@@ -202,6 +210,7 @@
     if (key.indexOf('role:') === 0) session.settings.roles[key.slice(5)] = value;
     else session.settings[key] = value;
     session.settings = C.sanitise(session.settings);
+    U.store.set('settings', session.settings);
     NS.host.setSettings(session.settings);
     refreshLobby();
   }
@@ -254,6 +263,7 @@
     for (const id of NS.host.list()) {
       NS.host.H.players[id].alive = true;
       NS.host.H.players[id].ghost = false;
+      NS.host.H.players[id].spectator = false;
       NS.host.H.players[id].ready = false;
     }
     NS.bots.resetForRound();
@@ -273,10 +283,88 @@
          host is whoever sent one, and after that nobody else can. */
       if (!session.hostId) session.hostId = msg.from;
       if (msg.from !== session.hostId) return;
+      heardFromHost = U.now();
       applySys(msg.data);
       return;
     }
     if (msg.kind === 'chat') onChat(msg.from, msg.data);
+  }
+
+  /* ---- when the host goes away ------------------------------------------- */
+
+  /* One device decides everything, which means one device can take the game
+     with it. Before this the rest of the room simply froze: no snapshots, no
+     message, a countdown that had stopped and nothing to press. Silence is the
+     one answer a game is never allowed to give.
+
+     In the lobby it is recoverable and nobody should have to re-enter a code,
+     so the remaining player with the lowest id picks the game up. Mid-round it
+     is not recoverable -- a new host would know nobody's role, because roles
+     are sealed to devices rather than stored anywhere -- so the round ends and
+     says so. */
+  const HOST_SILENCE = 9000;
+  let heardFromHost = 0;
+
+  function watchHost() {
+    if (session.isHost || !session.link || !session.link.ready) return;
+    if (!heardFromHost) return;
+    if (U.now() - heardFromHost < HOST_SILENCE) return;
+
+    const peers = session.link.peers();
+    const stillHere = peers.some((p) => p.id === session.hostId);
+    heardFromHost = U.now();          // do not fire again while we sort it out
+
+    if (stillHere) {
+      NS.bits.toast('The host has gone quiet. Still trying.', 'warn', 5);
+      return;
+    }
+    if (W.state.phase !== 'lobby' && W.state.phase !== 'end') {
+      NS.bits.toast('The host closed the game, so the round ended.', 'bad', 9);
+    }
+    takeOverLobby(peers);
+  }
+
+  /* The lowest id wins, decided identically on every device, so exactly one of
+     them picks the lobby up and the others follow it without being told. */
+  function takeOverLobby(peers) {
+    const ids = peers.map((p) => p.id).filter(Boolean).sort();
+    const heir = ids[0];
+    session.hostId = null;
+    heardFromHost = 0;
+    W.myRole = null;
+    W.myTasks = [];
+    W.state.roles = {};
+    W.bodies = [];
+    W.state.phase = 'lobby';
+    W.state.winner = null;
+    W.state.meeting = null;
+    W.state.sabotage = null;
+    NS.minigames.close(true);
+    NS.hud.closeOverlay();
+    NS.hud.hideRole();
+    NS.hud.hideEject();
+    NS.meeting.hide();
+    NS.input.setEnabled(true);
+
+    if (heir !== session.myId) { session.inGame = false; showLobby(); return; }
+
+    session.isHost = true;
+    session.hostId = session.myId;
+    session.ready = true;
+    session.inGame = false;
+    NS.host.begin({ send, settings: session.settings });
+    NS.host.addPlayer(session.myId, {
+      n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
+      h: NS.screens.profile.hatIdx, k: NS.secrets.publicKey,
+    });
+    for (const peer of peers) {
+      if (peer.isMe || !peer.presence) continue;
+      NS.host.addPlayer(peer.id, {
+        n: peer.presence.n, c: peer.presence.c, h: peer.presence.h, k: peer.presence.k,
+      });
+    }
+    NS.bits.toast('You are the host now.', 'info', 6);
+    showLobby();
   }
 
   function applySys(data) {
@@ -318,6 +406,8 @@
     W.state.roles[session.myId] = W.myRole;
     for (const id of (payload.mates || [])) W.state.roles[id] = 'impostor';
     NS.hud.setAbilitySpent(false);
+    const def = C.ROLES[W.myRole];
+    NS.bits.announce('You are the ' + def.name + '. ' + def.blurb);
     if (W.state.phase === 'reveal') showRoleCard();
     if (wasClear) {
       NS.bits.toast('This browser cannot encrypt, so roles were sent in the clear on this round.', 'warn', 7);
@@ -357,6 +447,15 @@
         p.name = U.cleanName(row[1], C.NAME_MAX) || 'Someone';
         p.colorIdx = U.clamp(row[2] | 0, 0, C.COLORS.length - 1);
         p.hatIdx = U.clamp(row[3] | 0, 0, C.HATS.length - 1);
+      } else if (row[1] && row[1] !== p.name) {
+        /* The host renames you if somebody already had that name. Better to
+           be told once than to spend a meeting being confused for them. */
+        const was = p.name;
+        p.name = U.cleanName(row[1], C.NAME_MAX) || p.name;
+        NS.screens.profile.name = p.name;
+        if (was && was !== p.name) {
+          NS.bits.toast('Somebody was already called ' + was + '. You are ' + p.name + '.', 'info', 6);
+        }
       }
       const flags = row[4] | 0;
       p.alive = !!(flags & 1);
@@ -392,13 +491,14 @@
     } : null;
 
     applyDoors(s.cd || []);
+    st.cameras = !!s.cw;
 
     st.meeting = s.mt ? {
       reason: s.mt.r, by: s.mt.by, bodyId: s.mt.bd, stage: s.mt.s,
       time: Number(s.mt.t) || 0, voted: s.mt.vd || [],
     } : null;
     st.ejected = s.ej || null;
-    st.winner = s.wn ? { team: s.wn.tm, reason: s.wn.rs, roles: s.wn.rl || [] } : null;
+    st.winner = s.wn ? { team: s.wn.tm, reason: s.wn.rs, roles: s.wn.rl || [], log: s.wn.lg || [] } : null;
     if (st.winner) {
       st.roles = st.roles || {};
       for (const row of st.winner.roles) st.roles[row[0]] = row[1];
@@ -410,14 +510,32 @@
       st.phase = phase;
       onPhase(from, phase);
     }
+
+    /* Arrived in the middle of somebody else's round. Say so once, rather
+       than dropping them into a station where every button is greyed out. */
+    if (!toldSpectating && !session.isHost && phase !== 'lobby' && phase !== 'end'
+        && !W.myRole && W.me && W.me.ghost) {
+      toldSpectating = true;
+      session.inGame = true;
+      NS.screens.hideAll();
+      NS.input.setEnabled(true);
+      NS.bits.toast('This round had already started, so you are watching it. '
+        + 'You will be dealt in when the next one begins.', 'info', 9);
+    }
+    if (phase === 'lobby') toldSpectating = false;
   }
 
   function applyDoors(list) {
     const wanted = {};
     for (const id of list) wanted[id] = true;
     const current = W.state.closedRooms || [];
-    for (const id of current) if (!wanted[id]) M.sealRoom(id, false);
-    for (const id of list) if (current.indexOf(id) < 0) M.sealRoom(id, true);
+    const at = W.state.doorAt || (W.state.doorAt = {});
+    for (const id of current) if (!wanted[id]) { M.sealRoom(id, false); delete at[id]; }
+    for (const id of list) {
+      if (current.indexOf(id) >= 0) continue;
+      M.sealRoom(id, true);
+      at[id] = U.now();
+    }
     W.state.closedRooms = list.slice();
   }
 
@@ -452,7 +570,14 @@
     if (to === 'eject') {
       NS.meeting.hide();
       NS.input.setEnabled(false);
-      if (W.state.ejected) NS.hud.showEject(W.state.ejected);
+      const out = W.state.ejected;
+      if (out) {
+        NS.hud.showEject(out);
+        NS.bits.announce(out.id
+          ? (out.name + ' was ejected'
+            + (W.state.settings.confirmEjects ? (out.impostor ? ', and was an impostor.' : ', and was not an impostor.') : '.'))
+          : (out.tie ? 'The vote tied. Nobody was ejected.' : 'The crew skipped. Nobody was ejected.'));
+      }
       return;
     }
     if (to === 'play') {
@@ -477,7 +602,10 @@
           alive: p.alive, role: (W.state.roles || {})[p.id] || 'crewmate',
         });
       }
-      NS.screens.showEnd(W.state.winner || { team: 'crew', reason: '' }, players, session.isHost);
+      const result = W.state.winner || { team: 'crew', reason: '' };
+      NS.bits.announce((result.team === 'crew' ? 'The crew wins. '
+        : result.team === 'impostor' ? 'The impostors win. ' : 'The jester wins. ') + (result.reason || ''));
+      NS.screens.showEnd(result, players, session.isHost);
       return;
     }
     if (to === 'lobby') {
@@ -512,6 +640,7 @@
           NS.render.flash('#7a0f20', 0.8);
           NS.render.shake(14);
           NS.bits.toast('You are dead. Finish your tasks and watch.', 'bad', 6);
+          NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
         } else if (seen(e.x, e.y)) {
           NS.audio.play('kill');
           NS.render.shake(7);
@@ -553,16 +682,26 @@
         const spot = group && group[e.i];
         if (spot) {
           const w = M.toWorld(spot);
-          if (seen(w.x, w.y)) { NS.fx.vent(w.x, w.y); NS.audio.play('vent'); }
+          if (seen(w.x, w.y)) {
+            NS.fx.vent(w.x, w.y);
+            NS.render.ventOpened(w.x, w.y);
+            NS.audio.play('vent');
+          }
         }
         break;
       }
-      case 'meeting':
+      case 'meeting': {
         NS.audio.play(e.reason === 'body' ? 'report' : 'alarm');
         NS.render.flash('#3a2a05', 0.5);
+        const caller = W.players.get(e.by);
+        NS.bits.announce(e.reason === 'body'
+          ? ((caller ? caller.name : 'Somebody') + ' reported a body. Meeting.')
+          : ((caller ? caller.name : 'Somebody') + ' called an emergency meeting.'));
         break;
+      }
       case 'sabotage': {
         const def = NS.sabotage.SABOTAGES[e.k];
+        if (def) NS.bits.announce(def.name + '. ' + def.warn);
         NS.audio.play(e.k === 'lights' ? 'lightsOut' : 'sabotage');
         NS.render.shake(def && def.critical ? 10 : 5);
         /* No toast: the banner across the top says this already and stays
@@ -579,12 +718,13 @@
         NS.bits.toast('Fixed.', 'good');
         break;
       case 'visual': {
-        const who = W.players.get(e.by);
-        if (who && seen(who.x, who.y)) {
-          const station = NS.rules.stationById[e.sid];
-          NS.fx.task(who.x, who.y);
-          NS.fx.say(who.x, who.y - 52, station ? station.name : 'Task', '#34e0b8');
-        }
+        const station = NS.rules.stationById[e.sid];
+        if (!station) break;
+        const spot = M.toWorld(station.steps ? station.steps[station.steps.length - 1] : station);
+        if (!seen(spot.x, spot.y)) break;
+        NS.fx.visual(station.kind, spot.x, spot.y);
+        NS.fx.say(spot.x, spot.y - 54, station.name, '#34e0b8');
+        NS.audio.play('taskDone');
         break;
       }
       case 'voted':
@@ -594,8 +734,17 @@
     }
   }
 
+  /* Limited on the way in rather than on the way out: the sender is the last
+     party that can be trusted to hold back, and one person leaning on a key
+     should not be able to push a meeting off everybody's screen. */
+  const chatClock = new Map();
+  const CHAT_GAP = 700;
+
   function onChat(from, data) {
     if (!data || typeof data !== 'object' || data.t !== 'msg') return;
+    const now = U.now();
+    if (now - (chatClock.get(from) || 0) < CHAT_GAP) return;
+    chatClock.set(from, now);
     const text = U.cleanName(data.text, C.CHAT_MAX);
     if (!text) return;
     const who = W.players.get(from);
@@ -650,6 +799,9 @@
        broken and there is nothing to click to find out why. */
     lobbyTick -= dt;
     if (lobbyTick <= 0) { lobbyTick = 0.25; refreshLobby(); }
+
+    watchHost();
+    roomTone();
 
     publishPresence();
     if (session.isHost) NS.host.tick(dt);
@@ -737,6 +889,23 @@
       session.hostId = id;
       if (old && NS.host.H.players[old]) delete NS.host.H.players[old];
     }
+  }
+
+  /* The station's own sound, set from what is happening rather than from a
+     playlist. Changed only when the mood changes -- retargeting an oscillator
+     sixteen times a second is audible as a stutter. */
+  let mood = '';
+  function roomTone() {
+    if (!NS.audio.unlocked) return;
+    const st = W.state;
+    let next = 'station';
+    if (!session.link) next = 'off';
+    else if (st.phase === 'meeting' || st.phase === 'eject' || st.phase === 'end') next = 'off';
+    else if (st.sabotage && st.sabotage.kind === 'lights') next = 'dark';
+    else if (st.sabotage && NS.sabotage.SABOTAGES[st.sabotage.kind].critical) next = 'alarm';
+    if (next === mood) return;
+    mood = next;
+    NS.audio.ambience(next);
   }
 
   function publishPresence() {

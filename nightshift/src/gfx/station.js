@@ -455,6 +455,26 @@
     }
   }
 
+  /* The housing is drawn for everybody. Its light is drawn live, because
+     whether somebody is watching changes and the housing does not. */
+  function cameraHousing(camera) {
+    const w = M.toWorld(camera);
+    const look = M.toWorld(camera.look);
+    const a = Math.atan2(look.y - w.y, look.x - w.x);
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.fillStyle = '#39435c';
+    rr(ctx, -9, -14, 18, 16, 4); ctx.fill();
+    ctx.rotate(a);
+    ctx.fillStyle = '#2c3648';
+    rr(ctx, -4, -8, 22, 16, 5); ctx.fill();
+    ctx.fillStyle = '#0d1320';
+    ctx.beginPath(); ctx.arc(15, 0, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(207,217,232,0.35)';
+    ctx.beginPath(); ctx.arc(13.6, -1.6, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   function emergencyButton() {
     const w = M.toWorld(M.EMERGENCY);
     ctx.fillStyle = '#2c3648';
@@ -513,12 +533,45 @@
 
   /* ---- build ------------------------------------------------------------- */
 
-  function build() {
+  /* The full-size station is about thirty megabytes of canvas. Most devices
+     take it without noticing; a five-year-old phone in a classroom may not,
+     and the failure mode is a blank canvas rather than an exception, so it is
+     checked rather than trusted. Half scale is a little softer and works
+     everywhere -- a slightly soft station beats a black one. */
+  let scale = 1;
+
+  function allocate(factor) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(M.pixelWidth * factor);
+    c.height = Math.round(M.pixelHeight * factor);
+    const g = c.getContext('2d');
+    if (!g || c.width !== Math.round(M.pixelWidth * factor)) return null;
+    /* A canvas the device refused comes back sized but unpaintable, so it is
+       painted and read back once before anything is built on it. */
+    g.fillStyle = '#ff0000';
+    g.fillRect(0, 0, 2, 2);
+    try {
+      const probe = g.getImageData(0, 0, 1, 1).data;
+      if (probe[0] < 200) return null;
+    } catch (e) {
+      return null;                 // tainted or unavailable; treat as refused
+    }
+    g.clearRect(0, 0, 2, 2);
+    return { c, g };
+  }
+
+  function build(forceFactor) {
     if (built) return canvas;
-    canvas = document.createElement('canvas');
-    canvas.width = M.pixelWidth;
-    canvas.height = M.pixelHeight;
-    ctx = canvas.getContext('2d');
+    let made = null;
+    const factors = forceFactor ? [forceFactor] : [1, 0.6, 0.4];
+    for (const factor of factors) {
+      try { made = allocate(factor); } catch (e) { made = null; }
+      if (made) { scale = factor; break; }
+    }
+    if (!made) { built = true; canvas = null; return null; }
+    canvas = made.c;
+    ctx = made.g;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
     const rand = U.mulberry32(0x4a1b7);
 
     ctx.fillStyle = '#05070d';
@@ -630,6 +683,8 @@
       sabotagePad(M.SABOTAGE_SPOTS[key], key.indexOf('reactor') === 0 ? '#ffb03a' : '#37e0c8');
     }
     emergencyButton();
+    for (const camera of M.CAMERAS) cameraHousing(camera);
+    for (const console of M.CONSOLES) taskConsole(console, TONES[M.roomById[console.room].tone].accent);
 
     built = true;
     return canvas;
@@ -639,8 +694,11 @@
 
   NS.station = {
     build,
-    rebuild() { built = false; canvas = null; return build(); },
+    rebuild(factor) { built = false; canvas = null; scale = 1; return build(factor); },
     get canvas() { return canvas; },
+    /* World units per canvas pixel, so anything blitting from it can map a
+       world rectangle onto the right source rectangle. */
+    get scale() { return scale; },
     TONES,
   };
 })(window.NS);

@@ -29,6 +29,16 @@
   let scale = 1;
   const camera = { x: 0, y: 0, shake: 0, flash: 0, flashColour: '#ff3f5b' };
 
+  /* The stylesheet honours prefers-reduced-motion, but a canvas is not styled.
+     Screen shake is the one thing in here that can make somebody feel ill, so
+     it asks the same question the CSS does. */
+  let calm = false;
+  try {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    calm = query.matches;
+    if (query.addEventListener) query.addEventListener('change', (e) => { calm = e.matches; });
+  } catch (e) { calm = false; }
+
   function attach(node) {
     canvas = node;
     ctx = canvas.getContext('2d');
@@ -91,14 +101,53 @@
 
   /* ---- pieces ------------------------------------------------------------ */
 
+  /* Vent covers, thrown open for half a second. Without it somebody simply
+     stops existing where they were standing, and the one thing a vent has to
+     communicate is that this is how they left. */
+  const ventFlashes = [];
+  function ventOpened(x, y) {
+    ventFlashes.push({ x, y, life: 0.55 });
+    if (ventFlashes.length > 6) ventFlashes.shift();
+  }
+
+  function drawVents(dt) {
+    for (let i = ventFlashes.length - 1; i >= 0; i--) {
+      const v = ventFlashes[i];
+      v.life -= dt;
+      if (v.life <= 0) { ventFlashes.splice(i, 1); continue; }
+      const t = 1 - v.life / 0.55;
+      const lid = Math.sin(Math.min(1, t * 1.6) * Math.PI) * 26;
+      ctx.save();
+      ctx.translate(v.x, v.y);
+      ctx.fillStyle = '#0a0f1a';
+      NS.characters.rr(ctx, -16, -11, 32, 22, 3);
+      ctx.fill();
+      ctx.fillStyle = '#4a5570';
+      NS.characters.rr(ctx, -21, -15 - lid, 42, 8, 3);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function drawDoors(now) {
     const closed = W.state.closedRooms || [];
     if (!closed.length) return;
+    const at = W.state.doorAt || {};
     for (const roomId of closed) {
       const doors = M.DOORS[roomId];
       if (!doors) continue;
+      /* Slid shut over a quarter of a second rather than appearing: a barrier
+         that pops into existence reads as a rendering glitch, and you need to
+         see which way it came from to know you have been shut in. */
+      const age = at[roomId] ? Math.min(1, (now - at[roomId]) / 260) : 1;
+      const slide = 1 - Math.pow(1 - age, 3);
       for (const d of doors) {
-        const x = d.x * M.TILE, y = d.y * M.TILE, w = d.w * M.TILE, h = d.h * M.TILE;
+        const fullW = d.w * M.TILE, fullH = d.h * M.TILE;
+        const horizontal = fullW > fullH;
+        const x = d.x * M.TILE + (horizontal ? 0 : (fullW * (1 - slide)) / 2);
+        const y = d.y * M.TILE + (horizontal ? (fullH * (1 - slide)) / 2 : 0);
+        const w = horizontal ? fullW : fullW * slide;
+        const h = horizontal ? fullH * slide : fullH;
         ctx.fillStyle = '#c0523f';
         NS.characters.rr(ctx, x + 1, y + 1, w - 2, h - 2, 4);
         ctx.fill();
@@ -150,6 +199,26 @@
     ctx.restore();
   }
 
+  /* Every camera blinks while anybody is at the console in Security. It is the
+     impostor's only warning, and it has to be visible from across a room, so
+     it is a hard on/off rather than a fade. */
+  function drawCameraLights(now) {
+    if (!W.state.cameras) return;
+    const on = Math.floor(now / 520) % 2 === 0;
+    if (!on) return;
+    for (const camera of M.CAMERAS) {
+      const w = M.toWorld(camera);
+      ctx.fillStyle = '#ff3f5b';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y - 10, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,63,91,0.3)';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y - 10, 8.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function nameTag(p, alpha) {
     const label = p.name;
     ctx.font = '700 13px Archivo, system-ui, sans-serif';
@@ -192,11 +261,11 @@
     ctx.fillRect(0, 0, cssW, cssH);
 
     let shakeX = 0, shakeY = 0;
-    if (camera.shake > 0.1) {
+    if (camera.shake > 0.1 && !calm) {
       shakeX = (Math.random() - 0.5) * camera.shake;
       shakeY = (Math.random() - 0.5) * camera.shake;
-      camera.shake *= Math.pow(0.0016, dt);
     }
+    if (camera.shake > 0.1) camera.shake *= Math.pow(0.0016, dt);
 
     ctx.save();
     ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
@@ -210,10 +279,16 @@
     const sy = U.clamp(camera.y - halfH, 0, M.pixelHeight);
     const sw = U.clamp(halfW * 2, 1, M.pixelWidth - sx);
     const sh = U.clamp(halfH * 2, 1, M.pixelHeight - sy);
-    if (station) ctx.drawImage(station, sx, sy, sw, sh, sx, sy, sw, sh);
+    if (station) {
+      const k = NS.station.scale;
+      ctx.drawImage(station, sx * k, sy * k, sw * k, sh * k, sx, sy, sw, sh);
+    }
 
     drawObjectives(now);
     drawDoors(now);
+    drawCameraLights(now);
+    drawVents(dt);
+    NS.fx.drawVisuals(ctx);
 
     ctx.restore();
 
@@ -337,7 +412,7 @@
   }
 
   NS.render = {
-    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash,
+    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened,
     visionRadius,
     get scale() { return scale; },
     get width() { return cssW; },

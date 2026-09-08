@@ -30,7 +30,7 @@
     bodies: [],
     state: {
       phase: 'lobby', seq: 0, settings: C.defaults(),
-      tasksDone: 0, tasksTotal: 0, sabotage: null, meeting: null,
+      tasksDone: 0, tasksTotal: 0, sabotage: null, meeting: null, cameras: false,
       ejected: null, winner: null, closedRooms: [],
     },
     myRole: null,
@@ -221,9 +221,19 @@
       else { p.x += (p.tx - p.x) * ease; p.y += (p.ty - p.y) * ease; }
     }
 
+    /* Footsteps from everybody else, quieter with distance and deliberately
+       not blocked by walls. Hearing somebody you cannot see is most of what a
+       dark corridor is for, and both sides of the game get to use it. */
+    const EARSHOT = 360;
     for (const p of world.players.values()) {
       p.walk += (p.moving ? dt * 9 : 0);
       p.bob = p.moving ? Math.sin(p.walk) * 1.6 : 0;
+      if (p.isMe || !p.moving || p.ghost || p.inVent || !p.connected) continue;
+      p.stepClock = (p.stepClock || 0) + dt;
+      if (p.stepClock < 0.27) continue;
+      p.stepClock = 0;
+      const d = U.dist(me.x, me.y, p.x, p.y);
+      if (d < EARSHOT) NS.audio.footstep(1 - d / EARSHOT);
     }
   }
 
@@ -308,6 +318,15 @@
         if (U.dist2(me.x, me.y, spot.x, spot.y) < USE_RANGE * USE_RANGE) {
           out.use = { kind: 'task', task, station: NS.rules.stationById[task.sid], x: spot.x, y: spot.y };
           break;
+        }
+      }
+      if (!out.use) {
+        for (const console of M.CONSOLES) {
+          const w = M.toWorld(console);
+          if (U.dist2(me.x, me.y, w.x, w.y) < USE_RANGE * USE_RANGE) {
+            out.use = { kind: 'console', console, x: w.x, y: w.y };
+            break;
+          }
         }
       }
       if (!out.use && !me.ghost) {

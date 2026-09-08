@@ -25,6 +25,24 @@
     return canvas;
   }
 
+  /* Announcements for a screen reader. Toasts are visual and transient; this
+     is the same information as text, in order, for somebody who is not looking
+     at the station. Deliberately terse -- a live region that narrates every
+     footstep is worse than none. */
+  let announcer = null;
+  function announce(text) {
+    if (!announcer) {
+      announcer = el('div', {
+        class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+      });
+      document.body.appendChild(announcer);
+    }
+    /* Same string twice in a row is not re-read by most screen readers, so it
+       is cleared first. */
+    announcer.textContent = '';
+    setTimeout(() => { if (announcer) announcer.textContent = text; }, 60);
+  }
+
   let toastHost = null;
   function toast(text, kind, seconds) {
     if (!toastHost) {
@@ -75,7 +93,7 @@
     vent: 'M4 6h16v12H4z M7 9h10 M7 12h10 M7 15h10',
     map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14',
     tasks: 'M4 6h16 M4 12h16 M4 18h10',
-    gear: 'M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M19 5l-2 2 M7 17l-2 2',
+    gear: 'M4 7h7 M15 7h5 M4 12h11 M19 12h1 M4 17h3 M11 17h9 M13 7v0a2 2 0 104 0 2 2 0 10-4 0z M15 12v0a2 2 0 10-4 0 2 2 0 104 0z M7 17v0a2 2 0 104 0 2 2 0 10-4 0z',
     sabotage: 'M12 2l9 18H3z M12 9v5 M12 17v1.5',
     chat: 'M4 5h16v10H9l-5 4z',
     sound: 'M4 9h4l5-4v14l-5-4H4z M16 9c1.5 1.5 1.5 4.5 0 6',
@@ -106,5 +124,5 @@
     return svg;
   }
 
-  NS.bits = { avatar, toast, confirm, icon, ICONS };
+  NS.bits = { avatar, toast, confirm, icon, announce, ICONS };
 })(window.NS);

@@ -86,6 +86,53 @@
     },
   };
 
+  /* The machine a visual task drives, running where the station is. Its whole
+     job is to be witnessed: if you are in the room you can see the shields
+     light or the chute blow, and that is the alibi. */
+  const visuals = [];
+  const VISUAL_ART = {
+    asteroids: { colour: '#ffb03a', rings: 3, life: 2.4 },
+    shields:   { colour: '#4d9fd6', rings: 5, life: 2.6 },
+    filter:    { colour: '#4ca85c', rings: 2, life: 2.4 },
+    signal:    { colour: '#37e0c8', rings: 4, life: 2.8 },
+    scan:      { colour: '#37e0c8', rings: 3, life: 3.2 },
+    chute:     { colour: '#8d97ad', rings: 2, life: 2.4 },
+  };
+
+  function visual(kind, x, y) {
+    const art = VISUAL_ART[kind] || { colour: '#34e0b8', rings: 3, life: 2.4 };
+    visuals.push({ x, y, kind, art, life: art.life, max: art.life });
+    if (visuals.length > 6) visuals.shift();
+    burst(x, y - 10, 16, { colour: art.colour, speed: 120, life: 1, size: 4, gravity: -30 });
+  }
+
+  function drawVisuals(ctx) {
+    for (const v of visuals) {
+      const t = 1 - v.life / v.max;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, v.life * 1.6) * 0.7;
+      ctx.strokeStyle = v.art.colour;
+      ctx.lineWidth = 3;
+      for (let i = 0; i < v.art.rings; i++) {
+        const phase = (t * 1.6 + i / v.art.rings) % 1;
+        ctx.globalAlpha = Math.min(1, v.life * 1.6) * (1 - phase) * 0.6;
+        ctx.beginPath();
+        ctx.ellipse(v.x, v.y + 6, 26 + phase * 62, 12 + phase * 28, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = Math.min(1, v.life * 1.6) * 0.32;
+      const glow = ctx.createRadialGradient(v.x, v.y, 4, v.x, v.y, 74);
+      glow.addColorStop(0, v.art.colour);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, 74, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function say(x, y, text, colour) {
     floaters.push({ x, y, text, colour: colour || '#cfd9e8', life: 1.5, max: 1.5 });
     if (floaters.length > 12) floaters.shift();
@@ -102,6 +149,10 @@
       p.y += p.vy * dt;
       const k = Math.pow(p.drag, dt * 60);
       p.vx *= k; p.vy *= k;
+    }
+    for (let i = visuals.length - 1; i >= 0; i--) {
+      visuals[i].life -= dt;
+      if (visuals[i].life <= 0) visuals.splice(i, 1);
     }
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];
@@ -148,7 +199,8 @@
   function clear() {
     for (let i = 0; i < MAX; i++) pool[i].live = false;
     floaters.length = 0;
+    visuals.length = 0;
   }
 
-  NS.fx = Object.assign({ spawn, burst, step, draw, drawFloaters, say, clear }, FX);
+  NS.fx = Object.assign({ spawn, burst, step, draw, drawFloaters, drawVisuals, visual, say, clear }, FX);
 })(window.NS);

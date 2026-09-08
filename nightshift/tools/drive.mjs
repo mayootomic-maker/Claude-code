@@ -55,6 +55,11 @@ await page.click('.hat-btn:nth-child(4)');
 await page.waitForTimeout(250);
 await shot(page, 'dressed');
 
+await page.evaluate(() => window.NS.screens.showHelp());
+await page.waitForTimeout(400);
+await shot(page, 'help');
+await page.evaluate(() => { const sheet = document.querySelector('.sheet'); if (sheet) sheet.remove(); });
+
 await page.click('.btn--quiet');
 await page.waitForSelector('.screen--lobby', { timeout: 10000 });
 await page.waitForTimeout(700);
@@ -99,6 +104,14 @@ await page.waitForTimeout(500);
 await shot(page, 'map');
 await page.evaluate(() => window.NS.hud.closeOverlay());
 
+for (const panel of ['showAdmin', 'showCameras', 'showVitals']) {
+  await page.evaluate((fn) => window.NS.hud[fn](), panel);
+  await page.waitForTimeout(700);
+  await shot(page, panel.replace('show', '').toLowerCase());
+  await page.evaluate(() => window.NS.hud.closeOverlay());
+  await page.waitForTimeout(120);
+}
+
 /* Every minigame, opened directly. Walking to twenty-one consoles would be a
    test of the pathfinder, not of the panels. */
 const kinds = ['wiring', 'swipe', 'calibrate', 'shields', 'chart', 'steering', 'filter',
@@ -112,10 +125,103 @@ for (const kind of kinds) {
   await page.waitForTimeout(90);
 }
 
+/* The half-size station the fallback allocates on a device that will not give
+   us thirty megabytes of canvas. Everything that blits it has to map the
+   source rectangle through that scale, and getting one of them wrong shows up
+   as a station in the wrong place rather than as an error. */
+await page.evaluate(() => window.NS.station.rebuild(0.6));
+await page.waitForTimeout(700);
+await shot(page, 'half-scale-station');
+const halfScale = await page.evaluate(() => window.NS.station.scale);
+if (halfScale !== 0.6) problems.push('the station fallback did not take: scale ' + halfScale);
+await page.evaluate(() => window.NS.hud.showCameras());
+await page.waitForTimeout(600);
+await shot(page, 'half-scale-cameras');
+await page.evaluate(() => window.NS.hud.closeOverlay());
+await page.evaluate(() => window.NS.station.rebuild());
+await page.waitForTimeout(600);
+
+await page.evaluate(() => window.NS.hud.showOptions());
+await page.waitForTimeout(400);
+await shot(page, 'options');
+await page.evaluate(() => window.NS.hud.closeOverlay());
+
 /* A meeting, a vote, an ejection. The bots are playing the whole time this
    runs and can be mid-meeting of their own when we ask for one, so wait for a
    phase we can actually act from rather than assuming. */
-await page.waitForFunction(() => window.NS.world.state.phase === 'play', null, { timeout: 40000 });
+/* A bot may have called a meeting while the screenshots were being taken, and
+   a full discussion plus vote outlasts any sane wait. Cut it short rather than
+   race it: what is being tested next is the meeting we ask for. */
+await page.evaluate(() => {
+  const H = window.NS.host.H;
+  /* Both, not just the clock: running the discussion out only opens the vote,
+     which is the game working and the harness waiting another ninety seconds. */
+  if (H.meeting) { H.meeting.stage = 'vote'; H.meeting.time = 0.2; H.dirty = true; }
+});
+try {
+  await page.waitForFunction(() => window.NS.world.state.phase === 'play', null, { timeout: 45000 });
+} catch (e) {
+  console.log('  stuck: ' + await page.evaluate(() => JSON.stringify({
+    phase: window.NS.world.state.phase,
+    hostPhase: window.NS.host.H.phase,
+    winner: window.NS.host.H.winner,
+    meeting: window.NS.host.H.meeting && { s: window.NS.host.H.meeting.stage, t: Math.round(window.NS.host.H.meeting.time) },
+    alive: window.NS.host.livingIds().length,
+    players: window.NS.host.list().length,
+    td: window.NS.world.state.tasksDone, tt: window.NS.world.state.tasksTotal,
+  })));
+  throw e;
+}
+/* A reactor meltdown ends the round in forty-five seconds unless two people
+   put a hand on a pad at each end of the map. Crew bots ignored it entirely at
+   first, which made a bot game unwinnable and looked like nothing at all --
+   the round simply ended. Broken on purpose here, and the fix is measured. */
+const impostor = await page.evaluate(() => {
+  const H = window.NS.host.H;
+  return Object.keys(H.roles).find((id) => window.NS.config.ROLES[H.roles[id]].kill
+    && H.players[id] && H.players[id].alive) || null;
+});
+if (impostor) {
+  await page.evaluate((id) => {
+    const H = window.NS.host.H;
+    H.sabotageCooldown = 0;
+    window.NS.host.handle(id, { t: 'sabotage', k: 'reactor' });
+  }, impostor);
+  await page.waitForTimeout(600);
+  const started = await page.evaluate(() => !!window.NS.world.state.sabotage);
+  if (!started) problems.push('the reactor sabotage would not start');
+  else {
+    await shot(page, 'meltdown');
+    try {
+      await page.waitForFunction(() => !window.NS.world.state.sabotage
+        || window.NS.world.state.phase !== 'play', null, { timeout: 44000 });
+    } catch (e) { /* falls through to the check below */ }
+    const fixed = await page.evaluate(() => ({
+      sabotage: window.NS.world.state.sabotage,
+      phase: window.NS.world.state.phase,
+    }));
+    if (fixed.sabotage) problems.push('the bots never repaired the reactor');
+    else if (fixed.phase !== 'play') problems.push('the reactor ended the round: ' + fixed.phase);
+    else console.log('  the bots repaired the reactor');
+  }
+}
+
+/* The bots have been playing this whole time and may well have killed us,
+   which is the game working. Photograph being dead, then stand back up so the
+   meeting screens can be driven from a living player. */
+if (await page.evaluate(() => !window.NS.world.me.alive)) {
+  await shot(page, 'ghost');
+  await page.evaluate(() => {
+    const H = window.NS.host.H;
+    const me = H.players[window.NS.session.myId];
+    me.alive = true;
+    me.ghost = false;
+    H.bodies = H.bodies.filter((b) => b.id !== window.NS.session.myId);
+    H.dirty = true;
+  });
+  await page.waitForTimeout(700);
+}
+
 await page.evaluate(() => {
   /* A meeting the bots called during the screenshots leaves the emergency
      button on cooldown, which is the game behaving correctly and the harness
@@ -125,6 +231,15 @@ await page.evaluate(() => {
   H.emergenciesUsed = {};
   window.NS.host.handle(window.NS.session.myId, { t: 'emergency' });
 });
+await page.waitForTimeout(300);
+if (await page.evaluate(() => window.NS.world.state.phase !== 'meeting')) {
+  problems.push('the emergency meeting was refused: '
+    + await page.evaluate(() => JSON.stringify({
+      phase: window.NS.host.H.phase,
+      alive: window.NS.host.H.players[window.NS.session.myId].alive,
+      cooldown: window.NS.host.H.emergencyCooldown,
+    })));
+}
 await page.waitForSelector('.meeting', { timeout: 10000 });
 await page.waitForTimeout(900);
 await shot(page, 'meeting-discussion');
@@ -172,6 +287,14 @@ await page.evaluate(() => {
 await page.waitForSelector('.screen--end', { timeout: 10000 });
 await page.waitForTimeout(800);
 await shot(page, 'end');
+
+const recap = await page.$('.recap-wrap');
+if (!recap) problems.push('the end screen showed no round recap');
+else {
+  await recap.evaluate((node) => { node.open = true; });
+  await page.waitForTimeout(400);
+  await shot(page, 'end-recap');
+}
 
 await browser.close();
 

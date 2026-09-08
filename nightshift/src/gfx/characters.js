@@ -171,6 +171,100 @@
     ctx.restore();
   }
 
+  /* ---- colourblind marks -------------------------------------------------- */
+
+  /* Drawn upright rather than mirrored with the body, so an arrow means the
+     same thing whichever way somebody is walking. Light fill on a dark ring so
+     it reads on every one of the fourteen suits, including Bone and Ink. */
+  const SYMBOL_ART = {
+    circle(ctx, r) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); },
+    square(ctx, r) { ctx.fillRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7); },
+    triangle(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * 0.92, r * 0.72);
+      ctx.lineTo(-r * 0.92, r * 0.72); ctx.closePath(); ctx.fill();
+    },
+    diamond(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r);
+      ctx.lineTo(-r, 0); ctx.closePath(); ctx.fill();
+    },
+    star(ctx, r) {
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+        const rad = i % 2 ? r * 0.45 : r;
+        if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+        else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+      }
+      ctx.closePath(); ctx.fill();
+    },
+    cross(ctx, r) {
+      ctx.fillRect(-r * 0.32, -r, r * 0.64, r * 2);
+      ctx.fillRect(-r, -r * 0.32, r * 2, r * 0.64);
+    },
+    chevron(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(-r, r * 0.2); ctx.lineTo(0, -r * 0.7); ctx.lineTo(r, r * 0.2);
+      ctx.lineTo(r, r * 0.85); ctx.lineTo(0, -r * 0.05); ctx.lineTo(-r, r * 0.85);
+      ctx.closePath(); ctx.fill();
+    },
+    ring(ctx, r) {
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+      ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+    },
+    bar(ctx, r) { ctx.fillRect(-r, -r * 0.34, r * 2, r * 0.68); },
+    dots(ctx, r) {
+      ctx.beginPath(); ctx.arc(-r * 0.5, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.5, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+    },
+    hexagon(ctx, r) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill();
+    },
+    drop(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r);
+      ctx.quadraticCurveTo(r, 0, 0, r); ctx.quadraticCurveTo(-r, 0, 0, -r);
+      ctx.fill();
+    },
+    arrow(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * 0.9, r * 0.1);
+      ctx.lineTo(r * 0.34, r * 0.1); ctx.lineTo(r * 0.34, r);
+      ctx.lineTo(-r * 0.34, r); ctx.lineTo(-r * 0.34, r * 0.1);
+      ctx.lineTo(-r * 0.9, r * 0.1); ctx.closePath(); ctx.fill();
+    },
+    wave(ctx, r) {
+      ctx.lineWidth = r * 0.44;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.beginPath();
+      ctx.moveTo(-r, r * 0.3);
+      ctx.quadraticCurveTo(-r * 0.35, -r * 0.9, 0, r * 0.1);
+      ctx.quadraticCurveTo(r * 0.35, r * 0.95, r, -r * 0.2);
+      ctx.stroke();
+    },
+  };
+
+  let showSymbols = false;
+  function setSymbols(on) { showSymbols = !!on; }
+
+  function drawSymbol(ctx, colorIdx, size) {
+    const art = SYMBOL_ART[C.SYMBOLS[colorIdx % C.SYMBOLS.length]];
+    if (!art) return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(5,7,13,0.75)';
+    ctx.lineWidth = size * 0.55;
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = 'rgba(5,7,13,0.75)';
+    art(ctx, size * 1.12);
+    ctx.fillStyle = '#f2f6fb';
+    art(ctx, size);
+    ctx.restore();
+  }
+
   /* ---- the player -------------------------------------------------------- */
 
   /* `p` is a world entity. `opts.alpha` dims a peer standing in your light's
@@ -282,6 +376,13 @@
 
     ctx.restore();
 
+    if (showSymbols && !ghost) {
+      ctx.save();
+      ctx.translate(0, -BODY_H * 0.36);
+      drawSymbol(ctx, p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx, 5.4);
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(0, -BODY_H - 1);
     drawHat(ctx, p.hatIdx, p.dir);
@@ -360,5 +461,8 @@
     ctx.restore();
   }
 
-  NS.characters = { drawPlayer, drawBody, drawAvatar, drawHat, rr, BODY_W, BODY_H, beanPath };
+  NS.characters = {
+    drawPlayer, drawBody, drawAvatar, drawHat, drawSymbol, setSymbols,
+    rr, BODY_W, BODY_H, beanPath,
+  };
 })(window.NS);

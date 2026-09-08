@@ -58,15 +58,31 @@ sample to wait on, fuel to carry between two rooms.
 once. Lights shrink what the crew can see and leave the impostors untouched.
 Comms take away the task list. Doors seal a room for twelve seconds.
 
+**Somewhere to gather evidence.** The Admin table counts heads per room and
+tells you nothing about who. The cameras show four corridors live -- and every
+camera on the station blinks while somebody is watching, so it costs you the
+one thing an impostor wants to know. Vitals in MedBay says who is still alive.
+All three go dark when comms are sabotaged, which is itself information.
+
 **A meeting built for a classroom.** Text chat with quick phrases, because
-nobody is on voice; votes hidden until the vote closes; the dead can read
-everything and say nothing to the living.
+nobody is on voice; votes hidden until the vote closes, then the whole
+breakdown of who voted for whom; the dead read everything, say nothing to the
+living, and have a window of their own to say it in. Afterwards, a recap of
+what actually happened, in order -- which is the only moment anybody sees the
+round whole.
 
 **Practice bots** that walk to their tasks, stand at them for as long as a
 person would, report bodies they can actually see, and kill when they are alone
 with somebody. Enough to learn the map, and enough to fill out a small class.
 
-**Fourteen colours and twelve hats**, all drawn rather than sprited.
+**Fourteen colours and twelve hats**, all drawn rather than sprited. Colour is
+never the only thing telling two people apart: Options turns on a shape per
+colour, drawn on the suit and on every portrait.
+
+**A station you can hear.** The room tone drops a fifth and opens up when the
+lights go out, so the dark sounds different before you have read the banner,
+and everybody else's footsteps carry through walls at a volume that falls off
+with distance. Both sides of the game get to use that.
 
 ## The dark
 
@@ -141,6 +157,12 @@ that would have made the published page look empty to everybody: the lobby
 filter and the player's colour were both stored under `c`, and the round could
 start before the view knew its own peer id.
 
+The bots are worth their own line: they walk to the nearest job they still owe
+rather than the first on the list (dealing in order parked seven of them in
+Storage at once), they repair a sabotage -- a crew of bots used to lose every
+reactor meltdown by ignoring it -- they walk their fake list if they are lying,
+and they leave through a vent after a kill.
+
 Four bugs came out of running these that reading the code did not find. Every
 action button showed for crewmates, because `hidden` was losing to a `display`
 rule. Two players could be locked into the same colour, because only the person
@@ -185,6 +207,12 @@ reason rather than hanging, and a phone hotspot is the usual way round it.
 - **No server.** There is nowhere to run one for free that survives a class of
   thirty, and a public broker plus one host device is enough for what this
   sends.
-- **No host migration mid-round.** If the host closes their tab the round ends
-  and everyone returns to the lobby, said plainly, rather than the game
-  pretending to continue with nobody deciding anything.
+- **No host migration mid-round.** One device decides everything, so losing it
+  mid-round is not recoverable: a new host would know nobody's role, because
+  roles are sealed to devices rather than stored anywhere. The round ends, says
+  why, and the lobby is picked up by whoever is left -- the lowest peer id,
+  decided the same way on every device, so nobody has to re-enter a code. In
+  the lobby that handover is seamless.
+- **Arriving mid-round makes you a spectator.** You walk the station, watch,
+  and talk to the other ghosts; the next round deals you in. Being able to do
+  nothing is a fine outcome, being told nothing is not.

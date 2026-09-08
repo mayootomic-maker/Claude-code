@@ -198,8 +198,24 @@ check(seqAfter - seqBefore > 3,
   'a host in a background tab keeps running (' + (seqAfter - seqBefore) + ' snapshots in 2.5s)');
 
 await host.screenshot({ path: resolve(here, '..', 'shots', 'two-host.png') });
-await guest.screenshot({ path: resolve(here, '..', 'shots', 'two-guest.png') });
 
+/* And the thing that used to be silence: the host closes their tab. The round
+   cannot continue -- the new host would know nobody's role -- but the guest has
+   to be told, and has to end up somewhere they can play again rather than
+   frozen in a meeting whose clock has stopped. */
+await host.close();
+await guest.waitForFunction(
+  () => window.NS.world.state.phase === 'lobby' && window.NS.session.isHost,
+  null, { timeout: 25000 },
+).then(() => check(true, 'losing the host drops the guest into a lobby they now host'))
+  .catch(async () => {
+    check(false, 'the guest was left stranded when the host closed: '
+      + await guest.evaluate(() => JSON.stringify({
+        phase: window.NS.world.state.phase, isHost: window.NS.session.isHost,
+      })));
+  });
+await guest.waitForTimeout(600);
+await guest.screenshot({ path: resolve(here, '..', 'shots', 'two-handover.png') });
 await browser.close();
 
 if (problems.length) {

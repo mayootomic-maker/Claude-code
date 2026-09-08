@@ -66,7 +66,10 @@
         ctx.save();
         ctx.globalAlpha = 0.5;
         ctx.scale(scale, scale);
-        ctx.drawImage(station, px, py, rect.width / scale, rect.height / scale, 0, 0, rect.width / scale, rect.height / scale);
+        const k = NS.station.scale;
+        ctx.drawImage(station,
+          px * k, py * k, (rect.width / scale) * k, (rect.height / scale) * k,
+          0, 0, rect.width / scale, rect.height / scale);
         ctx.restore();
       }
       requestAnimationFrame(frame);
@@ -264,6 +267,31 @@
       body.appendChild(el('h4', { text: title }));
       body.appendChild(el('p', { text }));
     });
+    /* Built from the role table rather than written out, so a role that is
+       added, renamed or reworded can never quietly disagree with the page that
+       explains it. */
+    body.appendChild(el('h4', { text: 'The roles' }));
+    body.appendChild(el('p', {
+      text: 'Which of these turn up is set in the lobby. Every one of them is off or on '
+        + 'with a chance, so a class can build the game it wants.',
+    }));
+    const roles = el('div', { class: 'help-roles' });
+    for (const key of ['crewmate'].concat(C.CREW_ROLES, ['impostor'], C.IMPOSTOR_ROLES, ['jester'])) {
+      const def = C.ROLES[key];
+      if (!def) continue;
+      roles.appendChild(el('div', { class: 'help-role' }, [
+        el('div', { class: 'help-role-head' }, [
+          el('strong', { text: def.name }),
+          el('span', {
+            class: 'role-team role-team--' + def.team,
+            text: def.team === 'impostor' ? 'Impostor' : def.team === 'jester' ? 'Neutral' : 'Crew',
+          }),
+        ]),
+        el('p', { text: def.blurb }),
+      ]));
+    }
+    body.appendChild(roles);
+
     box.appendChild(body);
     root.appendChild(box);
     root.addEventListener('click', (e) => { if (e.target === root) root.remove(); });
@@ -308,7 +336,10 @@
       el('button', { class: 'btn btn--ghost btn--tight', type: 'button', text: '+', 'aria-label': 'One more bot', onclick: () => hooks.onBots(1) }),
     ]);
 
-    const leave = el('button', { class: 'link-btn', type: 'button', text: 'Leave', onclick: () => hooks.onLeave() });
+    const leave = el('div', { class: 'lobby-links' }, [
+      el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
+      el('button', { class: 'link-btn', type: 'button', text: 'Leave', onclick: () => hooks.onLeave() }),
+    ]);
 
     const panel = el('div', { class: 'lobby-panel' }, [
       code,
@@ -492,6 +523,7 @@
       el('h1', { class: 'end-title', text: title }),
       el('p', { class: 'end-reason', text: result.reason }),
       grid,
+      recap(result.log),
       el('div', { class: 'end-buttons' }, [
         isHost
           ? el('button', { class: 'btn btn--primary btn--big', type: 'button', text: 'Back to the lobby', onclick: () => hooks.onPlayAgain() })
@@ -500,6 +532,48 @@
       ]),
     ]));
     NS.audio.play(result.team === 'crew' ? 'win' : 'lose');
+  }
+
+  /* What actually happened, in order. Everybody spent the round arguing from
+     two-second glimpses; this is the only moment anyone sees the whole thing,
+     and watching a class read it is most of the fun of losing. */
+  /* Always m:ss in the timeline. `clock` drops the minutes under sixty
+     seconds, which is right on a countdown and wrong in a column where "15"
+     sits above "1:05". */
+  const stamp = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+
+  function recap(log) {
+    if (!log || !log.length) return null;
+    const list = el('ol', { class: 'recap' });
+    for (const entry of log) {
+      let text = '';
+      if (entry.k === 'kill') {
+        text = entry.self
+          ? entry.who + ' shot the wrong person and died for it, in ' + entry.where
+          : (entry.by ? entry.by + ' killed ' + entry.who + ' in ' + entry.where
+            : entry.who + ' died in ' + entry.where);
+      } else if (entry.k === 'meeting') {
+        text = entry.reason === 'body'
+          ? (entry.by || 'Somebody') + ' reported ' + (entry.who || 'a body')
+          : (entry.by || 'Somebody') + ' called an emergency meeting';
+      } else if (entry.k === 'eject') {
+        text = entry.who
+          ? entry.who + ' was thrown out - ' + (entry.impostor ? 'an impostor' : 'not an impostor')
+          : (entry.tie ? 'The vote tied. Nobody went out' : 'The crew skipped');
+      } else if (entry.k === 'sabotage') {
+        text = entry.name;
+      }
+      if (!text) continue;
+      list.appendChild(el('li', { class: 'recap-row recap-row--' + entry.k }, [
+        el('span', { class: 'recap-time', text: stamp(entry.t) }),
+        el('span', { class: 'recap-text', text }),
+      ]));
+    }
+    if (!list.children.length) return null;
+    return el('details', { class: 'recap-wrap' }, [
+      el('summary', { text: 'What happened' }),
+      list,
+    ]);
   }
 
   NS.screens = {

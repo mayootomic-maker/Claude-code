@@ -55,6 +55,11 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` has to beat the display rules below it. Every button in this file
+   sets its own display, which quietly outranks the user-agent [hidden] rule --
+   which is how the kill button ended up on screen for crewmates. */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
@@ -106,6 +111,17 @@ body::after {
   z-index: 9000;
   opacity: .035;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---- buttons ------------------------------------------------------------ */
@@ -384,6 +400,7 @@ body::after {
 .lobby-status { font-size: 12.5px; color: var(--faint); text-align: center; }
 .lobby-buttons { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .lobby-buttons .btn { width: 100%; }
+.lobby-links { display: flex; gap: 16px; }
 .bot-row { display: flex; align-items: center; gap: 10px; }
 .bot-label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
 .bot-count { font-family: var(--mono); font-size: 18px; min-width: 22px; text-align: center; }
@@ -599,7 +616,15 @@ body::after {
   transition: transform .08s ease, box-shadow .08s ease, opacity .15s ease;
 }
 .act:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 1px 1px 0 rgba(0, 0, 0, .45); }
-.act:disabled { opacity: .4; box-shadow: none; cursor: not-allowed; }
+/* Disabled is a different button, not a faded one: dimming an amber button to
+   40% just looks like something failed to paint. */
+.act:disabled {
+  background: var(--raised);
+  border-color: var(--line);
+  color: var(--faint);
+  box-shadow: none;
+  cursor: not-allowed;
+}
 .act-label { position: relative; z-index: 2; padding: 0 4px; text-align: center; line-height: 1.1; }
 .act-ring {
   position: absolute;
@@ -615,7 +640,7 @@ body::after {
 .act--use { grid-column: 2; width: 96px; height: 96px; border-radius: 28px; font-size: 15px; background: var(--flare); border-color: #ffd08a; color: #1c1305; }
 .act--kill { background: var(--blood); border-color: #ff8f9f; color: #2a0209; width: 84px; height: 84px; border-radius: 24px; font-size: 14px; }
 .act--report { background: #f0a63c; border-color: #ffd08a; color: #291a03; width: 84px; height: 84px; border-radius: 24px; font-size: 14px; }
-.act--small { width: 60px; height: 60px; border-radius: 17px; font-size: 11.5px; }
+.act--small { width: 62px; height: 62px; border-radius: 17px; font-size: 10px; letter-spacing: -.01em; }
 
 .stick {
   position: fixed;
@@ -682,7 +707,7 @@ body::after {
   cursor: pointer;
 }
 .mg-close:hover { color: var(--ink); border-color: var(--steel); }
-.mg-stage { display: grid; place-items: center; padding: 14px; min-height: 0; flex: 1; }
+.mg-stage { display: grid; place-items: center; padding: 14px; min-height: 0; }
 .mg-stage canvas { touch-action: none; border-radius: 12px; max-width: 100%; }
 .mg-foot { display: flex; align-items: center; gap: 12px; padding: 10px 16px 14px; }
 .mg-step { flex: 1; font-size: 12px; color: var(--faint); }
@@ -730,6 +755,11 @@ body::after {
 .prose h4 { font-size: 15px; margin-top: 16px; color: var(--flare); }
 .prose h4:first-child { margin-top: 0; }
 .prose p { font-size: 14px; color: var(--dim); max-width: 62ch; margin-top: 4px; line-height: 1.6; }
+
+.help-roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-top: 10px; }
+.help-role { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--hull); }
+.help-role-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.help-role p { font-size: 12.5px; line-height: 1.45; color: var(--dim); max-width: none; }
 
 .toasts {
   position: fixed;
@@ -782,6 +812,14 @@ body::after {
 .task-where { font-size: 12px; color: var(--faint); }
 .task-steps { font-family: var(--mono); font-size: 12px; color: var(--flare); }
 
+.ghost-chat { display: flex; flex-direction: column; gap: 8px; }
+.ghost-chat .chat-log { height: min(46vh, 380px); }
+
+.options { display: flex; flex-direction: column; gap: 4px; }
+.options .setting { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.options .setting-hint { grid-column: 1 / -1; }
+.options-preview { grid-column: 1 / -1; display: grid; place-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--hull); }
+
 .vitals { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
 .vital {
   display: grid;
@@ -797,7 +835,68 @@ body::after {
 .vital.is-dead { opacity: .62; }
 .vital.is-dead .vital-state { color: var(--blood); }
 
-.map-wrap { flex: 1; min-height: 260px; height: min(58vh, 520px); border: 1px solid var(--line); border-radius: 12px; background: var(--void); overflow: hidden; }
+.cams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.cam {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--void);
+  overflow: hidden;
+}
+.cam-canvas { display: block; width: 100%; height: 100%; }
+.cam-name {
+  position: absolute;
+  left: 8px; bottom: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: rgba(52, 224, 184, .85);
+  text-shadow: 0 1px 3px #000;
+}
+.cam-live {
+  position: absolute;
+  right: 8px; top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .14em;
+  color: var(--blood);
+  text-shadow: 0 1px 3px #000;
+}
+.cam-live::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--blood);
+  animation: blink 1.05s steps(1, end) infinite;
+}
+
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .15; } }
+
+@media (max-width: 620px) {
+  .cams { grid-template-columns: 1fr; }
+}
+
+/* The station is a 17:10 rectangle, so the frame is too -- a square well left
+   the map floating in the middle of it with the labels shrunk to fit. */
+.map-wrap {
+  width: 100%;
+  aspect-ratio: 3584 / 2112;
+  max-height: min(60vh, 520px);
+  min-height: 220px;
+  margin-inline: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--void);
+  overflow: hidden;
+}
 .map-canvas { display: block; }
 .sab-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .sab-btn { padding: 10px; }
@@ -843,6 +942,23 @@ body::after {
 .eject-body { animation: drift 5.5s cubic-bezier(.3, 0, .7, 1) forwards; }
 .eject-line { font-family: var(--display); font-size: clamp(20px, 4.4vw, 30px); }
 .eject-sub { color: var(--dim); font-size: 15px; }
+
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(18, 24, 38, .8);
+  max-width: min(460px, 88vw);
+}
+.tally-row { display: grid; grid-template-columns: minmax(70px, auto) 1fr; gap: 12px; align-items: center; }
+.tally-row.is-out .tally-name { color: var(--blood); }
+.tally-name { font-weight: 700; font-size: 13.5px; text-align: right; overflow-wrap: anywhere; }
+.tally-faces { display: flex; flex-wrap: wrap; gap: 2px; }
+.tally-unknown { width: 30px; height: 30px; border-radius: 50%; background: var(--steel); }
 
 @keyframes drift {
   from { transform: translateX(-42vw) rotate(0deg); }
@@ -985,7 +1101,8 @@ body::after {
 .chat-input:focus { border-color: var(--flare); outline: none; }
 .chat-send { padding: 11px 18px; }
 
-body.in-meeting .hud { display: none; }
+body.in-meeting .hud,
+body.in-task .hud { display: none !important; }
 
 /* ---- end ---------------------------------------------------------------- */
 
@@ -1009,6 +1126,43 @@ body.in-meeting .hud { display: none; }
 .end-card--impostor .end-role { color: var(--blood); }
 .end-card--jester { border-color: rgba(241, 143, 176, .5); }
 .end-card--jester .end-role { color: #f18fb0; }
+.recap-wrap {
+  width: min(560px, 92vw);
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(13, 19, 32, .82);
+  text-align: left;
+}
+.recap-wrap summary {
+  padding: 11px 16px;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  color: var(--dim);
+  list-style: none;
+}
+.recap-wrap summary::-webkit-details-marker { display: none; }
+.recap-wrap summary::after { content: " +"; font-family: var(--mono); }
+.recap-wrap[open] summary::after { content: " -"; }
+.recap-wrap summary:hover { color: var(--ink); }
+.recap {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.recap-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px; font-size: 13px; }
+.recap-time { font-family: var(--mono); font-size: 11.5px; color: var(--faint); padding-top: 1px; }
+.recap-text { color: var(--dim); }
+.recap-row--kill .recap-text { color: #ff8f9f; }
+.recap-row--eject .recap-text { color: var(--ink); }
+.recap-row--sabotage .recap-text { color: var(--flare); }
+
 .end-buttons { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .end-wait { color: var(--dim); font-size: 14px; }
 
@@ -1036,9 +1190,13 @@ body.in-meeting .hud { display: none; }
   .act--use { width: 82px; height: 82px; border-radius: 24px; }
   .act--kill, .act--report { width: 70px; height: 70px; border-radius: 20px; }
   .act { width: 60px; height: 60px; border-radius: 17px; font-size: 11.5px; }
-  .act--small { width: 54px; height: 54px; border-radius: 15px; font-size: 10.5px; }
-  .taskbar { width: min(230px, 52vw); }
-  .alert { max-width: 66vw; }
+  .act--small { width: 56px; height: 56px; border-radius: 15px; font-size: 9.5px; }
+  .taskbar { width: min(150px, 38vw); padding: 7px 10px; }
+  .taskbar-label { font-size: 10px; }
+  .tool { width: 38px; height: 38px; border-radius: 10px; }
+  .hud-tools { gap: 5px; }
+  .alert { top: calc(58px + var(--safe-t)); max-width: 88vw; }
+  .role-tag { top: calc(122px + var(--safe-t)); }
   .swatches { grid-template-columns: repeat(7, 1fr); }
 }
 
@@ -1240,6 +1398,13 @@ window.NS = window.NS || {};
     { id: 'coral',  name: 'Coral',  body: '#ff7a6b', dark: '#9c3b31', rim: '#ffb0a5' },
   ];
 
+  /* Colour is never the only thing telling two players apart. Fourteen shades
+     is more than anybody with a colour vision deficiency can be asked to hold,
+     and the game turns the lights off on purpose -- so each colour also has a
+     shape, drawn on the body and on every portrait when the option is on. */
+  const SYMBOLS = ['circle', 'square', 'triangle', 'diamond', 'star', 'cross', 'chevron',
+                   'ring', 'bar', 'dots', 'hexagon', 'drop', 'arrow', 'wave'];
+
   const colorById = (id) => COLORS.find((c) => c.id === id) || COLORS[0];
   const colorIndex = (id) => Math.max(0, COLORS.findIndex((c) => c.id === id));
 
@@ -1392,7 +1557,7 @@ window.NS = window.NS || {};
   const KILL_RANGE = { Short: 78, Normal: 108, Long: 152 };
 
   NS.config = {
-    COLORS, colorById, colorIndex, HATS, ROLES, CREW_ROLES, IMPOSTOR_ROLES,
+    COLORS, SYMBOLS, colorById, colorIndex, HATS, ROLES, CREW_ROLES, IMPOSTOR_ROLES,
     SETTINGS, ROLE_SETTINGS, defaults, sanitise, KILL_RANGE,
     MAX_PLAYERS: 14,
     MIN_PLAYERS: 4,
@@ -1424,11 +1589,23 @@ window.NS = window.NS || {};
   let muted = NS.util.store.get('muted', false);
   let volume = NS.util.store.get('volume', 0.7);
 
+  /* Nothing is built until somebody has touched the page. A browser refuses to
+     start audio before a gesture and says so in the console, and the room tone
+     wants to start on its own the moment the game loads -- so the gate is here
+     rather than at each call site, and `unlock` is wired to the first real
+     touch or key press in main.js. */
+  let unlocked = false;
+  function unlock() {
+    unlocked = true;
+    wake();
+  }
+
   function wake() {
     if (ctx) {
       if (ctx.state === 'suspended') ctx.resume();
       return ctx;
     }
+    if (!unlocked) return null;
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return null;
     ctx = new Ctor();
@@ -1442,6 +1619,7 @@ window.NS = window.NS || {};
     muted = !!v;
     NS.util.store.set('muted', muted);
     if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
+    if (hum) hum.gain.gain.setTargetAtTime(muted ? 0 : hum.level, ctx.currentTime, 0.1);
   }
   function setVolume(v) {
     volume = NS.util.clamp(Number(v) || 0, 0, 1);
@@ -1541,6 +1719,68 @@ window.NS = window.NS || {};
     chat:     () => tone({ freq: 1180, dur: 0.05, type: 'sine', gain: 0.07 }),
   };
 
+  /* ---- the room tone ------------------------------------------------------ */
+
+  /* A station you can hear. Two detuned oscillators under a low-pass, at a
+     level you stop noticing in about ten seconds -- which is the point: you
+     notice when it changes. The lights going out drops it a fifth and opens
+     the filter, so the dark sounds different before you have finished reading
+     the banner. */
+  let hum = null;
+  function ambience(mood) {
+    const c = wake();
+    if (!c) return;
+    if (!hum) {
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 260;
+      filter.Q.value = 0.7;
+      const a = c.createOscillator();
+      const b = c.createOscillator();
+      a.type = 'sawtooth'; b.type = 'triangle';
+      a.frequency.value = 55; b.frequency.value = 82.5;
+      /* A slow wobble so it never sits perfectly still, which is what makes a
+         drone sound like a recording instead of a place. */
+      const wobble = c.createOscillator();
+      const wobbleGain = c.createGain();
+      wobble.frequency.value = 0.07;
+      wobbleGain.gain.value = 3.5;
+      wobble.connect(wobbleGain);
+      wobbleGain.connect(a.frequency);
+      a.connect(filter); b.connect(filter);
+      filter.connect(gain); gain.connect(master);
+      a.start(); b.start(); wobble.start();
+      hum = { gain, filter, a, b, level: 0 };
+    }
+    const t = c.currentTime;
+    const settings = {
+      off:     { level: 0,     freq: 260, base: 55 },
+      station: { level: 0.055, freq: 240, base: 55 },
+      dark:    { level: 0.085, freq: 520, base: 36.7 },
+      alarm:   { level: 0.075, freq: 420, base: 46 },
+    }[mood] || { level: 0, freq: 260, base: 55 };
+    hum.gain.gain.setTargetAtTime(muted ? 0 : settings.level, t, 0.6);
+    hum.filter.frequency.setTargetAtTime(settings.freq, t, 0.5);
+    hum.a.frequency.setTargetAtTime(settings.base, t, 0.5);
+    hum.b.frequency.setTargetAtTime(settings.base * 1.5, t, 0.5);
+  }
+
+  /* Somebody else's footsteps, quieter the further away they are and audible
+     through a wall on purpose. Hearing someone you cannot see is most of the
+     tension in a dark corridor, and it is information the impostor has too. */
+  function footstep(nearness) {
+    const c = wake();
+    if (!c || muted || nearness <= 0) return;
+    noise({
+      freq: 300 + Math.random() * 200,
+      dur: 0.055,
+      gain: 0.028 * nearness * nearness,
+      q: 2.6,
+    });
+  }
+
   let lastStep = 0;
   function play(name, opts) {
     const fn = SOUNDS[name];
@@ -1556,7 +1796,8 @@ window.NS = window.NS || {};
   }
 
   NS.audio = {
-    play, wake, setMuted, setVolume,
+    play, wake, unlock, setMuted, setVolume, ambience, footstep,
+    get unlocked() { return unlocked; },
     get muted() { return muted; },
     get volume() { return volume; },
   };
@@ -1679,6 +1920,33 @@ window.NS = window.NS || {};
     [{ room: 'cafeteria', tx: 58, ty: 20 }, { room: 'admin', tx: 77, ty: 38 }],
     [{ room: 'weapons', tx: 95, ty: 9 }, { room: 'navigation', tx: 106, ty: 32 }, { room: 'shields', tx: 91, ty: 47 }],
     [{ room: 'storage', tx: 57, ty: 37 }, { room: 'comms', tx: 59, ty: 60 }, { room: 'o2', tx: 87, ty: 21 }],
+  ];
+
+  /* The three places the crew can gather evidence rather than opinions. They
+     are the counterweight to the impostor's vents: without somewhere to check
+     a claim, a meeting is fourteen people saying "not me" and the game is a
+     coin toss.
+
+     Each is deliberately somewhere inconvenient, and each one costs you the
+     time you are standing at it -- which is what makes watching cameras a
+     decision rather than a free advantage. */
+  const CONSOLES = [
+    { id: 'admin', kind: 'admin', name: 'Admin table', hint: 'How many people are in each room',
+      room: 'admin', tx: 82, ty: 36 },
+    { id: 'cameras', kind: 'cameras', name: 'Cameras', hint: 'Four corridors, live',
+      room: 'security', tx: 27, ty: 26 },
+    { id: 'vitals', kind: 'vitals', name: 'Vitals', hint: 'Who is still alive',
+      room: 'medbay', tx: 39, ty: 21 },
+  ];
+
+  /* Where the cameras physically are, and what each one looks at. Everyone can
+     see the housings, and they blink when somebody is watching -- that tell is
+     the whole reason cameras are fair. */
+  const CAMERAS = [
+    { id: 'caf', name: 'Cafeteria', tx: 58, ty: 8, look: { tx: 63, ty: 12 }, zoom: 0.5 },
+    { id: 'upper', name: 'Upper corridor', tx: 33, ty: 14, look: { tx: 35, ty: 15 }, zoom: 0.5 },
+    { id: 'lower', name: 'Lower corridor', tx: 33, ty: 45, look: { tx: 35, ty: 46 }, zoom: 0.5 },
+    { id: 'store', name: 'Storage', tx: 70, ty: 44, look: { tx: 66, ty: 45 }, zoom: 0.5 },
   ];
 
   /* Fixed points the sabotages hang off. Reactor and O2 need two people at
@@ -1840,7 +2108,7 @@ window.NS = window.NS || {};
   }
 
   NS.map = {
-    TILE, W, H, ROOMS, HALLS, STATIONS, VENT_GROUPS, SABOTAGE_SPOTS,
+    TILE, W, H, ROOMS, HALLS, STATIONS, VENT_GROUPS, SABOTAGE_SPOTS, CONSOLES, CAMERAS,
     EMERGENCY, SPAWN, DOORS, SEALABLE, FLOOR, roomById, RADIUS,
     at, solid, solidTile, roomAt, toWorld, move, path, sealRoom, clearDoors,
     pixelWidth: W * TILE, pixelHeight: H * TILE,
@@ -2272,10 +2540,14 @@ window.NS = window.NS || {};
   const ROOT = 'nightshift/v2/';
   const PRESENCE_HZ = 10;
   const KEEPALIVE = 1100;        // say something even when standing still
-  const GONE = 5200;             // silence after which somebody has left
+  /* A backgrounded tab is throttled to roughly one interval a second, so this
+     has to be several of those and not two: dropping somebody who alt-tabbed
+     is worse than carrying a ghost for a few seconds. */
+  const GONE = 9000;
 
   const roomAvailable = () => !!(window.claude && typeof window.claude.use === 'function');
   const mqttAvailable = () => typeof window.WebSocket === 'function';
+  const localAvailable = () => typeof window.BroadcastChannel === 'function';
 
   /* ---- the shape everything above this file talks to --------------------- */
 
@@ -2438,6 +2710,98 @@ window.NS = window.NS || {};
     return self;
   }
 
+  /* ---- two tabs on one computer ----------------------------------------- */
+
+  /* BroadcastChannel reaches every other tab of the same page with no server,
+     no broker and no permission. Two people can share a laptop with it, and --
+     the reason it exists -- it is the only way to exercise the guest half of
+     this game without fourteen devices: the host and the guest run the real
+     code, including the sealed role delivery, in two tabs. */
+  function openLocal(opts) {
+    const self = base(opts);
+    self.id = U.id(10);
+    const code = String(opts.code || 'MAIN').toUpperCase();
+    const table = new Map();
+    let mine = {};
+    let closed = false;
+    let channel = null;
+    let beat = null;
+    let sweep = null;
+
+    table.set(self.id, { id: self.id, presence: mine, isMe: true, seen: Date.now() });
+
+    try {
+      channel = new BroadcastChannel('nightshift-v2-' + code);
+    } catch (e) {
+      opts.onError('This browser will not open a channel between tabs.');
+      return self;
+    }
+
+    const post = (msg) => { if (!closed && channel) channel.postMessage(msg); };
+
+    channel.onmessage = (e) => {
+      const msg = e.data;
+      if (closed || !msg || msg.i === self.id) return;
+      if (msg.p) {
+        let peer = table.get(msg.i);
+        if (!peer) {
+          peer = { id: msg.i, presence: {}, isMe: false, seen: 0 };
+          table.set(msg.i, peer);
+          peer.presence = msg.p;
+          peer.seen = Date.now();
+          post({ i: self.id, p: mine });          // say hello back at once
+          opts.onPeers();
+          return;
+        }
+        peer.presence = msg.p;
+        peer.seen = Date.now();
+        return;
+      }
+      if (msg.gone) {
+        if (table.delete(msg.i)) opts.onPeers();
+        return;
+      }
+      if (msg.k) opts.onMessage({ from: msg.i, kind: msg.k, data: msg.d, mine: false });
+    };
+
+    self.send = (kind, data) => {
+      if (closed) return;
+      /* Your own messages come back to you on every other transport, so they
+         have to here too, or the host would not hear itself. */
+      opts.onMessage({ from: self.id, kind, data, mine: true });
+      post({ i: self.id, k: kind, d: data });
+    };
+    self.presence = (patch) => {
+      for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
+    };
+    self.peers = () => Array.from(table.values());
+    self.close = () => {
+      closed = true;
+      clearInterval(beat); clearInterval(sweep);
+      if (channel) { post({ i: self.id, gone: 1 }); channel.close(); }
+    };
+
+    beat = setInterval(() => post({ i: self.id, p: mine }), Math.floor(1000 / PRESENCE_HZ));
+    sweep = setInterval(() => {
+      const t = Date.now();
+      let changed = false;
+      for (const [id, peer] of table) {
+        if (peer.isMe) continue;
+        if (t - peer.seen > GONE) { table.delete(id); changed = true; }
+      }
+      if (changed) opts.onPeers();
+    }, 700);
+
+    self.ready = true;
+    setTimeout(() => {
+      if (closed) return;
+      post({ i: self.id, p: mine });
+      opts.onStatus('Playing across tabs on this computer.');
+      opts.onReady();
+    }, 0);
+    return self;
+  }
+
   /* ---- the artifact room ------------------------------------------------ */
 
   function openRoom(opts) {
@@ -2446,6 +2810,8 @@ window.NS = window.NS || {};
     let room = null;
     let mine = {};
     let closed = false;
+    let started = false;
+    let waiting = null;
     const unsubs = [];
 
     /* One topic per direction, all three opened to `interact` at publish time
@@ -2454,9 +2820,16 @@ window.NS = window.NS || {};
        and do nothing else. */
     const TOPICS = ['act', 'sys', 'chat'];
 
+    /* Everybody viewing the page is in one room, so several games can run in
+       it at once and each has to ignore the others. The key is `lobby` and not
+       something shorter for a reason: presence already carries `c` for the
+       player's colour, and a two-games-at-once filter that silently matched a
+       colour index would have made the room look empty to everybody. */
+    const LOBBY = 'lobby';
+
     self.send = (kind, data) => {
       if (closed || !room || TOPICS.indexOf(kind) < 0) return;
-      room.emit(kind, { c: code, d: data }).catch((e) => {
+      room.emit(kind, { lobby: code, d: data }).catch((e) => {
         if (e && e.code === 'not_permitted') {
           opts.onError('This page was published without the game topics open, so nothing you do '
             + 'can reach the others. Republishing it fixes that.');
@@ -2465,15 +2838,42 @@ window.NS = window.NS || {};
     };
     self.presence = (patch) => {
       for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
-      if (room && !closed) room.presence(Object.assign({ c: code }, patch)).catch(() => {});
+      if (room && !closed) {
+        const out = {};
+        for (const k in patch) out[k] = patch[k];
+        out[LOBBY] = code;
+        room.presence(out).catch(() => {});
+      }
     };
     self.peers = () => {
       if (!room) return [{ id: self.id, presence: mine, isMe: true }];
       return room.peers()
-        .filter((p) => p.kind === 'viewer' && p.presence && p.presence.c === code)
-        .map((p) => ({ id: p.peer, presence: p.presence, isMe: p.isMe && p.sameTab }));
+        .filter((p) => p.kind === 'viewer' && p.presence && p.presence[LOBBY] === code)
+        .map((p) => ({ id: p.peer, presence: p.presence, isMe: !!(p.isMe && p.sameTab) }));
     };
-    self.close = () => { closed = true; unsubs.forEach((fn) => { try { fn(); } catch (e) {} }); };
+    self.close = () => {
+      closed = true;
+      clearTimeout(waiting);
+      unsubs.forEach((fn) => { try { fn(); } catch (e) {} });
+    };
+
+    /* The game cannot start until this view knows its own peer id: every
+       player in a snapshot is keyed by it, so starting a moment early would
+       give this device an entity nobody else has heard of and a second one
+       arriving in the first snapshot. The id comes from the first onPeers,
+       not from `use()`, so readiness waits for it. */
+    function begin() {
+      if (started || closed) return;
+      const me = room.peers().find((p) => p.isMe && p.sameTab);
+      if (!me) return;
+      started = true;
+      clearTimeout(waiting);
+      self.id = me.peer;
+      self.ready = true;
+      opts.onStatus('In the room.');
+      opts.onReady();
+      opts.onPeers();
+    }
 
     opts.onStatus('Looking for the others...');
     window.claude.use('room').then((got) => {
@@ -2487,20 +2887,25 @@ window.NS = window.NS || {};
       room = got;
       for (const topic of TOPICS) {
         unsubs.push(room.on(topic, (msg) => {
-          if (closed || !msg || !msg.data || msg.data.c !== code) return;
-          opts.onMessage({ from: msg.peer, kind: topic, data: msg.data.d, mine: msg.isMe && msg.sameTab });
+          if (closed || !msg || !msg.data || msg.data.lobby !== code) return;
+          opts.onMessage({
+            from: msg.peer, kind: topic, data: msg.data.d,
+            mine: !!(msg.isMe && msg.sameTab),
+          });
         }, (err) => opts.onError('The room closed: ' + (err && err.message ? err.message : 'unknown'))));
       }
       unsubs.push(room.onPeers(() => {
         if (closed) return;
-        const me = room.peers().find((p) => p.isMe && p.sameTab);
-        if (me) self.id = me.peer;
-        opts.onPeers();
+        if (!started) begin(); else opts.onPeers();
       }));
-      room.presence(Object.assign({ c: code }, mine)).catch(() => {});
-      self.ready = true;
-      opts.onStatus('In the room.');
-      opts.onReady();
+      self.presence({});
+      begin();
+      waiting = setTimeout(() => {
+        if (!started && !closed) {
+          opts.onError('The room never said who this device is, so it cannot join a game here. '
+            + 'Practice mode still works.');
+        }
+      }, 8000);
     }).catch(() => {
       if (!closed) opts.onError('The room capability failed to load. Practice mode still works.');
     });
@@ -2520,10 +2925,11 @@ window.NS = window.NS || {};
     };
     if (opts.mode === 'room') return openRoom(wired);
     if (opts.mode === 'mqtt') return openMqtt(wired);
+    if (opts.mode === 'local') return openLocal(wired);
     return openSolo(wired);
   }
 
-  NS.link = { open, roomAvailable, mqttAvailable, BROKERS };
+  NS.link = { open, roomAvailable, mqttAvailable, localAvailable, BROKERS };
 })(window.NS);
 
 </script>
@@ -2813,7 +3219,7 @@ window.NS = window.NS || {};
     bodies: [],
     state: {
       phase: 'lobby', seq: 0, settings: C.defaults(),
-      tasksDone: 0, tasksTotal: 0, sabotage: null, meeting: null,
+      tasksDone: 0, tasksTotal: 0, sabotage: null, meeting: null, cameras: false,
       ejected: null, winner: null, closedRooms: [],
     },
     myRole: null,
@@ -3004,9 +3410,19 @@ window.NS = window.NS || {};
       else { p.x += (p.tx - p.x) * ease; p.y += (p.ty - p.y) * ease; }
     }
 
+    /* Footsteps from everybody else, quieter with distance and deliberately
+       not blocked by walls. Hearing somebody you cannot see is most of what a
+       dark corridor is for, and both sides of the game get to use it. */
+    const EARSHOT = 360;
     for (const p of world.players.values()) {
       p.walk += (p.moving ? dt * 9 : 0);
       p.bob = p.moving ? Math.sin(p.walk) * 1.6 : 0;
+      if (p.isMe || !p.moving || p.ghost || p.inVent || !p.connected) continue;
+      p.stepClock = (p.stepClock || 0) + dt;
+      if (p.stepClock < 0.27) continue;
+      p.stepClock = 0;
+      const d = U.dist(me.x, me.y, p.x, p.y);
+      if (d < EARSHOT) NS.audio.footstep(1 - d / EARSHOT);
     }
   }
 
@@ -3091,6 +3507,15 @@ window.NS = window.NS || {};
         if (U.dist2(me.x, me.y, spot.x, spot.y) < USE_RANGE * USE_RANGE) {
           out.use = { kind: 'task', task, station: NS.rules.stationById[task.sid], x: spot.x, y: spot.y };
           break;
+        }
+      }
+      if (!out.use) {
+        for (const console of M.CONSOLES) {
+          const w = M.toWorld(console);
+          if (U.dist2(me.x, me.y, w.x, w.y) < USE_RANGE * USE_RANGE) {
+            out.use = { kind: 'console', console, x: w.x, y: w.y };
+            break;
+          }
         }
       }
       if (!out.use && !me.ghost) {
@@ -3311,6 +3736,100 @@ window.NS = window.NS || {};
     ctx.restore();
   }
 
+  /* ---- colourblind marks -------------------------------------------------- */
+
+  /* Drawn upright rather than mirrored with the body, so an arrow means the
+     same thing whichever way somebody is walking. Light fill on a dark ring so
+     it reads on every one of the fourteen suits, including Bone and Ink. */
+  const SYMBOL_ART = {
+    circle(ctx, r) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); },
+    square(ctx, r) { ctx.fillRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7); },
+    triangle(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * 0.92, r * 0.72);
+      ctx.lineTo(-r * 0.92, r * 0.72); ctx.closePath(); ctx.fill();
+    },
+    diamond(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r, 0); ctx.lineTo(0, r);
+      ctx.lineTo(-r, 0); ctx.closePath(); ctx.fill();
+    },
+    star(ctx, r) {
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+        const rad = i % 2 ? r * 0.45 : r;
+        if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+        else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+      }
+      ctx.closePath(); ctx.fill();
+    },
+    cross(ctx, r) {
+      ctx.fillRect(-r * 0.32, -r, r * 0.64, r * 2);
+      ctx.fillRect(-r, -r * 0.32, r * 2, r * 0.64);
+    },
+    chevron(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(-r, r * 0.2); ctx.lineTo(0, -r * 0.7); ctx.lineTo(r, r * 0.2);
+      ctx.lineTo(r, r * 0.85); ctx.lineTo(0, -r * 0.05); ctx.lineTo(-r, r * 0.85);
+      ctx.closePath(); ctx.fill();
+    },
+    ring(ctx, r) {
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.82, 0, Math.PI * 2);
+      ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+    },
+    bar(ctx, r) { ctx.fillRect(-r, -r * 0.34, r * 2, r * 0.68); },
+    dots(ctx, r) {
+      ctx.beginPath(); ctx.arc(-r * 0.5, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r * 0.5, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+    },
+    hexagon(ctx, r) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill();
+    },
+    drop(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r);
+      ctx.quadraticCurveTo(r, 0, 0, r); ctx.quadraticCurveTo(-r, 0, 0, -r);
+      ctx.fill();
+    },
+    arrow(ctx, r) {
+      ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(r * 0.9, r * 0.1);
+      ctx.lineTo(r * 0.34, r * 0.1); ctx.lineTo(r * 0.34, r);
+      ctx.lineTo(-r * 0.34, r); ctx.lineTo(-r * 0.34, r * 0.1);
+      ctx.lineTo(-r * 0.9, r * 0.1); ctx.closePath(); ctx.fill();
+    },
+    wave(ctx, r) {
+      ctx.lineWidth = r * 0.44;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.beginPath();
+      ctx.moveTo(-r, r * 0.3);
+      ctx.quadraticCurveTo(-r * 0.35, -r * 0.9, 0, r * 0.1);
+      ctx.quadraticCurveTo(r * 0.35, r * 0.95, r, -r * 0.2);
+      ctx.stroke();
+    },
+  };
+
+  let showSymbols = false;
+  function setSymbols(on) { showSymbols = !!on; }
+
+  function drawSymbol(ctx, colorIdx, size) {
+    const art = SYMBOL_ART[C.SYMBOLS[colorIdx % C.SYMBOLS.length]];
+    if (!art) return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(5,7,13,0.75)';
+    ctx.lineWidth = size * 0.55;
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = 'rgba(5,7,13,0.75)';
+    art(ctx, size * 1.12);
+    ctx.fillStyle = '#f2f6fb';
+    art(ctx, size);
+    ctx.restore();
+  }
+
   /* ---- the player -------------------------------------------------------- */
 
   /* `p` is a world entity. `opts.alpha` dims a peer standing in your light's
@@ -3422,6 +3941,13 @@ window.NS = window.NS || {};
 
     ctx.restore();
 
+    if (showSymbols && !ghost) {
+      ctx.save();
+      ctx.translate(0, -BODY_H * 0.36);
+      drawSymbol(ctx, p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx, 5.4);
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.translate(0, -BODY_H - 1);
     drawHat(ctx, p.hatIdx, p.dir);
@@ -3482,11 +4008,17 @@ window.NS = window.NS || {};
 
   /* The lobby, the meeting grid and the role card all need a portrait. Same
      drawing, standing still, centred in a box of `size`. */
+  /* The drawing's origin is the feet, and a hat reaches about 22 above the
+     head, so the content runs from -(BODY_H + 22) to +6. Centring on the body
+     alone -- which is what this did at first -- crops every hat against the
+     top of the box. */
+  const AVATAR_TOP = BODY_H + 24;
+  const AVATAR_BOTTOM = 7;
   function drawAvatar(ctx, colorIdx, hatIdx, size, opts) {
     const o = opts || {};
-    const scale = (size / (BODY_H + 26));
+    const scale = size / (AVATAR_TOP + AVATAR_BOTTOM);
     ctx.save();
-    ctx.translate(0, (BODY_H * scale) / 2 + size * 0.06);
+    ctx.translate(0, ((AVATAR_TOP - AVATAR_BOTTOM) / 2) * scale);
     drawPlayer(ctx, {
       x: 0, y: 0, dir: 1, colorIdx, hatIdx, shiftIdx: -1,
       moving: false, walk: 0, bob: 0, ghost: !!o.ghost, alive: !o.ghost,
@@ -3494,7 +4026,10 @@ window.NS = window.NS || {};
     ctx.restore();
   }
 
-  NS.characters = { drawPlayer, drawBody, drawAvatar, drawHat, rr, BODY_W, BODY_H, beanPath };
+  NS.characters = {
+    drawPlayer, drawBody, drawAvatar, drawHat, drawSymbol, setSymbols,
+    rr, BODY_W, BODY_H, beanPath,
+  };
 })(window.NS);
 
 </script>
@@ -3956,6 +4491,26 @@ window.NS = window.NS || {};
     }
   }
 
+  /* The housing is drawn for everybody. Its light is drawn live, because
+     whether somebody is watching changes and the housing does not. */
+  function cameraHousing(camera) {
+    const w = M.toWorld(camera);
+    const look = M.toWorld(camera.look);
+    const a = Math.atan2(look.y - w.y, look.x - w.x);
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.fillStyle = '#39435c';
+    rr(ctx, -9, -14, 18, 16, 4); ctx.fill();
+    ctx.rotate(a);
+    ctx.fillStyle = '#2c3648';
+    rr(ctx, -4, -8, 22, 16, 5); ctx.fill();
+    ctx.fillStyle = '#0d1320';
+    ctx.beginPath(); ctx.arc(15, 0, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(207,217,232,0.35)';
+    ctx.beginPath(); ctx.arc(13.6, -1.6, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   function emergencyButton() {
     const w = M.toWorld(M.EMERGENCY);
     ctx.fillStyle = '#2c3648';
@@ -4014,12 +4569,45 @@ window.NS = window.NS || {};
 
   /* ---- build ------------------------------------------------------------- */
 
-  function build() {
+  /* The full-size station is about thirty megabytes of canvas. Most devices
+     take it without noticing; a five-year-old phone in a classroom may not,
+     and the failure mode is a blank canvas rather than an exception, so it is
+     checked rather than trusted. Half scale is a little softer and works
+     everywhere -- a slightly soft station beats a black one. */
+  let scale = 1;
+
+  function allocate(factor) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(M.pixelWidth * factor);
+    c.height = Math.round(M.pixelHeight * factor);
+    const g = c.getContext('2d');
+    if (!g || c.width !== Math.round(M.pixelWidth * factor)) return null;
+    /* A canvas the device refused comes back sized but unpaintable, so it is
+       painted and read back once before anything is built on it. */
+    g.fillStyle = '#ff0000';
+    g.fillRect(0, 0, 2, 2);
+    try {
+      const probe = g.getImageData(0, 0, 1, 1).data;
+      if (probe[0] < 200) return null;
+    } catch (e) {
+      return null;                 // tainted or unavailable; treat as refused
+    }
+    g.clearRect(0, 0, 2, 2);
+    return { c, g };
+  }
+
+  function build(forceFactor) {
     if (built) return canvas;
-    canvas = document.createElement('canvas');
-    canvas.width = M.pixelWidth;
-    canvas.height = M.pixelHeight;
-    ctx = canvas.getContext('2d');
+    let made = null;
+    const factors = forceFactor ? [forceFactor] : [1, 0.6, 0.4];
+    for (const factor of factors) {
+      try { made = allocate(factor); } catch (e) { made = null; }
+      if (made) { scale = factor; break; }
+    }
+    if (!made) { built = true; canvas = null; return null; }
+    canvas = made.c;
+    ctx = made.g;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
     const rand = U.mulberry32(0x4a1b7);
 
     ctx.fillStyle = '#05070d';
@@ -4131,6 +4719,8 @@ window.NS = window.NS || {};
       sabotagePad(M.SABOTAGE_SPOTS[key], key.indexOf('reactor') === 0 ? '#ffb03a' : '#37e0c8');
     }
     emergencyButton();
+    for (const camera of M.CAMERAS) cameraHousing(camera);
+    for (const console of M.CONSOLES) taskConsole(console, TONES[M.roomById[console.room].tone].accent);
 
     built = true;
     return canvas;
@@ -4140,8 +4730,11 @@ window.NS = window.NS || {};
 
   NS.station = {
     build,
-    rebuild() { built = false; canvas = null; return build(); },
+    rebuild(factor) { built = false; canvas = null; scale = 1; return build(factor); },
     get canvas() { return canvas; },
+    /* World units per canvas pixel, so anything blitting from it can map a
+       world rectangle onto the right source rectangle. */
+    get scale() { return scale; },
     TONES,
   };
 })(window.NS);
@@ -4236,6 +4829,53 @@ window.NS = window.NS || {};
     },
   };
 
+  /* The machine a visual task drives, running where the station is. Its whole
+     job is to be witnessed: if you are in the room you can see the shields
+     light or the chute blow, and that is the alibi. */
+  const visuals = [];
+  const VISUAL_ART = {
+    asteroids: { colour: '#ffb03a', rings: 3, life: 2.4 },
+    shields:   { colour: '#4d9fd6', rings: 5, life: 2.6 },
+    filter:    { colour: '#4ca85c', rings: 2, life: 2.4 },
+    signal:    { colour: '#37e0c8', rings: 4, life: 2.8 },
+    scan:      { colour: '#37e0c8', rings: 3, life: 3.2 },
+    chute:     { colour: '#8d97ad', rings: 2, life: 2.4 },
+  };
+
+  function visual(kind, x, y) {
+    const art = VISUAL_ART[kind] || { colour: '#34e0b8', rings: 3, life: 2.4 };
+    visuals.push({ x, y, kind, art, life: art.life, max: art.life });
+    if (visuals.length > 6) visuals.shift();
+    burst(x, y - 10, 16, { colour: art.colour, speed: 120, life: 1, size: 4, gravity: -30 });
+  }
+
+  function drawVisuals(ctx) {
+    for (const v of visuals) {
+      const t = 1 - v.life / v.max;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, v.life * 1.6) * 0.7;
+      ctx.strokeStyle = v.art.colour;
+      ctx.lineWidth = 3;
+      for (let i = 0; i < v.art.rings; i++) {
+        const phase = (t * 1.6 + i / v.art.rings) % 1;
+        ctx.globalAlpha = Math.min(1, v.life * 1.6) * (1 - phase) * 0.6;
+        ctx.beginPath();
+        ctx.ellipse(v.x, v.y + 6, 26 + phase * 62, 12 + phase * 28, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = Math.min(1, v.life * 1.6) * 0.32;
+      const glow = ctx.createRadialGradient(v.x, v.y, 4, v.x, v.y, 74);
+      glow.addColorStop(0, v.art.colour);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, 74, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function say(x, y, text, colour) {
     floaters.push({ x, y, text, colour: colour || '#cfd9e8', life: 1.5, max: 1.5 });
     if (floaters.length > 12) floaters.shift();
@@ -4252,6 +4892,10 @@ window.NS = window.NS || {};
       p.y += p.vy * dt;
       const k = Math.pow(p.drag, dt * 60);
       p.vx *= k; p.vy *= k;
+    }
+    for (let i = visuals.length - 1; i >= 0; i--) {
+      visuals[i].life -= dt;
+      if (visuals[i].life <= 0) visuals.splice(i, 1);
     }
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];
@@ -4298,9 +4942,10 @@ window.NS = window.NS || {};
   function clear() {
     for (let i = 0; i < MAX; i++) pool[i].live = false;
     floaters.length = 0;
+    visuals.length = 0;
   }
 
-  NS.fx = Object.assign({ spawn, burst, step, draw, drawFloaters, say, clear }, FX);
+  NS.fx = Object.assign({ spawn, burst, step, draw, drawFloaters, drawVisuals, visual, say, clear }, FX);
 })(window.NS);
 
 </script>
@@ -4336,6 +4981,16 @@ window.NS = window.NS || {};
   let scale = 1;
   const camera = { x: 0, y: 0, shake: 0, flash: 0, flashColour: '#ff3f5b' };
 
+  /* The stylesheet honours prefers-reduced-motion, but a canvas is not styled.
+     Screen shake is the one thing in here that can make somebody feel ill, so
+     it asks the same question the CSS does. */
+  let calm = false;
+  try {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    calm = query.matches;
+    if (query.addEventListener) query.addEventListener('change', (e) => { calm = e.matches; });
+  } catch (e) { calm = false; }
+
   function attach(node) {
     canvas = node;
     ctx = canvas.getContext('2d');
@@ -4362,7 +5017,7 @@ window.NS = window.NS || {};
     /* How much station fits on screen. Held between 420 and 900 world pixels
        across so a phone is not playing a different game from a laptop: the
        laptop gets a wider view, but the people on it are the same size. */
-    const visible = U.clamp(cssW * 0.78, 420, 940);
+    const visible = U.clamp(cssW * 0.62, 400, 780);
     scale = cssW / visible;
     const minHeight = 330;
     if (cssH / scale < minHeight) scale = cssH / minHeight;
@@ -4398,14 +5053,53 @@ window.NS = window.NS || {};
 
   /* ---- pieces ------------------------------------------------------------ */
 
+  /* Vent covers, thrown open for half a second. Without it somebody simply
+     stops existing where they were standing, and the one thing a vent has to
+     communicate is that this is how they left. */
+  const ventFlashes = [];
+  function ventOpened(x, y) {
+    ventFlashes.push({ x, y, life: 0.55 });
+    if (ventFlashes.length > 6) ventFlashes.shift();
+  }
+
+  function drawVents(dt) {
+    for (let i = ventFlashes.length - 1; i >= 0; i--) {
+      const v = ventFlashes[i];
+      v.life -= dt;
+      if (v.life <= 0) { ventFlashes.splice(i, 1); continue; }
+      const t = 1 - v.life / 0.55;
+      const lid = Math.sin(Math.min(1, t * 1.6) * Math.PI) * 26;
+      ctx.save();
+      ctx.translate(v.x, v.y);
+      ctx.fillStyle = '#0a0f1a';
+      NS.characters.rr(ctx, -16, -11, 32, 22, 3);
+      ctx.fill();
+      ctx.fillStyle = '#4a5570';
+      NS.characters.rr(ctx, -21, -15 - lid, 42, 8, 3);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function drawDoors(now) {
     const closed = W.state.closedRooms || [];
     if (!closed.length) return;
+    const at = W.state.doorAt || {};
     for (const roomId of closed) {
       const doors = M.DOORS[roomId];
       if (!doors) continue;
+      /* Slid shut over a quarter of a second rather than appearing: a barrier
+         that pops into existence reads as a rendering glitch, and you need to
+         see which way it came from to know you have been shut in. */
+      const age = at[roomId] ? Math.min(1, (now - at[roomId]) / 260) : 1;
+      const slide = 1 - Math.pow(1 - age, 3);
       for (const d of doors) {
-        const x = d.x * M.TILE, y = d.y * M.TILE, w = d.w * M.TILE, h = d.h * M.TILE;
+        const fullW = d.w * M.TILE, fullH = d.h * M.TILE;
+        const horizontal = fullW > fullH;
+        const x = d.x * M.TILE + (horizontal ? 0 : (fullW * (1 - slide)) / 2);
+        const y = d.y * M.TILE + (horizontal ? (fullH * (1 - slide)) / 2 : 0);
+        const w = horizontal ? fullW : fullW * slide;
+        const h = horizontal ? fullH * slide : fullH;
         ctx.fillStyle = '#c0523f';
         NS.characters.rr(ctx, x + 1, y + 1, w - 2, h - 2, 4);
         ctx.fill();
@@ -4457,6 +5151,26 @@ window.NS = window.NS || {};
     ctx.restore();
   }
 
+  /* Every camera blinks while anybody is at the console in Security. It is the
+     impostor's only warning, and it has to be visible from across a room, so
+     it is a hard on/off rather than a fade. */
+  function drawCameraLights(now) {
+    if (!W.state.cameras) return;
+    const on = Math.floor(now / 520) % 2 === 0;
+    if (!on) return;
+    for (const camera of M.CAMERAS) {
+      const w = M.toWorld(camera);
+      ctx.fillStyle = '#ff3f5b';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y - 10, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,63,91,0.3)';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y - 10, 8.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function nameTag(p, alpha) {
     const label = p.name;
     ctx.font = '700 13px Archivo, system-ui, sans-serif';
@@ -4499,11 +5213,11 @@ window.NS = window.NS || {};
     ctx.fillRect(0, 0, cssW, cssH);
 
     let shakeX = 0, shakeY = 0;
-    if (camera.shake > 0.1) {
+    if (camera.shake > 0.1 && !calm) {
       shakeX = (Math.random() - 0.5) * camera.shake;
       shakeY = (Math.random() - 0.5) * camera.shake;
-      camera.shake *= Math.pow(0.0016, dt);
     }
+    if (camera.shake > 0.1) camera.shake *= Math.pow(0.0016, dt);
 
     ctx.save();
     ctx.translate(cssW / 2 + shakeX, cssH / 2 + shakeY);
@@ -4517,10 +5231,16 @@ window.NS = window.NS || {};
     const sy = U.clamp(camera.y - halfH, 0, M.pixelHeight);
     const sw = U.clamp(halfW * 2, 1, M.pixelWidth - sx);
     const sh = U.clamp(halfH * 2, 1, M.pixelHeight - sy);
-    if (station) ctx.drawImage(station, sx, sy, sw, sh, sx, sy, sw, sh);
+    if (station) {
+      const k = NS.station.scale;
+      ctx.drawImage(station, sx * k, sy * k, sw * k, sh * k, sx, sy, sw, sh);
+    }
 
     drawObjectives(now);
     drawDoors(now);
+    drawCameraLights(now);
+    drawVents(dt);
+    NS.fx.drawVisuals(ctx);
 
     ctx.restore();
 
@@ -4644,7 +5364,7 @@ window.NS = window.NS || {};
   }
 
   NS.render = {
-    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash,
+    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened,
     visionRadius,
     get scale() { return scale; },
     get width() { return cssW; },
@@ -4692,8 +5412,8 @@ window.NS = window.NS || {};
     bodies: [], sabotage: null, meeting: null, ejected: null, winner: null,
     killCooldown: {}, abilityCooldown: {}, abilityUsed: {},
     emergenciesUsed: {}, emergencyCooldown: 0, sabotageCooldown: 0,
-    shields: {}, invisible: {}, shifted: {},
-    closedRooms: {}, revealLeft: 0, ejectLeft: 0,
+    shields: {}, invisible: {}, shifted: {}, watching: new Set(),
+    closedRooms: {}, revealLeft: 0, ejectLeft: 0, log: [], startedAt: 0,
     lastSnapshot: 0, dirty: true, seed: 1,
   };
 
@@ -4719,20 +5439,58 @@ window.NS = window.NS || {};
     H.meeting = null; H.ejected = null; H.winner = null;
     H.killCooldown = {}; H.abilityCooldown = {}; H.abilityUsed = {};
     H.emergenciesUsed = {}; H.emergencyCooldown = 0; H.sabotageCooldown = 0;
-    H.shields = {}; H.invisible = {}; H.shifted = {};
-    H.closedRooms = {};
+    H.shields = {}; H.invisible = {}; H.shifted = {}; H.watching = new Set();
+    H.closedRooms = {}; H.log = []; H.startedAt = 0;
     M.clearDoors();
   }
 
   function stop() { H.active = false; }
+
+  /* People outrank bots for a colour. A bot holding the shade somebody wants
+     would otherwise block the round with a message about a clash the player
+     cannot do anything about. */
+  function freeBotColour(wanted, botId) {
+    const taken = {};
+    for (const id of list()) if (id !== botId) taken[H.players[id].colorIdx] = true;
+    for (let i = 0; i < C.COLORS.length; i++) if (!taken[i]) return i;
+    return wanted;
+  }
+
+  function yieldColour(wanted, claimant) {
+    for (const id of list()) {
+      const other = H.players[id];
+      if (id === claimant || !other.bot || other.colorIdx !== wanted) continue;
+      other.colorIdx = freeBotColour(wanted, id);
+      H.dirty = true;
+    }
+  }
+
+  /* Two people called Sam is a meeting nobody can hold: half the argument is
+     about which Sam. The second one keeps their name with a number on it, and
+     their own device tells them so rather than leaving them to notice. */
+  function uniqueName(wanted, id) {
+    const clean = U.cleanName(wanted, C.NAME_MAX) || 'Someone';
+    const taken = (name) => list().some((other) =>
+      other !== id && H.players[other].name.toLowerCase() === name.toLowerCase());
+    if (!taken(clean)) return clean;
+    for (let n = 2; n <= 20; n++) {
+      const suffix = ' ' + n;
+      const candidate = clean.slice(0, C.NAME_MAX - suffix.length) + suffix;
+      if (!taken(candidate)) return candidate;
+    }
+    return clean;
+  }
 
   function addPlayer(id, info) {
     const existing = H.players[id];
     if (existing) {
       existing.connected = true;
       if (info) {
-        if (info.n) existing.name = U.cleanName(info.n, C.NAME_MAX) || existing.name;
-        if (Number.isFinite(info.c)) existing.colorIdx = U.clamp(info.c | 0, 0, C.COLORS.length - 1);
+        if (info.n) existing.name = uniqueName(info.n, id);
+        if (Number.isFinite(info.c)) {
+          existing.colorIdx = U.clamp(info.c | 0, 0, C.COLORS.length - 1);
+          if (!existing.bot) yieldColour(existing.colorIdx, id);
+        }
         if (Number.isFinite(info.h)) existing.hatIdx = U.clamp(info.h | 0, 0, C.HATS.length - 1);
         if (info.k) existing.key = String(info.k).slice(0, 200);
       }
@@ -4740,17 +5498,26 @@ window.NS = window.NS || {};
       return existing;
     }
     if (Object.keys(H.players).length >= C.MAX_PLAYERS) return null;
-    /* Joining mid-round makes you a ghost with nothing to do, so the door is
-       shut and the join screen says why rather than dropping you in confused. */
-    if (H.phase !== 'lobby') return null;
+    /* Arriving mid-round used to be a closed door -- the code was right and
+       the round was under way, so nothing happened and the join screen sat
+       there. Now you come in as a spectator: you can walk the station, watch,
+       and talk to the other ghosts, and the next round deals you in. Being
+       able to do nothing is a fine outcome; being told nothing is not. */
+    const midRound = H.phase !== 'lobby';
     const p = {
       id,
-      name: U.cleanName(info && info.n, C.NAME_MAX) || 'Someone',
+      name: uniqueName(info && info.n, id),
       colorIdx: Number.isFinite(info && info.c) ? U.clamp(info.c | 0, 0, C.COLORS.length - 1) : 0,
       hatIdx: Number.isFinite(info && info.h) ? U.clamp(info.h | 0, 0, C.HATS.length - 1) : 0,
       key: info && info.k ? String(info.k).slice(0, 200) : null,
-      alive: true, ghost: false, bot: !!(info && info.bot), connected: true, ready: false,
+      alive: !midRound, ghost: midRound, spectator: midRound,
+      bot: !!(info && info.bot), connected: true, ready: false,
     };
+    if (midRound) {
+      /* A crew role with no tasks: counted by nothing, and safe to look up. */
+      H.roles[id] = 'crewmate';
+      H.tasks[id] = [];
+    }
     H.players[id] = p;
     H.dirty = true;
     return p;
@@ -4800,11 +5567,13 @@ window.NS = window.NS || {};
     for (const id of ids) {
       H.players[id].alive = true;
       H.players[id].ghost = false;
+      H.players[id].spectator = false;
     }
     H.roles = R.dealRoles(ids, H.settings, rand);
     H.tasks = R.dealTasks(ids, H.settings, rand);
     for (const id of ids) H.killCooldown[id] = H.settings.killCooldown + 5;
 
+    H.startedAt = U.now();
     H.phase = 'reveal';
     H.revealLeft = REVEAL_SECONDS;
     H.dirty = true;
@@ -4848,9 +5617,10 @@ window.NS = window.NS || {};
     profile(from, msg) {
       const p = H.players[from];
       if (!p || H.phase !== 'lobby') return;
-      if (msg.n) p.name = U.cleanName(msg.n, C.NAME_MAX) || p.name;
+      if (msg.n) p.name = uniqueName(msg.n, from);
       if (Number.isFinite(msg.c)) {
         const wanted = U.clamp(msg.c | 0, 0, C.COLORS.length - 1);
+        yieldColour(wanted, from);
         const clash = list().some((id) => id !== from && H.players[id].colorIdx === wanted);
         if (!clash) p.colorIdx = wanted;
       }
@@ -4887,7 +5657,11 @@ window.NS = window.NS || {};
       task.step++;
       if (task.step >= task.steps) task.done = true;
       H.dirty = true;
-      if (station.visual && H.settings.visualTasks) {
+      /* Only the crew get the animation. A visual task is a task somebody can
+         stand and watch you finish, which is worth nothing if the person
+         faking it can play the same animation. */
+      if (station.visual && H.settings.visualTasks
+          && C.ROLES[H.roles[from] || 'crewmate'].team === 'crew') {
         send('sys', { t: 'E', e: 'visual', by: from, sid: task.sid });
       }
       checkWin();
@@ -5028,6 +5802,7 @@ window.NS = window.NS || {};
       const def = SAB.SABOTAGES[msg.k];
       if (!def || SAB.MENU.indexOf(msg.k) < 0) return;
       H.sabotage = { kind: msg.k, remaining: def.seconds, done: def.spots.map(() => false), holds: {} };
+      record('sabotage', { name: def.name });
       H.sabotageCooldown = 25;
       send('sys', { t: 'E', e: 'sabotage', k: msg.k });
       H.dirty = true;
@@ -5047,6 +5822,16 @@ window.NS = window.NS || {};
       }
       H.dirty = true;
       settleSabotage();
+    },
+
+    /* Somebody at the cameras makes every camera on the station blink. It is
+       the only reason watching them is fair, so it is authoritative rather
+       than drawn locally by the watcher. */
+    watching(from, msg) {
+      const p = H.players[from];
+      if (!p || !p.alive) { H.watching.delete(from); return; }
+      if (msg.on) H.watching.add(from); else H.watching.delete(from);
+      H.dirty = true;
     },
 
     vote(from, msg) {
@@ -5077,12 +5862,37 @@ window.NS = window.NS || {};
 
   /* ---- death, meetings, endings ------------------------------------------- */
 
+  /* A short account of the round, kept so the end screen can show what
+     actually happened. Everybody spends the last ten minutes arguing from
+     fragments; this is the only moment anyone gets to see the whole thing, and
+     it is worth more than another leaderboard. Capped, because a long round
+     with bots is a lot of lines and this rides in a snapshot. */
+  function record(kind, data) {
+    if (H.log.length >= 40) return;
+    H.log.push(Object.assign({
+      k: kind,
+      t: Math.max(0, Math.round((U.now() - H.startedAt) / 1000)),
+    }, data));
+  }
+
+  function roomNameAt(x, y) {
+    const room = M.roomAt(x, y);
+    return room ? room.name : 'a corridor';
+  }
+
   function die(id, byId, x, y, facing) {
     const p = H.players[id];
     if (!p || !p.alive) return;
     p.alive = false;
     p.ghost = true;
     H.bodies.push({ id, x, y, colorIdx: p.colorIdx, hatIdx: p.hatIdx, by: byId, facing: facing || 0 });
+    const killer = H.players[byId];
+    record('kill', {
+      by: killer ? killer.name : null,
+      who: p.name,
+      where: roomNameAt(x, y),
+      self: byId === id,
+    });
     delete H.invisible[id];
     delete H.shifted[id];
     send('sys', { t: 'E', e: 'kill', by: byId, target: id, x, y });
@@ -5098,6 +5908,7 @@ window.NS = window.NS || {};
     H.invisible = {};
     H.shifted = {};
     H.phase = 'meeting';
+    H.watching.clear();
     H.emergencyCooldown = H.settings.emergencyCooldown;
     H.meeting = {
       reason, by, bodyId,
@@ -5105,6 +5916,11 @@ window.NS = window.NS || {};
       time: H.settings.discussionTime > 0 ? H.settings.discussionTime : H.settings.votingTime,
       votes: {},
     };
+    record('meeting', {
+      by: H.players[by] ? H.players[by].name : null,
+      reason,
+      who: bodyId && H.players[bodyId] ? H.players[bodyId].name : null,
+    });
     send('sys', { t: 'E', e: 'meeting', reason, by, body: bodyId });
     H.dirty = true;
   }
@@ -5153,6 +5969,12 @@ window.NS = window.NS || {};
     H.ejected.remaining = list().filter((id) =>
       H.players[id].alive && H.players[id].connected
       && C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor').length;
+
+    record('eject', {
+      who: ejectedId ? H.players[ejectedId].name : null,
+      impostor: H.ejected.impostor,
+      tie: wasTie,
+    });
 
     H.phase = 'eject';
     H.ejectLeft = EJECT_SECONDS;
@@ -5205,6 +6027,10 @@ window.NS = window.NS || {};
     if (H.emergencyCooldown > 0) H.emergencyCooldown -= dt;
     if (H.sabotageCooldown > 0) H.sabotageCooldown -= dt;
 
+    for (const id of Array.from(H.watching)) {
+      const watcher = H.players[id];
+      if (!watcher || !watcher.alive || !watcher.connected) { H.watching.delete(id); H.dirty = true; }
+    }
     for (const id in H.invisible) {
       H.invisible[id] -= dt;
       if (H.invisible[id] <= 0) { delete H.invisible[id]; H.dirty = true; send('sys', { t: 'E', e: 'vanish', by: id, on: 0 }); }
@@ -5244,7 +6070,10 @@ window.NS = window.NS || {};
           }
         }
       }
-      if (NS.bots) NS.bots.step(dt, H);
+      /* Timers above get the real elapsed time so a throttled background tab
+         does not slow the round down. Bots get a capped one, because moving
+         them a whole second in one step teleports them through walls. */
+      if (NS.bots) NS.bots.step(Math.min(dt, 0.1), H);
       if (H.winner) finish();
     } else if (H.phase === 'meeting' && H.meeting) {
       H.meeting.time -= dt;
@@ -5307,6 +6136,7 @@ window.NS = window.NS || {};
       cd: Object.keys(H.closedRooms),
       bo: H.bodies.map((b) => [b.id, Math.round(b.x), Math.round(b.y), b.colorIdx, b.hatIdx, b.facing]),
       iv: Object.keys(H.invisible),
+      cw: H.watching.size ? 1 : 0,
       sh: Object.keys(H.shifted).map((id) => [id, H.shifted[id].as]),
       mt: H.meeting ? {
         r: H.meeting.reason, by: H.meeting.by, bd: H.meeting.bodyId,
@@ -5317,6 +6147,7 @@ window.NS = window.NS || {};
       wn: H.winner ? {
         tm: H.winner.team, rs: H.winner.reason,
         rl: list().map((id) => [id, H.roles[id] || 'crewmate']),
+        lg: H.log,
       } : null,
       rv: H.phase === 'reveal' ? Math.max(0, Math.round(H.revealLeft * 10) / 10) : 0,
     };
@@ -5378,40 +6209,54 @@ window.NS = window.NS || {};
 
   const brains = new Map();
 
-  function clear() {
-    for (const id of brains.keys()) NS.world.players.delete(id);
-    brains.clear();
+  function forget(id, host) {
+    NS.world.players.delete(id);
+    brains.delete(id);
+    if (host && host.H.players[id]) delete host.H.players[id];
   }
 
-  /* Bots take the colours and names nobody else has, so a lobby never shows
-     two Cass or two Cobalt. */
+  function clear(host) {
+    for (const id of Array.from(brains.keys())) forget(id, host);
+  }
+
+  /* Adding and removing rather than rebuilding.
+
+     Re-rolling every bot each time somebody pressed + meant a bot that was
+     Fern a moment ago was now Ada, while the host's player table still had the
+     old name on the old id -- and the deduplicator, doing its job, handed
+     somebody "Fern 2". Existing bots keep who they are; only the difference is
+     made. */
   function fill(count, host) {
-    clear();
+    for (const id of Array.from(brains.keys())) {
+      if (Number(id.slice(3)) >= count) forget(id, host);
+    }
+
     const takenNames = {};
     const takenColors = {};
-    for (const id of Object.keys(host.players)) {
-      takenNames[host.players[id].name.toLowerCase()] = true;
-      takenColors[host.players[id].colorIdx] = true;
+    for (const id of Object.keys(host.H.players)) {
+      takenNames[host.H.players[id].name.toLowerCase()] = true;
+      takenColors[host.H.players[id].colorIdx] = true;
     }
     const names = NAMES.filter((n) => !takenNames[n.toLowerCase()]);
     const colors = C.COLORS.map((_, i) => i).filter((i) => !takenColors[i]);
     const rand = Math.random;
 
     for (let i = 0; i < count; i++) {
-      if (!names.length || !colors.length) break;
       const id = 'bot' + i;
+      if (brains.has(id)) continue;
+      if (!names.length || !colors.length) break;
       const name = names.splice(Math.floor(rand() * names.length), 1)[0];
       const colorIdx = colors.splice(Math.floor(rand() * colors.length), 1)[0];
       host.addPlayer(id, { n: name, c: colorIdx, h: Math.floor(rand() * C.HATS.length), bot: true });
       const spot = M.toWorld(M.SPAWN);
       const entity = NS.world.entity(id, {
-        name, colorIdx, hatIdx: host.players[id].hatIdx, bot: true,
+        name, colorIdx, hatIdx: host.H.players[id].hatIdx, bot: true,
         x: spot.x, y: spot.y, tx: spot.x, ty: spot.y,
       });
       NS.world.players.set(id, entity);
       brains.set(id, {
-        id, entity, path: null, step: 0, goal: null,
-        busy: 0, think: rand() * 1.5, votes: -1, panic: 0, ventCool: 8 + rand() * 20,
+        id, entity, path: null, step: 0, goal: null, order: i,
+        busy: 0, think: rand() * 1.5, votes: -1, hold: 0, ventCool: 8 + rand() * 20,
       });
     }
     return brains.size;
@@ -5469,14 +6314,45 @@ window.NS = window.NS || {};
     return true;
   }
 
+  /* The nearest job they still owe, not the first one on the list. Dealing the
+     list in order sent every bot down the same corridor at the same moment and
+     parked seven of them in Storage, which reads as a bug even though each one
+     was behaving correctly on its own. */
   function nextTaskSpot(brain, host) {
     const mine = host.H.tasks[brain.id];
     if (!mine) return null;
-    const task = mine.find((t) => !t.done);
-    if (!task) return null;
-    const station = R.stationById[task.sid];
-    const spot = station.steps ? station.steps[task.step] : station;
-    return { task, world: M.toWorld(spot) };
+    const e = brain.entity;
+    let best = null, bestD = Infinity;
+    for (const task of mine) {
+      if (task.done) continue;
+      const station = R.stationById[task.sid];
+      if (!station) continue;
+      const spot = station.steps ? station.steps[task.step] : station;
+      const world = M.toWorld(spot);
+      const d = U.dist2(e.x, e.y, world.x, world.y);
+      if (d < bestD) { bestD = d; best = { task, world }; }
+    }
+    return best;
+  }
+
+  /* Which broken thing this bot is walking to, if any. Spots are handed out by
+     the bot's own index so two of them go to the two reactor pads instead of
+     both going to the left one -- a meltdown needs a person at each end, and a
+     crew of bots that all queued at the same pad lost every single time. */
+  function sabotageTarget(brain, H) {
+    const active = H.sabotage;
+    if (!active) return null;
+    const def = NS.sabotage.SABOTAGES[active.kind];
+    if (!def || !def.fix || !def.spots.length) return null;
+    const open = [];
+    for (let i = 0; i < def.spots.length; i++) {
+      if (def.fix !== 'hold' && active.done && active.done[i]) continue;
+      open.push(i);
+    }
+    if (!open.length) return null;
+    const index = open[brain.order % open.length];
+    const w = M.toWorld(M.SABOTAGE_SPOTS[def.spots[index]]);
+    return { index, x: w.x, y: w.y, fix: def.fix, critical: def.critical };
   }
 
   function wander(brain) {
@@ -5528,6 +6404,35 @@ window.NS = window.NS || {};
         }
       }
 
+      /* A broken station comes before a task list. Only the crew care --
+         an impostor bot walking across the map to repair its own sabotage was
+         the loudest tell in the game. */
+      if (role.team !== 'impostor') {
+        const fix = sabotageTarget(brain, H);
+        if (fix) {
+          const reach = NS.sabotage.REACH * 0.75;
+          if (U.dist(e.x, e.y, fix.x, fix.y) < reach) {
+            e.moving = false;
+            brain.path = null;
+            brain.hold -= dt;
+            if (brain.hold <= 0) {
+              /* A hold decays at the host, so it has to be renewed; a panel is
+                 done once, after a pause long enough to look like a person
+                 reading it. */
+              brain.hold = fix.fix === 'hold' ? 0.5 : 1.6;
+              host.handle(brain.id, { t: 'fix', i: fix.index, on: true });
+            }
+            continue;
+          }
+          if (!brain.path || !brain.goal || U.dist(brain.goal.x, brain.goal.y, fix.x, fix.y) > 16) {
+            repath(brain, fix.x, fix.y);
+            brain.hold = fix.fix === 'hold' ? 0 : 1.2;
+          }
+          advance(brain, dt, speed);
+          continue;
+        }
+      }
+
       if (role.kill) {
         brain.ventCool -= dt;
         const cooldown = H.killCooldown[brain.id] || 0;
@@ -5543,6 +6448,7 @@ window.NS = window.NS || {};
               host.handle(brain.id, { t: 'kill', target: id });
               brain.busy = 0.8;
               brain.path = null;
+              escape(brain, host);
               break;
             }
           }
@@ -5555,7 +6461,10 @@ window.NS = window.NS || {};
       }
 
       if (!brain.path || brain.step >= (brain.path ? brain.path.length : 0)) {
-        const next = role.team === 'crew' ? nextTaskSpot(brain, host) : null;
+        /* Impostors walk their fake list too. The host counts nothing for
+           them and plays no visual, so the only thing it changes is that they
+           are standing where a working crewmate would be standing. */
+        const next = nextTaskSpot(brain, host);
         if (next) {
           if (U.dist(e.x, e.y, next.world.x, next.world.y) < 40) {
             /* Standing at the console for as long as it would take a person,
@@ -5572,6 +6481,34 @@ window.NS = window.NS || {};
 
       advance(brain, dt, speed);
     }
+  }
+
+  /* Leaving through the vent is most of what makes an impostor frightening:
+     the body is in Electrical and they were in Navigation. Bots do it when
+     there is one to hand, because a killer that always walks away down the
+     corridor is a killer you can catch by walking the corridor. */
+  function escape(brain, host) {
+    const e = brain.entity;
+    let best = null, bestD = 150 * 150, group = -1, index = -1;
+    M.VENT_GROUPS.forEach((vents, gi) => {
+      vents.forEach((v, vi) => {
+        const w = M.toWorld(v);
+        const d = U.dist2(e.x, e.y, w.x, w.y);
+        if (d < bestD) { bestD = d; best = w; group = gi; index = vi; }
+      });
+    });
+    if (!best) return;
+    const vents = M.VENT_GROUPS[group];
+    const exits = vents.map((_, i) => i).filter((i) => i !== index);
+    if (!exits.length) return;
+    const exit = exits[Math.floor(Math.random() * exits.length)];
+    const out = M.toWorld(vents[exit]);
+    e.x = e.tx = out.x;
+    e.y = e.ty = out.y;
+    brain.path = null;
+    brain.goal = null;
+    host.handle(brain.id, { t: 'vent', a: 'in', g: group, i: index });
+    host.handle(brain.id, { t: 'vent', a: 'out', g: group, i: exit });
   }
 
   /* ---- meetings ----------------------------------------------------------- */
@@ -5610,7 +6547,7 @@ window.NS = window.NS || {};
   function resetForRound() {
     for (const brain of brains.values()) {
       brain.path = null; brain.goal = null; brain.busy = 0;
-      brain.pending = null; brain.votes = -1;
+      brain.pending = null; brain.votes = -1; brain.hold = 0;
     }
   }
 
@@ -5642,8 +6579,26 @@ window.NS = window.NS || {};
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.translate(size / 2, size / 2);
-    NS.characters.drawAvatar(ctx, colorIdx, hatIdx, size * 0.82, o);
+    NS.characters.drawAvatar(ctx, colorIdx, hatIdx, size * 0.94, o);
     return canvas;
+  }
+
+  /* Announcements for a screen reader. Toasts are visual and transient; this
+     is the same information as text, in order, for somebody who is not looking
+     at the station. Deliberately terse -- a live region that narrates every
+     footstep is worse than none. */
+  let announcer = null;
+  function announce(text) {
+    if (!announcer) {
+      announcer = el('div', {
+        class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+      });
+      document.body.appendChild(announcer);
+    }
+    /* Same string twice in a row is not re-read by most screen readers, so it
+       is cleared first. */
+    announcer.textContent = '';
+    setTimeout(() => { if (announcer) announcer.textContent = text; }, 60);
   }
 
   let toastHost = null;
@@ -5696,7 +6651,7 @@ window.NS = window.NS || {};
     vent: 'M4 6h16v12H4z M7 9h10 M7 12h10 M7 15h10',
     map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14',
     tasks: 'M4 6h16 M4 12h16 M4 18h10',
-    gear: 'M12 8a4 4 0 100 8 4 4 0 000-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M19 5l-2 2 M7 17l-2 2',
+    gear: 'M4 7h7 M15 7h5 M4 12h11 M19 12h1 M4 17h3 M11 17h9 M13 7v0a2 2 0 104 0 2 2 0 10-4 0z M15 12v0a2 2 0 10-4 0 2 2 0 104 0z M7 17v0a2 2 0 104 0 2 2 0 10-4 0z',
     sabotage: 'M12 2l9 18H3z M12 9v5 M12 17v1.5',
     chat: 'M4 5h16v10H9l-5 4z',
     sound: 'M4 9h4l5-4v14l-5-4H4z M16 9c1.5 1.5 1.5 4.5 0 6',
@@ -5727,7 +6682,7 @@ window.NS = window.NS || {};
     return svg;
   }
 
-  NS.bits = { avatar, toast, confirm, icon, ICONS };
+  NS.bits = { avatar, toast, confirm, icon, announce, ICONS };
 })(window.NS);
 
 </script>
@@ -5797,6 +6752,7 @@ window.NS = window.NS || {};
     box.appendChild(foot);
     root.appendChild(box);
     document.body.appendChild(root);
+    document.body.classList.add('in-task');
 
     game.root = root;
     game.canvas = canvas;
@@ -5807,10 +6763,16 @@ window.NS = window.NS || {};
     const W = spec.w || 460, H = spec.h || 300;
     game.W = W; game.H = H;
 
+    /* The stage is as wide as the panel and as tall as the window can spare.
+       Measuring the stage's own height would be circular -- it gets its height
+       from this canvas -- which is what left the first build drawing a small
+       panel in the middle of a large empty one. */
     function fit() {
       const rect = stage.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const s = Math.min(rect.width / W, rect.height / H);
+      const availW = Math.max(220, rect.width || (box.clientWidth - 28));
+      const availH = Math.max(200, window.innerHeight - 250);
+      const s = Math.min(availW / W, availH / H);
       game.scale = s;
       canvas.style.width = Math.round(W * s) + 'px';
       canvas.style.height = Math.round(H * s) + 'px';
@@ -5820,6 +6782,7 @@ window.NS = window.NS || {};
     }
     game.fit = fit;
     fit();
+    requestAnimationFrame(fit);
     window.addEventListener('resize', fit);
 
     function local(e) {
@@ -5892,6 +6855,7 @@ window.NS = window.NS || {};
 
     game.teardown = function () {
       window.removeEventListener('resize', fit);
+      document.body.classList.remove('in-task');
       root.remove();
     };
     return game;
@@ -7099,27 +8063,40 @@ window.NS = window.NS || {};
     'Saw them vent', 'Body in ', 'It is not me', 'Skip',
   ];
 
+  const listeners = new Set();
+  function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+
   function addMessage(msg) {
     history.push(msg);
     if (history.length > 120) history.shift();
     if (log) appendRow(msg);
+    for (const fn of Array.from(listeners)) fn(msg);
+  }
+
+  /* One chat row, rendered the same way wherever it is shown -- the meeting
+     and the ghosts' own window are the same conversation seen from different
+     sides of being alive. */
+  function renderRow(msg) {
+    const row = el('div', { class: 'chat-row' + (msg.ghost ? ' is-ghost' : '') });
+    if (msg.system) {
+      row.className = 'chat-row is-system';
+      row.textContent = msg.text;
+      return row;
+    }
+    const who = el('span', { class: 'chat-who', text: msg.name });
+    who.style.color = msg.ghost ? '#9d8cff' : (C.COLORS[msg.colorIdx] || C.COLORS[0]).rim;
+    row.appendChild(who);
+    row.appendChild(el('span', { class: 'chat-text', text: msg.text }));
+    return row;
   }
 
   function appendRow(msg) {
-    const dead = msg.ghost;
-    const row = el('div', { class: 'chat-row' + (dead ? ' is-ghost' : '') });
-    const who = el('span', { class: 'chat-who', text: msg.name });
-    who.style.color = dead ? '#9d8cff' : (C.COLORS[msg.colorIdx] || C.COLORS[0]).rim;
-    row.appendChild(who);
-    row.appendChild(el('span', { class: 'chat-text', text: msg.text }));
-    log.appendChild(row);
+    log.appendChild(renderRow(msg));
     log.scrollTop = log.scrollHeight;
   }
 
   function systemMessage(text) {
-    if (!log) return;
-    log.appendChild(el('div', { class: 'chat-row is-system', text }));
-    log.scrollTop = log.scrollHeight;
+    addMessage({ system: true, text });
   }
 
   /* ---- building ---------------------------------------------------------- */
@@ -7202,7 +8179,6 @@ window.NS = window.NS || {};
   function rebuildGrid(state) {
     grid.textContent = '';
     rows.clear();
-    const meAlive = W.me && W.me.alive && !W.me.ghost;
     const players = Array.from(W.players.values())
       .filter((p) => p.connected)
       .sort((a, b) => (a.alive === b.alive ? a.name.localeCompare(b.name) : (a.alive ? -1 : 1)));
@@ -7220,9 +8196,8 @@ window.NS = window.NS || {};
       row.appendChild(tokens);
       const button = el('button', {
         class: 'vote-btn', type: 'button', 'aria-label': 'Vote for ' + p.name,
-        onclick: () => castVote(p.id),
+        disabled: true, onclick: () => castVote(p.id),
       }, [NS.bits.icon('close', 18)]);
-      if (!meAlive || !p.alive) button.disabled = true;
       row.appendChild(button);
       grid.appendChild(row);
       rows.set(p.id, { row, tokens, button, player: p });
@@ -7238,9 +8213,8 @@ window.NS = window.NS || {};
     skipRow.appendChild(skipTokens);
     const skipButton = el('button', {
       class: 'vote-btn', type: 'button', 'aria-label': 'Skip the vote',
-      onclick: () => castVote('skip'),
+      disabled: true, onclick: () => castVote('skip'),
     }, [NS.bits.icon('close', 18)]);
-    if (!meAlive) skipButton.disabled = true;
     skipRow.appendChild(skipButton);
     grid.appendChild(skipRow);
     rows.set('skip', { row: skipRow, tokens: skipTokens, button: skipButton });
@@ -7289,9 +8263,30 @@ window.NS = window.NS || {};
       if (id === 'skip') continue;
       row.row.classList.toggle('has-voted', voted.indexOf(id) >= 0);
     }
-    const waiting = W.alivePlayers().filter((p) => voted.indexOf(p.id) < 0).length;
+
+    /* A vote button that can be pressed and does nothing is worse than one
+       that is plainly off, so they stay disabled until voting actually opens
+       and after you have used yours. */
+    const meAlive = !!(W.me && W.me.alive && !W.me.ghost);
+    const open = meeting.stage === 'vote' && meAlive && !myVote;
+    for (const [id, row] of rows) {
+      const target = row.player;
+      row.button.disabled = !open || (target && !target.alive);
+    }
+
     const counter = U.$('.meeting-waiting', root);
-    if (counter) counter.textContent = waiting + ' still to vote';
+    if (counter) {
+      if (meeting.stage !== 'vote') {
+        counter.textContent = meAlive
+          ? 'Say where you were. Voting opens in ' + U.clock(meeting.time) + '.'
+          : 'You are dead. You can read this, but they cannot hear you.';
+      } else {
+        const waiting = W.alivePlayers().filter((p) => voted.indexOf(p.id) < 0).length;
+        counter.textContent = myVote
+          ? 'Vote cast. ' + waiting + ' still to vote.'
+          : waiting + ' still to vote.';
+      }
+    }
   }
 
   function show(state) {
@@ -7316,6 +8311,7 @@ window.NS = window.NS || {};
     if (!U.$('.meeting-waiting', root)) {
       root.querySelector('.meeting-left').appendChild(el('p', { class: 'meeting-waiting', text: '' }));
     }
+    root.dataset.stage = state.meeting.stage;
     /* Ghosts can read but not write to the living. Disabling the box rather
        than hiding it is deliberate: you can see the conversation you are
        locked out of, which is most of what being dead is. */
@@ -7351,7 +8347,10 @@ window.NS = window.NS || {};
     if (log) log.textContent = '';
   }
 
-  NS.meeting = { init, show, hide, update, onChat, clear, systemMessage, setTab };
+  NS.meeting = {
+    init, show, hide, update, onChat, clear, systemMessage, setTab,
+    subscribe, renderRow, history, send: (text) => send('chat', { t: 'msg', text }),
+  };
 })(window.NS);
 
 </script>
@@ -7419,6 +8418,8 @@ window.NS = window.NS || {};
       toolButton('tasks', 'Tasks', () => showTasks()),
       toolButton('map', 'Map', () => showMap(false)),
       toolButton('sound', NS.audio.muted ? 'Sound off' : 'Sound on', toggleSound),
+      toolButton('chat', 'Ghost chat', showGhostChat),
+      toolButton('gear', 'Options', showOptions),
       toolButton('close', 'Leave', async () => {
         if (await NS.bits.confirm({
           title: 'Leave the round?',
@@ -7487,6 +8488,7 @@ window.NS = window.NS || {};
     if (id === 'use') {
       if (ctx.sabotageFix) return openFix(ctx.sabotageFix);
       if (ctx.use && ctx.use.kind === 'task') return openTask(ctx.use);
+      if (ctx.use && ctx.use.kind === 'console') return openConsole(ctx.use.console);
       if (ctx.emergency) return callEmergency();
       return;
     }
@@ -7644,7 +8646,12 @@ window.NS = window.NS || {};
   /* ---- overlays ---------------------------------------------------------- */
 
   function closeOverlay() {
-    if (overlay) { overlay.remove(); overlay = null; W.frozen = false; }
+    if (!overlay) return;
+    overlay.remove();
+    overlay = null;
+    W.frozen = false;
+    if (overlayLoop) { cancelAnimationFrame(overlayLoop); overlayLoop = null; }
+    if (overlayClose) { const fn = overlayClose; overlayClose = null; fn(); }
   }
 
   function shell(title, sub) {
@@ -7662,6 +8669,318 @@ window.NS = window.NS || {};
     overlay = root;
     W.frozen = true;
     return box;
+  }
+
+  /* Everything in this room runs on the station's own network, which is what
+     the comms sabotage cuts. Refusing with the reason is the point: a crew
+     that finds the cameras dark should know why, because that is information. */
+  function openConsole(console) {
+    if (NS.sabotage.commsDown()) {
+      NS.bits.toast('Comms are down, so ' + console.name.toLowerCase() + ' is dead until they are fixed.', 'warn', 5);
+      return;
+    }
+    if (console.kind === 'admin') return showAdmin();
+    if (console.kind === 'cameras') return showCameras();
+    if (console.kind === 'vitals') return showVitals();
+  }
+
+  /* A map with a head count per room, and nothing else. It cannot tell you who
+     is where, which is exactly why it is worth arguing about: four people in
+     Electrical and one of them walks out is a fact, and who walked out is not. */
+  function showAdmin() {
+    const box = shell('Admin table', 'Counts only. It cannot tell you who.');
+    const wrap = el('div', { class: 'map-wrap' });
+    const canvas = el('canvas', { class: 'map-canvas' });
+    wrap.appendChild(canvas);
+    box.appendChild(wrap);
+    box.appendChild(el('p', { class: 'sheet-note', text: 'The dead are not counted.' }));
+    const ctx = canvas.getContext('2d');
+
+    live(canvas, () => {
+      const place = fitMap(canvas, wrap, ctx);
+      paintRooms(ctx, { labels: false });
+      ctx.restore();
+
+      const counts = {};
+      for (const p of W.players.values()) {
+        if (!p.alive || p.ghost || !p.connected || p.inVent) continue;
+        const room = M.roomAt(p.x, p.y);
+        if (room) counts[room.id] = (counts[room.id] || 0) + 1;
+      }
+      /* Labels are drawn after the map transform is undone, so they are the
+         same readable size on a phone and a projector rather than scaling with
+         the station. */
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const room of M.ROOMS) {
+        const n = counts[room.id] || 0;
+        const x = place.ox + room.cx * place.scale;
+        const y = place.oy + room.cy * place.scale;
+        ctx.fillStyle = 'rgba(207,217,232,0.6)';
+        ctx.font = '700 11px Archivo, system-ui, sans-serif';
+        ctx.fillText(room.name, x, y - 13);
+        ctx.fillStyle = n ? '#ffb03a' : 'rgba(141,154,177,0.35)';
+        ctx.font = '800 ' + (n ? 26 : 17) + 'px Archivo, system-ui, sans-serif';
+        ctx.fillText(String(n), x, y + 8);
+      }
+    });
+  }
+
+  /* Four corridors, live, and every camera on the station blinks while
+     somebody is here. That tell is the whole reason this is fair -- an
+     impostor who checks the housing knows whether they are being watched. */
+  function showCameras() {
+    const box = shell('Cameras', 'Four corridors. Everyone can see that you are watching.');
+    const grid = el('div', { class: 'cams' });
+    const feeds = M.CAMERAS.map((camera) => {
+      const cell = el('div', { class: 'cam' });
+      const canvas = el('canvas', { class: 'cam-canvas' });
+      cell.appendChild(canvas);
+      cell.appendChild(el('span', { class: 'cam-name', text: camera.name }));
+      cell.appendChild(el('span', { class: 'cam-live', text: 'LIVE' }));
+      grid.appendChild(cell);
+      return { camera, canvas, ctx: canvas.getContext('2d') };
+    });
+    box.appendChild(grid);
+
+    const alive = W.me && W.me.alive && !W.me.ghost;
+    if (alive) send('act', { t: 'watching', on: true });
+    onOverlayClose(() => { if (alive) send('act', { t: 'watching', on: false }); });
+
+    /* Four station blits plus every character, four times a frame, is more
+       than a phone should spend on a picture that is mostly a corridor. Twenty
+       a second is smooth enough to follow somebody walking and a third of the
+       work. */
+    let last = 0;
+    live(feeds[0].canvas, () => {
+      const now = U.now();
+      if (now - last < 48) return;
+      last = now;
+      for (const feed of feeds) paintFeed(feed);
+    });
+  }
+
+  const FEED_W = 300, FEED_H = 190;
+
+  function paintFeed(feed) {
+    const { camera, canvas, ctx } = feed;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(80, rect.width), h = Math.max(50, rect.height);
+    if (canvas.width !== Math.round(w * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#05070d';
+    ctx.fillRect(0, 0, w, h);
+
+    const look = M.toWorld(camera.look);
+    const scale = (w / FEED_W) * camera.zoom * 1.6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.clip();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-look.x, -look.y);
+
+    const station = NS.station.canvas;
+    if (station) {
+      const halfW = w / (2 * scale) + 40, halfH = h / (2 * scale) + 40;
+      const sx = U.clamp(look.x - halfW, 0, M.pixelWidth);
+      const sy = U.clamp(look.y - halfH, 0, M.pixelHeight);
+      const sw = U.clamp(halfW * 2, 1, M.pixelWidth - sx);
+      const sh = U.clamp(halfH * 2, 1, M.pixelHeight - sy);
+      const k = NS.station.scale;
+      ctx.drawImage(station, sx * k, sy * k, sw * k, sh * k, sx, sy, sw, sh);
+    }
+    for (const body of W.bodies) {
+      if (Math.abs(body.x - look.x) > 700 || Math.abs(body.y - look.y) > 500) continue;
+      NS.characters.drawBody(ctx, body);
+    }
+    const seen = [];
+    for (const p of W.players.values()) {
+      if (!p.connected || p.ghost || p.inVent || p.invisible) continue;
+      if (Math.abs(p.x - look.x) > 700 || Math.abs(p.y - look.y) > 500) continue;
+      seen.push(p);
+    }
+    seen.sort((a, b) => a.y - b.y);
+    for (const p of seen) NS.characters.drawPlayer(ctx, p, {});
+    ctx.restore();
+
+    /* A cheap tube: scanlines, a green cast and a soft edge. It reads as a
+       feed rather than as a second window onto the game, which matters --
+       looking at cameras should feel like looking at cameras. */
+    ctx.fillStyle = 'rgba(52,224,184,0.05)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
+    const vignette = ctx.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, h * 0.85);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /* ---- panel plumbing ----------------------------------------------------- */
+
+  let overlayLoop = null;
+  let overlayClose = null;
+
+  function onOverlayClose(fn) { overlayClose = fn; }
+
+  /* Runs a paint function every frame for as long as the panel is on screen,
+     and stops the moment it is not -- a camera feed left running behind a
+     closed panel is a phone getting warm for nothing. */
+  function live(canvas, paint) {
+    cancelAnimationFrame(overlayLoop);
+    function tick() {
+      if (!overlay || !document.body.contains(canvas)) { overlayLoop = null; return; }
+      paint();
+      overlayLoop = requestAnimationFrame(tick);
+    }
+    overlayLoop = requestAnimationFrame(tick);
+  }
+
+  function fitMap(canvas, wrap, ctx) {
+    const rect = wrap.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const pad = 10;
+    const scale = Math.min((rect.width - pad * 2) / M.pixelWidth, (rect.height - pad * 2) / M.pixelHeight);
+    if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const ox = (rect.width - M.pixelWidth * scale) / 2;
+    const oy = (rect.height - M.pixelHeight * scale) / 2;
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(scale, scale);
+    return { ox, oy, scale };
+  }
+
+  function paintRooms(ctx, opts) {
+    const o = opts || {};
+    for (const hall of M.HALLS) {
+      ctx.fillStyle = 'rgba(44,54,72,0.55)';
+      ctx.fillRect(hall.x * M.TILE, hall.y * M.TILE, hall.w * M.TILE, hall.h * M.TILE);
+    }
+    for (const room of M.ROOMS) {
+      const sealed = (W.state.closedRooms || []).indexOf(room.id) >= 0;
+      ctx.fillStyle = sealed ? 'rgba(192,82,63,0.4)' : 'rgba(44,54,72,0.85)';
+      ctx.fillRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
+      ctx.strokeStyle = sealed ? '#ff3f5b' : '#3a4761';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
+      if (o.labels === false) continue;
+      ctx.fillStyle = 'rgba(207,217,232,0.72)';
+      ctx.font = '700 34px Archivo, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(room.name, room.cx, room.cy);
+    }
+  }
+
+  /* Personal, not a game setting: nobody else is affected by how loud your
+     phone is or whether you need the shapes, so these are kept on the device
+     and are changeable mid-round rather than locked to the lobby. */
+  function showOptions() {
+    const box = shell('Options', 'Yours alone. Nobody else in the game is affected.');
+    const list = el('div', { class: 'options' });
+
+    const volume = el('input', {
+      class: 'slider', type: 'range', min: '0', max: '100', step: '5',
+      value: String(Math.round(NS.audio.volume * 100)), 'aria-label': 'Volume',
+      oninput: (e) => { NS.audio.wake(); NS.audio.setVolume(Number(e.target.value) / 100); },
+    });
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Volume' }),
+      el('div', { class: 'slider-row' }, [volume, el('output', { class: 'setting-value', text: 'sound' })]),
+    ]));
+
+    const mute = el('button', {
+      class: 'toggle' + (NS.audio.muted ? '' : ' is-on'), type: 'button', role: 'switch',
+      'aria-checked': String(!NS.audio.muted), text: NS.audio.muted ? 'Off' : 'On',
+      onclick: () => {
+        toggleSound();
+        mute.classList.toggle('is-on', !NS.audio.muted);
+        mute.setAttribute('aria-checked', String(!NS.audio.muted));
+        mute.textContent = NS.audio.muted ? 'Off' : 'On';
+      },
+    });
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Sound' }), mute,
+    ]));
+
+    const on = !!U.store.get('symbols', false);
+    const symbols = el('button', {
+      class: 'toggle' + (on ? ' is-on' : ''), type: 'button', role: 'switch',
+      'aria-checked': String(on), text: on ? 'On' : 'Off',
+      onclick: () => {
+        const next = !U.store.get('symbols', false);
+        U.store.set('symbols', next);
+        NS.characters.setSymbols(next);
+        symbols.classList.toggle('is-on', next);
+        symbols.setAttribute('aria-checked', String(next));
+        symbols.textContent = next ? 'On' : 'Off';
+        preview.textContent = '';
+        preview.appendChild(NS.bits.avatar(W.me ? W.me.colorIdx : 0, W.me ? W.me.hatIdx : 0, 74));
+      },
+    });
+    const preview = el('div', { class: 'options-preview' }, [
+      NS.bits.avatar(W.me ? W.me.colorIdx : 0, W.me ? W.me.hatIdx : 0, 74),
+    ]);
+    list.appendChild(el('div', { class: 'setting' }, [
+      el('label', { class: 'setting-name', text: 'Shapes on suits' }),
+      symbols,
+      el('p', { class: 'setting-hint', text: 'A different shape per colour, so colour is never the only way to tell two people apart.' }),
+      preview,
+    ]));
+
+    list.appendChild(el('p', {
+      class: 'setting-hint',
+      text: 'Motion is already reduced automatically if your device asks for it.',
+    }));
+    box.appendChild(list);
+  }
+
+  /* Where the dead talk. The conversation exists whether or not there is a
+     meeting on, and before this there was nowhere to read it outside one --
+     so being killed meant being cut off from the only thing left to do. */
+  function showGhostChat() {
+    const box = shell('The dead', 'Only ghosts can read this.');
+    const log = el('div', { class: 'chat-log', 'aria-live': 'polite', 'aria-label': 'Ghost chat' });
+    for (const msg of NS.meeting.history) log.appendChild(NS.meeting.renderRow(msg));
+    const input = el('input', {
+      class: 'chat-input', type: 'text', maxlength: '120',
+      placeholder: 'Say something', autocomplete: 'off', 'aria-label': 'Message',
+    });
+    const form = el('form', {
+      class: 'chat-form',
+      onsubmit: (e) => {
+        e.preventDefault();
+        const text = U.cleanName(input.value, 120);
+        if (!text) return;
+        NS.meeting.send(text);
+        input.value = '';
+      },
+    }, [input, el('button', { class: 'btn btn--primary chat-send', type: 'submit', text: 'Send' })]);
+
+    const stop = NS.meeting.subscribe((msg) => {
+      if (!document.body.contains(log)) { stop(); return; }
+      log.appendChild(NS.meeting.renderRow(msg));
+      log.scrollTop = log.scrollHeight;
+    });
+    onOverlayClose(stop);
+
+    box.appendChild(el('div', { class: 'ghost-chat' }, [log, form]));
+    log.scrollTop = log.scrollHeight;
+    setTimeout(() => input.focus(), 50);
   }
 
   function showTasks() {
@@ -7733,40 +9052,11 @@ window.NS = window.NS || {};
     box.appendChild(wrap);
 
     const ctx = canvas.getContext('2d');
-    const pad = 10;
-    function paint() {
-      const rect = wrap.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const scale = Math.min((rect.width - pad * 2) / M.pixelWidth, (rect.height - pad * 2) / M.pixelHeight);
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
-      canvas.style.width = rect.width + 'px';
-      canvas.style.height = rect.height + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      const ox = (rect.width - M.pixelWidth * scale) / 2;
-      const oy = (rect.height - M.pixelHeight * scale) / 2;
-      ctx.save();
-      ctx.translate(ox, oy);
-      ctx.scale(scale, scale);
+    let place = null;
 
-      for (const hall of M.HALLS) {
-        ctx.fillStyle = 'rgba(44,54,72,0.55)';
-        ctx.fillRect(hall.x * M.TILE, hall.y * M.TILE, hall.w * M.TILE, hall.h * M.TILE);
-      }
-      for (const room of M.ROOMS) {
-        const sealed = (W.state.closedRooms || []).indexOf(room.id) >= 0;
-        ctx.fillStyle = sealed ? 'rgba(192,82,63,0.4)' : 'rgba(44,54,72,0.85)';
-        ctx.fillRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
-        ctx.strokeStyle = sealed ? '#ff3f5b' : '#3a4761';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(room.x * M.TILE, room.y * M.TILE, room.w * M.TILE, room.h * M.TILE);
-        ctx.fillStyle = 'rgba(207,217,232,0.72)';
-        ctx.font = '700 34px Archivo, system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(room.name, room.cx, room.cy);
-      }
+    live(canvas, () => {
+      place = fitMap(canvas, wrap, ctx);
+      paintRooms(ctx);
       if (!sabotageMode && !NS.sabotage.commsDown()) {
         for (const task of W.myTasks) {
           if (task.done) continue;
@@ -7776,8 +9066,7 @@ window.NS = window.NS || {};
           ctx.beginPath(); ctx.arc(spot.x, spot.y, 17, 0, Math.PI * 2); ctx.fill();
         }
       }
-      const active = W.state.sabotage;
-      if (active) {
+      if (W.state.sabotage) {
         for (const spot of NS.sabotage.activeSpots()) {
           if (spot.done) continue;
           ctx.fillStyle = '#ff3f5b';
@@ -7791,15 +9080,8 @@ window.NS = window.NS || {};
         ctx.beginPath(); ctx.arc(W.me.x, W.me.y, 16, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
-      wrap.__place = { ox, oy, scale };
-    }
-    paint();
-    const repaint = () => { if (overlay) paint(); };
-    window.addEventListener('resize', repaint);
-    const stop = new MutationObserver(() => {
-      if (!document.body.contains(canvas)) { window.removeEventListener('resize', repaint); stop.disconnect(); }
+      wrap.__place = place;
     });
-    stop.observe(document.body, { childList: true });
 
     if (sabotageMode) {
       canvas.addEventListener('click', (e) => {
@@ -7873,6 +9155,36 @@ window.NS = window.NS || {};
         text: ejected.remaining === 1 ? '1 impostor remains.' : ejected.remaining + ' impostors remain.',
       }));
     }
+
+    /* Who voted for whom, revealed only now the vote is closed. Showing it
+       during the vote would turn it into a stampede; not showing it at all
+       throws away the one hard fact a meeting produces. */
+    if (!W.state.settings.anonymousVotes && ejected.votes && ejected.votes.length) {
+      const groups = new Map();
+      for (const [voter, target] of ejected.votes) {
+        if (!groups.has(target)) groups.set(target, []);
+        groups.get(target).push(voter);
+      }
+      const tally = el('div', { class: 'tally' });
+      const order = Array.from(groups.keys())
+        .sort((a, b) => groups.get(b).length - groups.get(a).length);
+      for (const target of order) {
+        const who = target === 'skip' ? null : W.players.get(target);
+        const row = el('div', { class: 'tally-row' + (target === ejected.id ? ' is-out' : '') });
+        row.appendChild(el('span', { class: 'tally-name', text: who ? who.name : 'Skipped' }));
+        const faces = el('span', { class: 'tally-faces' });
+        for (const voter of groups.get(target)) {
+          const p = W.players.get(voter);
+          faces.appendChild(p
+            ? NS.bits.avatar(p.colorIdx, p.hatIdx, 30)
+            : el('span', { class: 'tally-unknown' }));
+        }
+        row.appendChild(faces);
+        tally.appendChild(row);
+      }
+      stage.appendChild(tally);
+    }
+
     wrap.appendChild(stage);
     document.body.appendChild(wrap);
     nodes.eject = wrap;
@@ -7921,6 +9233,9 @@ window.NS = window.NS || {};
       nodes.alert.classList.toggle('is-critical', !!def.critical);
     }
 
+    const dead = !!(me.ghost || !me.alive);
+    if (nodes.tool_chat) nodes.tool_chat.hidden = !dead;
+
     const role = C.ROLES[W.myRole || 'crewmate'];
     nodes.roleTag.hidden = !W.myRole || state.phase !== 'play';
     if (!nodes.roleTag.hidden) {
@@ -7933,17 +9248,22 @@ window.NS = window.NS || {};
     const ctx = playing ? context() : {};
     const ghost = me.ghost;
 
-    /* Use */
+    /* A button you own stays on screen greyed out rather than vanishing. A HUD
+       that empties itself as you walk teaches nobody what they can do, and on
+       a phone the buttons moving under your thumb is worse than useless. */
     const use = ctx.sabotageFix || ctx.use || ctx.emergency;
-    show(nodes.use, playing && !!use);
-    if (use) {
-      nodes.use.querySelector('.act-label').textContent =
-        ctx.sabotageFix ? 'Fix' : ctx.use ? 'Use' : 'Meeting';
-      nodes.use.disabled = !!(ctx.emergency && !ctx.use && !ctx.sabotageFix
-        && (emergenciesLeft <= 0 || cooldown.emergency > 0));
-    }
+    show(nodes.use, playing);
+    nodes.use.querySelector('.act-label').textContent =
+      ctx.sabotageFix ? 'Fix'
+        : ctx.use && ctx.use.kind === 'console' ? ctx.use.console.kind.replace('cameras', 'Cameras')
+          .replace('admin', 'Admin').replace('vitals', 'Vitals')
+        : ctx.use ? 'Use' : ctx.emergency ? 'Meeting' : 'Use';
+    nodes.use.disabled = !use || !!(ctx.emergency && !ctx.use && !ctx.sabotageFix
+      && (emergenciesLeft <= 0 || cooldown.emergency > 0));
 
-    show(nodes.report, playing && !ghost && !!ctx.report);
+    show(nodes.report, playing && !ghost);
+    nodes.report.disabled = !ctx.report;
+
     show(nodes.kill, playing && !ghost && !!(W.myRole && role.kill));
     if (!nodes.kill.hidden) {
       nodes.kill.disabled = !ctx.kill || cooldown.kill > 0;
@@ -7951,8 +9271,14 @@ window.NS = window.NS || {};
       nodes.kill.querySelector('.act-label').textContent =
         cooldown.kill > 0 ? Math.ceil(cooldown.kill) + '' : 'Kill';
     }
-    show(nodes.vent, playing && !ghost && !!ctx.vent);
-    if (ctx.vent) nodes.vent.querySelector('.act-label').textContent = ctx.vent.kind === 'exit' ? 'Climb out' : 'Vent';
+
+    const canVent = W.myRole && (role.kill || role.ability === 'vent');
+    show(nodes.vent, playing && !ghost && !!canVent);
+    if (!nodes.vent.hidden) {
+      nodes.vent.disabled = !ctx.vent;
+      nodes.vent.querySelector('.act-label').textContent =
+        ctx.vent && ctx.vent.kind === 'exit' ? 'Climb out' : 'Vent';
+    }
 
     show(nodes.sabotage, playing && !ghost && !!(W.myRole && role.kill));
     if (!nodes.sabotage.hidden) {
@@ -7985,6 +9311,7 @@ window.NS = window.NS || {};
 
   NS.hud = {
     init, update, showRole, hideRole, showEject, hideEject, showMap, showTasks,
+    showAdmin, showCameras, showVitals, openConsole, showOptions, showGhostChat,
     setCooldown, forceCooldown, setEmergencies, setAbilitySpent, closeOverlay,
     cooldown,
     get stick() { return nodes.stick; },
@@ -8203,7 +9530,10 @@ window.NS = window.NS || {};
         ctx.save();
         ctx.globalAlpha = 0.5;
         ctx.scale(scale, scale);
-        ctx.drawImage(station, px, py, rect.width / scale, rect.height / scale, 0, 0, rect.width / scale, rect.height / scale);
+        const k = NS.station.scale;
+        ctx.drawImage(station,
+          px * k, py * k, (rect.width / scale) * k, (rect.height / scale) * k,
+          0, 0, rect.width / scale, rect.height / scale);
         ctx.restore();
       }
       requestAnimationFrame(frame);
@@ -8361,6 +9691,11 @@ window.NS = window.NS || {};
   }
 
   function transportNote() {
+    if (location.hash === '#local') {
+      return 'Same-computer mode: this page talks to its own other tabs and nothing else. '
+        + 'Open it twice, host in one and join in the other. Drop the #local off the address '
+        + 'to play with other devices.';
+    }
     if (NS.link.roomAvailable()) {
       return 'Everyone opens this same link and types the code. It works for people signed in to '
         + 'the same organisation as whoever published it; anyone else should use the downloadable file.';
@@ -8396,6 +9731,31 @@ window.NS = window.NS || {};
       body.appendChild(el('h4', { text: title }));
       body.appendChild(el('p', { text }));
     });
+    /* Built from the role table rather than written out, so a role that is
+       added, renamed or reworded can never quietly disagree with the page that
+       explains it. */
+    body.appendChild(el('h4', { text: 'The roles' }));
+    body.appendChild(el('p', {
+      text: 'Which of these turn up is set in the lobby. Every one of them is off or on '
+        + 'with a chance, so a class can build the game it wants.',
+    }));
+    const roles = el('div', { class: 'help-roles' });
+    for (const key of ['crewmate'].concat(C.CREW_ROLES, ['impostor'], C.IMPOSTOR_ROLES, ['jester'])) {
+      const def = C.ROLES[key];
+      if (!def) continue;
+      roles.appendChild(el('div', { class: 'help-role' }, [
+        el('div', { class: 'help-role-head' }, [
+          el('strong', { text: def.name }),
+          el('span', {
+            class: 'role-team role-team--' + def.team,
+            text: def.team === 'impostor' ? 'Impostor' : def.team === 'jester' ? 'Neutral' : 'Crew',
+          }),
+        ]),
+        el('p', { text: def.blurb }),
+      ]));
+    }
+    body.appendChild(roles);
+
     box.appendChild(body);
     root.appendChild(box);
     root.addEventListener('click', (e) => { if (e.target === root) root.remove(); });
@@ -8440,7 +9800,10 @@ window.NS = window.NS || {};
       el('button', { class: 'btn btn--ghost btn--tight', type: 'button', text: '+', 'aria-label': 'One more bot', onclick: () => hooks.onBots(1) }),
     ]);
 
-    const leave = el('button', { class: 'link-btn', type: 'button', text: 'Leave', onclick: () => hooks.onLeave() });
+    const leave = el('div', { class: 'lobby-links' }, [
+      el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
+      el('button', { class: 'link-btn', type: 'button', text: 'Leave', onclick: () => hooks.onLeave() }),
+    ]);
 
     const panel = el('div', { class: 'lobby-panel' }, [
       code,
@@ -8464,23 +9827,26 @@ window.NS = window.NS || {};
     ]));
 
     lobbyNodes = { roster, status, settingsHost, startBtn, readyBtn, botRow, code };
+    rosterSignature = '';
     return lobbyNodes;
   }
+
+  let rosterSignature = '';
 
   function updateLobby(info) {
     if (!lobbyNodes) return;
     const { roster, status, startBtn, readyBtn, botRow } = lobbyNodes;
-    roster.textContent = '';
     const players = info.players || [];
-    for (const p of players) {
-      const card = el('div', { class: 'roster-card' + (p.ready ? ' is-ready' : '') + (p.bot ? ' is-bot' : '') });
-      card.appendChild(NS.bits.avatar(p.colorIdx, p.hatIdx, 76));
-      card.appendChild(el('strong', { text: p.name }));
-      card.appendChild(el('span', { class: 'roster-tag', text: p.isHost ? 'Host' : (p.bot ? 'Bot' : (p.ready ? 'Ready' : '')) }));
-      roster.appendChild(card);
-    }
-    for (let i = players.length; i < C.MAX_PLAYERS; i++) {
-      roster.appendChild(el('div', { class: 'roster-card is-empty' }, [el('span', { text: '' })]));
+
+    /* The roster is redrawn only when it actually changed. This runs several
+       times a second so the start button can never be left stale, and
+       rebuilding fourteen canvas portraits at that rate would flicker. */
+    const signature = players.map((p) =>
+      p.name + p.colorIdx + p.hatIdx + (p.ready ? 'r' : '') + (p.bot ? 'b' : '') + (p.isHost ? 'h' : '')
+    ).join('|');
+    if (signature !== rosterSignature) {
+      rosterSignature = signature;
+      renderRoster(roster, players);
     }
 
     const real = players.filter((p) => !p.bot).length;
@@ -8498,6 +9864,20 @@ window.NS = window.NS || {};
     } else {
       readyBtn.classList.toggle('is-on', !!info.ready);
       readyBtn.textContent = info.ready ? 'Ready' : 'Ready up';
+    }
+  }
+
+  function renderRoster(roster, players) {
+    roster.textContent = '';
+    for (const p of players) {
+      const card = el('div', { class: 'roster-card' + (p.ready ? ' is-ready' : '') + (p.bot ? ' is-bot' : '') });
+      card.appendChild(NS.bits.avatar(p.colorIdx, p.hatIdx, 76));
+      card.appendChild(el('strong', { text: p.name }));
+      card.appendChild(el('span', { class: 'roster-tag', text: p.isHost ? 'Host' : (p.bot ? 'Bot' : (p.ready ? 'Ready' : '')) }));
+      roster.appendChild(card);
+    }
+    for (let i = players.length; i < C.MAX_PLAYERS; i++) {
+      roster.appendChild(el('div', { class: 'roster-card is-empty' }, [el('span', { text: '' })]));
     }
   }
 
@@ -8607,6 +9987,7 @@ window.NS = window.NS || {};
       el('h1', { class: 'end-title', text: title }),
       el('p', { class: 'end-reason', text: result.reason }),
       grid,
+      recap(result.log),
       el('div', { class: 'end-buttons' }, [
         isHost
           ? el('button', { class: 'btn btn--primary btn--big', type: 'button', text: 'Back to the lobby', onclick: () => hooks.onPlayAgain() })
@@ -8615,6 +9996,48 @@ window.NS = window.NS || {};
       ]),
     ]));
     NS.audio.play(result.team === 'crew' ? 'win' : 'lose');
+  }
+
+  /* What actually happened, in order. Everybody spent the round arguing from
+     two-second glimpses; this is the only moment anyone sees the whole thing,
+     and watching a class read it is most of the fun of losing. */
+  /* Always m:ss in the timeline. `clock` drops the minutes under sixty
+     seconds, which is right on a countdown and wrong in a column where "15"
+     sits above "1:05". */
+  const stamp = (seconds) => Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+
+  function recap(log) {
+    if (!log || !log.length) return null;
+    const list = el('ol', { class: 'recap' });
+    for (const entry of log) {
+      let text = '';
+      if (entry.k === 'kill') {
+        text = entry.self
+          ? entry.who + ' shot the wrong person and died for it, in ' + entry.where
+          : (entry.by ? entry.by + ' killed ' + entry.who + ' in ' + entry.where
+            : entry.who + ' died in ' + entry.where);
+      } else if (entry.k === 'meeting') {
+        text = entry.reason === 'body'
+          ? (entry.by || 'Somebody') + ' reported ' + (entry.who || 'a body')
+          : (entry.by || 'Somebody') + ' called an emergency meeting';
+      } else if (entry.k === 'eject') {
+        text = entry.who
+          ? entry.who + ' was thrown out - ' + (entry.impostor ? 'an impostor' : 'not an impostor')
+          : (entry.tie ? 'The vote tied. Nobody went out' : 'The crew skipped');
+      } else if (entry.k === 'sabotage') {
+        text = entry.name;
+      }
+      if (!text) continue;
+      list.appendChild(el('li', { class: 'recap-row recap-row--' + entry.k }, [
+        el('span', { class: 'recap-time', text: stamp(entry.t) }),
+        el('span', { class: 'recap-text', text }),
+      ]));
+    }
+    if (!list.children.length) return null;
+    return el('details', { class: 'recap-wrap' }, [
+      el('summary', { text: 'What happened' }),
+      list,
+    ]);
   }
 
   NS.screens = {
@@ -8650,13 +10073,16 @@ window.NS = window.NS || {};
   const session = {
     link: null, mode: 'solo', code: '', isHost: false,
     myId: null, hostId: null, ready: false, botCount: 3,
-    connection: '', settings: C.defaults(), inGame: false,
+    /* Kept between rounds and between days: a teacher who tuned fourteen
+       dials once should not do it again next lesson. */
+    connection: '', settings: C.sanitise(U.store.get('settings', null)), inGame: false,
   };
 
   let canvas = null;
   let pendingRole = null;
   let pendingRoleSince = 0;
   let lastPhase = 'lobby';
+  let toldSpectating = false;
 
   const send = (kind, data) => { if (session.link) session.link.send(kind, data); };
 
@@ -8665,6 +10091,7 @@ window.NS = window.NS || {};
   function boot() {
     canvas = U.$('#stage');
     NS.render.attach(canvas);
+    NS.characters.setSymbols(U.store.get('symbols', false));
     NS.secrets.init();
     NS.hud.init({ send, onLeave: leaveToTitle });
     NS.input.init({ stick: NS.hud.stick, onAction: keyAction, surface: document.body });
@@ -8686,8 +10113,12 @@ window.NS = window.NS || {};
     } else build();
 
     requestAnimationFrame(frame);
-    window.addEventListener('pointerdown', () => NS.audio.wake(), { once: true });
-    window.addEventListener('keydown', () => NS.audio.wake(), { once: true });
+    setInterval(beat, 60);
+    /* Captured, so the gate opens before the button handler that wants to make
+       a noise runs -- otherwise the very first click is silent. */
+    const open = () => { NS.audio.unlock(); mood = ''; };
+    window.addEventListener('pointerdown', open, { once: true, capture: true });
+    window.addEventListener('keydown', open, { once: true, capture: true });
   }
 
   function keyAction(action) {
@@ -8708,7 +10139,7 @@ window.NS = window.NS || {};
     session.ready = asHost;
     session.connection = '';
     W.reset();
-    NS.bots.clear();
+    NS.bots.clear(NS.host);
     NS.meeting.clear();
     lastPhase = 'lobby';
 
@@ -8727,11 +10158,11 @@ window.NS = window.NS || {};
           });
           if (mode === 'solo') NS.bots.fill(session.botCount, NS.host);
         } else {
+          heardFromHost = U.now();
           send('act', {
             t: 'hello', n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
             h: NS.screens.profile.hatIdx, k: NS.secrets.publicKey,
           });
-          setTimeout(avoidColourClash, 900);
         }
         showLobby();
       },
@@ -8752,8 +10183,17 @@ window.NS = window.NS || {};
     session.inGame = false;
   }
 
-  const hostGame = () => openLink(NS.link.roomAvailable() ? 'room' : 'mqtt', U.roomCode(4), true);
-  const joinGame = (profile, code) => openLink(NS.link.roomAvailable() ? 'room' : 'mqtt', code, false);
+  /* `#local` puts the game on a BroadcastChannel between tabs of this browser:
+     two people on one laptop, and the only way to try the join flow before a
+     class without a second device. Otherwise the artifact room where there is
+     one, and a public broker everywhere else. */
+  function transport() {
+    if (location.hash === '#local' && NS.link.localAvailable()) return 'local';
+    return NS.link.roomAvailable() ? 'room' : 'mqtt';
+  }
+
+  const hostGame = () => openLink(transport(), U.roomCode(4), true);
+  const joinGame = (profile, code) => openLink(transport(), code, false);
   const soloGame = () => openLink('solo', 'SOLO', true);
 
   function leaveToTitle(why) {
@@ -8764,22 +10204,37 @@ window.NS = window.NS || {};
     NS.hud.hideEject();
     NS.meeting.hide();
     W.reset();
-    NS.bots.clear();
+    NS.bots.clear(NS.host);
     NS.fx.clear();
     NS.screens.showTitle(typeof why === 'string' ? why : null);
   }
 
-  /* Two people who picked the same colour is a game where nobody can say who
-     they saw. Rather than refuse to start, the later arrival quietly moves to
-     a free one and is told. */
+  /* Two people in the same colour is a game where nobody can say who they saw,
+     and everybody shares a browser profile often enough -- two tabs, a shared
+     laptop, a saved default -- that it happens on the first try.
+
+     Resolved by a rule rather than by asking: the lower peer id keeps the
+     colour and everybody else moves. That is decided the same way on every
+     device, so exactly one of a clashing pair moves and the two do not swap
+     back and forth. It runs on a timer rather than once on arrival, because
+     the person you clash with may not have arrived yet. */
+  let clashCheck = 0;
+  let lobbyTick = 0;
   function avoidColourClash() {
-    if (!session.link) return;
+    if (!session.link || W.state.phase !== 'lobby') return;
     const taken = {};
     for (const peer of session.link.peers()) {
       if (peer.isMe || !peer.presence) continue;
       if (peer.id < session.myId) taken[peer.presence.c] = true;
     }
-    if (!taken[NS.screens.profile.colorIdx]) return;
+    const mine = NS.screens.profile.colorIdx;
+    if (!taken[mine]) return;
+    /* Anything anyone here is wearing is off the table, not just the colours
+       of the people who outrank us -- otherwise we move onto a third person. */
+    for (const peer of session.link.peers()) {
+      if (peer.isMe || !peer.presence) continue;
+      taken[peer.presence.c] = true;
+    }
     for (let i = 0; i < C.COLORS.length; i++) {
       if (taken[i]) continue;
       NS.screens.profile.colorIdx = i;
@@ -8789,6 +10244,7 @@ window.NS = window.NS || {};
       NS.bits.toast('Somebody already had that colour. You are ' + C.COLORS[i].name + '.', 'info', 5);
       return;
     }
+    NS.bits.toast('Every colour is taken.', 'warn', 5);
   }
 
   /* ---- lobby ------------------------------------------------------------- */
@@ -8805,6 +10261,7 @@ window.NS = window.NS || {};
     if (key.indexOf('role:') === 0) session.settings.roles[key.slice(5)] = value;
     else session.settings[key] = value;
     session.settings = C.sanitise(session.settings);
+    U.store.set('settings', session.settings);
     NS.host.setSettings(session.settings);
     refreshLobby();
   }
@@ -8857,6 +10314,7 @@ window.NS = window.NS || {};
     for (const id of NS.host.list()) {
       NS.host.H.players[id].alive = true;
       NS.host.H.players[id].ghost = false;
+      NS.host.H.players[id].spectator = false;
       NS.host.H.players[id].ready = false;
     }
     NS.bots.resetForRound();
@@ -8876,10 +10334,88 @@ window.NS = window.NS || {};
          host is whoever sent one, and after that nobody else can. */
       if (!session.hostId) session.hostId = msg.from;
       if (msg.from !== session.hostId) return;
+      heardFromHost = U.now();
       applySys(msg.data);
       return;
     }
     if (msg.kind === 'chat') onChat(msg.from, msg.data);
+  }
+
+  /* ---- when the host goes away ------------------------------------------- */
+
+  /* One device decides everything, which means one device can take the game
+     with it. Before this the rest of the room simply froze: no snapshots, no
+     message, a countdown that had stopped and nothing to press. Silence is the
+     one answer a game is never allowed to give.
+
+     In the lobby it is recoverable and nobody should have to re-enter a code,
+     so the remaining player with the lowest id picks the game up. Mid-round it
+     is not recoverable -- a new host would know nobody's role, because roles
+     are sealed to devices rather than stored anywhere -- so the round ends and
+     says so. */
+  const HOST_SILENCE = 9000;
+  let heardFromHost = 0;
+
+  function watchHost() {
+    if (session.isHost || !session.link || !session.link.ready) return;
+    if (!heardFromHost) return;
+    if (U.now() - heardFromHost < HOST_SILENCE) return;
+
+    const peers = session.link.peers();
+    const stillHere = peers.some((p) => p.id === session.hostId);
+    heardFromHost = U.now();          // do not fire again while we sort it out
+
+    if (stillHere) {
+      NS.bits.toast('The host has gone quiet. Still trying.', 'warn', 5);
+      return;
+    }
+    if (W.state.phase !== 'lobby' && W.state.phase !== 'end') {
+      NS.bits.toast('The host closed the game, so the round ended.', 'bad', 9);
+    }
+    takeOverLobby(peers);
+  }
+
+  /* The lowest id wins, decided identically on every device, so exactly one of
+     them picks the lobby up and the others follow it without being told. */
+  function takeOverLobby(peers) {
+    const ids = peers.map((p) => p.id).filter(Boolean).sort();
+    const heir = ids[0];
+    session.hostId = null;
+    heardFromHost = 0;
+    W.myRole = null;
+    W.myTasks = [];
+    W.state.roles = {};
+    W.bodies = [];
+    W.state.phase = 'lobby';
+    W.state.winner = null;
+    W.state.meeting = null;
+    W.state.sabotage = null;
+    NS.minigames.close(true);
+    NS.hud.closeOverlay();
+    NS.hud.hideRole();
+    NS.hud.hideEject();
+    NS.meeting.hide();
+    NS.input.setEnabled(true);
+
+    if (heir !== session.myId) { session.inGame = false; showLobby(); return; }
+
+    session.isHost = true;
+    session.hostId = session.myId;
+    session.ready = true;
+    session.inGame = false;
+    NS.host.begin({ send, settings: session.settings });
+    NS.host.addPlayer(session.myId, {
+      n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
+      h: NS.screens.profile.hatIdx, k: NS.secrets.publicKey,
+    });
+    for (const peer of peers) {
+      if (peer.isMe || !peer.presence) continue;
+      NS.host.addPlayer(peer.id, {
+        n: peer.presence.n, c: peer.presence.c, h: peer.presence.h, k: peer.presence.k,
+      });
+    }
+    NS.bits.toast('You are the host now.', 'info', 6);
+    showLobby();
   }
 
   function applySys(data) {
@@ -8921,6 +10457,8 @@ window.NS = window.NS || {};
     W.state.roles[session.myId] = W.myRole;
     for (const id of (payload.mates || [])) W.state.roles[id] = 'impostor';
     NS.hud.setAbilitySpent(false);
+    const def = C.ROLES[W.myRole];
+    NS.bits.announce('You are the ' + def.name + '. ' + def.blurb);
     if (W.state.phase === 'reveal') showRoleCard();
     if (wasClear) {
       NS.bits.toast('This browser cannot encrypt, so roles were sent in the clear on this round.', 'warn', 7);
@@ -8960,6 +10498,15 @@ window.NS = window.NS || {};
         p.name = U.cleanName(row[1], C.NAME_MAX) || 'Someone';
         p.colorIdx = U.clamp(row[2] | 0, 0, C.COLORS.length - 1);
         p.hatIdx = U.clamp(row[3] | 0, 0, C.HATS.length - 1);
+      } else if (row[1] && row[1] !== p.name) {
+        /* The host renames you if somebody already had that name. Better to
+           be told once than to spend a meeting being confused for them. */
+        const was = p.name;
+        p.name = U.cleanName(row[1], C.NAME_MAX) || p.name;
+        NS.screens.profile.name = p.name;
+        if (was && was !== p.name) {
+          NS.bits.toast('Somebody was already called ' + was + '. You are ' + p.name + '.', 'info', 6);
+        }
       }
       const flags = row[4] | 0;
       p.alive = !!(flags & 1);
@@ -8995,13 +10542,14 @@ window.NS = window.NS || {};
     } : null;
 
     applyDoors(s.cd || []);
+    st.cameras = !!s.cw;
 
     st.meeting = s.mt ? {
       reason: s.mt.r, by: s.mt.by, bodyId: s.mt.bd, stage: s.mt.s,
       time: Number(s.mt.t) || 0, voted: s.mt.vd || [],
     } : null;
     st.ejected = s.ej || null;
-    st.winner = s.wn ? { team: s.wn.tm, reason: s.wn.rs, roles: s.wn.rl || [] } : null;
+    st.winner = s.wn ? { team: s.wn.tm, reason: s.wn.rs, roles: s.wn.rl || [], log: s.wn.lg || [] } : null;
     if (st.winner) {
       st.roles = st.roles || {};
       for (const row of st.winner.roles) st.roles[row[0]] = row[1];
@@ -9013,14 +10561,32 @@ window.NS = window.NS || {};
       st.phase = phase;
       onPhase(from, phase);
     }
+
+    /* Arrived in the middle of somebody else's round. Say so once, rather
+       than dropping them into a station where every button is greyed out. */
+    if (!toldSpectating && !session.isHost && phase !== 'lobby' && phase !== 'end'
+        && !W.myRole && W.me && W.me.ghost) {
+      toldSpectating = true;
+      session.inGame = true;
+      NS.screens.hideAll();
+      NS.input.setEnabled(true);
+      NS.bits.toast('This round had already started, so you are watching it. '
+        + 'You will be dealt in when the next one begins.', 'info', 9);
+    }
+    if (phase === 'lobby') toldSpectating = false;
   }
 
   function applyDoors(list) {
     const wanted = {};
     for (const id of list) wanted[id] = true;
     const current = W.state.closedRooms || [];
-    for (const id of current) if (!wanted[id]) M.sealRoom(id, false);
-    for (const id of list) if (current.indexOf(id) < 0) M.sealRoom(id, true);
+    const at = W.state.doorAt || (W.state.doorAt = {});
+    for (const id of current) if (!wanted[id]) { M.sealRoom(id, false); delete at[id]; }
+    for (const id of list) {
+      if (current.indexOf(id) >= 0) continue;
+      M.sealRoom(id, true);
+      at[id] = U.now();
+    }
     W.state.closedRooms = list.slice();
   }
 
@@ -9055,7 +10621,14 @@ window.NS = window.NS || {};
     if (to === 'eject') {
       NS.meeting.hide();
       NS.input.setEnabled(false);
-      if (W.state.ejected) NS.hud.showEject(W.state.ejected);
+      const out = W.state.ejected;
+      if (out) {
+        NS.hud.showEject(out);
+        NS.bits.announce(out.id
+          ? (out.name + ' was ejected'
+            + (W.state.settings.confirmEjects ? (out.impostor ? ', and was an impostor.' : ', and was not an impostor.') : '.'))
+          : (out.tie ? 'The vote tied. Nobody was ejected.' : 'The crew skipped. Nobody was ejected.'));
+      }
       return;
     }
     if (to === 'play') {
@@ -9080,7 +10653,10 @@ window.NS = window.NS || {};
           alive: p.alive, role: (W.state.roles || {})[p.id] || 'crewmate',
         });
       }
-      NS.screens.showEnd(W.state.winner || { team: 'crew', reason: '' }, players, session.isHost);
+      const result = W.state.winner || { team: 'crew', reason: '' };
+      NS.bits.announce((result.team === 'crew' ? 'The crew wins. '
+        : result.team === 'impostor' ? 'The impostors win. ' : 'The jester wins. ') + (result.reason || ''));
+      NS.screens.showEnd(result, players, session.isHost);
       return;
     }
     if (to === 'lobby') {
@@ -9115,6 +10691,7 @@ window.NS = window.NS || {};
           NS.render.flash('#7a0f20', 0.8);
           NS.render.shake(14);
           NS.bits.toast('You are dead. Finish your tasks and watch.', 'bad', 6);
+          NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
         } else if (seen(e.x, e.y)) {
           NS.audio.play('kill');
           NS.render.shake(7);
@@ -9156,19 +10733,30 @@ window.NS = window.NS || {};
         const spot = group && group[e.i];
         if (spot) {
           const w = M.toWorld(spot);
-          if (seen(w.x, w.y)) { NS.fx.vent(w.x, w.y); NS.audio.play('vent'); }
+          if (seen(w.x, w.y)) {
+            NS.fx.vent(w.x, w.y);
+            NS.render.ventOpened(w.x, w.y);
+            NS.audio.play('vent');
+          }
         }
         break;
       }
-      case 'meeting':
+      case 'meeting': {
         NS.audio.play(e.reason === 'body' ? 'report' : 'alarm');
         NS.render.flash('#3a2a05', 0.5);
+        const caller = W.players.get(e.by);
+        NS.bits.announce(e.reason === 'body'
+          ? ((caller ? caller.name : 'Somebody') + ' reported a body. Meeting.')
+          : ((caller ? caller.name : 'Somebody') + ' called an emergency meeting.'));
         break;
+      }
       case 'sabotage': {
         const def = NS.sabotage.SABOTAGES[e.k];
+        if (def) NS.bits.announce(def.name + '. ' + def.warn);
         NS.audio.play(e.k === 'lights' ? 'lightsOut' : 'sabotage');
         NS.render.shake(def && def.critical ? 10 : 5);
-        NS.bits.toast(def ? def.warn : 'Something broke.', 'bad', 6);
+        /* No toast: the banner across the top says this already and stays
+           until it is fixed. Two copies of the same sentence is noise. */
         if (e.by === me) NS.hud.forceCooldown('sabotage', 25);
         break;
       }
@@ -9181,12 +10769,13 @@ window.NS = window.NS || {};
         NS.bits.toast('Fixed.', 'good');
         break;
       case 'visual': {
-        const who = W.players.get(e.by);
-        if (who && seen(who.x, who.y)) {
-          const station = NS.rules.stationById[e.sid];
-          NS.fx.task(who.x, who.y);
-          NS.fx.say(who.x, who.y - 52, station ? station.name : 'Task', '#34e0b8');
-        }
+        const station = NS.rules.stationById[e.sid];
+        if (!station) break;
+        const spot = M.toWorld(station.steps ? station.steps[station.steps.length - 1] : station);
+        if (!seen(spot.x, spot.y)) break;
+        NS.fx.visual(station.kind, spot.x, spot.y);
+        NS.fx.say(spot.x, spot.y - 54, station.name, '#34e0b8');
+        NS.audio.play('taskDone');
         break;
       }
       case 'voted':
@@ -9196,8 +10785,17 @@ window.NS = window.NS || {};
     }
   }
 
+  /* Limited on the way in rather than on the way out: the sender is the last
+     party that can be trusted to hold back, and one person leaning on a key
+     should not be able to push a meeting off everybody's screen. */
+  const chatClock = new Map();
+  const CHAT_GAP = 700;
+
   function onChat(from, data) {
     if (!data || typeof data !== 'object' || data.t !== 'msg') return;
+    const now = U.now();
+    if (now - (chatClock.get(from) || 0) < CHAT_GAP) return;
+    chatClock.set(from, now);
     const text = U.cleanName(data.text, C.CHAT_MAX);
     if (!text) return;
     const who = W.players.get(from);
@@ -9213,22 +10811,50 @@ window.NS = window.NS || {};
     });
   }
 
-  /* ---- the frame --------------------------------------------------------- */
+  /* ---- two loops, and why ------------------------------------------------ */
 
-  let last = U.now();
+  /* Drawing runs on requestAnimationFrame, which is right: it matches the
+     screen and stops when nothing is on screen to match.
 
-  function frame() {
+     The game does NOT run there, and this was found the hard way. A browser
+     stops animation frames in a tab that is not visible, so with the whole
+     game on that clock the host glancing at another tab froze the round for
+     everybody -- and, worse, stopped their presence going out, so after five
+     seconds thirteen other devices decided the host had left. In a classroom
+     that is not an edge case; it is what happens the first time somebody gets
+     a message.
+
+     So anything that has to keep happening -- the authoritative tick, presence,
+     hearing other people -- runs on an interval instead. A hidden tab throttles
+     that to about once a second rather than stopping it, which is slow but
+     alive, and it catches up the moment the tab is looked at again. */
+
+  let lastBeat = U.now();
+  let lastFrame = U.now();
+
+  function beat() {
     const now = U.now();
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
+    const dt = Math.min(1.5, (now - lastBeat) / 1000);
+    lastBeat = now;
 
     syncPeers();
     tryPendingRole();
 
-    const input = NS.input.read();
-    W.step(dt, input);
-    publishPresence();
+    clashCheck -= dt;
+    if (clashCheck <= 0) { clashCheck = 1.2; avoidColourClash(); }
 
+    /* The lobby is redrawn on a timer rather than only when somebody joins.
+       Whether the round can start depends on colours that resolve themselves a
+       second after everybody has arrived, and a start button left disabled by
+       a state that has since cleared is the worst kind of bug: the game looks
+       broken and there is nothing to click to find out why. */
+    lobbyTick -= dt;
+    if (lobbyTick <= 0) { lobbyTick = 0.25; refreshLobby(); }
+
+    watchHost();
+    roomTone();
+
+    publishPresence();
     if (session.isHost) NS.host.tick(dt);
 
     /* Countdowns run locally between snapshots. The host still owns them --
@@ -9240,7 +10866,15 @@ window.NS = window.NS || {};
       const def = NS.sabotage.SABOTAGES[st.sabotage.kind];
       if (def && def.critical) st.sabotage.remaining = Math.max(0, st.sabotage.remaining - dt);
     }
+  }
 
+  function frame() {
+    const now = U.now();
+    const dt = Math.min(0.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+
+    const input = NS.input.read();
+    W.step(dt, input);
     NS.fx.step(dt);
 
     if (session.inGame && W.me) {
@@ -9259,7 +10893,7 @@ window.NS = window.NS || {};
     for (const peer of peers) {
       const presence = peer.presence || {};
       if (peer.isMe) {
-        session.myId = peer.id;
+        if (peer.id && peer.id !== session.myId) rekeyMe(peer.id);
         if (session.isHost) {
           NS.host.addPlayer(peer.id, {
             n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
@@ -9289,6 +10923,40 @@ window.NS = window.NS || {};
       }
     }
     if (session.myId && session.hostId === session.myId) W.hostKey = NS.secrets.publicKey;
+  }
+
+  /* Snapshots key every player by the id the transport gave them, so if this
+     device's id ever changes the local entity has to move with it -- otherwise
+     the next snapshot creates a second copy of you and the one you are walking
+     around in belongs to nobody. */
+  function rekeyMe(id) {
+    const old = session.myId;
+    session.myId = id;
+    if (!W.me) return;
+    if (old) W.players.delete(old);
+    W.me.id = id;
+    W.players.set(id, W.me);
+    if (session.isHost) {
+      session.hostId = id;
+      if (old && NS.host.H.players[old]) delete NS.host.H.players[old];
+    }
+  }
+
+  /* The station's own sound, set from what is happening rather than from a
+     playlist. Changed only when the mood changes -- retargeting an oscillator
+     sixteen times a second is audible as a stutter. */
+  let mood = '';
+  function roomTone() {
+    if (!NS.audio.unlocked) return;
+    const st = W.state;
+    let next = 'station';
+    if (!session.link) next = 'off';
+    else if (st.phase === 'meeting' || st.phase === 'eject' || st.phase === 'end') next = 'off';
+    else if (st.sabotage && st.sabotage.kind === 'lights') next = 'dark';
+    else if (st.sabotage && NS.sabotage.SABOTAGES[st.sabotage.kind].critical) next = 'alarm';
+    if (next === mood) return;
+    mood = next;
+    NS.audio.ambience(next);
   }
 
   function publishPresence() {

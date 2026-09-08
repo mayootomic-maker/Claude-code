@@ -27,6 +27,13 @@
     { id: 'coral',  name: 'Coral',  body: '#ff7a6b', dark: '#9c3b31', rim: '#ffb0a5' },
   ];
 
+  /* Colour is never the only thing telling two players apart. Fourteen shades
+     is more than anybody with a colour vision deficiency can be asked to hold,
+     and the game turns the lights off on purpose -- so each colour also has a
+     shape, drawn on the body and on every portrait when the option is on. */
+  const SYMBOLS = ['circle', 'square', 'triangle', 'diamond', 'star', 'cross', 'chevron',
+                   'ring', 'bar', 'dots', 'hexagon', 'drop', 'arrow', 'wave'];
+
   const colorById = (id) => COLORS.find((c) => c.id === id) || COLORS[0];
   const colorIndex = (id) => Math.max(0, COLORS.findIndex((c) => c.id === id));
 
@@ -179,7 +186,7 @@
   const KILL_RANGE = { Short: 78, Normal: 108, Long: 152 };
 
   NS.config = {
-    COLORS, colorById, colorIndex, HATS, ROLES, CREW_ROLES, IMPOSTOR_ROLES,
+    COLORS, SYMBOLS, colorById, colorIndex, HATS, ROLES, CREW_ROLES, IMPOSTOR_ROLES,
     SETTINGS, ROLE_SETTINGS, defaults, sanitise, KILL_RANGE,
     MAX_PLAYERS: 14,
     MIN_PLAYERS: 4,

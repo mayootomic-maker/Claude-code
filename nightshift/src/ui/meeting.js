@@ -44,27 +44,40 @@
     'Saw them vent', 'Body in ', 'It is not me', 'Skip',
   ];
 
+  const listeners = new Set();
+  function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+
   function addMessage(msg) {
     history.push(msg);
     if (history.length > 120) history.shift();
     if (log) appendRow(msg);
+    for (const fn of Array.from(listeners)) fn(msg);
+  }
+
+  /* One chat row, rendered the same way wherever it is shown -- the meeting
+     and the ghosts' own window are the same conversation seen from different
+     sides of being alive. */
+  function renderRow(msg) {
+    const row = el('div', { class: 'chat-row' + (msg.ghost ? ' is-ghost' : '') });
+    if (msg.system) {
+      row.className = 'chat-row is-system';
+      row.textContent = msg.text;
+      return row;
+    }
+    const who = el('span', { class: 'chat-who', text: msg.name });
+    who.style.color = msg.ghost ? '#9d8cff' : (C.COLORS[msg.colorIdx] || C.COLORS[0]).rim;
+    row.appendChild(who);
+    row.appendChild(el('span', { class: 'chat-text', text: msg.text }));
+    return row;
   }
 
   function appendRow(msg) {
-    const dead = msg.ghost;
-    const row = el('div', { class: 'chat-row' + (dead ? ' is-ghost' : '') });
-    const who = el('span', { class: 'chat-who', text: msg.name });
-    who.style.color = dead ? '#9d8cff' : (C.COLORS[msg.colorIdx] || C.COLORS[0]).rim;
-    row.appendChild(who);
-    row.appendChild(el('span', { class: 'chat-text', text: msg.text }));
-    log.appendChild(row);
+    log.appendChild(renderRow(msg));
     log.scrollTop = log.scrollHeight;
   }
 
   function systemMessage(text) {
-    if (!log) return;
-    log.appendChild(el('div', { class: 'chat-row is-system', text }));
-    log.scrollTop = log.scrollHeight;
+    addMessage({ system: true, text });
   }
 
   /* ---- building ---------------------------------------------------------- */
@@ -315,5 +328,8 @@
     if (log) log.textContent = '';
   }
 
-  NS.meeting = { init, show, hide, update, onChat, clear, systemMessage, setTab };
+  NS.meeting = {
+    init, show, hide, update, onChat, clear, systemMessage, setTab,
+    subscribe, renderRow, history, send: (text) => send('chat', { t: 'msg', text }),
+  };
 })(window.NS);
