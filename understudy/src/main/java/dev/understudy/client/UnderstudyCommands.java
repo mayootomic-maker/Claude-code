@@ -128,6 +128,14 @@ public final class UnderstudyCommands {
             // out the doing for itself.
             // The control panel. Off until asked for, on the loopback address
             // unless asked otherwise, and a fresh token every time.
+            // Pasting rather than building. Same menu, same drag, same Enter —
+            // and then the whole thing is simply there, with no materials and
+            // no walking, because the server put it there rather than the
+            // character. See PasteTask for what that costs and where it works.
+            dispatcher.register(literal("paste")
+                    .executes(context -> paste(context.getSource()))
+                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+
             dispatcher.register(literal("panel")
                     .executes(context -> panel(context.getSource(), false))
                     .then(literal("network").executes(context -> panel(context.getSource(), true)))
@@ -313,6 +321,28 @@ public final class UnderstudyCommands {
      * almost always what was meant — and which is also the item you would least
      * like it to get wrong, so everything it does is announced first.
      */
+    /**
+     * Open the menu, and put whatever is chosen straight into the world.
+     *
+     * The only difference from /build is what happens after Enter, so it is the
+     * same two screens and the same keys, and nothing new to learn.
+     */
+    private static int paste(FabricClientCommandSource source) {
+        UnderstudyClient.resume();
+        if (source.getPlayer() == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        UnderstudyClient.askForPicker(true);
+        if (Minecraft.getInstance().getSingleplayerServer() == null) {
+            // Said before rather than after, because finding out that it needed
+            // a permission you do not have is a thing to learn at the start.
+            say(source, "on a server this needs permission to run /setblock — "
+                    + "it tries one block first and says if it was refused");
+        }
+        return 1;
+    }
+
     private static int enchant(FabricClientCommandSource source, String rawItem) {
         UnderstudyClient.resume();
         EnchantTask task = UnderstudyClient.enchant();

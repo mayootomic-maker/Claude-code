@@ -45,6 +45,8 @@ public final class Manual {
                             "open the menu: pick a design, size and materials"),
                     new Entry("/build <name> [size]",
                             "hut, house, tower, storage, study or manor"),
+                    new Entry("/paste", "the same menu, but the build simply appears"),
+                    new Entry("/paste stop", "stop a paste part way through"),
                     new Entry("/build cancel", "drop the site you are placing"),
                     new Entry("/build stop", "stop a build that is under way"),
                     new Entry("/build imports", "where to drop schematics and models"),

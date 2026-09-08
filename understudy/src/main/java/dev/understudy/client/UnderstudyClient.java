@@ -28,6 +28,7 @@ import dev.understudy.mc.Snapshot;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
+import dev.understudy.mc.PasteTask;
 import dev.understudy.mc.Safety;
 import dev.understudy.mc.SmeltTask;
 import dev.understudy.mc.SortTask;
@@ -106,6 +107,15 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static Safety safety;
     private static Marker marker;
     private static boolean pickerWanted;
+    /**
+     * Whether the thing being sited will be pasted rather than built.
+     *
+     * The two share every step up to the moment of truth — the same menu, the
+     * same drag, the same Enter — because choosing what and choosing where are
+     * the same questions either way. Only the last step differs.
+     */
+    private static boolean pasting;
+    private static PasteTask paste;
     private static boolean paused;
     private static boolean greeted;
     private static boolean reportedFailure;
@@ -213,6 +223,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     gather = new GatherTask(client, travel, craft, smelt, hunt, atlas, measured,
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
+                    paste = new PasteTask(client, UnderstudyClient::tell);
                     autopilot = new Autopilot(client, gather, sort, build, atlas, measured, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
@@ -308,6 +319,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     }
                 }
 
+                paste.tick();
                 travel.tick();
                 craft.tick();
                 smelt.tick();
@@ -374,7 +386,16 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     /** Ask for the build menu; it opens on the next tick. */
     public static void askForPicker() {
+        askForPicker(false);
+    }
+
+    public static void askForPicker(boolean toPaste) {
         pickerWanted = true;
+        pasting = toPaste;
+    }
+
+    public static PasteTask paste() {
+        return paste;
     }
 
     public static void cancelSite() {
@@ -394,7 +415,7 @@ public final class UnderstudyClient implements ClientModInitializer {
             tell("not in a world yet");
             return;
         }
-        marker.start(design, UnderstudyClient::gatherThenBuild);
+        marker.start(design, UnderstudyClient::placeIt);
     }
 
     /**
@@ -408,6 +429,21 @@ public final class UnderstudyClient implements ClientModInitializer {
      * With a full inventory it skips straight to building, which is the common
      * case for anyone who keeps a stocked chest.
      */
+    /**
+     * Sited, and now either built block by block or simply put there.
+     *
+     * The fork is here rather than in the marker because the marker's job ends
+     * when it knows the where, and it should not also have to know why.
+     */
+    private static void placeIt(Blueprint blueprint, net.minecraft.core.BlockPos origin) {
+        if (pasting) {
+            pasting = false;
+            paste.start(blueprint, origin);
+            return;
+        }
+        gatherThenBuild(blueprint, origin);
+    }
+
     private static void gatherThenBuild(Blueprint blueprint, net.minecraft.core.BlockPos origin) {
         Minecraft client = Minecraft.getInstance();
         if (build == null || gather == null || client.player == null) return;
@@ -550,7 +586,8 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
-        return (hunt != null && hunt.running())
+        return (paste != null && paste.running())
+                || (hunt != null && hunt.running())
                 || (enchant != null && enchant.running())
                 || (travel != null && travel.running())
                 || (build != null && build.running())
@@ -733,6 +770,8 @@ public final class UnderstudyClient implements ClientModInitializer {
         paused = false;
         pickerWanted = false;
         if (marker != null) marker.cancel();
+        pasting = false;
+        if (paste != null) paste.stop(null);
         handover.reset();
         if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);

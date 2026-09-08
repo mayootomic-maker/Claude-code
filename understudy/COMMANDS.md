@@ -6,6 +6,8 @@
 |---|---|
 | `/build` | open the menu: pick a design, size and materials |
 | `/build <name> [size]` | hut, house, tower, storage, study or manor |
+| `/paste` | the same menu, but the build simply appears |
+| `/paste stop` | stop a paste part way through |
 | `/build cancel` | drop the site you are placing |
 | `/build stop` | stop a build that is under way |
 | `/build imports` | where to drop schematics and models |
