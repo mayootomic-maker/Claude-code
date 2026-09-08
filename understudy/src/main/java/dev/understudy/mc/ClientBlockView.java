@@ -60,9 +60,18 @@ public final class ClientBlockView implements BlockView {
     @Override
     public boolean hazard(int x, int y, int z) {
         BlockState state = stateAt(x, y, z);
-        if (!state.getFluidState().isEmpty() && state.getFluidState().isSource()) {
-            String fluid = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
-            if (fluid.contains("lava")) return true;
+        // Any lava, not only a source block.
+        //
+        // The source test was there to let it wade through flowing water, and
+        // it quietly did the same for flowing lava. A source pool is mostly
+        // harmless because you cannot stand on it and the route never goes
+        // there; the sheet of lava running over solid netherrack is the one
+        // that kills you, because the block under it is solid, the fluid is
+        // passable, and the search calls that a floor. That is the whole of why
+        // the Nether was left alone until now.
+        if (!state.getFluidState().isEmpty()
+                && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().contains("lava")) {
+            return true;
         }
         return HAZARDS.contains(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath());
     }

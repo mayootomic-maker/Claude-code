@@ -76,6 +76,23 @@ public final class PasteTask {
      * is about to overwrite anyway, so a permitted paste costs nothing and a
      * refused one changes nothing.
      */
+    /**
+     * What has been pasted this session, newest last.
+     *
+     * Six numbers and a dimension each, which is all an undo needs: the box a
+     * paste occupies is the box it cleared, so taking it away is the same fill
+     * that made room for it. Kept as a stack because pasting three things and
+     * being able to remove only the third would be a strange kind of undo.
+     *
+     * It does not put back what was there before. That was never recorded and
+     * recording it would be a copy of every block in the box; what an undo does
+     * is remove the building, and it says so rather than implying more.
+     */
+    private record Pasted(String what, String dimension, int x, int y, int z,
+                          int wide, int tall, int deep) {}
+
+    private final java.util.ArrayDeque<Pasted> done = new java.util.ArrayDeque<>();
+
     private BlockPos probe;
     private BlockState probeWas;
     private int probeTicks = -1;
@@ -85,8 +102,51 @@ public final class PasteTask {
         this.report = report;
     }
 
+    /** How many pastes back it can go. Longer than anyone undoes in one sitting. */
+    private static final int REMEMBERED = 32;
+
     public boolean running() {
         return running;
+    }
+
+    /**
+     * Take the last paste away again.
+     *
+     * The same route as putting it there, because it is the same kind of work:
+     * the server does it, or nobody does. On somebody else's server it needs
+     * the same permission, and finding that out is the same one-block question
+     * — so an undo of a paste that landed will land too.
+     */
+    public void undo() {
+        if (running) {
+            stop("stopped the paste that was running");
+            return;
+        }
+        if (done.isEmpty()) {
+            report.accept("nothing pasted this session to undo");
+            return;
+        }
+        Pasted last = done.peekLast();
+        if (!last.dimension().equals(dimension())) {
+            report.accept("the last paste was in " + last.dimension() + " — go there to undo it");
+            return;
+        }
+        done.removeLast();
+
+        this.what = "undo of the " + last.what();
+        this.commands = Paste.erase(last.x(), last.y(), last.z(),
+                last.wide(), last.tall(), last.deep());
+        this.next = 0;
+        this.running = true;
+        this.probeTicks = -1;
+        Ghosts.hide();
+        report.accept("removing the " + last.what() + " at "
+                + last.x() + " " + last.y() + " " + last.z()
+                + " — the ground it was cleared off does not come back");
+    }
+
+    private String dimension() {
+        return client.level == null ? "?" : client.level.dimension().identifier().toString();
     }
 
     public void start(Blueprint plan, BlockPos origin) {
@@ -104,6 +164,10 @@ public final class PasteTask {
         this.next = 0;
         this.running = true;
         this.probeTicks = -1;
+
+        done.addLast(new Pasted(plan.name(), dimension(), origin.getX(), origin.getY(),
+                origin.getZ(), plan.sizeX(), plan.sizeY(), plan.sizeZ()));
+        while (done.size() > REMEMBERED) done.removeFirst();
 
         int blocks = Paste.blockCount(plan, origin.getX(), origin.getY(), origin.getZ());
         report.accept("pasting the " + what + " — " + blocks + " blocks, "
@@ -148,7 +212,7 @@ public final class PasteTask {
 
         if (next >= commands.size()) {
             running = false;
-            report.accept("pasted the " + what);
+            report.accept(what.startsWith("undo") ? "removed it" : "pasted the " + what);
         }
     }
 

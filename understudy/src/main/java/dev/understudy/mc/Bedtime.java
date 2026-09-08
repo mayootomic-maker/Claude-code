@@ -54,7 +54,8 @@ public final class Bedtime {
     }
 
     public static boolean night(Minecraft client) {
-        return client.level != null && client.level.getSkyDarken() > NIGHT;
+        if (client.level == null || !Worlds.hasASky(client.level)) return false;
+        return client.level.getSkyDarken() > NIGHT;
     }
 
     /**

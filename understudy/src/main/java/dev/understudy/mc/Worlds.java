@@ -40,4 +40,23 @@ public final class Worlds {
         ServerData server = client.getCurrentServer();
         return server == null ? "unknown" : "server." + server.ip;
     }
+
+    /**
+     * Whether this world has a sky, and therefore a night to sleep through.
+     *
+     * Asked because getSkyDarken answers in the Nether too, and answers
+     * "dark" — there is no sky light down there at all. So the sleep rule read
+     * a permanent midnight, went looking for a bed, and a bed in the Nether is
+     * a bomb. It is the one thing about the place that will kill you for doing
+     * the ordinary thing.
+     */
+    public static boolean hasASky(net.minecraft.world.level.Level level) {
+        String where = level.dimension().identifier().getPath();
+        return !where.equals("the_nether") && !where.equals("the_end");
+    }
+
+    /** Whether this is the Nether, which changes what is safe rather than only where you are. */
+    public static boolean inTheNether(net.minecraft.world.level.Level level) {
+        return level.dimension().identifier().getPath().equals("the_nether");
+    }
 }

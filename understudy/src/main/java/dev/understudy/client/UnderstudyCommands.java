@@ -25,6 +25,7 @@ import dev.understudy.mc.ChatFix;
 import dev.understudy.mc.Hud;
 import dev.understudy.mc.Imports;
 import dev.understudy.mc.SelfTest;
+import dev.understudy.mc.PasteTask;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import net.minecraft.client.Minecraft;
@@ -134,6 +135,17 @@ public final class UnderstudyCommands {
             // character. See PasteTask for what that costs and where it works.
             dispatcher.register(literal("paste")
                     .executes(context -> paste(context.getSource()))
+                    .then(literal("undo").executes(context -> undoPaste(context.getSource())))
+                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+
+            // One command both ways. A portal in the Nether leads home and one
+            // at home leads to the Nether, so which you get is decided by where
+            // you are standing rather than by what you typed.
+            dispatcher.register(literal("nether")
+                    .executes(context -> {
+                        UnderstudyClient.throughAPortal();
+                        return 1;
+                    })
                     .then(literal("stop").executes(context -> stop(context.getSource()))));
 
             dispatcher.register(literal("panel")
@@ -340,6 +352,18 @@ public final class UnderstudyCommands {
             say(source, "on a server this needs permission to run /setblock — "
                     + "it tries one block first and says if it was refused");
         }
+        return 1;
+    }
+
+    /** Take the last paste away again. */
+    private static int undoPaste(FabricClientCommandSource source) {
+        PasteTask task = UnderstudyClient.paste();
+        if (task == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        UnderstudyClient.resume();
+        task.undo();
         return 1;
     }
 

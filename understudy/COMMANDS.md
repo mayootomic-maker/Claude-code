@@ -7,6 +7,7 @@
 | `/build` | open the menu: pick a design, size and materials |
 | `/build <name> [size]` | hut, house, tower, storage, study or manor |
 | `/paste` | the same menu, but the build simply appears |
+| `/paste undo` | take the last paste back out again |
 | `/paste stop` | stop a paste part way through |
 | `/build cancel` | drop the site you are placing |
 | `/build stop` | stop a build that is under way |
@@ -34,6 +35,7 @@
 | `/enchant [item]` | at a table with its fifteen shelves |
 | `/travel <x> <y> <z>` | walk there |
 | `/travel stop` | stop walking |
+| `/nether` | through a portal, building and lighting one if needed |
 
 ## Running it
 

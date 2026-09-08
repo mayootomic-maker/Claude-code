@@ -165,13 +165,26 @@ public final class Paste {
      * tall import would be refused whole with nothing said about why.
      */
     private static List<String> clear(Blueprint plan, int ox, int oy, int oz) {
+        return erase(ox, oy, oz, plan.sizeX(), plan.sizeY(), plan.sizeZ());
+    }
+
+    /**
+     * Empty a box, in slabs the game will accept.
+     *
+     * One stack of layers at a time rather than one box, because a fill is
+     * capped at {@link #FILL_LIMIT} and a tall import would be refused whole
+     * with nothing said about why.
+     *
+     * Used both to make room for a paste and to take one away again, which are
+     * the same operation over the same box — which is the whole reason undoing
+     * a paste needs nothing recorded but six numbers.
+     */
+    public static List<String> erase(int ox, int oy, int oz, int wide, int tall, int deep) {
         List<String> out = new ArrayList<>();
-        int wide = plan.sizeX();
-        int deep = plan.sizeZ();
         int perLayer = Math.max(1, wide * deep);
         int layersAtOnce = Math.max(1, FILL_LIMIT / perLayer);
-        for (int y = 0; y < plan.sizeY(); y += layersAtOnce) {
-            int top = Math.min(plan.sizeY() - 1, y + layersAtOnce - 1);
+        for (int y = 0; y < tall; y += layersAtOnce) {
+            int top = Math.min(tall - 1, y + layersAtOnce - 1);
             out.add("fill " + ox + " " + (oy + y) + " " + oz + " "
                     + (ox + wide - 1) + " " + (oy + top) + " " + (oz + deep - 1) + " air");
         }

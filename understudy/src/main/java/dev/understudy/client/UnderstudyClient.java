@@ -29,6 +29,7 @@ import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
 import dev.understudy.mc.PasteTask;
+import dev.understudy.mc.PortalTask;
 import dev.understudy.mc.Safety;
 import dev.understudy.mc.SmeltTask;
 import dev.understudy.mc.SortTask;
@@ -116,6 +117,9 @@ public final class UnderstudyClient implements ClientModInitializer {
      */
     private static boolean pasting;
     private static PasteTask paste;
+    private static PortalTask portal;
+    /** Set while the thing being sited is a portal frame, so it gets lit afterwards. */
+    private static boolean sitingAPortal;
     private static boolean paused;
     private static boolean greeted;
     private static boolean reportedFailure;
@@ -224,6 +228,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
                     paste = new PasteTask(client, UnderstudyClient::tell);
+                    portal = new PortalTask(client, travel, atlas, UnderstudyClient::tell);
                     autopilot = new Autopilot(client, gather, sort, build, atlas, measured, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
                 }
@@ -320,6 +325,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 }
 
                 paste.tick();
+                portal.tick();
                 travel.tick();
                 craft.tick();
                 smelt.tick();
@@ -398,6 +404,44 @@ public final class UnderstudyClient implements ClientModInitializer {
         return paste;
     }
 
+    public static PortalTask portal() {
+        return portal;
+    }
+
+    /**
+     * Go to the other side, whichever side that is.
+     *
+     * Three cases and they are all one question — is there a door. Walk through
+     * one that is lit; put one up if there is obsidian for it; say what is
+     * missing if there is not. The building half is the ordinary building half:
+     * the same menu-less siting as any other blueprint, so the frame goes where
+     * you drag it rather than wherever the character happened to stop.
+     */
+    public static void throughAPortal() {
+        Minecraft client = Minecraft.getInstance();
+        if (portal == null || client.player == null) {
+            tell("not in a world yet");
+            return;
+        }
+        resume();
+        tell("a portal here comes out in " + portal.otherSide(client.player));
+
+        if (portal.oneNearby()) {
+            portal.start();
+            return;
+        }
+        String missing = portal.shoppingList(client.player);
+        if (missing != null) {
+            tell("no portal here, and to build one I need " + missing);
+            tell("/get obsidian 10  —  then /nether again");
+            return;
+        }
+        sitingAPortal = true;
+        tell("no portal here — drag out where the frame goes and press Enter");
+        siteFor(dev.understudy.core.build.Sized.fixed(
+                dev.understudy.core.nether.Portal.frame()));
+    }
+
     public static void cancelSite() {
         if (marker != null) marker.cancel();
         if (build != null) build.stop("cancelled");
@@ -436,6 +480,12 @@ public final class UnderstudyClient implements ClientModInitializer {
      * when it knows the where, and it should not also have to know why.
      */
     private static void placeIt(Blueprint blueprint, net.minecraft.core.BlockPos origin) {
+        if (sitingAPortal) {
+            sitingAPortal = false;
+            // Told before the build starts, so the moment the last block lands
+            // it strikes the light rather than waiting to be asked again.
+            portal.lightWhenBuilt(blueprint, origin);
+        }
         if (pasting) {
             pasting = false;
             paste.start(blueprint, origin);
@@ -586,7 +636,8 @@ public final class UnderstudyClient implements ClientModInitializer {
 
     /** Whether the mod is driving anything at all right now. */
     private static boolean working() {
-        return (paste != null && paste.running())
+        return (portal != null && portal.running())
+                || (paste != null && paste.running())
                 || (hunt != null && hunt.running())
                 || (enchant != null && enchant.running())
                 || (travel != null && travel.running())
@@ -771,7 +822,9 @@ public final class UnderstudyClient implements ClientModInitializer {
         pickerWanted = false;
         if (marker != null) marker.cancel();
         pasting = false;
+        sitingAPortal = false;
         if (paste != null) paste.stop(null);
+        if (portal != null) portal.stop(null);
         handover.reset();
         if (autopilot != null) autopilot.stop();
         if (gather != null) gather.stop(why);

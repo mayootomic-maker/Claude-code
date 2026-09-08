@@ -46,6 +46,7 @@ public final class Manual {
                     new Entry("/build <name> [size]",
                             "hut, house, tower, storage, study or manor"),
                     new Entry("/paste", "the same menu, but the build simply appears"),
+                    new Entry("/paste undo", "take the last paste back out again"),
                     new Entry("/paste stop", "stop a paste part way through"),
                     new Entry("/build cancel", "drop the site you are placing"),
                     new Entry("/build stop", "stop a build that is under way"),
@@ -67,7 +68,9 @@ public final class Manual {
                     new Entry("/sort all", "the same, including the kit you carry"),
                     new Entry("/enchant [item]", "at a table with its fifteen shelves"),
                     new Entry("/travel <x> <y> <z>", "walk there"),
-                    new Entry("/travel stop", "stop walking"))),
+                    new Entry("/travel stop", "stop walking"),
+                    new Entry("/nether",
+                            "through a portal, building and lighting one if needed"))),
 
             new Section("run", "Running it", List.of(
                     new Entry("/understudy", "this list"),
