@@ -4,6 +4,7 @@ dist/
 *.local
 .DS_Store
 app/e2e/shots/
+nightshift/shots/
 
 # Secrets. The OJP key and device token live here in local development and in
 # `wrangler secret` in production — never in the app bundle, which is public.

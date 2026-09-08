@@ -1,0 +1,390 @@
+/* Getting fourteen phones to agree on where everybody is.
+
+   Three ways in, one interface above them, because the three places this page
+   runs have completely different rules about the network:
+
+     - **A file, or any web host.** A public MQTT broker over a WebSocket.
+       Nothing to install and nothing to sign into: somebody reads a four
+       letter code out and the class types it in. This is the one that works
+       for a class, and it is the one the built file uses.
+
+     - **Inside the claude.ai artifact viewer.** No WebSocket and no WebRTC --
+       both are blocked before they open. What there is instead is the `room`
+       capability: presence for where everyone is, topics for what they did.
+       It only reaches signed-in viewers of the same organisation, which is a
+       real limit and is said on the join screen rather than left to be found
+       out when half the class cannot connect.
+
+     - **Nobody else at all.** A loopback that hands your own messages back to
+       you, so one player and a pile of bots runs the identical code path as
+       fourteen people. This is not a stub for the other two: it is how the
+       page is playable the second it opens.
+
+   Everything above this file sees the same four things -- `send`, `presence`,
+   `peers` and an id -- and cannot tell which one it got. */
+
+(function (NS) {
+  'use strict';
+
+  const U = NS.util;
+
+  /* Public brokers, tried in order. Each is somebody else's goodwill and any
+     of them can be down, full, or blocked by a school network. */
+  const BROKERS = [
+    { url: 'wss://broker.emqx.io:8084/mqtt', name: 'EMQX' },
+    { url: 'wss://broker.hivemq.com:8884/mqtt', name: 'HiveMQ' },
+    { url: 'wss://test.mosquitto.org:8081/mqtt', name: 'Mosquitto' },
+  ];
+  const ROOT = 'nightshift/v2/';
+  const PRESENCE_HZ = 10;
+  const KEEPALIVE = 1100;        // say something even when standing still
+  /* A backgrounded tab is throttled to roughly one interval a second, so this
+     has to be several of those and not two: dropping somebody who alt-tabbed
+     is worse than carrying a ghost for a few seconds. */
+  const GONE = 9000;
+
+  const roomAvailable = () => !!(window.claude && typeof window.claude.use === 'function');
+  const mqttAvailable = () => typeof window.WebSocket === 'function';
+  const localAvailable = () => typeof window.BroadcastChannel === 'function';
+
+  /* ---- the shape everything above this file talks to --------------------- */
+
+  function base(opts) {
+    return {
+      mode: opts.mode,
+      code: opts.code || '',
+      id: '',
+      ready: false,
+      send() {},
+      presence() {},
+      peers() { return []; },
+      close() {},
+    };
+  }
+
+  /* ---- loopback --------------------------------------------------------- */
+
+  function openSolo(opts) {
+    const self = base(opts);
+    self.id = 'me';
+    self.ready = true;
+    let mine = {};
+    let closed = false;
+
+    self.send = (kind, data) => {
+      if (closed) return;
+      /* Delivered on a later turn, exactly as the networked paths deliver it.
+         Making a solo game synchronous would let the host logic depend on an
+         ordering that never happens once there is a network involved. */
+      setTimeout(() => {
+        if (!closed) opts.onMessage({ from: self.id, kind, data, mine: true });
+      }, 0);
+    };
+    self.presence = (patch) => {
+      for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
+    };
+    self.peers = () => [{ id: self.id, presence: mine, isMe: true }];
+    self.close = () => { closed = true; };
+
+    setTimeout(() => { opts.onStatus('Playing on this device.'); opts.onReady(); }, 0);
+    return self;
+  }
+
+  /* ---- public broker ---------------------------------------------------- */
+
+  function openMqtt(opts) {
+    const self = base(opts);
+    self.id = U.id(10);
+    const code = String(opts.code || '').toUpperCase();
+    const tPresence = ROOT + code + '/p';
+    const tEvent = ROOT + code + '/e';
+
+    const table = new Map();       // id -> { id, presence, isMe, seen }
+    let mine = {};
+    let client = null;
+    let brokerIndex = 0;
+    let closed = false;
+    let dirty = true;
+    let lastSent = 0;
+    let pump = null;
+    let sweep = null;
+
+    table.set(self.id, { id: self.id, presence: mine, isMe: true, seen: Date.now() });
+
+    function publishPresence(force) {
+      if (!client || !client.ready) return;
+      const t = Date.now();
+      if (!force && !dirty && t - lastSent < KEEPALIVE) return;
+      if (t - lastSent < 1000 / PRESENCE_HZ) return;
+      lastSent = t;
+      dirty = false;
+      client.publish(tPresence, { i: self.id, p: mine });
+    }
+
+    function forget() {
+      const t = Date.now();
+      let changed = false;
+      for (const [id, peer] of table) {
+        if (peer.isMe) continue;
+        if (t - peer.seen > GONE) { table.delete(id); changed = true; }
+      }
+      if (changed) opts.onPeers();
+    }
+
+    function connect() {
+      if (closed) return;
+      if (brokerIndex >= BROKERS.length) {
+        opts.onError('No public broker would take the connection. This network may block them, '
+          + 'or all three may be down. A phone hotspot usually gets around it.');
+        return;
+      }
+      const broker = BROKERS[brokerIndex++];
+      opts.onStatus('Connecting via ' + broker.name + '...');
+      client = NS.mqtt.connect({
+        url: broker.url,
+        clientId: 'ns' + self.id + U.id(4),
+        onUp() {
+          if (closed) { client.close(); return; }
+          client.subscribe(tPresence);
+          client.subscribe(tEvent);
+          opts.onStatus('Connected via ' + broker.name + '.');
+          self.ready = true;
+          publishPresence(true);
+          opts.onReady(broker);
+        },
+        onDown(why) {
+          if (closed) return;
+          if (!self.ready) { connect(); return; }   // this one never worked; try the next
+          self.ready = false;
+          opts.onError('Lost the connection to ' + broker.name + '. ' + (why || ''));
+        },
+      });
+      if (!client) { connect(); return; }
+
+      client.onMessage((topic, msg) => {
+        if (closed || !msg) return;
+        if (topic === tPresence) {
+          const id = String(msg.i || '');
+          if (!id || id === self.id) return;
+          let peer = table.get(id);
+          if (!peer) {
+            peer = { id, presence: {}, isMe: false, seen: 0 };
+            table.set(id, peer);
+            peer.presence = (msg.p && typeof msg.p === 'object') ? msg.p : {};
+            peer.seen = Date.now();
+            opts.onPeers();
+            return;
+          }
+          peer.presence = (msg.p && typeof msg.p === 'object') ? msg.p : {};
+          peer.seen = Date.now();
+          return;
+        }
+        if (topic === tEvent) {
+          const from = String(msg.i || '');
+          if (!from) return;
+          opts.onMessage({ from, kind: String(msg.k || ''), data: msg.d, mine: from === self.id });
+        }
+      });
+    }
+
+    self.send = (kind, data) => {
+      if (closed || !client || !client.ready) return;
+      client.publish(tEvent, { i: self.id, k: kind, d: data });
+    };
+    self.presence = (patch) => {
+      for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
+      dirty = true;
+    };
+    self.peers = () => Array.from(table.values());
+    self.close = () => {
+      closed = true;
+      clearInterval(pump); clearInterval(sweep);
+      if (client) { try { client.publish(tPresence, { i: self.id, gone: 1 }); } catch (e) {} client.close(); }
+    };
+
+    pump = setInterval(publishPresence, Math.floor(1000 / PRESENCE_HZ));
+    sweep = setInterval(forget, 700);
+    connect();
+    return self;
+  }
+
+  /* ---- two tabs on one computer ----------------------------------------- */
+
+  /* BroadcastChannel reaches every other tab of the same page with no server,
+     no broker and no permission. Two people can share a laptop with it, and --
+     the reason it exists -- it is the only way to exercise the guest half of
+     this game without fourteen devices: the host and the guest run the real
+     code, including the sealed role delivery, in two tabs. */
+  function openLocal(opts) {
+    const self = base(opts);
+    self.id = U.id(10);
+    const code = String(opts.code || 'MAIN').toUpperCase();
+    const table = new Map();
+    let mine = {};
+    let closed = false;
+    let channel = null;
+    let beat = null;
+    let sweep = null;
+
+    table.set(self.id, { id: self.id, presence: mine, isMe: true, seen: Date.now() });
+
+    try {
+      channel = new BroadcastChannel('nightshift-v2-' + code);
+    } catch (e) {
+      opts.onError('This browser will not open a channel between tabs.');
+      return self;
+    }
+
+    const post = (msg) => { if (!closed && channel) channel.postMessage(msg); };
+
+    channel.onmessage = (e) => {
+      const msg = e.data;
+      if (closed || !msg || msg.i === self.id) return;
+      if (msg.p) {
+        let peer = table.get(msg.i);
+        if (!peer) {
+          peer = { id: msg.i, presence: {}, isMe: false, seen: 0 };
+          table.set(msg.i, peer);
+          peer.presence = msg.p;
+          peer.seen = Date.now();
+          post({ i: self.id, p: mine });          // say hello back at once
+          opts.onPeers();
+          return;
+        }
+        peer.presence = msg.p;
+        peer.seen = Date.now();
+        return;
+      }
+      if (msg.gone) {
+        if (table.delete(msg.i)) opts.onPeers();
+        return;
+      }
+      if (msg.k) opts.onMessage({ from: msg.i, kind: msg.k, data: msg.d, mine: false });
+    };
+
+    self.send = (kind, data) => {
+      if (closed) return;
+      /* Your own messages come back to you on every other transport, so they
+         have to here too, or the host would not hear itself. */
+      opts.onMessage({ from: self.id, kind, data, mine: true });
+      post({ i: self.id, k: kind, d: data });
+    };
+    self.presence = (patch) => {
+      for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
+    };
+    self.peers = () => Array.from(table.values());
+    self.close = () => {
+      closed = true;
+      clearInterval(beat); clearInterval(sweep);
+      if (channel) { post({ i: self.id, gone: 1 }); channel.close(); }
+    };
+
+    beat = setInterval(() => post({ i: self.id, p: mine }), Math.floor(1000 / PRESENCE_HZ));
+    sweep = setInterval(() => {
+      const t = Date.now();
+      let changed = false;
+      for (const [id, peer] of table) {
+        if (peer.isMe) continue;
+        if (t - peer.seen > GONE) { table.delete(id); changed = true; }
+      }
+      if (changed) opts.onPeers();
+    }, 700);
+
+    self.ready = true;
+    setTimeout(() => {
+      if (closed) return;
+      post({ i: self.id, p: mine });
+      opts.onStatus('Playing across tabs on this computer.');
+      opts.onReady();
+    }, 0);
+    return self;
+  }
+
+  /* ---- the artifact room ------------------------------------------------ */
+
+  function openRoom(opts) {
+    const self = base(opts);
+    const code = String(opts.code || 'MAIN').toUpperCase();
+    let room = null;
+    let mine = {};
+    let closed = false;
+    const unsubs = [];
+
+    /* One topic per direction, all three opened to `interact` at publish time
+       so a viewer who can only view the page can still play it. A topic that
+       is not opened is admin-only, and the class would be able to walk around
+       and do nothing else. */
+    const TOPICS = ['act', 'sys', 'chat'];
+
+    self.send = (kind, data) => {
+      if (closed || !room || TOPICS.indexOf(kind) < 0) return;
+      room.emit(kind, { c: code, d: data }).catch((e) => {
+        if (e && e.code === 'not_permitted') {
+          opts.onError('This page was published without the game topics open, so nothing you do '
+            + 'can reach the others. Republishing it fixes that.');
+        }
+      });
+    };
+    self.presence = (patch) => {
+      for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
+      if (room && !closed) room.presence(Object.assign({ c: code }, patch)).catch(() => {});
+    };
+    self.peers = () => {
+      if (!room) return [{ id: self.id, presence: mine, isMe: true }];
+      return room.peers()
+        .filter((p) => p.kind === 'viewer' && p.presence && p.presence.c === code)
+        .map((p) => ({ id: p.peer, presence: p.presence, isMe: p.isMe && p.sameTab }));
+    };
+    self.close = () => { closed = true; unsubs.forEach((fn) => { try { fn(); } catch (e) {} }); };
+
+    opts.onStatus('Looking for the others...');
+    window.claude.use('room').then((got) => {
+      if (closed) return;
+      if (!got) {
+        opts.onError('This view cannot reach the room. That usually means you are signed out, '
+          + 'or the page was shared outside the organisation that published it. '
+          + 'Practice mode works either way.');
+        return;
+      }
+      room = got;
+      for (const topic of TOPICS) {
+        unsubs.push(room.on(topic, (msg) => {
+          if (closed || !msg || !msg.data || msg.data.c !== code) return;
+          opts.onMessage({ from: msg.peer, kind: topic, data: msg.data.d, mine: msg.isMe && msg.sameTab });
+        }, (err) => opts.onError('The room closed: ' + (err && err.message ? err.message : 'unknown'))));
+      }
+      unsubs.push(room.onPeers(() => {
+        if (closed) return;
+        const me = room.peers().find((p) => p.isMe && p.sameTab);
+        if (me) self.id = me.peer;
+        opts.onPeers();
+      }));
+      room.presence(Object.assign({ c: code }, mine)).catch(() => {});
+      self.ready = true;
+      opts.onStatus('In the room.');
+      opts.onReady();
+    }).catch(() => {
+      if (!closed) opts.onError('The room capability failed to load. Practice mode still works.');
+    });
+
+    return self;
+  }
+
+  function open(opts) {
+    const wired = {
+      mode: opts.mode,
+      code: opts.code,
+      onStatus: opts.onStatus || function () {},
+      onReady: opts.onReady || function () {},
+      onError: opts.onError || function () {},
+      onMessage: opts.onMessage || function () {},
+      onPeers: opts.onPeers || function () {},
+    };
+    if (opts.mode === 'room') return openRoom(wired);
+    if (opts.mode === 'mqtt') return openMqtt(wired);
+    if (opts.mode === 'local') return openLocal(wired);
+    return openSolo(wired);
+  }
+
+  NS.link = { open, roomAvailable, mqttAvailable, localAvailable, BROKERS };
+})(window.NS);

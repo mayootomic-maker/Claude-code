@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#05070d">
+<meta name="description" content="A social deduction game for a class: fourteen people on a failing space station, and at least one of them wants it to fail.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Nightshift on Aurora-7</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&amp;family=Archivo+Black&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="stage" aria-label="The station. Walk with the arrow keys or by touching the left of the screen."></canvas>
+<noscript>
+  <p style="padding:24px;font-family:system-ui,sans-serif;color:#e6ecf6;background:#05070d">
+    Nightshift needs JavaScript. It is a game; there is nothing to read here without it.
+  </p>
+</noscript>
+<script src="core/util.js"></script>
+<script src="core/config.js"></script>
+<script src="core/audio.js"></script>
+<script src="world/map.js"></script>
+<script src="world/los.js"></script>
+<script src="net/mqtt.js"></script>
+<script src="net/crypto.js"></script>
+<script src="net/link.js"></script>
+<script src="game/rules.js"></script>
+<script src="game/sabotage.js"></script>
+<script src="game/world.js"></script>
+<script src="gfx/characters.js"></script>
+<script src="gfx/station.js"></script>
+<script src="gfx/fx.js"></script>
+<script src="gfx/render.js"></script>
+<script src="game/host.js"></script>
+<script src="game/bots.js"></script>
+<script src="ui/bits.js"></script>
+<script src="ui/minigames.js"></script>
+<script src="ui/meeting.js"></script>
+<script src="ui/hud.js"></script>
+<script src="ui/input.js"></script>
+<script src="ui/screens.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
