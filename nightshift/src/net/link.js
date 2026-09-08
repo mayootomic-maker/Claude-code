@@ -308,6 +308,8 @@
     let room = null;
     let mine = {};
     let closed = false;
+    let started = false;
+    let waiting = null;
     const unsubs = [];
 
     /* One topic per direction, all three opened to `interact` at publish time
@@ -316,9 +318,16 @@
        and do nothing else. */
     const TOPICS = ['act', 'sys', 'chat'];
 
+    /* Everybody viewing the page is in one room, so several games can run in
+       it at once and each has to ignore the others. The key is `lobby` and not
+       something shorter for a reason: presence already carries `c` for the
+       player's colour, and a two-games-at-once filter that silently matched a
+       colour index would have made the room look empty to everybody. */
+    const LOBBY = 'lobby';
+
     self.send = (kind, data) => {
       if (closed || !room || TOPICS.indexOf(kind) < 0) return;
-      room.emit(kind, { c: code, d: data }).catch((e) => {
+      room.emit(kind, { lobby: code, d: data }).catch((e) => {
         if (e && e.code === 'not_permitted') {
           opts.onError('This page was published without the game topics open, so nothing you do '
             + 'can reach the others. Republishing it fixes that.');
@@ -327,15 +336,42 @@
     };
     self.presence = (patch) => {
       for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
-      if (room && !closed) room.presence(Object.assign({ c: code }, patch)).catch(() => {});
+      if (room && !closed) {
+        const out = {};
+        for (const k in patch) out[k] = patch[k];
+        out[LOBBY] = code;
+        room.presence(out).catch(() => {});
+      }
     };
     self.peers = () => {
       if (!room) return [{ id: self.id, presence: mine, isMe: true }];
       return room.peers()
-        .filter((p) => p.kind === 'viewer' && p.presence && p.presence.c === code)
-        .map((p) => ({ id: p.peer, presence: p.presence, isMe: p.isMe && p.sameTab }));
+        .filter((p) => p.kind === 'viewer' && p.presence && p.presence[LOBBY] === code)
+        .map((p) => ({ id: p.peer, presence: p.presence, isMe: !!(p.isMe && p.sameTab) }));
     };
-    self.close = () => { closed = true; unsubs.forEach((fn) => { try { fn(); } catch (e) {} }); };
+    self.close = () => {
+      closed = true;
+      clearTimeout(waiting);
+      unsubs.forEach((fn) => { try { fn(); } catch (e) {} });
+    };
+
+    /* The game cannot start until this view knows its own peer id: every
+       player in a snapshot is keyed by it, so starting a moment early would
+       give this device an entity nobody else has heard of and a second one
+       arriving in the first snapshot. The id comes from the first onPeers,
+       not from `use()`, so readiness waits for it. */
+    function begin() {
+      if (started || closed) return;
+      const me = room.peers().find((p) => p.isMe && p.sameTab);
+      if (!me) return;
+      started = true;
+      clearTimeout(waiting);
+      self.id = me.peer;
+      self.ready = true;
+      opts.onStatus('In the room.');
+      opts.onReady();
+      opts.onPeers();
+    }
 
     opts.onStatus('Looking for the others...');
     window.claude.use('room').then((got) => {
@@ -349,20 +385,25 @@
       room = got;
       for (const topic of TOPICS) {
         unsubs.push(room.on(topic, (msg) => {
-          if (closed || !msg || !msg.data || msg.data.c !== code) return;
-          opts.onMessage({ from: msg.peer, kind: topic, data: msg.data.d, mine: msg.isMe && msg.sameTab });
+          if (closed || !msg || !msg.data || msg.data.lobby !== code) return;
+          opts.onMessage({
+            from: msg.peer, kind: topic, data: msg.data.d,
+            mine: !!(msg.isMe && msg.sameTab),
+          });
         }, (err) => opts.onError('The room closed: ' + (err && err.message ? err.message : 'unknown'))));
       }
       unsubs.push(room.onPeers(() => {
         if (closed) return;
-        const me = room.peers().find((p) => p.isMe && p.sameTab);
-        if (me) self.id = me.peer;
-        opts.onPeers();
+        if (!started) begin(); else opts.onPeers();
       }));
-      room.presence(Object.assign({ c: code }, mine)).catch(() => {});
-      self.ready = true;
-      opts.onStatus('In the room.');
-      opts.onReady();
+      self.presence({});
+      begin();
+      waiting = setTimeout(() => {
+        if (!started && !closed) {
+          opts.onError('The room never said who this device is, so it cannot join a game here. '
+            + 'Practice mode still works.');
+        }
+      }, 8000);
     }).catch(() => {
       if (!closed) opts.onError('The room capability failed to load. Practice mode still works.');
     });

@@ -690,7 +690,7 @@
     for (const peer of peers) {
       const presence = peer.presence || {};
       if (peer.isMe) {
-        session.myId = peer.id;
+        if (peer.id && peer.id !== session.myId) rekeyMe(peer.id);
         if (session.isHost) {
           NS.host.addPlayer(peer.id, {
             n: NS.screens.profile.name, c: NS.screens.profile.colorIdx,
@@ -720,6 +720,23 @@
       }
     }
     if (session.myId && session.hostId === session.myId) W.hostKey = NS.secrets.publicKey;
+  }
+
+  /* Snapshots key every player by the id the transport gave them, so if this
+     device's id ever changes the local entity has to move with it -- otherwise
+     the next snapshot creates a second copy of you and the one you are walking
+     around in belongs to nobody. */
+  function rekeyMe(id) {
+    const old = session.myId;
+    session.myId = id;
+    if (!W.me) return;
+    if (old) W.players.delete(old);
+    W.me.id = id;
+    W.players.set(id, W.me);
+    if (session.isHost) {
+      session.hostId = id;
+      if (old && NS.host.H.players[old]) delete NS.host.H.players[old];
+    }
   }
 
   function publishPresence() {

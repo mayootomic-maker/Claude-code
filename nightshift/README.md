@@ -121,6 +121,7 @@ node build.mjs --fragment      # -> nightshift.fragment.html
 node tools/drive.mjs           # plays a round in Chromium, fails on any error
 node tools/drive.mjs --phone   # the same at phone size
 node tools/together.mjs        # two tabs: one hosts, one joins, across the seam
+node tools/room.mjs            # the artifact transport, against a stand-in room
 node tools/deal.mjs            # 270,000 role deals against the rules' invariants
 ```
 
@@ -132,10 +133,22 @@ half of the game the solo drive cannot: it checks that a guest is dealt a
 host's settings reach the guest, that walking on one device is visible on the
 other, and that a task finished on the guest moves the bar on the host.
 
-Two bugs were found by running these that nothing else would have caught: every
-action button showing for crewmates (the `hidden` attribute was losing to a
-`display` rule), and two players locked into the same colour because only the
-person joining ever re-picked.
+`room.mjs` stands up the room capability locally -- emit/on, presence/onPeers,
+peers() with the same shape -- so the artifact transport is exercised outside
+the viewer, where `window.claude` does not exist. It proves this game's use of
+the contract, not the platform's implementation of it, and it caught two bugs
+that would have made the published page look empty to everybody: the lobby
+filter and the player's colour were both stored under `c`, and the round could
+start before the view knew its own peer id.
+
+Four bugs came out of running these that reading the code did not find. Every
+action button showed for crewmates, because `hidden` was losing to a `display`
+rule. Two players could be locked into the same colour, because only the person
+joining ever re-picked. The two room bugs above. And the worst one: the whole
+game ran on `requestAnimationFrame`, so a host who looked at another tab froze
+the round for everyone and, five seconds later, vanished from it -- the
+authoritative loop is on an interval now, and `together.mjs` measures that a
+backgrounded host keeps ticking.
 
 `--fragment` is for hosts that supply their own `<html>` and `<body>`. Inside
 the claude.ai artifact viewer there is no WebSocket and no WebRTC, so that build
