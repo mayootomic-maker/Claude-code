@@ -35,10 +35,31 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
      * It is not decoration: stairs take their orientation from where the player
      * is looking, so a roof built without it points the wrong way everywhere.
      */
+    /**
+     * @param facing     which way it goes, for the builder, which can only aim
+     *                   at the four horizontal directions
+     * @param properties the whole of what the block says about itself, as it
+     *                   appears between the brackets and without them —
+     *                   "facing=east,half=top,shape=straight". Null for the
+     *                   designs, which describe blocks rather than states, and
+     *                   filled in for anything imported.
+     *
+     *                   Kept separately from facing rather than replacing it
+     *                   because the two have different jobs. A builder cannot
+     *                   act on half=top: there is no click that means it. A
+     *                   paste can, and dropping the rest was the difference
+     *                   between an import arriving as itself and arriving with
+     *                   its buttons on the floor.
+     */
     public record Placement(int x, int y, int z, String block, Role role, boolean optional,
-                            Facing facing) {
+                            Facing facing, String properties) {
         public Placement(int x, int y, int z, String block, Role role, boolean optional) {
-            this(x, y, z, block, role, optional, null);
+            this(x, y, z, block, role, optional, null, null);
+        }
+
+        public Placement(int x, int y, int z, String block, Role role, boolean optional,
+                         Facing facing) {
+            this(x, y, z, block, role, optional, facing, null);
         }
     }
 
@@ -97,7 +118,13 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
                 facing = facing == null ? null : facing.clockwise();
             }
             int y = upsideDown ? sizeY - 1 - p.y() : p.y();
-            moved.add(new Placement(x, y, z, p.block(), p.role(), p.optional(), facing));
+            // The blocks move and so does what they say about themselves: a
+            // turned building whose stairs still claim to face east is a
+            // building with its roof on sideways.
+            String properties = States.turned(p.properties(), turns);
+            if (upsideDown) properties = States.flipped(properties);
+            moved.add(new Placement(x, y, z, p.block(), p.role(), p.optional(), facing,
+                    properties));
         }
 
         boolean sideways = turns % 2 == 1;

@@ -49,6 +49,7 @@ public final class Paste {
     public static List<String> commands(Blueprint plan, int ox, int oy, int oz,
                                         boolean clearFirst) {
         Map<Cell, String> cells = states(plan, ox, oy, oz);
+        standUpTheTorches(cells);
         List<String> out = new ArrayList<>();
         if (clearFirst) out.addAll(clear(plan, ox, oy, oz));
         out.addAll(merged(cells));
@@ -77,29 +78,84 @@ public final class Paste {
             Facing facing = p.facing();
 
             if (block.endsWith("_door") && !block.endsWith("_trapdoor")) {
-                cells.put(new Cell(x, y, z), state(block, facing, "half=lower"));
-                cells.put(new Cell(x, y + 1, z), state(block, facing, "half=upper"));
+                cells.put(new Cell(x, y, z),
+                        state(block, facing, States.with(p.properties(), "half", "lower")));
+                cells.put(new Cell(x, y + 1, z),
+                        state(block, facing, States.with(p.properties(), "half", "upper")));
                 continue;
             }
             if (block.endsWith("_bed")) {
                 // The foot goes where it was placed and the head one further
                 // the way it faces, which is what a click on the ground does.
                 Facing lie = facing == null ? Facing.NORTH : facing;
-                cells.put(new Cell(x, y, z), state(block, lie, "part=foot"));
-                cells.put(new Cell(x + lie.dx(), y, z + lie.dz()), state(block, lie, "part=head"));
+                cells.put(new Cell(x, y, z),
+                        state(block, lie, States.with(p.properties(), "part", "foot")));
+                cells.put(new Cell(x + lie.dx(), y, z + lie.dz()),
+                        state(block, lie, States.with(p.properties(), "part", "head")));
                 continue;
             }
-            cells.put(new Cell(x, y, z), state(block, facing, null));
+            cells.put(new Cell(x, y, z), state(block, facing, p.properties()));
         }
         return cells;
     }
 
-    private static String state(String block, Facing facing, String extra) {
-        List<String> properties = new ArrayList<>();
-        if (facing != null) properties.add("facing=" + facing.name().toLowerCase(java.util.Locale.ROOT));
-        if (extra != null) properties.add(extra);
+    /**
+     * The blocks that fall off unless they are told what they are stuck to.
+     *
+     * A torch placed by clicking a wall becomes a wall torch, and the game does
+     * that conversion for you. Nothing does it for a paste: it puts down exactly
+     * what it was given, so "torch" three blocks up in the middle of a room is a
+     * floor torch with no floor, and it pops the instant anything updates it.
+     * That is the sconces in every one of these designs.
+     */
+    private static final Map<String, String> ON_A_WALL = Map.of(
+            "torch", "wall_torch",
+            "soul_torch", "soul_wall_torch",
+            "redstone_torch", "redstone_wall_torch");
+
+    /**
+     * Turn floor-standing blocks into their wall form where there is no floor.
+     *
+     * Exact rather than a guess, because the box is cleared to air first: a cell
+     * that is not in the design is empty, so "is there something under this" has
+     * a definite answer and so does "which side is the wall on".
+     */
+    private static void standUpTheTorches(Map<Cell, String> cells) {
+        for (Map.Entry<Cell, String> entry : new ArrayList<>(cells.entrySet())) {
+            Cell at = entry.getKey();
+            String plain = entry.getValue().replace("minecraft:", "");
+            String wall = ON_A_WALL.get(plain);
+            if (wall == null) continue;
+            if (cells.containsKey(new Cell(at.x(), at.y() - 1, at.z()))) continue;
+
+            for (Facing side : Facing.values()) {
+                // The wall is the neighbour; the torch faces away from it.
+                Cell behind = new Cell(at.x() - side.dx(), at.y(), at.z() - side.dz());
+                if (!cells.containsKey(behind)) continue;
+                entry.setValue("minecraft:" + wall + "[facing="
+                        + side.name().toLowerCase(java.util.Locale.ROOT) + "]");
+                break;
+            }
+        }
+    }
+
+    /**
+     * One block, as the game writes them.
+     *
+     * The block's own properties win where it has them, which is every imported
+     * block and no designed one. A design says "a stair facing east" and means
+     * only that; an import says exactly which of the eighty states it is, and
+     * saying anything less is how a building arrives with its buttons on the
+     * floor. The facing is folded in only when the properties did not already
+     * carry one.
+     */
+    private static String state(String block, Facing facing, String properties) {
+        String out = properties;
+        if (facing != null && States.value(out, "facing") == null) {
+            out = States.with(out, "facing", facing.name().toLowerCase(java.util.Locale.ROOT));
+        }
         String name = block.contains(":") ? block : "minecraft:" + block;
-        return properties.isEmpty() ? name : name + "[" + String.join(",", properties) + "]";
+        return out == null || out.isEmpty() ? name : name + "[" + out + "]";
     }
 
     /**

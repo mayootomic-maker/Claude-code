@@ -93,7 +93,7 @@ public final class Schematic {
     }
 
     /** One block as read, before the whole thing is shifted to start at the origin. */
-    private record Raw(int x, int y, int z, String block, Facing facing) {}
+    private record Raw(int x, int y, int z, String block, Facing facing, String properties) {}
 
     public static Result read(String name, byte[] file) throws IOException {
         Nbt.Tag.Compound root = Nbt.read(file);
@@ -127,7 +127,8 @@ public final class Schematic {
         Draft draft = new Draft(cleanName(name));
         for (Raw block : raw) {
             draft.set(block.x() - minX, block.y() - minY, block.z() - minZ,
-                    block.block(), roleOf(block.block()), false, block.facing());
+                    block.block(), roleOf(block.block()), false, block.facing(),
+                    block.properties());
         }
 
         Blueprint blueprint = draft.finish(0, 0, 0);
@@ -287,30 +288,31 @@ public final class Schematic {
     /**
      * Add one block, unless it is air.
      *
-     * The block state string carries its properties, so a stair's facing comes
-     * across with it. Anything else in the brackets is dropped: a blueprint
-     * describes what to place, and waterlogged or powered is not something a
-     * builder can aim at.
+     * The block state string carries its properties, and all of them are kept.
+     *
+     * The facing is pulled out separately because that is the one thing a
+     * builder can act on — it looks that way before it clicks. Everything else
+     * is passed through untouched for the paste, which sets the state directly
+     * and can honour all of it. Dropping it, which is what this used to do, is
+     * why an imported building arrived with its buttons on the floor and its
+     * trapdoors the wrong way up.
      */
     private static void put(List<Raw> out, int x, int y, int z, String state) {
         String name = state;
         Facing facing = null;
 
+        String properties = null;
         int bracket = name.indexOf('[');
         if (bracket >= 0) {
-            String properties = name.substring(bracket + 1, Math.max(bracket + 1, name.length() - 1));
+            properties = name.substring(bracket + 1, Math.max(bracket + 1, name.length() - 1));
             name = name.substring(0, bracket);
-            for (String property : properties.split(",")) {
-                String[] pair = property.split("=", 2);
-                if (pair.length == 2 && pair[0].trim().equals("facing")) {
-                    facing = facingOf(pair[1].trim());
-                }
-            }
+            String way = States.value(properties, "facing");
+            if (way != null) facing = facingOf(way);
         }
         if (name.startsWith("minecraft:")) name = name.substring("minecraft:".length());
         if (name.equals("air") || name.equals("cave_air") || name.equals("void_air")) return;
 
-        out.add(new Raw(x, y, z, name, facing));
+        out.add(new Raw(x, y, z, name, facing, properties));
     }
 
     private static Facing facingOf(String value) {

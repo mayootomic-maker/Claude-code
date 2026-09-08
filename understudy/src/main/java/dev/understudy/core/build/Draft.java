@@ -39,7 +39,14 @@ public final class Draft {
 
     public Draft set(int x, int y, int z, String block, Blueprint.Role role, boolean optional,
                      Facing facing) {
-        cells.put(key(x, y, z), new Blueprint.Placement(x, y, z, block, role, optional, facing));
+        return set(x, y, z, block, role, optional, facing, null);
+    }
+
+    /** With the whole of what the block says about itself, which only an import has. */
+    public Draft set(int x, int y, int z, String block, Blueprint.Role role, boolean optional,
+                     Facing facing, String properties) {
+        cells.put(key(x, y, z),
+                new Blueprint.Placement(x, y, z, block, role, optional, facing, properties));
         return this;
     }
 

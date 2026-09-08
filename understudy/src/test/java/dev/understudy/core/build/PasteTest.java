@@ -8,6 +8,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -60,7 +61,11 @@ class PasteTest {
                 String at = (100 + p.x()) + "," + (64 + p.y()) + "," + (100 + p.z());
                 String got = world.get(at);
                 assertNotNull(got, id + " left " + p.block() + " out at " + at);
-                assertTrue(got.startsWith("minecraft:" + p.block()),
+                // A torch with no floor under it is a wall torch, which is a
+                // different block and the correct one — see standUpTheTorches.
+                boolean asAsked = got.startsWith("minecraft:" + p.block());
+                boolean onItsWall = got.startsWith("minecraft:" + p.block().replace("torch", "wall_torch"));
+                assertTrue(asAsked || onItsWall,
                         id + " put " + got + " where " + p.block() + " belongs");
             }
         }
@@ -87,6 +92,54 @@ class PasteTest {
         assertTrue(world.values().stream().anyMatch(v -> v.contains("part=head")), "no bed head");
         assertTrue(world.values().stream().anyMatch(v -> v.contains("part=foot")), "no bed foot");
         assertEquals(0, beds % 2, "a bed with an odd number of ends");
+    }
+
+    /**
+     * A sconce is a wall torch, and nothing in the game converts one for you.
+     *
+     * Clicking a wall with a torch gives you a wall torch because the game does
+     * that on placement. A paste puts down exactly what it is given, so the
+     * designs' torches — three blocks up in the middle of a room — arrived as
+     * floor torches with no floor and popped off the moment anything nudged
+     * them. Every lit design was dark within a second of being pasted.
+     */
+    @Test
+    void aTorchWithNoFloorUnderItIsAWallTorch() {
+        Map<String, String> world = run(Paste.commands(design("house"), 0, 0, 0, true));
+        long onWalls = world.values().stream().filter(v -> v.contains("wall_torch")).count();
+        assertTrue(onWalls > 0, "the sconces are still floor torches");
+        for (Map.Entry<String, String> lit : world.entrySet()) {
+            if (!lit.getValue().contains("wall_torch")) continue;
+            assertTrue(lit.getValue().contains("facing="),
+                    "a wall torch with no wall named: " + lit.getValue());
+            String[] at = lit.getKey().split(",");
+            String below = (Integer.parseInt(at[0])) + "," + (Integer.parseInt(at[1]) - 1)
+                    + "," + at[2];
+            assertNull(world.get(below), "that one had a floor and should have stayed a torch");
+        }
+    }
+
+    /**
+     * What an import says about itself survives to the world.
+     *
+     * This is the whole of the buttons-on-the-floor bug: a schematic knows its
+     * blocks down to the last property, the blueprint used to keep only a
+     * horizontal facing, and a paste can honour every one of them.
+     */
+    @Test
+    void anImportedBlockKeepsEveryPropertyItCameWith() {
+        Blueprint imported = new Blueprint("imported",
+                List.of(new Blueprint.Placement(0, 0, 0, "stone", Blueprint.Role.FLOOR, false),
+                        new Blueprint.Placement(0, 1, 0, "stone_button", Blueprint.Role.FURNITURE,
+                                false, Facing.EAST, "face=floor,facing=east,powered=false"),
+                        new Blueprint.Placement(1, 1, 0, "oak_trapdoor", Blueprint.Role.FURNITURE,
+                                false, Facing.NORTH, "facing=north,half=top,open=true")),
+                2, 2, 1, 0, 0, 0);
+        Map<String, String> world = run(Paste.commands(imported, 0, 0, 0, true));
+        assertEquals("minecraft:stone_button[face=floor,facing=east,powered=false]",
+                world.get("0,1,0"));
+        assertEquals("minecraft:oak_trapdoor[facing=north,half=top,open=true]",
+                world.get("1,1,0"));
     }
 
     @Test
