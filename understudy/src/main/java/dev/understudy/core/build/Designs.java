@@ -33,7 +33,10 @@ public final class Designs {
         palette.put(Role.WALL, "oak_planks");
         palette.put(Role.ACCENT, "oak_log");
         palette.put(Role.ROOF, "cobblestone");
-        palette.put(Role.WINDOW, "glass");
+        // A pane rather than a block, which is what a window is: it takes the
+        // light, it is a quarter of the glass, and a flush block of glass in a
+        // wall reads as a hole somebody forgot to finish.
+        palette.put(Role.WINDOW, "glass_pane");
         palette.put(Role.LIGHT, "torch");
         palette.put(Role.DOOR, "oak_door");
         palette.put(Role.FURNITURE, "chest");
@@ -53,7 +56,10 @@ public final class Designs {
         palette.put(Role.WALL, wood.planks());
         palette.put(Role.ACCENT, wood.log());
         palette.put(Role.ROOF, stone.block());
-        palette.put(Role.WINDOW, "glass");
+        // A pane rather than a block, which is what a window is: it takes the
+        // light, it is a quarter of the glass, and a flush block of glass in a
+        // wall reads as a hole somebody forgot to finish.
+        palette.put(Role.WINDOW, "glass_pane");
         palette.put(Role.LIGHT, "torch");
         palette.put(Role.DOOR, wood.door());
         palette.put(Role.FURNITURE, "chest");
@@ -110,13 +116,14 @@ public final class Designs {
         Trim.plinth(draft, w, d, stone.block());
         draft.box(1, 0, 1, w, 0, d, p.get(Role.FLOOR), Role.FLOOR);
         draft.shell(1, 1, 1, w, h, d, p.get(Role.WALL), Role.WALL);
-        Trim.posts(draft, w, d, 1, h, WINDOW_EVERY, p.get(Role.ACCENT));
+        Trim.posts(draft, w, d, 1, h, WINDOW_EVERY, p.get(Role.ACCENT), wood.strippedLog());
         Trim.baseCourse(draft, w, d, 1, stone.block());
 
         int sill = 2;
         int head = Math.min(h - 1, sill + 1);
         Trim.windows(draft, w, d, sill, head, WINDOW_EVERY, p.get(Role.WINDOW), doorX);
         Trim.dressWindows(draft, w, d, sill, head, WINDOW_EVERY, stone.slab());
+        Trim.beltCourse(draft, w, d, 1, stone.slab(), doorX);
         Trim.eaves(draft, w, d, h, wood.slab());
         Trim.doorway(draft, doorX, 1, p.get(Role.DOOR), stone.block());
         porch(draft, doorX, wood, stone);
@@ -157,7 +164,7 @@ public final class Designs {
         Trim.plinth(draft, s, s, stone.block());
         draft.box(1, 0, 1, s, 0, s, p.get(Role.FLOOR), Role.FLOOR);
         draft.shell(1, 1, 1, s, h, s, p.get(Role.WALL), Role.WALL);
-        Trim.posts(draft, s, s, 1, h, s - 1, p.get(Role.ACCENT));
+        Trim.posts(draft, s, s, 1, h, s - 1, p.get(Role.ACCENT), wood.strippedLog());
         Trim.baseCourse(draft, s, s, 1, stone.block());
 
         // One opening in the middle of each wall, at eye level. The rhythm rule
@@ -203,7 +210,7 @@ public final class Designs {
         Trim.plinth(draft, s, s, stone.block());
         draft.box(1, 0, 1, s, 0, s, p.get(Role.FLOOR), Role.FLOOR);
         draft.shell(1, 1, 1, s, h, s, p.get(Role.WALL), Role.WALL);
-        Trim.posts(draft, s, s, 1, h, s - 1, p.get(Role.ACCENT));
+        Trim.posts(draft, s, s, 1, h, s - 1, p.get(Role.ACCENT), wood.strippedLog());
         Trim.baseCourse(draft, s, s, 1, stone.block());
 
         // Arrow slits, two courses tall, every few floors and on every face —
@@ -286,7 +293,7 @@ public final class Designs {
         Trim.plinth(draft, w, d, stone.block());
         draft.box(1, 0, 1, w, 0, d, p.get(Role.FLOOR), Role.FLOOR);
         draft.shell(1, 1, 1, w, h, d, p.get(Role.WALL), Role.WALL);
-        Trim.posts(draft, w, d, 1, h, WINDOW_EVERY, p.get(Role.ACCENT));
+        Trim.posts(draft, w, d, 1, h, WINDOW_EVERY, p.get(Role.ACCENT), wood.strippedLog());
         Trim.baseCourse(draft, w, d, 1, stone.block());
 
         // Windows high up, above the chests rather than behind them: a store

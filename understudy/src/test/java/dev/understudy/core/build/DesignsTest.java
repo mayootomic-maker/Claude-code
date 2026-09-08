@@ -126,9 +126,9 @@ class DesignsTest {
         Map<String, Integer> essential = bp.essentialMaterials();
 
         assertEquals(bp.blockCount(), all.values().stream().mapToInt(Integer::intValue).sum());
-        assertTrue(all.containsKey("glass"), "no windows counted");
-        assertFalse(essential.containsKey("glass"), "windows must not block the build");
-        assertFalse(essential.containsKey("torch"));
+        assertTrue(all.containsKey("glass_pane"), "no windows counted");
+        assertFalse(essential.containsKey("glass_pane"), "windows must not block the build");
+        assertFalse(essential.containsKey("lantern"));
         assertTrue(essential.get("oak_planks") > 50);
     }
 

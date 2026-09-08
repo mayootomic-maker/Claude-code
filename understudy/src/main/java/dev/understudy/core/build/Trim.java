@@ -45,21 +45,68 @@ public final class Trim {
      * land between the windows rather than through them.
      */
     public static void posts(Draft draft, int w, int d, int from, int to, int every, String log) {
+        posts(draft, w, d, from, to, every, log, log);
+    }
+
+    /**
+     * The same, banded between two blocks course by course.
+     *
+     * Quoining: a post of one material against a wall of another is a line, and
+     * a post that alternates is a texture. It is the cheapest thing on this list
+     * and the one that does most — a stripped log against plain planks is the
+     * difference between a shape and a building, and it costs nothing but
+     * saying which block on which course.
+     */
+    public static void posts(Draft draft, int w, int d, int from, int to, int every,
+                             String log, String banding) {
         for (int x = 1; x <= w; x++) {
             if (!onGrid(x, w, every)) continue;
             for (int y = from; y <= to; y++) {
-                draft.set(x, y, 1, log, Role.ACCENT);
-                draft.set(x, y, d, log, Role.ACCENT);
+                draft.set(x, y, 1, band(log, banding, y), Role.ACCENT);
+                draft.set(x, y, d, band(log, banding, y), Role.ACCENT);
             }
         }
         for (int z = 1; z <= d; z++) {
             if (!onGrid(z, d, every)) continue;
             for (int y = from; y <= to; y++) {
-                draft.set(1, y, z, log, Role.ACCENT);
-                draft.set(w, y, z, log, Role.ACCENT);
+                draft.set(1, y, z, band(log, banding, y), Role.ACCENT);
+                draft.set(w, y, z, band(log, banding, y), Role.ACCENT);
             }
         }
     }
+
+    private static String band(String even, String odd, int y) {
+        return y % 2 == 0 ? even : odd;
+    }
+
+    /**
+     * A line right round the building at one height.
+     *
+     * Every building that reads as designed has one. It breaks the wall into a
+     * base and a storey, which is the difference between a house and a crate
+     * with windows in it, and because it sits in the margin it costs no floor
+     * space and no interior.
+     */
+    public static void beltCourse(Draft draft, int w, int d, int y, String slab, int skipX) {
+        for (int x = 0; x <= w + 1; x++) {
+            // Never across the doorway. The way in is the one thing that has to
+            // stay open at every height, and a slab at knee level in it is a
+            // door you cannot walk through.
+            if (x != skipX) draft.set(x, y, 0, slab, Role.ACCENT, true);
+            draft.set(x, y, d + 1, slab, Role.ACCENT, true);
+        }
+        for (int z = 0; z <= d + 1; z++) {
+            draft.set(0, y, z, slab, Role.ACCENT, true);
+            draft.set(w + 1, y, z, slab, Role.ACCENT, true);
+        }
+    }
+
+    // An apron of paving round the outside was the obvious next thing and it is
+    // not here, because it has to sit at x=-1 and a design's own corner is
+    // 0,0,0 by contract — everything downstream measures the building from
+    // there, so a block outside it is a building whose size is a lie. It would
+    // need every design shifted a block, which is a bigger change than the
+    // detail is worth.
 
     /** A corner, or one of the regular uprights between them. */
     public static boolean onGrid(int along, int span, int every) {
@@ -205,7 +252,17 @@ public final class Trim {
         draft.set(doorX + 1, 3, wallZ - 1, "torch", Role.LIGHT, true);
     }
 
-    /** Wall lamps at intervals down both long walls, high enough to light a room. */
+    /**
+     * Lamps at intervals down both long walls, high enough to light a room.
+     *
+     * Torches against the wall, and they stay torches. A hanging lantern is the
+     * better-looking fitting and it was tried here: it needs a solid block
+     * above it, these rooms have open rafters, and a lantern hung from nothing
+     * falls the moment it is placed. That is the same mistake as a floor torch
+     * with no floor, made the other way up. A torch beside a wall becomes a
+     * wall torch — the builder gets that from clicking the wall, and the paste
+     * converts it because it can see there is no floor under it.
+     */
     public static void lights(Draft draft, int w, int d, int y, int every) {
         for (int z = 2; z < d; z += every) {
             draft.set(2, y, z, "torch", Role.LIGHT, true);

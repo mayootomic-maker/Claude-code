@@ -5,6 +5,7 @@ import dev.understudy.core.build.Catalog;
 import dev.understudy.core.build.Schematic;
 import dev.understudy.core.build.Sized;
 import dev.understudy.core.build.Materials;
+import dev.understudy.core.build.Palette;
 import dev.understudy.core.build.Preview;
 import dev.understudy.core.adapt.Measured;
 import dev.understudy.core.craft.Catalogue;
@@ -34,11 +35,31 @@ import java.util.Map;
  */
 public final class BuildPicker extends Screen {
 
-    private static final int PANEL = 0xC0101418;
+    /**
+     * The palette, and why it is this one.
+     *
+     * A screen inside Minecraft that ignores Minecraft's own conventions reads
+     * as a foreign object bolted on, however tidy it is on its own terms. So:
+     * a dark translucent ground rather than a solid one, a single hairline
+     * rather than rounded corners and shadows, one accent and no more, and type
+     * that lines up in columns. What is not vanilla is the restraint — the game
+     * itself would put a border on every one of these.
+     */
+    private static final int SHADE = 0xC0080B0E;
+    private static final int PANEL = 0xE0141A20;
+    private static final int RAISED = 0xFF1D262F;
     private static final int LINE = 0xFF39414B;
-    private static final int SELECTED = 0xFF2E6DA4;
+    private static final int ACCENT = 0xFF54B87A;
+    private static final int ACCENT_DIM = 0x4054B87A;
     private static final int TEXT = 0xFFE6E6E6;
     private static final int DIM = 0xFF9AA3AD;
+    private static final int FAINT = 0xFF6A737D;
+
+    /** Row metrics for the list, which is drawn rather than made of widgets. */
+    private static final int ROW = 13;
+    private static final int RAIL = 150;
+
+    private int scroll;
 
     private final Map<String, Integer> inventory;
     /** Called with the chosen design, size and materials once the player commits. */
@@ -129,47 +150,150 @@ public final class BuildPicker extends Screen {
         }
     }
 
+    /**
+     * Where everything sits, worked out from the window rather than pinned to it.
+     *
+     * The old layout was a column of buttons, one per design, at fixed pixel
+     * offsets. Two things were wrong with that and the second is the one that
+     * mattered: a button is a box with a border and a label, so twelve of them
+     * is twelve boxes and no hierarchy — nothing says which are this mod's
+     * designs and which are files you dropped in a folder. And a fixed column
+     * runs off the bottom of the screen the moment you have more than a handful
+     * of imports, with no way to reach the rest.
+     *
+     * So the list is drawn rather than built: rows of text on a highlight,
+     * under headings, scrolled by the keyboard and clickable. Only the things
+     * that genuinely are buttons are buttons, and they are on one line at the
+     * bottom where the eye finishes rather than scattered down the side.
+     */
     @Override
     protected void init() {
-        int listX = 16;
-        int listY = 44;
-        for (int i = 0; i < options.size(); i++) {
-            int index = i;
-            addRenderableWidget(Button.builder(Component.literal(shorten(options.get(i).label())),
-                            button -> select(index))
-                    .bounds(listX, listY + i * 24, 120, 20).build());
-        }
+        int bottom = height - 28;
+        int x = 16;
 
-        int controlsY = listY + options.size() * 24 + 16;
-        addRenderableWidget(Button.builder(Component.literal("-"), button -> resize(-1))
-                .bounds(listX, controlsY, 24, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("+"), button -> resize(1))
-                .bounds(listX + 96, controlsY, 24, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("\u2212"), b -> resize(-1))
+                .bounds(x, bottom, 20, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("+"), b -> resize(1))
+                .bounds(x + 52, bottom, 20, 20).build());
+        x += 80;
 
-        // Materials cycle rather than opening a second menu: eight woods and
-        // seven masonries is a list nobody wants to scroll, and the preview
-        // shows the answer immediately anyway.
-        addRenderableWidget(Button.builder(Component.literal("Wood \u203a"), button -> cycleWood(1))
-                .bounds(listX, controlsY + 24, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Stone \u203a"), button -> cycleStone(1))
-                .bounds(listX, controlsY + 48, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Hollow / solid"),
-                        button -> toggleSolid())
-                .bounds(listX, controlsY + 72, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Wood \u203a"), b -> cycleWood(1))
+                .bounds(x, bottom, 74, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Stone \u203a"), b -> cycleStone(1))
+                .bounds(x + 78, bottom, 74, 20).build());
+        x += 160;
 
-        // Which way up an imported file means is not written in the file, so it
-        // is asked here instead of guessed at twice.
-        addRenderableWidget(Button.builder(Component.literal("Turn \u21bb"), button -> turn())
-                .bounds(listX, controlsY + 96, 58, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Flip \u21c5"), button -> flip())
-                .bounds(listX + 62, controlsY + 96, 58, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Turn \u21bb"), b -> turn())
+                .bounds(x, bottom, 52, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Flip \u21c5"), b -> flip())
+                .bounds(x + 56, bottom, 52, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Solid \u25a0"), b -> toggleSolid())
+                .bounds(x + 112, bottom, 56, 20).build());
 
-        addRenderableWidget(Button.builder(Component.literal("Choose where"), button -> commit())
-                .bounds(listX, controlsY + 124, 120, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> onClose())
-                .bounds(listX, controlsY + 148, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
+                .bounds(width - 176, bottom, 74, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Place \u2192"), b -> commit())
+                .bounds(width - 96, bottom, 80, 20).build());
 
         refresh();
+    }
+
+    /** How many rows of the list the window has room for. */
+    private int rowsThatFit() {
+        return Math.max(3, (height - 28 - 56 - 12) / ROW);
+    }
+
+    /** One drawn line: either a heading, or an option and which one. */
+    private record Row(String text, int option) {
+        boolean heading() {
+            return option < 0;
+        }
+    }
+
+    /**
+     * The list as it reads, headings included.
+     *
+     * Built each time rather than kept: it is a dozen entries, and rebuilding it
+     * is cheaper than keeping two things that have to agree with each other.
+     */
+    private List<Row> rows() {
+        List<Row> out = new ArrayList<>();
+        boolean openedImports = false;
+        for (int i = 0; i < options.size(); i++) {
+            Option option = options.get(i);
+            if (out.isEmpty() && option instanceof Designed) out.add(new Row("DESIGNS", -1));
+            if (!(option instanceof Designed) && !openedImports) {
+                openedImports = true;
+                out.add(new Row("IMPORTED", -1));
+            }
+            out.add(new Row(option.label(), i));
+        }
+        return out;
+    }
+
+    /**
+     * Move the selection, skipping the headings.
+     *
+     * Arrow keys rather than only the mouse because this is a list and a list
+     * is the one thing a keyboard is unambiguously better at.
+     */
+    private void move(int by) {
+        selected = Math.max(0, Math.min(options.size() - 1, selected + by));
+        int shown = rowsThatFit();
+        if (selected < scroll) scroll = selected;
+        if (selected >= scroll + shown) scroll = selected - shown + 1;
+        select(selected);
+    }
+
+    @Override
+    public boolean keyPressed(int key, int scancode, int modifiers) {
+        switch (key) {
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_UP -> {
+                move(-1);
+                return true;
+            }
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN -> {
+                move(1);
+                return true;
+            }
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT -> {
+                resize(-1);
+                return true;
+            }
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT -> {
+                resize(1);
+                return true;
+            }
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER -> {
+                commit();
+                return true;
+            }
+            default -> {
+                return super.keyPressed(key, scancode, modifiers);
+            }
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int top = 56;
+        if (mouseX >= 16 && mouseX < RAIL && mouseY >= top) {
+            int row = (int) ((mouseY - top) / ROW);
+            int at = rowAt(row);
+            if (at >= 0) {
+                selected = at;
+                select(at);
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** Which option a drawn row belongs to, or -1 for a heading or empty space. */
+    private int rowAt(int row) {
+        List<Row> all = rows();
+        int at = row + scroll;
+        return at >= 0 && at < all.size() ? all.get(at).option() : -1;
     }
 
     private void select(int index) {
@@ -355,42 +479,135 @@ public final class BuildPicker extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
                                    float partialTick) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-
         Option option = options.get(selected);
-        int panelX = 148;
-        int panelY = 44;
-        int panelW = width - panelX - 16;
-        int panelH = height - panelY - 16;
 
-        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, PANEL);
-        graphics.outline(panelX, panelY, panelW, panelH, LINE);
+        graphics.fill(0, 0, width, height, SHADE);
+        graphics.text(font, Component.literal("Build"), 16, 20, TEXT);
+        graphics.text(font, Component.literal("\u2191\u2193 choose  \u2190\u2192 size  "
+                + "\u23ce place"), 16, 34, FAINT);
+        graphics.fill(16, 46, width - 16, 47, LINE);
 
-        String title = option.label();
+        drawList(graphics);
+        drawPanel(graphics, option);
+
+        // The size, between the two buttons that change it, because a number
+        // you can alter and cannot read is a strange thing to offer.
+        // text rather than centeredText: this file only uses primitives whose
+        // shape is already proven elsewhere in the mod, and centring by hand
+        // costs one call to the font.
+        String label = sizeLabel();
+        graphics.text(font, Component.literal(label),
+                16 + 36 - (font == null ? 0 : font.width(label) / 2), height - 22, TEXT);
+    }
+
+    /** What the size control is currently set to, in the units that design uses. */
+    private String sizeLabel() {
+        Option option = options.get(selected);
+        if (option instanceof Designed) return String.valueOf(size);
+        if (option instanceof Imported imported && imported.model()) return size + "h";
+        // A schematic is the size it was saved at and the control does nothing.
+        return "\u2014";
+    }
+
+    /**
+     * The rail: headings, rows, and a mark on the one that is chosen.
+     *
+     * The selected row is a filled bar with a bright edge rather than a
+     * different colour of text. Colour alone is a weak signal at this size and
+     * on a translucent ground it is weaker still; a shape you can see out of the
+     * corner of your eye is what a selection needs to be.
+     */
+    private void drawList(GuiGraphicsExtractor graphics) {
+        List<Row> all = rows();
+        int top = 56;
+        int shown = rowsThatFit();
+
+        for (int i = 0; i < shown && i + scroll < all.size(); i++) {
+            Row row = all.get(i + scroll);
+            int y = top + i * ROW;
+            if (row.heading()) {
+                graphics.text(font, Component.literal(row.text()), 16, y + 2, FAINT);
+                continue;
+            }
+            boolean chosen = row.option() == selected;
+            if (chosen) {
+                graphics.fill(14, y - 1, RAIL - 8, y + ROW - 2, ACCENT_DIM);
+                graphics.fill(14, y - 1, 16, y + ROW - 2, ACCENT);
+            }
+            graphics.text(font, Component.literal(shorten(row.text())), 22, y + 1,
+                    chosen ? TEXT : DIM);
+        }
+
+        // Only says anything when there is something out of sight, which is the
+        // only time a scrollbar tells you anything you did not know.
+        if (all.size() > shown) {
+            int barTop = top + (int) ((double) scroll / all.size() * (shown * ROW));
+            int barHeight = Math.max(8, (int) ((double) shown / all.size() * (shown * ROW)));
+            graphics.fill(RAIL - 6, top, RAIL - 5, top + shown * ROW, LINE);
+            graphics.fill(RAIL - 7, barTop, RAIL - 4, barTop + barHeight, DIM);
+        }
+    }
+
+    /** The panel: what this one is, what it will cost, and a picture of it. */
+    private void drawPanel(GuiGraphicsExtractor graphics, Option option) {
+        int x = RAIL + 8;
+        int y = 56;
+        int w = width - x - 16;
+        int h = height - y - 36;
+
+        graphics.fill(x, y, x + w, y + h, PANEL);
+        graphics.outline(x, y, w, h, LINE);
+
+        graphics.text(font, Component.literal(option.label()), x + 12, y + 12, TEXT);
         String summary = option instanceof Designed designed
                 ? designed.entry().summary()
                 : "imported from " + ((Imported) option).file().getFileName();
-        String detail;
-        if (option instanceof Designed) {
-            detail = "size " + size + "  ·  " + wood().name() + "  ·  " + stone().name();
-        } else if (option instanceof Imported imported && imported.model()) {
-            detail = size + " tall  ·  " + (solid ? "solid" : "hollow") + "  ·  " + wood().name()
-                    + turnNote();
-        } else {
-            detail = ((Imported) option).note() + turnNote();
+        graphics.text(font, Component.literal(clip(summary, w - 24)), x + 12, y + 26, DIM);
+
+        // The numbers on one line, in columns, because that is what makes three
+        // facts read as three facts rather than as a sentence.
+        String stats = blueprint == null ? "\u2014"
+                : blueprint.sizeX() + " \u00d7 " + blueprint.sizeZ() + " wide  \u00b7  "
+                        + blueprint.sizeY() + " tall  \u00b7  " + blueprint.blockCount()
+                        + " blocks";
+        graphics.text(font, Component.literal(stats), x + 12, y + 42, DIM);
+
+        swatches(graphics, x + 12, y + 58);
+
+        int pictureTop = y + 74;
+        int pictureHeight = h - 74 - 30;
+        drawPreview(graphics, x + 12, pictureTop, w - 24, pictureHeight);
+
+        graphics.fill(x + 12, y + h - 26, x + w - 12, y + h - 25, LINE);
+        graphics.text(font, Component.literal(clip(costLine, w - 24)), x + 12, y + h - 18,
+                costLine.startsWith("\u00a7c") ? TEXT : DIM);
+    }
+
+    /**
+     * The materials, as the colours they are.
+     *
+     * "Wood: spruce" is a fact you have to picture. Two chips of the actual
+     * block colour beside the name is the same fact already pictured, and it is
+     * the colour the preview is drawn in, so the two agree by construction.
+     */
+    private void swatches(GuiGraphicsExtractor graphics, int x, int y) {
+        int at = x;
+        for (String block : List.of(wood().planks(), stone().block())) {
+            graphics.fill(at, y, at + 8, y + 8, 0xFF000000 | Palette.colourOf(block));
+            graphics.outline(at - 1, y - 1, 10, 10, LINE);
+            at += 12;
         }
-
-        graphics.text(font, Component.literal(title), panelX + 10, panelY + 10, TEXT);
-        graphics.text(font, Component.literal(summary), panelX + 10, panelY + 24, DIM);
-        graphics.text(font, Component.literal(detail), panelX + 10, panelY + 38, DIM);
-        if (modelNote != null && option instanceof Imported imported && imported.model()) {
-            graphics.text(font, Component.literal(modelNote), panelX + 10, panelY + 52, DIM);
+        graphics.text(font, Component.literal(wood().name() + " \u00b7 " + stone().name()),
+                at + 2, y, DIM);
+        if (turns != 0 || upsideDown) {
+            graphics.text(font, Component.literal(turnNote().trim()), at + 2, y + 11, FAINT);
         }
+    }
 
-        drawPreview(graphics, panelX + 10, panelY + 56, panelW - 20, panelH - 96);
-        graphics.text(font, Component.literal(costLine), panelX + 10, panelY + panelH - 26, TEXT);
-
-        graphics.text(font, Component.literal(String.valueOf(size)), 16 + 40,
-                44 + options.size() * 24 + 22, TEXT);
+    /** Cut a line to the width it has, in characters the font actually measures. */
+    private String clip(String text, int room) {
+        if (font == null || font.width(text) <= room) return text;
+        return font.plainSubstrByWidth(text, room - font.width("\u2026")) + "\u2026";
     }
 
     /**
