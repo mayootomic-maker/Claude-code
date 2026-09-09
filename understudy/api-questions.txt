@@ -171,4 +171,11 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # x(), y() and button(). The picker's arrow keys and row clicks are written
 # against those.
 #
-# Nothing open.
+# PASTING WITHOUT BEING AN OPERATOR. The command route needs setblock, which on
+# somebody else's server means op — and op is not a thing to hand a friend so
+# they can build a shed. The client already knows its own permission level:
+# the server sends it at login and the vanilla client uses it to decide whether
+# to show the debug options. If it is readable, a paste can tell before it
+# sends anything, and take the other route in silence.
+net.minecraft.world.entity.player.Player hasPermissions
+net.minecraft.client.player.LocalPlayer 40

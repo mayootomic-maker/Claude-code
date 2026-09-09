@@ -6,7 +6,7 @@
 |---|---|
 | `/build` | open the menu: pick a design, size and materials |
 | `/build <name> [size]` | hut, house, tower, storage, study or manor |
-| `/paste` | the same menu, but the build simply appears |
+| `/paste` | same menu; it appears, or is built instantly without op |
 | `/paste undo` | take the last paste back out again |
 | `/paste stop` | stop a paste part way through |
 | `/build cancel` | drop the site you are placing |
@@ -32,6 +32,9 @@
 | `/get iron_ingot+coal 8` | several at once, planned as one trip |
 | `/sort` | put your things in the chests they belong in |
 | `/sort all` | the same, including the kit you carry |
+| `/stash` | a chest of spares here, for after you die |
+| `/stash where` | the stashes it has put down in this world |
+| `/stash needs` | what to carry so a stash fills up properly |
 | `/enchant [item]` | at a table with its fifteen shelves |
 | `/travel <x> <y> <z>` | walk there |
 | `/travel stop` | stop walking |

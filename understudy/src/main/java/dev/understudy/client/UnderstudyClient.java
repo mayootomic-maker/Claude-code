@@ -29,6 +29,7 @@ import dev.understudy.mc.Hud;
 import dev.understudy.mc.Keys;
 import dev.understudy.mc.Marker;
 import dev.understudy.mc.PasteTask;
+import dev.understudy.mc.StashTask;
 import dev.understudy.mc.PortalTask;
 import dev.understudy.mc.Safety;
 import dev.understudy.mc.SmeltTask;
@@ -99,6 +100,7 @@ public final class UnderstudyClient implements ClientModInitializer {
     private static TravelTask travel;
     private static BuildTask build;
     private static SortTask sort;
+    private static StashTask stash;
     private static GatherTask gather;
     private static CraftTask craft;
     private static SmeltTask smelt;
@@ -220,6 +222,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                     travel = new TravelTask(client, profile, UnderstudyClient::tell);
                     build = new BuildTask(client, travel, atlas, UnderstudyClient::tell);
                     sort = new SortTask(client, travel, UnderstudyClient::tell);
+                    stash = new StashTask(client, atlas, UnderstudyClient::tell);
                     craft = new CraftTask(client, UnderstudyClient::tell);
                     smelt = new SmeltTask(client, UnderstudyClient::tell);
                     hunt = new HuntTask(client, travel, UnderstudyClient::tell);
@@ -227,7 +230,8 @@ public final class UnderstudyClient implements ClientModInitializer {
                     gather = new GatherTask(client, travel, craft, smelt, hunt, atlas, measured,
                             UnderstudyClient::tell);
                     marker = new Marker(client, UnderstudyClient::tell);
-                    paste = new PasteTask(client, UnderstudyClient::tell);
+                    paste = new PasteTask(client, UnderstudyClient::tell,
+                            UnderstudyClient::gatherThenBuild);
                     portal = new PortalTask(client, travel, atlas, UnderstudyClient::tell);
                     autopilot = new Autopilot(client, gather, sort, build, atlas, measured, agenda,
                             UnderstudyClient::damageRecently, UnderstudyClient::tell);
@@ -341,6 +345,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 gather.tick();
                 build.tick();
                 sort.tick();
+                stash.tick();
 
                 // One tick, one bucket. Recorded after the tasks have run so it
                 // describes what they actually did rather than what they were
@@ -635,6 +640,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (gather != null && gather.running()) return gather.phase();
         if (build != null && build.running()) return build.phase();
         if (sort != null && sort.running()) return sort.phase();
+        if (stash != null && stash.running()) return Timings.Phase.HANDLING;
         if (craft != null && craft.running()) return Timings.Phase.HANDLING;
         if (smelt != null && smelt.running()) return Timings.Phase.HANDLING;
         if (travel != null && travel.running()) return Timings.Phase.TRAVELLING;
@@ -650,6 +656,7 @@ public final class UnderstudyClient implements ClientModInitializer {
                 || (travel != null && travel.running())
                 || (build != null && build.running())
                 || (sort != null && sort.running())
+                || (stash != null && stash.running())
                 || (gather != null && gather.running())
                 || (craft != null && craft.running())
                 || (smelt != null && smelt.running());
@@ -724,6 +731,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (gather != null && gather.running()) return gather.status();
         if (build != null && build.running()) return build.status();
         if (sort != null && sort.running()) return sort.status();
+        if (stash != null && stash.running()) return stash.status();
         if (enchant != null && enchant.running()) return enchant.status();
         if (travel != null && travel.running()) return travel.status();
         if (autopilot != null && autopilot.on()) return "auto: " + autopilot.goal();
@@ -796,6 +804,10 @@ public final class UnderstudyClient implements ClientModInitializer {
         return build;
     }
 
+    public static StashTask stash() {
+        return stash;
+    }
+
     public static SortTask sort() {
         return sort;
     }
@@ -839,6 +851,7 @@ public final class UnderstudyClient implements ClientModInitializer {
         if (enchant != null) enchant.stop(null);
         if (build != null) build.stop(why);
         if (sort != null) sort.stop(why);
+        if (stash != null) stash.stop(why);
         if (craft != null) craft.stop();
         if (smelt != null) smelt.stop();
         if (travel != null) travel.stop(null);

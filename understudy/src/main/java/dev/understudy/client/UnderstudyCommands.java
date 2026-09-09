@@ -26,6 +26,7 @@ import dev.understudy.mc.Hud;
 import dev.understudy.mc.Imports;
 import dev.understudy.mc.SelfTest;
 import dev.understudy.mc.PasteTask;
+import dev.understudy.mc.StashTask;
 import dev.understudy.mc.SortTask;
 import dev.understudy.mc.TravelTask;
 import net.minecraft.client.Minecraft;
@@ -190,6 +191,16 @@ public final class UnderstudyCommands {
                     .then(literal("all").executes(context -> sort(context.getSource(), false)))
                     .then(literal("stop").executes(context -> stop(context.getSource()))));
 
+            // A chest of spares, for the walk back from a respawn. Nothing
+            // here is a command sent to the server and nothing needs
+            // permission: it holds a chest, right-clicks the ground and
+            // shift-clicks stacks across, which is what a player does.
+            dispatcher.register(literal("stash")
+                    .executes(context -> stash(context.getSource()))
+                    .then(literal("where").executes(context -> stashWhere(context.getSource())))
+                    .then(literal("needs").executes(context -> stashNeeds(context.getSource())))
+                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+
             dispatcher.register(literal("understudy")
                     .then(literal("stop").executes(context -> stop(context.getSource())))
                     .then(literal("pause").executes(context -> pause(context.getSource())))
@@ -347,10 +358,14 @@ public final class UnderstudyCommands {
         }
         UnderstudyClient.askForPicker(true);
         if (Minecraft.getInstance().getSingleplayerServer() == null) {
-            // Said before rather than after, because finding out that it needed
-            // a permission you do not have is a thing to learn at the start.
-            say(source, "on a server this needs permission to run /setblock — "
-                    + "it tries one block first and says if it was refused");
+            // Said before rather than after. Which of the two routes it will
+            // take is already knowable — the client is told its own operator
+            // level at login — and the two feel different enough to be worth
+            // knowing before choosing a design.
+            say(source, source.getPlayer().hasPermissions(2)
+                    ? "you are an operator here, so it goes straight in"
+                    : "not an operator here, so it will be built block by block at instant "
+                            + "speed instead — same building, same place, no permission needed");
         }
         return 1;
     }
@@ -596,6 +611,52 @@ public final class UnderstudyCommands {
         return 1;
     }
 
+    /** Put a recovery chest down here and fill it with whatever is spare. */
+    private static int stash(FabricClientCommandSource source) {
+        UnderstudyClient.resume();
+        StashTask task = UnderstudyClient.stash();
+        if (task == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        task.start();
+        return 1;
+    }
+
+    /**
+     * Where the ones it has put down are.
+     *
+     * The atlas keeps them per world and across sessions, which is the only
+     * version of this feature worth having — a cache you have to remember the
+     * coordinates of yourself is a cache you wrote on a sticky note.
+     */
+    private static int stashWhere(FabricClientCommandSource source) {
+        StashTask task = UnderstudyClient.stash();
+        if (task == null) {
+            say(source, "not in a world yet");
+            return 0;
+        }
+        java.util.List<String> found = task.where();
+        if (found.isEmpty()) {
+            say(source, "no stashes in this world yet — /stash puts one here");
+            return 1;
+        }
+        say(source, found.size() == 1 ? "one stash:" : found.size() + " stashes, nearest first:");
+        for (String line : found) say(source, "  " + line);
+        return 1;
+    }
+
+    /** What to be carrying for a full one, spare and kept side by side. */
+    private static int stashNeeds(FabricClientCommandSource source) {
+        say(source, "a full recovery chest needs, on you, one chest and:");
+        for (dev.understudy.core.gear.Kit.Line line : dev.understudy.core.gear.Kit.recovery()) {
+            say(source, "  " + (line.want() + line.keepBack()) + " " + line.item()
+                    + "  —  " + line.want() + " for the chest, " + line.keepBack() + " stays");
+        }
+        say(source, "in creative it needs none of it: the chest is stocked in full");
+        return 1;
+    }
+
     private static int stop(FabricClientCommandSource source) {
         UnderstudyClient.stopAll();
         say(source, "stopped — everything, and the keys are yours");
@@ -627,6 +688,7 @@ public final class UnderstudyCommands {
         TravelTask travel = UnderstudyClient.travel();
         BuildTask build = UnderstudyClient.build();
         SortTask sort = UnderstudyClient.sort();
+        StashTask stash = UnderstudyClient.stash();
         if (travel == null) {
             say(source, "idle");
             return 1;
@@ -642,6 +704,7 @@ public final class UnderstudyCommands {
         else if (travel.running()) say(source, travel.status());
         else if (build != null && build.running()) say(source, build.status());
         else if (sort != null && sort.running()) say(source, sort.status());
+        else if (stash != null && stash.running()) say(source, stash.status());
         else say(source, "idle");
         return 1;
     }

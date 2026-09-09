@@ -31,12 +31,23 @@ import java.util.function.Consumer;
  *    permission four whether or not cheats are switched on, which is why this
  *    works in a survival world you never enabled cheats in.
  *  - **Somebody's server.** They go as you, and land only if you may run
- *    setblock there. Nothing is installed on the server and nothing is asked of
- *    the other players — which is the point — but the permission is real and it
- *    is not this mod's to grant.
+ *    setblock there — which means being an operator.
  *
- * If you may not, that is said plainly rather than dressed up: the alternative
- * is a progress bar that counts to six hundred while nothing appears.
+ * And operator is not a thing to ask a friend for so you can put up a shed. It
+ * is every command on the server, and a group of people who all have it is a
+ * group where one bad afternoon is unrecoverable. So the second route is a
+ * bonus rather than a requirement: if the permission is there it is used
+ * because it is instant, and if it is not, the paste is not refused — it is
+ * *built*. The character walks it up block by block at instant speed, which
+ * needs no permission at all because placing a block is what a player does. In
+ * creative it costs nothing; in survival it costs the materials, and it says
+ * which before it starts.
+ *
+ * The permission is worked out before anything is sent — the client is told its
+ * own operator level at login — so on a server where you are not an operator
+ * nothing is attempted, no red error appears in the chat, and the build simply
+ * begins. One block is still sent as a check where the level says yes, because
+ * a permissions plugin can disagree with the level.
  *
  * Rate. In your own world there is no packet and no limit, so it goes in one
  * go. On a server every command is a packet and servers kick for sending too
@@ -60,8 +71,29 @@ public final class PasteTask {
     /** How long to give the server to answer the probe before believing it. */
     private static final int PROBE_TICKS = 20;
 
+    /**
+     * What the server last said about whether commands from here land.
+     *
+     * Cached per world so the one-block question is asked once rather than
+     * before every paste, and so the second paste on a server where you are not
+     * an operator goes straight to building with nothing sent at all.
+     */
+    private enum Allowed { UNKNOWN, YES, NO }
+
     private final Minecraft client;
     private final Consumer<String> report;
+    /**
+     * Where a paste goes when commands are not available: the ordinary builder.
+     *
+     * Held as a callback rather than a BuildTask because the fallback is not
+     * only "build it" — it is the whole gather-then-build flow, which knows to
+     * skip the gathering in creative and to go shopping in survival. That
+     * decision already lives in one place and should not live in two.
+     */
+    private final java.util.function.BiConsumer<Blueprint, BlockPos> otherwise;
+
+    private Allowed allowed = Allowed.UNKNOWN;
+    private String verdictFor = "";
 
     private List<String> commands = List.of();
     private int next;
@@ -96,10 +128,15 @@ public final class PasteTask {
     private BlockPos probe;
     private BlockState probeWas;
     private int probeTicks = -1;
+    /** Kept only so a refused probe can hand the same plan to the builder. */
+    private Blueprint pending;
+    private BlockPos pendingAt;
 
-    public PasteTask(Minecraft client, Consumer<String> report) {
+    public PasteTask(Minecraft client, Consumer<String> report,
+                     java.util.function.BiConsumer<Blueprint, BlockPos> otherwise) {
         this.client = client;
         this.report = report;
+        this.otherwise = otherwise;
     }
 
     /** How many pastes back it can go. Longer than anyone undoes in one sitting. */
@@ -113,9 +150,10 @@ public final class PasteTask {
      * Take the last paste away again.
      *
      * The same route as putting it there, because it is the same kind of work:
-     * the server does it, or nobody does. On somebody else's server it needs
-     * the same permission, and finding that out is the same one-block question
-     * — so an undo of a paste that landed will land too.
+     * the server does it, or nobody does. Only a paste that actually went
+     * through commands is recorded, so an undo is only ever offered for
+     * something that can be undone — a paste that fell back to being built has
+     * no entry here, and comes down the way anything built comes down.
      */
     public void undo() {
         if (running) {
@@ -123,7 +161,14 @@ public final class PasteTask {
             return;
         }
         if (done.isEmpty()) {
-            report.accept("nothing pasted this session to undo");
+            report.accept("nothing pasted this session to undo — anything built block by block comes down the same way");
+            return;
+        }
+        if (local() == null && client.player != null && !mayCommand(client.player)) {
+            // Only a paste that went through commands is ever recorded, so
+            // reaching here means the permission was taken away in between.
+            report.accept("this server will not run fill for you any more — "
+                    + "what was pasted has to come down by hand");
             return;
         }
         Pasted last = done.peekLast();
@@ -139,6 +184,7 @@ public final class PasteTask {
         this.next = 0;
         this.running = true;
         this.probeTicks = -1;
+        this.pending = null;
         Ghosts.hide();
         report.accept("removing the " + last.what() + " at "
                 + last.x() + " " + last.y() + " " + last.z()
@@ -159,11 +205,20 @@ public final class PasteTask {
         // drawing; a paste has no progress to draw, so nothing else would ever
         // take it down and it would hang in the air over the finished house.
         Ghosts.hide();
+
+        if (local() == null && !mayCommand(player)) {
+            buildInstead(plan, origin, "you are not an operator on this server, so nothing "
+                    + "can be conjured here");
+            return;
+        }
+
         this.what = plan.name();
         this.commands = Paste.commands(plan, origin.getX(), origin.getY(), origin.getZ(), true);
         this.next = 0;
         this.running = true;
         this.probeTicks = -1;
+        this.pending = plan;
+        this.pendingAt = origin;
 
         done.addLast(new Pasted(plan.name(), dimension(), origin.getX(), origin.getY(),
                 origin.getZ(), plan.sizeX(), plan.sizeY(), plan.sizeZ()));
@@ -175,7 +230,47 @@ public final class PasteTask {
         report.accept("clearing " + plan.sizeX() + "x" + plan.sizeY() + "x" + plan.sizeZ()
                 + " at " + origin.getX() + " " + origin.getY() + " " + origin.getZ() + " first");
 
-        if (local() == null) askPermission(plan, origin);
+        if (local() == null && allowed == Allowed.UNKNOWN) askPermission(plan, origin);
+    }
+
+    /**
+     * Whether a command sent from here has any chance of landing.
+     *
+     * The operator level the client already knows is the cheap half and it is
+     * usually the whole answer: below two, setblock is refused by vanilla and
+     * there is nothing to try. Above it, a server can still say no — a
+     * permissions plugin, a claim, a plot world — so the answer is a maybe, and
+     * the one-block probe settles it.
+     */
+    private boolean mayCommand(LocalPlayer player) {
+        String world = Worlds.key(client);
+        if (!world.equals(verdictFor)) {
+            verdictFor = world;
+            allowed = Allowed.UNKNOWN;
+        }
+        if (allowed == Allowed.NO) return false;
+        return player.hasPermissions(2);
+    }
+
+    /**
+     * Put it up the long way instead, and say why before anything happens.
+     *
+     * Not a consolation prize. It is the same building in the same place from
+     * the same plan; what it costs is a walk, and in survival the materials —
+     * which is the honest price of not being an operator, and is worth stating
+     * rather than discovering when the gatherer wanders off after oak logs.
+     */
+    private void buildInstead(Blueprint plan, BlockPos origin, String why) {
+        running = false;
+        commands = List.of();
+        pending = null;
+        report.accept(why + " — building it instead, at instant speed");
+        report.accept(Hotbar.creative(client.player)
+                ? "creative, so the blocks cost nothing; it just has to walk it"
+                : "survival, so it needs the materials — /plan " + plan.name()
+                        + " says what they are");
+        BuildTask.speed(BuildTask.Speed.INSTANT);
+        otherwise.accept(plan, origin);
     }
 
     public void stop(String why) {
@@ -197,10 +292,20 @@ public final class PasteTask {
             if (++probeTicks < PROBE_TICKS) return;
             probeTicks = -1;
             if (client.level.getBlockState(probe).equals(probeWas)) {
-                stop("the server did not accept it — pasting needs permission to run "
-                        + "/setblock there. /build will do it the long way, with materials.");
+                // Level two and still refused: a plugin, a claim, or a plot
+                // world. Remembered so the next paste does not ask again.
+                allowed = Allowed.NO;
+                done.pollLast();
+                Blueprint plan = pending;
+                BlockPos at = pendingAt;
+                if (plan == null) {
+                    stop("the server would not let that block be set");
+                    return;
+                }
+                buildInstead(plan, at, "the server would not run setblock for you");
                 return;
             }
+            allowed = Allowed.YES;
         }
 
         int budget = server != null ? PER_TICK_LOCAL : PER_TICK_REMOTE;
