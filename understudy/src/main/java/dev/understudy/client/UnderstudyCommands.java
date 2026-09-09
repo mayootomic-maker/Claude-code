@@ -358,14 +358,16 @@ public final class UnderstudyCommands {
         }
         UnderstudyClient.askForPicker(true);
         if (Minecraft.getInstance().getSingleplayerServer() == null) {
-            // Said before rather than after. Which of the two routes it will
-            // take is already knowable — the client is told its own operator
-            // level at login — and the two feel different enough to be worth
-            // knowing before choosing a design.
-            say(source, source.getPlayer().hasPermissions(2)
-                    ? "you are an operator here, so it goes straight in"
-                    : "not an operator here, so it will be built block by block at instant "
-                            + "speed instead — same building, same place, no permission needed");
+            // Said before rather than after. The two routes feel different
+            // enough — one is instant, one is a character walking a house up —
+            // that finding out which you are getting after choosing a design is
+            // finding out too late.
+            say(source, "on a server it tries one block first: if that lands the whole "
+                    + "thing goes straight in");
+            say(source, "and if it does not, it is built block by block at instant speed "
+                    + "instead — same building, same place, no permission needed");
+            say(source, "so one red 'no permission' line from the server is expected, "
+                    + "once, and is not the paste failing");
         }
         return 1;
     }

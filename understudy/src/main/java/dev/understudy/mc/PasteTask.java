@@ -43,11 +43,12 @@ import java.util.function.Consumer;
  * creative it costs nothing; in survival it costs the materials, and it says
  * which before it starts.
  *
- * The permission is worked out before anything is sent — the client is told its
- * own operator level at login — so on a server where you are not an operator
- * nothing is attempted, no red error appears in the chat, and the build simply
- * begins. One block is still sent as a check where the level says yes, because
- * a permissions plugin can disagree with the level.
+ * Whether the permission is there is settled by asking, once: one real block is
+ * set and looked at. That is the only reliable question, because being an
+ * operator is not the same as being allowed — a plugin, a claim or a plot world
+ * can refuse setblock from someone the server calls one. A refusal is kept for
+ * as long as you are in that world, so the first paste on a server without the
+ * permission costs one refused command and every paste after it costs nothing.
  *
  * Rate. In your own world there is no packet and no limit, so it goes in one
  * go. On a server every command is a packet and servers kick for sending too
@@ -161,10 +162,11 @@ public final class PasteTask {
             return;
         }
         if (done.isEmpty()) {
-            report.accept("nothing pasted this session to undo — anything built block by block comes down the same way");
+            report.accept("nothing pasted this session to undo — anything built block "
+                    + "by block comes down the same way");
             return;
         }
-        if (local() == null && client.player != null && !mayCommand(client.player)) {
+        if (local() == null && !mayCommand()) {
             // Only a paste that went through commands is ever recorded, so
             // reaching here means the permission was taken away in between.
             report.accept("this server will not run fill for you any more — "
@@ -206,9 +208,8 @@ public final class PasteTask {
         // take it down and it would hang in the air over the finished house.
         Ghosts.hide();
 
-        if (local() == null && !mayCommand(player)) {
-            buildInstead(plan, origin, "you are not an operator on this server, so nothing "
-                    + "can be conjured here");
+        if (local() == null && !mayCommand()) {
+            buildInstead(plan, origin, "this server already refused to place blocks for you");
             return;
         }
 
@@ -236,20 +237,20 @@ public final class PasteTask {
     /**
      * Whether a command sent from here has any chance of landing.
      *
-     * The operator level the client already knows is the cheap half and it is
-     * usually the whole answer: below two, setblock is refused by vanilla and
-     * there is nothing to try. Above it, a server can still say no — a
-     * permissions plugin, a claim, a plot world — so the answer is a maybe, and
-     * the one-block probe settles it.
+     * Asked of the server rather than assumed, because the client's own idea of
+     * its permissions is not the whole answer anyway: a plugin, a claim or a
+     * plot world can refuse setblock from someone the server calls an operator.
+     * So the question is one real block, and the answer is kept for as long as
+     * you are in that world — a server that said no once is asked once, and
+     * every paste after the first goes straight to building with nothing sent.
      */
-    private boolean mayCommand(LocalPlayer player) {
+    private boolean mayCommand() {
         String world = Worlds.key(client);
         if (!world.equals(verdictFor)) {
             verdictFor = world;
             allowed = Allowed.UNKNOWN;
         }
-        if (allowed == Allowed.NO) return false;
-        return player.hasPermissions(2);
+        return allowed != Allowed.NO;
     }
 
     /**

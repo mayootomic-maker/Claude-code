@@ -177,5 +177,9 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # the server sends it at login and the vanilla client uses it to decide whether
 # to show the debug options. If it is readable, a paste can tell before it
 # sends anything, and take the other route in silence.
-net.minecraft.world.entity.player.Player hasPermissions
-net.minecraft.client.player.LocalPlayer 40
+# Answered: hasPermissions is gone. Permissions are an object now —
+# LocalPlayer.permissions() -> net.minecraft.server.permissions.PermissionSet,
+# with setPermissions(PermissionSet) beside it. What is wanted from it is
+# whether this player may run setblock, so that the paste can take the other
+# route in silence instead of spending one refused command finding out.
+net.minecraft.server.permissions.PermissionSet 30
