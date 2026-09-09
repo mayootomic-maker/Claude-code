@@ -21,7 +21,12 @@
   /* Not fully opaque: three per cent of the station bleeds through the dark,
      which is enough to keep the walls readable as a memory of the map and far
      too little to make out a person. */
-  const DARK_ALPHA = 0.968;
+  const DARK_ALPHA = 0.962;
+  /* The dark is blue, not black. Cutting a hole in flat black left the lit
+     circle looking like a photograph of the floor with a vignette on it --
+     technically correct and completely inert. A cold shadow against a warm
+     lamp is what makes the same pixels read as a room with a light in it. */
+  const DARK_TINT = '6,11,24';
 
   let canvas = null, ctx = null;
   let dark = null, darkCtx = null;
@@ -219,20 +224,42 @@
     }
   }
 
+  /* The name over somebody's head, at the weight of a caption rather than a
+     headline. Heavy black pills in bold white were the loudest thing on the
+     screen -- louder than the ducks they belonged to, and with four people in
+     a room they stacked into a wall of type. This is smaller, sits on smoked
+     glass, and carries the player's colour as a dot and a hairline, so a tag
+     half-behind somebody else still tells you whose it is. */
   function nameTag(p, alpha) {
     const label = p.name;
-    ctx.font = '700 13px Archivo, system-ui, sans-serif';
-    ctx.textAlign = 'center';
+    ctx.font = '600 11.5px Archivo, system-ui, sans-serif';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const w = ctx.measureText(label).width + 14;
-    const y = p.y - NS.characters.BODY_H - 26;
-    ctx.globalAlpha = alpha * 0.72;
-    ctx.fillStyle = 'rgba(5,7,13,0.72)';
-    NS.characters.rr(ctx, p.x - w / 2, y - 9, w, 18, 9);
+    const colour = C.COLORS[p.colorIdx] || C.COLORS[0];
+    const dot = p.ghost ? '#9d8cff' : colour.body;
+    const textW = ctx.measureText(label).width;
+    const w = textW + 24;
+    const left = p.x - w / 2;
+    const y = p.y - NS.characters.BODY_H - 28;
+
+    ctx.globalAlpha = alpha * 0.82;
+    ctx.fillStyle = 'rgba(7,11,20,0.66)';
+    NS.characters.rr(ctx, left, y - 8.5, w, 17, 8.5);
     ctx.fill();
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = dot;
+    ctx.lineWidth = 1;
+    NS.characters.rr(ctx, left + 0.5, y - 8, w - 1, 16, 8);
+    ctx.stroke();
+
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = p.ghost ? '#9d8cff' : '#e6ecf6';
-    ctx.fillText(label, p.x, y);
+    ctx.fillStyle = dot;
+    ctx.beginPath();
+    ctx.arc(left + 9, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = p.ghost ? '#c8bcff' : '#e6ecf6';
+    ctx.fillText(label, left + 16, y + 0.5);
+    ctx.textAlign = 'center';
     ctx.globalAlpha = 1;
   }
 
@@ -290,6 +317,33 @@
     drawVents(dt);
     NS.fx.drawVisuals(ctx);
 
+    /* The lamp. Added rather than merely not-subtracted: the light you carry
+       is warm and falls off, so the floor under your feet is bright and
+       slightly amber and the far wall is not. Clipped to the same polygon the
+       dark uses, so it cannot spill through a wall and quietly light a room
+       you are not supposed to be able to see into. Two per cent of a flicker
+       on it, which is the difference between a lamp and a stencil. */
+    if (!meGhost && me && W.state.phase !== 'lobby') {
+      const poly = NS.los.visible(me.x, me.y, radius);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(poly[0], poly[1]);
+      for (let i = 1; i < NS.los.RAYS; i++) ctx.lineTo(poly[i * 2], poly[i * 2 + 1]);
+      ctx.closePath();
+      ctx.clip();
+      const flicker = calm ? 1 : 1 + Math.sin(now * 0.0031) * 0.02 + Math.sin(now * 0.0117) * 0.012;
+      const warm = ctx.createRadialGradient(me.x, me.y, 4, me.x, me.y, radius * flicker);
+      warm.addColorStop(0, 'rgba(255,231,190,0.30)');
+      warm.addColorStop(0.24, 'rgba(255,205,143,0.15)');
+      warm.addColorStop(0.5, 'rgba(150,175,240,0.05)');
+      warm.addColorStop(1, 'rgba(80,120,215,0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = warm;
+      ctx.fillRect(me.x - radius, me.y - radius, radius * 2, radius * 2);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
+    }
+
     ctx.restore();
 
     /* ---- the dark ------------------------------------------------------- */
@@ -297,7 +351,7 @@
     if (!meGhost && me && W.state.phase !== 'lobby') {
       darkCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       darkCtx.clearRect(0, 0, cssW, cssH);
-      darkCtx.fillStyle = 'rgba(5,7,13,' + DARK_ALPHA + ')';
+      darkCtx.fillStyle = 'rgba(' + DARK_TINT + ',' + DARK_ALPHA + ')';
       darkCtx.fillRect(0, 0, cssW, cssH);
 
       const poly = NS.los.visible(me.x, me.y, radius);
@@ -310,9 +364,15 @@
       for (let i = 1; i < NS.los.RAYS; i++) darkCtx.lineTo(poly[i * 2], poly[i * 2 + 1]);
       darkCtx.closePath();
       darkCtx.clip();
-      const g = darkCtx.createRadialGradient(me.x, me.y, radius * 0.2, me.x, me.y, radius);
+      /* A longer falloff than it used to have. The old one held full
+         brightness to seven tenths of the radius and then fell off a cliff,
+         which drew a hard disc on the floor and made the light read as a
+         cut-out rather than as something you are holding. */
+      const g = darkCtx.createRadialGradient(me.x, me.y, radius * 0.12, me.x, me.y, radius);
       g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.72, 'rgba(0,0,0,0.98)');
+      g.addColorStop(0.5, 'rgba(0,0,0,0.985)');
+      g.addColorStop(0.78, 'rgba(0,0,0,0.86)');
+      g.addColorStop(0.92, 'rgba(0,0,0,0.42)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       darkCtx.globalCompositeOperation = 'destination-out';
       darkCtx.fillStyle = g;

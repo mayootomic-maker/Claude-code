@@ -179,6 +179,46 @@
     return null;
   }
 
+  /* The thumb on the scale, and the exact width of it.
+
+     Two complaints that sound like the same complaint are not: the shuffle was
+     measured over sixty thousand deals at every player count and is fair to
+     four decimal places, but "fair" at nine players means impostor one round
+     in nine, and a person practising alone against eight bots reads eight
+     crewmate rounds in a row as a broken game rather than as arithmetic. So
+     the lobby has a dial for it, and it is honoured here and only here: one
+     human in the lobby, everybody else a bot. The moment a second real person
+     joins there is somebody it would be unfair to, and it stops applying --
+     without a message, because the setting already says so.
+
+     Rotate is the default and is not a coin flip: it leaves the deal alone
+     until you have been on the crew's side twice running, then puts you on the
+     other one. The streak is kept on this device, so it survives a reload. */
+  function soloSeat() {
+    const humans = list().filter((id) => H.players[id].connected && !H.players[id].bot);
+    return humans.length === 1 ? humans[0] : null;
+  }
+
+  function rolePreference(seat) {
+    if (!seat) return null;
+    const mode = H.settings.soloRole;
+    if (mode === 'Impostor') return { id: seat, team: 'impostor' };
+    if (mode === 'Crewmate') return { id: seat, team: 'crew' };
+    if (mode !== 'Rotate') return null;
+    const streak = U.store.get('streak', null);
+    if (!streak || streak.n < 2) return null;
+    return { id: seat, team: streak.team === 'impostor' ? 'crew' : 'impostor' };
+  }
+
+  function recordStreak(seat) {
+    if (!seat) return;
+    const team = C.ROLES[H.roles[seat] || 'crewmate'].team;
+    const streak = U.store.get('streak', null);
+    U.store.set('streak', streak && streak.team === team
+      ? { team, n: streak.n + 1 }
+      : { team, n: 1 });
+  }
+
   function start() {
     if (H.phase !== 'lobby') return;
     const problem = canStart();
@@ -193,7 +233,9 @@
       H.players[id].ghost = false;
       H.players[id].spectator = false;
     }
-    H.roles = R.dealRoles(ids, H.settings, rand);
+    const seat = soloSeat();
+    H.roles = R.dealRoles(ids, H.settings, rand, rolePreference(seat));
+    recordStreak(seat);
     H.tasks = R.dealTasks(ids, H.settings, rand);
     for (const id of ids) H.killCooldown[id] = H.settings.killCooldown + 5;
 

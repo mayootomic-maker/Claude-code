@@ -95,7 +95,8 @@
     ctx.translate(-1, -19);
     ctx.rotate(beat);
     const g = ctx.createLinearGradient(0, -8, 0, 9);
-    g.addColorStop(0, colour.body);
+    g.addColorStop(0, colour.rim);
+    g.addColorStop(0.42, colour.body);
     g.addColorStop(1, colour.dark);
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -105,15 +106,31 @@
     ctx.quadraticCurveTo(-6, -7, 6, -7);
     ctx.closePath();
     ctx.fill();
-    /* Three feather lines, which is all it takes to stop the wing reading as
-       a smudge of a slightly darker colour. */
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-    ctx.lineWidth = 1.1;
+    /* An edge, so the wing is a thing lying on the body rather than a patch
+       of it in a different shade. At thirty pixels this is one dark pixel; on
+       the kill cam, where a duck is three hundred pixels tall, it is the
+       difference between a wing and a bruise. */
+    ctx.strokeStyle = 'rgba(0,0,0,0.24)';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+    /* Three feather lines, each with a lit edge under it: a groove reads as
+       two feathers meeting, a single dark scratch reads as damage. */
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.moveTo(4 - i * 3.4, 6.5 - i * 0.6);
       ctx.quadraticCurveTo(-2 - i * 2, 3 - i, -6 - i * 0.8, -1.5);
+      ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+      ctx.lineWidth = 1.1;
       ctx.stroke();
+      ctx.save();
+      ctx.translate(0, 1.1);
+      ctx.beginPath();
+      ctx.moveTo(4 - i * 3.4, 6.5 - i * 0.6);
+      ctx.quadraticCurveTo(-2 - i * 2, 3 - i, -6 - i * 0.8, -1.5);
+      ctx.strokeStyle = 'rgba(255,255,255,0.11)';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.restore();
     }
     ctx.restore();
   }

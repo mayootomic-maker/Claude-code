@@ -432,6 +432,10 @@ body::after {
 .lobby-buttons .btn { width: 100%; }
 .lobby-links { display: flex; gap: 16px; }
 .bot-row { display: flex; align-items: center; gap: 10px; }
+.play-as { display: flex; flex-direction: column; gap: 6px; }
+.play-as .segments { width: 100%; }
+.play-as .segment { flex: 1; font-size: 12px; padding: 7px 4px; }
+.play-as .setting-hint { margin: 0; }
 .bot-label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
 .bot-count { font-family: var(--mono); font-size: 18px; min-width: 22px; text-align: center; }
 
@@ -636,23 +640,30 @@ body::after {
   padding: 0;
   border: 2px solid var(--steel);
   border-radius: 20px;
-  background: rgba(26, 34, 49, .92);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, 0) 46%),
+    rgba(26, 34, 49, .92);
   color: var(--ink);
   font-weight: 800;
   font-size: 12.5px;
   cursor: pointer;
   overflow: hidden;
-  box-shadow: var(--hard);
+  box-shadow: var(--hard), inset 0 1px 0 rgba(255, 255, 255, .12);
   transition: transform .08s ease, box-shadow .08s ease, opacity .15s ease;
 }
 .act:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 1px 1px 0 rgba(0, 0, 0, .45); }
 /* Disabled is a different button, not a faded one: dimming an amber button to
-   40% just looks like something failed to paint. */
+   40% just looks like something failed to paint. It still has to look like a
+   thing that was manufactured, though -- flat grey with grey type on it reads
+   as a rectangle the renderer forgot, so it keeps its bevel and enough
+   contrast on the label to be legible over a lit floor. */
 .act:disabled {
-  background: var(--raised);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 50%),
+    rgba(18, 24, 38, .88);
   border-color: var(--line);
-  color: var(--faint);
-  box-shadow: none;
+  color: #7b88a0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
   cursor: not-allowed;
 }
 .act-label { position: relative; z-index: 2; padding: 0 4px; text-align: center; line-height: 1.1; }
@@ -667,9 +678,22 @@ body::after {
   opacity: 1;
   background: conic-gradient(transparent calc(var(--cool, 0) * 360deg), rgba(5, 7, 13, .78) 0);
 }
-.act--use { grid-column: 2; width: 96px; height: 96px; border-radius: 28px; font-size: 15px; background: var(--flare); border-color: #ffd08a; color: #1c1305; }
-.act--kill { background: var(--blood); border-color: #ff8f9f; color: #2a0209; width: 84px; height: 84px; border-radius: 24px; font-size: 14px; }
-.act--report { background: #f0a63c; border-color: #ffd08a; color: #291a03; width: 84px; height: 84px; border-radius: 24px; font-size: 14px; }
+/* The three that do something get a glow, because on a dark floor an amber
+   disc with nothing around it still reads as flat. It is a shadow in the
+   button's own colour, not a filter: it costs no repaint and it survives
+   prefers-reduced-motion, which switches off movement and not light. */
+.act--use { grid-column: 2; width: 96px; height: 96px; border-radius: 28px; font-size: 15px;
+  background: linear-gradient(180deg, #ffc768, var(--flare) 58%, #eb9a1f);
+  border-color: #ffd8a2; color: #1c1305;
+  box-shadow: var(--hard), 0 0 26px rgba(255, 176, 58, .35); }
+.act--kill { width: 84px; height: 84px; border-radius: 24px; font-size: 14px;
+  background: linear-gradient(180deg, #ff6d80, var(--blood) 58%, #e01d3b);
+  border-color: #ff9dab; color: #2a0209;
+  box-shadow: var(--hard), 0 0 26px rgba(255, 63, 91, .38); }
+.act--report { width: 84px; height: 84px; border-radius: 24px; font-size: 14px;
+  background: linear-gradient(180deg, #ffbe62, #f0a63c 58%, #d1861d);
+  border-color: #ffd08a; color: #291a03;
+  box-shadow: var(--hard), 0 0 22px rgba(240, 166, 60, .3); }
 .act--small { width: 62px; height: 62px; border-radius: 17px; font-size: 10px; letter-spacing: -.01em; }
 
 .stick {
@@ -1549,6 +1573,16 @@ window.NS = window.NS || {};
       hint: 'Some tasks show an animation others can watch, which clears you.' },
     { key: 'taskBar', name: 'Task bar', kind: 'choice', options: ['Always', 'Meetings', 'Never'], def: 'Always' },
     { key: 'ghostsDoTasks', name: 'Ghosts finish tasks', kind: 'bool', def: true },
+    /* Practice only, and it says so, because a dial that quietly decided who
+       was the impostor in a room of fourteen would ruin the game it is in.
+       With eight bots in the lobby an honest shuffle deals you impostor about
+       one round in nine, which over an evening of practice feels less like
+       chance and more like the game has decided what you are. Rotate is the
+       fix: it leaves the shuffle alone until you have been crew twice running,
+       and then puts you on the other side. */
+    { key: 'soloRole', name: 'Play as', kind: 'choice', practice: true,
+      options: ['Rotate', 'Random', 'Impostor', 'Crewmate'], def: 'Rotate',
+      hint: 'Practice only. Ignored the moment a real person joins.' },
   ];
 
   /* Roles are toggled separately from the numeric dials: each is off, or on
@@ -3212,12 +3246,27 @@ window.NS = window.NS || {};
      0 never appears, at 100 always does if there is somebody to take it. Each
      special role is handed out at most once, because two sheriffs shooting
      each other is a bug report waiting to happen. */
-  function dealRoles(playerIds, settings, rand) {
-    const ids = U.shuffle(playerIds, rand);
+  function dealRoles(playerIds, settings, rand, prefer) {
+    let ids = U.shuffle(playerIds, rand);
     const impostorCount = Math.min(
       Math.max(1, settings.impostors),
       impostorCap(ids.length),
       Math.max(1, Math.floor((ids.length - 1) / 2)));
+
+    /* One player may be moved to the side they asked for -- practice against
+       bots, and nowhere else; the host decides whether that is allowed and
+       this only carries it out. It is a move within the shuffle rather than an
+       assignment on top of it: dropped at a random index inside the half it
+       belongs to, so a forced crewmate can still be the medic or the jester,
+       and everybody else's roles are still dealt by the same deck. */
+    if (prefer && ids.indexOf(prefer.id) >= 0) {
+      const rest = ids.filter((id) => id !== prefer.id);
+      const at = prefer.team === 'impostor'
+        ? Math.floor(rand() * impostorCount)
+        : impostorCount + Math.floor(rand() * (rest.length + 1 - impostorCount));
+      rest.splice(at, 0, prefer.id);
+      ids = rest;
+    }
 
     const roles = {};
     const impostors = ids.slice(0, impostorCount);
@@ -4414,7 +4463,8 @@ window.NS = window.NS || {};
     ctx.translate(-1, -19);
     ctx.rotate(beat);
     const g = ctx.createLinearGradient(0, -8, 0, 9);
-    g.addColorStop(0, colour.body);
+    g.addColorStop(0, colour.rim);
+    g.addColorStop(0.42, colour.body);
     g.addColorStop(1, colour.dark);
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -4424,15 +4474,31 @@ window.NS = window.NS || {};
     ctx.quadraticCurveTo(-6, -7, 6, -7);
     ctx.closePath();
     ctx.fill();
-    /* Three feather lines, which is all it takes to stop the wing reading as
-       a smudge of a slightly darker colour. */
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-    ctx.lineWidth = 1.1;
+    /* An edge, so the wing is a thing lying on the body rather than a patch
+       of it in a different shade. At thirty pixels this is one dark pixel; on
+       the kill cam, where a duck is three hundred pixels tall, it is the
+       difference between a wing and a bruise. */
+    ctx.strokeStyle = 'rgba(0,0,0,0.24)';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+    /* Three feather lines, each with a lit edge under it: a groove reads as
+       two feathers meeting, a single dark scratch reads as damage. */
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.moveTo(4 - i * 3.4, 6.5 - i * 0.6);
       ctx.quadraticCurveTo(-2 - i * 2, 3 - i, -6 - i * 0.8, -1.5);
+      ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+      ctx.lineWidth = 1.1;
       ctx.stroke();
+      ctx.save();
+      ctx.translate(0, 1.1);
+      ctx.beginPath();
+      ctx.moveTo(4 - i * 3.4, 6.5 - i * 0.6);
+      ctx.quadraticCurveTo(-2 - i * 2, 3 - i, -6 - i * 0.8, -1.5);
+      ctx.strokeStyle = 'rgba(255,255,255,0.11)';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -5036,16 +5102,23 @@ window.NS = window.NS || {};
   const U = NS.util;
   const rr = NS.characters.rr;
 
-  const HULL = '#1b2436';
-  const HULL_EDGE = '#2c3648';
-  const KEYLINE = '#3a4761';
+  const HULL = '#1e2941';
+  const HULL_EDGE = '#33415c';
+  const KEYLINE = '#44546f';
 
+  /* Wings you can tell apart at a glance, which is the whole job: the floor
+     under somebody's light is the evidence they are going to give in two
+     minutes. The old palette was five shades of the same desaturated navy, and
+     under the lamp they all resolved to the same grey -- so every room looked
+     like every other room and the map stopped being worth remembering. These
+     are still dark enough that an unlit corridor gives nothing away; they just
+     have somewhere to go when a light lands on them. */
   const TONES = {
-    clean: { floor: '#232d40', accent: '#37e0c8' },
-    plain: { floor: '#1e2739', accent: '#8d97ad' },
-    cold:  { floor: '#1c2a3d', accent: '#4d9fd6' },
-    hot:   { floor: '#2a2634', accent: '#ffb03a' },
-    hall:  { floor: '#171f2e', accent: '#8d97ad' },
+    clean: { floor: '#24384a', accent: '#3ff0d4' },
+    plain: { floor: '#262f42', accent: '#9aa6bd' },
+    cold:  { floor: '#1e3050', accent: '#5cb2ea' },
+    hot:   { floor: '#3a2a2f', accent: '#ffb03a' },
+    hall:  { floor: '#1a2334', accent: '#8d97ad' },
   };
 
   let canvas = null;
@@ -5616,7 +5689,16 @@ window.NS = window.NS || {};
       }
     }
 
-    /* Floors. */
+    /* Floors, as plate rather than as paint.
+
+       A flat fill with a one-pixel grid on it is invisible in the dark and,
+       the moment a light lands on it, a sheet of grey -- which is what made
+       every room look like the same room. Deck plating instead: bolted panels
+       four tiles across with a lit top edge and a shadowed bottom one, so the
+       floor has a direction and the light has something to catch. All of it is
+       baked once into the offscreen station, so the cost is at load and the
+       frame loop never sees it. */
+    const PLATE = 4;
     for (let ty = 0; ty < M.H; ty++) {
       for (let tx = 0; tx < M.W; tx++) {
         if (!M.FLOOR[M.at(tx, ty)]) continue;
@@ -5624,13 +5706,41 @@ window.NS = window.NS || {};
         const tone = room ? TONES[room.tone] : TONES.hall;
         ctx.fillStyle = tone.floor;
         ctx.fillRect(px(tx), px(ty), T, T);
-        const v = rand();
-        if (v > 0.88) { ctx.fillStyle = 'rgba(255,255,255,0.016)'; ctx.fillRect(px(tx), px(ty), T, T); }
-        else if (v < 0.09) { ctx.fillStyle = 'rgba(0,0,0,0.11)'; ctx.fillRect(px(tx), px(ty), T, T); }
+        /* One shade per plate, not per tile: the variation should read as
+           panels that were laid at different times, not as noise. */
+        const plate = ((Math.floor(tx / PLATE) * 73856093) ^ (Math.floor(ty / PLATE) * 19349663)) >>> 0;
+        const v = (plate % 1000) / 1000;
+        if (v > 0.72) { ctx.fillStyle = 'rgba(255,255,255,0.028)'; ctx.fillRect(px(tx), px(ty), T, T); }
+        else if (v < 0.24) { ctx.fillStyle = 'rgba(0,0,0,0.13)'; ctx.fillRect(px(tx), px(ty), T, T); }
       }
     }
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.032)';
+    /* Plate seams: a dark groove with a lit lip under it. */
+    for (let ty = 0; ty < M.H; ty++) {
+      for (let tx = 0; tx < M.W; tx++) {
+        if (!M.FLOOR[M.at(tx, ty)]) continue;
+        const x = px(tx), y = px(ty);
+        if (tx % PLATE === 0 && M.FLOOR[M.at(tx - 1, ty)]) {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x - 1, y, 2, T);
+          ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fillRect(x + 1, y, 1, T);
+        }
+        if (ty % PLATE === 0 && M.FLOOR[M.at(tx, ty - 1)]) {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x, y - 1, T, 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.075)'; ctx.fillRect(x, y + 1, T, 1);
+        }
+        /* A bolt at the plate corners. Four pixels of it, which is nothing
+           until a light crosses them. */
+        if (tx % PLATE === 0 && ty % PLATE === 0
+            && M.FLOOR[M.at(tx - 1, ty)] && M.FLOOR[M.at(tx, ty - 1)]) {
+          ctx.fillStyle = 'rgba(255,255,255,0.09)';
+          ctx.fillRect(x + 2, y + 2, 2, 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.fillRect(x + 2, y + 4, 2, 1);
+        }
+      }
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.022)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let ty = 0; ty < M.H; ty++) {
@@ -5642,10 +5752,39 @@ window.NS = window.NS || {};
     }
     ctx.stroke();
 
+    /* Strip lights in the ceiling, baked onto the floor beneath them. The
+       player's own lamp is the only light that moves, but a station where
+       nothing else is lit at all reads as a cave rather than as a building --
+       and these are what the three per cent of station that bleeds through the
+       dark actually shows you, which is how a room stays recognisable at the
+       edge of your circle. */
+    for (const room of M.ROOMS) {
+      const tone = TONES[room.tone] || TONES.plain;
+      const cols = Math.max(1, Math.round(room.w / 7));
+      const rows = Math.max(1, Math.round(room.h / 7));
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+          const cx = px(room.x + (room.w * (i + 0.5)) / cols);
+          const cy = px(room.y + (room.h * (j + 0.5)) / rows);
+          const r = px(3.1);
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          g.addColorStop(0, 'rgba(255,246,224,0.075)');
+          g.addColorStop(0.45, 'rgba(210,226,255,0.032)');
+          g.addColorStop(1, 'rgba(160,190,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+          ctx.fillStyle = tone.accent;
+          ctx.globalAlpha = 0.16;
+          rr(ctx, cx - 17, cy - 2.5, 34, 5, 2.5); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
     /* Room labels sit under the furniture so a console never has type on it. */
     for (const room of ROOMS_WITH_LABELS()) {
-      tracked(room.name.toUpperCase(), room.cx, room.cy, room.w > 12 ? 30 : 22,
-              room.w > 12 ? 11 : 7, TONES[room.tone].accent, 0.11);
+      tracked(room.name.toUpperCase(), room.cx, room.cy, room.w > 12 ? 26 : 19,
+              room.w > 12 ? 9 : 6, TONES[room.tone].accent, 0.075);
     }
 
     for (const room of M.ROOMS) {
@@ -6017,7 +6156,65 @@ window.NS = window.NS || {};
     ctx.fillStyle = '#04060b';
     ctx.fillRect(0, 0, w, bar);
     ctx.fillRect(0, h - bar, w, bar);
+    /* A hairline on the inside edge. Black bars over a nearly black shot are
+       invisible, which wastes the one piece of grammar that tells a room to
+       stop pressing buttons and watch. */
+    ctx.fillStyle = 'rgba(230,236,246,0.10)';
+    ctx.fillRect(0, bar, w, 1);
+    ctx.fillRect(0, h - bar - 1, w, 1);
     return bar;
+  }
+
+  /* A lit stage rather than a dark room with two ducks in it.
+
+     A cinematic that is only a cut and a caption is a cut and a caption. What
+     makes a still of this read as a shot is that the light is doing something:
+     a pool under the subjects, a colour on it, and everything at the edge of
+     the frame falling away. It is two gradients and it does more for the beat
+     than any amount of movement. */
+  function stage(ctx, w, h, cx, cy, radius, tint) {
+    const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    pool.addColorStop(0, tint.core);
+    pool.addColorStop(0.55, tint.mid);
+    pool.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    vignette(ctx, w, h, cx, cy, 0.72);
+  }
+
+  function vignette(ctx, w, h, cx, cy, depth) {
+    const corner = Math.hypot(w, h) / 2;
+    const vig = ctx.createRadialGradient(cx, cy, corner * 0.3, cx, cy, corner);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,' + depth + ')');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /* Radial streaks out of the point of impact. Drawn on the frame rather than
+     on the ducks, because the whole shot is what lurches, not the bird. */
+  function speedLines(ctx, w, h, cx, cy, amount, colour) {
+    if (amount <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = amount * 0.5;
+    ctx.strokeStyle = colour;
+    ctx.lineCap = 'round';
+    const reach = Math.hypot(w, h) * 0.5;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + i * 0.37;
+      const from = reach * (0.28 + ((i * 7) % 5) * 0.045);
+      const to = from + reach * (0.1 + ((i * 13) % 7) * 0.03) * amount;
+      ctx.lineWidth = 1.4 + ((i * 5) % 3);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * from, cy + Math.sin(a) * from);
+      ctx.lineTo(cx + Math.cos(a) * to, cy + Math.sin(a) * to);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function duck(ctx, colorIdx, hatIdx, scale, opts) {
@@ -6061,8 +6258,16 @@ window.NS = window.NS || {};
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2, cy = h / 2 + h * 0.02;
-        const scale = Math.min(w, h) / 190 * (s.calm ? 1 : (1 + span(t, 0, 0.5) * 0.22));
+        const scale = Math.min(w, h) / 152 * (s.calm ? 1 : (1 + span(t, 0, 0.5) * 0.22));
         const lunge = s.calm ? 1 : ease(span(t, 0.16, 0.34));
+        /* The light goes from cold to arterial across the lunge, so the frame
+           has turned by the time the strike lands. */
+        const heat = span(t, 0.14, 0.4);
+        stage(ctx, w, h, cx, cy + Math.min(w, h) * 0.06, Math.min(w, h) * 0.6, {
+          core: 'rgba(' + Math.round(96 + heat * 150) + ',' + Math.round(104 - heat * 62)
+            + ',' + Math.round(146 - heat * 70) + ',0.62)',
+          mid: 'rgba(' + Math.round(54 + heat * 110) + ',36,' + Math.round(92 - heat * 40) + ',0.24)',
+        });
         /* Measured in duck-widths rather than pixels, so the pair are framed
            the same on a phone and a projector -- a fixed pixel gap had them
            overlapping completely on a large screen, where the ducks are drawn
@@ -6090,9 +6295,10 @@ window.NS = window.NS || {};
         });
         ctx.restore();
 
-        /* Impact: a hard red wipe, once. */
+        /* Impact: a hard red wipe, once, with the frame torn around it. */
         const hit = span(t, 0.3, 0.42);
         if (hit > 0 && hit < 1) {
+          if (!s.calm) speedLines(ctx, w, h, cx, cy, Math.sin(hit * Math.PI), '#ff8595');
           ctx.save();
           ctx.globalAlpha = Math.sin(hit * Math.PI) * 0.75;
           ctx.fillStyle = '#ff3f5b';
@@ -6191,6 +6397,7 @@ window.NS = window.NS || {};
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
         ctx.globalAlpha = 1;
+        vignette(ctx, w, h, w / 2, h * 0.46, 0.6 * wash);
 
         /* The duck drops in and settles. */
         const drop = s.calm ? 1 : outCubic(span(t, 0.08, 0.42));
@@ -6249,7 +6456,12 @@ window.NS = window.NS || {};
   /* Not fully opaque: three per cent of the station bleeds through the dark,
      which is enough to keep the walls readable as a memory of the map and far
      too little to make out a person. */
-  const DARK_ALPHA = 0.968;
+  const DARK_ALPHA = 0.962;
+  /* The dark is blue, not black. Cutting a hole in flat black left the lit
+     circle looking like a photograph of the floor with a vignette on it --
+     technically correct and completely inert. A cold shadow against a warm
+     lamp is what makes the same pixels read as a room with a light in it. */
+  const DARK_TINT = '6,11,24';
 
   let canvas = null, ctx = null;
   let dark = null, darkCtx = null;
@@ -6447,20 +6659,42 @@ window.NS = window.NS || {};
     }
   }
 
+  /* The name over somebody's head, at the weight of a caption rather than a
+     headline. Heavy black pills in bold white were the loudest thing on the
+     screen -- louder than the ducks they belonged to, and with four people in
+     a room they stacked into a wall of type. This is smaller, sits on smoked
+     glass, and carries the player's colour as a dot and a hairline, so a tag
+     half-behind somebody else still tells you whose it is. */
   function nameTag(p, alpha) {
     const label = p.name;
-    ctx.font = '700 13px Archivo, system-ui, sans-serif';
-    ctx.textAlign = 'center';
+    ctx.font = '600 11.5px Archivo, system-ui, sans-serif';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const w = ctx.measureText(label).width + 14;
-    const y = p.y - NS.characters.BODY_H - 26;
-    ctx.globalAlpha = alpha * 0.72;
-    ctx.fillStyle = 'rgba(5,7,13,0.72)';
-    NS.characters.rr(ctx, p.x - w / 2, y - 9, w, 18, 9);
+    const colour = C.COLORS[p.colorIdx] || C.COLORS[0];
+    const dot = p.ghost ? '#9d8cff' : colour.body;
+    const textW = ctx.measureText(label).width;
+    const w = textW + 24;
+    const left = p.x - w / 2;
+    const y = p.y - NS.characters.BODY_H - 28;
+
+    ctx.globalAlpha = alpha * 0.82;
+    ctx.fillStyle = 'rgba(7,11,20,0.66)';
+    NS.characters.rr(ctx, left, y - 8.5, w, 17, 8.5);
     ctx.fill();
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = dot;
+    ctx.lineWidth = 1;
+    NS.characters.rr(ctx, left + 0.5, y - 8, w - 1, 16, 8);
+    ctx.stroke();
+
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = p.ghost ? '#9d8cff' : '#e6ecf6';
-    ctx.fillText(label, p.x, y);
+    ctx.fillStyle = dot;
+    ctx.beginPath();
+    ctx.arc(left + 9, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = p.ghost ? '#c8bcff' : '#e6ecf6';
+    ctx.fillText(label, left + 16, y + 0.5);
+    ctx.textAlign = 'center';
     ctx.globalAlpha = 1;
   }
 
@@ -6518,6 +6752,33 @@ window.NS = window.NS || {};
     drawVents(dt);
     NS.fx.drawVisuals(ctx);
 
+    /* The lamp. Added rather than merely not-subtracted: the light you carry
+       is warm and falls off, so the floor under your feet is bright and
+       slightly amber and the far wall is not. Clipped to the same polygon the
+       dark uses, so it cannot spill through a wall and quietly light a room
+       you are not supposed to be able to see into. Two per cent of a flicker
+       on it, which is the difference between a lamp and a stencil. */
+    if (!meGhost && me && W.state.phase !== 'lobby') {
+      const poly = NS.los.visible(me.x, me.y, radius);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(poly[0], poly[1]);
+      for (let i = 1; i < NS.los.RAYS; i++) ctx.lineTo(poly[i * 2], poly[i * 2 + 1]);
+      ctx.closePath();
+      ctx.clip();
+      const flicker = calm ? 1 : 1 + Math.sin(now * 0.0031) * 0.02 + Math.sin(now * 0.0117) * 0.012;
+      const warm = ctx.createRadialGradient(me.x, me.y, 4, me.x, me.y, radius * flicker);
+      warm.addColorStop(0, 'rgba(255,231,190,0.30)');
+      warm.addColorStop(0.24, 'rgba(255,205,143,0.15)');
+      warm.addColorStop(0.5, 'rgba(150,175,240,0.05)');
+      warm.addColorStop(1, 'rgba(80,120,215,0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = warm;
+      ctx.fillRect(me.x - radius, me.y - radius, radius * 2, radius * 2);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
+    }
+
     ctx.restore();
 
     /* ---- the dark ------------------------------------------------------- */
@@ -6525,7 +6786,7 @@ window.NS = window.NS || {};
     if (!meGhost && me && W.state.phase !== 'lobby') {
       darkCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
       darkCtx.clearRect(0, 0, cssW, cssH);
-      darkCtx.fillStyle = 'rgba(5,7,13,' + DARK_ALPHA + ')';
+      darkCtx.fillStyle = 'rgba(' + DARK_TINT + ',' + DARK_ALPHA + ')';
       darkCtx.fillRect(0, 0, cssW, cssH);
 
       const poly = NS.los.visible(me.x, me.y, radius);
@@ -6538,9 +6799,15 @@ window.NS = window.NS || {};
       for (let i = 1; i < NS.los.RAYS; i++) darkCtx.lineTo(poly[i * 2], poly[i * 2 + 1]);
       darkCtx.closePath();
       darkCtx.clip();
-      const g = darkCtx.createRadialGradient(me.x, me.y, radius * 0.2, me.x, me.y, radius);
+      /* A longer falloff than it used to have. The old one held full
+         brightness to seven tenths of the radius and then fell off a cliff,
+         which drew a hard disc on the floor and made the light read as a
+         cut-out rather than as something you are holding. */
+      const g = darkCtx.createRadialGradient(me.x, me.y, radius * 0.12, me.x, me.y, radius);
       g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(0.72, 'rgba(0,0,0,0.98)');
+      g.addColorStop(0.5, 'rgba(0,0,0,0.985)');
+      g.addColorStop(0.78, 'rgba(0,0,0,0.86)');
+      g.addColorStop(0.92, 'rgba(0,0,0,0.42)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       darkCtx.globalCompositeOperation = 'destination-out';
       darkCtx.fillStyle = g;
@@ -6841,6 +7108,46 @@ window.NS = window.NS || {};
     return null;
   }
 
+  /* The thumb on the scale, and the exact width of it.
+
+     Two complaints that sound like the same complaint are not: the shuffle was
+     measured over sixty thousand deals at every player count and is fair to
+     four decimal places, but "fair" at nine players means impostor one round
+     in nine, and a person practising alone against eight bots reads eight
+     crewmate rounds in a row as a broken game rather than as arithmetic. So
+     the lobby has a dial for it, and it is honoured here and only here: one
+     human in the lobby, everybody else a bot. The moment a second real person
+     joins there is somebody it would be unfair to, and it stops applying --
+     without a message, because the setting already says so.
+
+     Rotate is the default and is not a coin flip: it leaves the deal alone
+     until you have been on the crew's side twice running, then puts you on the
+     other one. The streak is kept on this device, so it survives a reload. */
+  function soloSeat() {
+    const humans = list().filter((id) => H.players[id].connected && !H.players[id].bot);
+    return humans.length === 1 ? humans[0] : null;
+  }
+
+  function rolePreference(seat) {
+    if (!seat) return null;
+    const mode = H.settings.soloRole;
+    if (mode === 'Impostor') return { id: seat, team: 'impostor' };
+    if (mode === 'Crewmate') return { id: seat, team: 'crew' };
+    if (mode !== 'Rotate') return null;
+    const streak = U.store.get('streak', null);
+    if (!streak || streak.n < 2) return null;
+    return { id: seat, team: streak.team === 'impostor' ? 'crew' : 'impostor' };
+  }
+
+  function recordStreak(seat) {
+    if (!seat) return;
+    const team = C.ROLES[H.roles[seat] || 'crewmate'].team;
+    const streak = U.store.get('streak', null);
+    U.store.set('streak', streak && streak.team === team
+      ? { team, n: streak.n + 1 }
+      : { team, n: 1 });
+  }
+
   function start() {
     if (H.phase !== 'lobby') return;
     const problem = canStart();
@@ -6855,7 +7162,9 @@ window.NS = window.NS || {};
       H.players[id].ghost = false;
       H.players[id].spectator = false;
     }
-    H.roles = R.dealRoles(ids, H.settings, rand);
+    const seat = soloSeat();
+    H.roles = R.dealRoles(ids, H.settings, rand, rolePreference(seat));
+    recordStreak(seat);
     H.tasks = R.dealTasks(ids, H.settings, rand);
     for (const id of ids) H.killCooldown[id] = H.settings.killCooldown + 5;
 
@@ -7561,7 +7870,7 @@ window.NS = window.NS || {};
       });
       NS.world.players.set(id, entity);
       brains.set(id, {
-        id, entity, path: null, step: 0, goal: null, order: i,
+        id, entity, path: null, step: 0, goal: null,
         busy: 0, think: rand() * 1.5, votes: -1, hold: 0, ventCool: 8 + rand() * 20,
       });
     }
@@ -7579,6 +7888,31 @@ window.NS = window.NS || {};
     brain.goal = { x, y };
   }
 
+  /* Can a body of this width walk that line, or only a ray?
+
+     This is the difference between a bot that crosses the station and a bot
+     that stands in a doorway for the rest of the round. String-pulling used a
+     single line-of-sight ray, and a ray has no width: it slips past a corner
+     that eleven pixels of duck cannot. The bot would then push diagonally into
+     the wall, move zero pixels, throw the path away, plan the identical path,
+     take the identical shortcut, and wedge again -- forever, at a fixed step
+     of a fixed path, which is exactly what the sabotage traces showed. Three
+     of the crew frozen in a corridor is why the reactor melted down in a third
+     of all rounds and why the tasks never finished.
+
+     So the shortcut is tested along both flanks of the body as well as its
+     centre. Slightly inside the radius, because the wall-slide in map.move
+     already gives back a pixel or two at the edges. */
+  function roomToWalk(e, tx, ty) {
+    const dx = tx - e.x, dy = ty - e.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return true;
+    const px = (-dy / len) * (M.RADIUS - 2), py = (dx / len) * (M.RADIUS - 2);
+    return NS.los.clear(e.x, e.y, tx, ty)
+        && NS.los.clear(e.x + px, e.y + py, tx + px, ty + py)
+        && NS.los.clear(e.x - px, e.y - py, tx - px, ty - py);
+  }
+
   /* String-pulling: rather than walk the tile centres one by one, look ahead
      for the furthest waypoint still in a straight line and head for that. Grid
      paths without it read as a bot, which for once is the thing to avoid. */
@@ -7587,7 +7921,7 @@ window.NS = window.NS || {};
     if (!brain.path || brain.step >= brain.path.length) { e.moving = false; return true; }
     let target = brain.path[brain.step];
     for (let i = Math.min(brain.path.length - 1, brain.step + 10); i > brain.step; i--) {
-      if (NS.los.clear(e.x, e.y, brain.path[i].x, brain.path[i].y)) { brain.step = i; target = brain.path[i]; break; }
+      if (roomToWalk(e, brain.path[i].x, brain.path[i].y)) { brain.step = i; target = brain.path[i]; break; }
     }
     const dx = target.x - e.x, dy = target.y - e.y;
     const len = Math.hypot(dx, dy);
@@ -7595,9 +7929,18 @@ window.NS = window.NS || {};
     const move = Math.min(len, speed * dt);
     const moved = M.move(e.x, e.y, (dx / len) * move, (dy / len) * move);
     if (Math.abs(moved.x - e.x) < 0.01 && Math.abs(moved.y - e.y) < 0.01) {
-      /* Wedged on a corner. Throw the path away rather than vibrate: the next
-         think tick will pick a new one. */
+      /* Wedged anyway. Throwing the path away is not enough on its own -- the
+         next plan starts from the same pixel and can wedge in the same place.
+         A 32px corridor leaves a body of radius 11 five pixels of play either
+         side, so a bot that entered off-centre has nowhere to push; stepping
+         back towards the middle of the tile it is standing in gives it the
+         room to try again. */
       brain.path = null;
+      const cx = (Math.floor(e.x / M.TILE) + 0.5) * M.TILE;
+      const cy = (Math.floor(e.y / M.TILE) + 0.5) * M.TILE;
+      const back = M.move(e.x, e.y, U.clamp(cx - e.x, -5, 5), U.clamp(cy - e.y, -5, 5));
+      e.x = back.x; e.y = back.y;
+      e.tx = e.x; e.ty = e.y;
       return true;
     }
     e.x = moved.x; e.y = moved.y;
@@ -7641,24 +7984,77 @@ window.NS = window.NS || {};
     return best;
   }
 
-  /* Which broken thing this bot is walking to, if any. Spots are handed out by
-     the bot's own index so two of them go to the two reactor pads instead of
-     both going to the left one -- a meltdown needs a person at each end, and a
-     crew of bots that all queued at the same pad lost every single time. */
-  function sabotageTarget(brain, H) {
+  /* Who is going to which pad.
+
+     A meltdown needs a person at each end at the same moment, so this has to
+     be a decision made across the whole crew rather than by each bot on its
+     own. It used to be: pad = order % 2. That covers both ends only while the
+     living crew happens to contain both parities, and by the second sabotage
+     of a round it often does not -- three survivors with even indices all
+     walked to the left pad, stood on it together, and watched the reactor
+     blow. Measured over a hundred rounds, a third of them ended that way.
+
+     So it is assigned instead, once per tick for everybody at once: each pad
+     claims the nearest crewmate who has not been claimed yet, and only then do
+     the leftovers pick a pad. Pads a human is already standing on are struck
+     off first, which is how a bot knows to go and cover the other one rather
+     than crowd the one that is already handled. */
+  function assignFixes(H) {
     const active = H.sabotage;
     if (!active) return null;
     const def = NS.sabotage.SABOTAGES[active.kind];
     if (!def || !def.fix || !def.spots.length) return null;
-    const open = [];
+
+    const spots = [];
     for (let i = 0; i < def.spots.length; i++) {
-      if (def.fix !== 'hold' && active.done && active.done[i]) continue;
-      open.push(i);
+      if (def.fix === 'hold') {
+        if (active.holds && active.holds[i] && active.holds[i].at > 0
+            && !brains.has(active.holds[i].by)) continue;
+      } else if (active.done && active.done[i]) continue;
+      const w = M.toWorld(M.SABOTAGE_SPOTS[def.spots[i]]);
+      spots.push({ index: i, x: w.x, y: w.y });
     }
-    if (!open.length) return null;
-    const index = open[brain.order % open.length];
-    const w = M.toWorld(M.SABOTAGE_SPOTS[def.spots[index]]);
-    return { index, x: w.x, y: w.y, fix: def.fix, critical: def.critical };
+    if (!spots.length) return null;
+
+    const crew = [];
+    for (const brain of brains.values()) {
+      const p = H.players[brain.id];
+      if (!p || !p.alive) continue;
+      if (C.ROLES[H.roles[brain.id] || 'crewmate'].team === 'impostor') continue;
+      crew.push(brain);
+    }
+    if (!crew.length) return null;
+
+    const out = new Map();
+    const taken = new Set();
+    for (const spot of spots) {
+      let pick = null, bestD = Infinity;
+      for (const brain of crew) {
+        if (taken.has(brain.id)) continue;
+        const d = U.dist2(brain.entity.x, brain.entity.y, spot.x, spot.y);
+        if (d < bestD) { bestD = d; pick = brain; }
+      }
+      if (!pick) break;
+      taken.add(pick.id);
+      out.set(pick.id, spot);
+    }
+    for (const brain of crew) {
+      if (out.has(brain.id)) continue;
+      let pick = spots[0], bestD = Infinity;
+      for (const spot of spots) {
+        const d = U.dist2(brain.entity.x, brain.entity.y, spot.x, spot.y);
+        if (d < bestD) { bestD = d; pick = spot; }
+      }
+      out.set(brain.id, pick);
+    }
+    return { def, spots: out };
+  }
+
+  function sabotageTarget(brain, plan) {
+    if (!plan) return null;
+    const spot = plan.spots.get(brain.id);
+    if (!spot) return null;
+    return { index: spot.index, x: spot.x, y: spot.y, fix: plan.def.fix, critical: plan.def.critical };
   }
 
   function wander(brain) {
@@ -7673,6 +8069,7 @@ window.NS = window.NS || {};
       return;
     }
     const speed = H.settings.playerSpeed * NS.world.BASE_SPEED * 0.94;
+    const plan = assignFixes(H);
 
     for (const brain of brains.values()) {
       const p = H.players[brain.id];
@@ -7714,7 +8111,7 @@ window.NS = window.NS || {};
          an impostor bot walking across the map to repair its own sabotage was
          the loudest tell in the game. */
       if (role.team !== 'impostor') {
-        const fix = sabotageTarget(brain, H);
+        const fix = sabotageTarget(brain, plan);
         if (fix) {
           const reach = NS.sabotage.REACH * 0.75;
           if (U.dist(e.x, e.y, fix.x, fix.y) < reach) {
@@ -7744,19 +8141,32 @@ window.NS = window.NS || {};
         const cooldown = H.killCooldown[brain.id] || 0;
         if (cooldown <= 0) {
           const range = (C.KILL_RANGE[H.settings.killRange] || 108) * 0.9;
+          /* Nearest first, and that ordering is the whole point.
+
+             This used to walk host.livingIds(), which is the player table in
+             insertion order -- and the person who opened the page is always
+             the first row in it. So of every crewmate standing in range, the
+             human was the one tested first, every time, in every round. It
+             was not that the bots were hunting them; it was that the loop
+             asked about them before it asked about anybody else. Two people
+             next to a bot with a ready knife should be a coin toss decided by
+             which of them is closer, not by who booted the lobby. */
+          let target = null, best = range * range;
           for (const id of host.livingIds()) {
             if (id === brain.id) continue;
             if (C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor') continue;
             const other = NS.world.players.get(id);
             if (!other) continue;
-            if (U.dist2(e.x, e.y, other.x, other.y) < range * range
-                && NS.los.clear(e.x, e.y, other.x, other.y) && alone(brain, host, id)) {
-              host.handle(brain.id, { t: 'kill', target: id });
-              brain.busy = 0.8;
-              brain.path = null;
-              escape(brain, host);
-              break;
+            const d = U.dist2(e.x, e.y, other.x, other.y);
+            if (d < best && NS.los.clear(e.x, e.y, other.x, other.y) && alone(brain, host, id)) {
+              best = d; target = id;
             }
+          }
+          if (target) {
+            host.handle(brain.id, { t: 'kill', target });
+            brain.busy = 0.8;
+            brain.path = null;
+            escape(brain, host);
           }
         }
         /* Sabotage on a timer rather than a plan. It moves the crew around,
@@ -11145,6 +11555,7 @@ window.NS = window.NS || {};
       el('strong', { class: 'bot-count', text: '0' }),
       el('button', { class: 'btn btn--ghost btn--tight', type: 'button', text: '+', 'aria-label': 'One more bot', onclick: () => hooks.onBots(1) }),
     ]);
+    const playAs = el('div', { class: 'play-as', hidden: true });
 
     const leave = el('div', { class: 'lobby-links' }, [
       el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
@@ -11156,6 +11567,7 @@ window.NS = window.NS || {};
       el('p', { class: 'lobby-hint', text: 'Everyone opens the same page and types this in.' }),
       status,
       botRow,
+      playAs,
       el('div', { class: 'lobby-buttons' }, [startBtn, readyBtn]),
       leave,
     ]);
@@ -11172,7 +11584,7 @@ window.NS = window.NS || {};
       ]),
     ]));
 
-    lobbyNodes = { roster, status, settingsHost, startBtn, readyBtn, botRow, code };
+    lobbyNodes = { roster, status, settingsHost, startBtn, readyBtn, botRow, playAs, code };
     rosterSignature = '';
     return lobbyNodes;
   }
@@ -11181,7 +11593,7 @@ window.NS = window.NS || {};
 
   function updateLobby(info) {
     if (!lobbyNodes) return;
-    const { roster, status, startBtn, readyBtn, botRow } = lobbyNodes;
+    const { roster, status, startBtn, readyBtn, botRow, playAs } = lobbyNodes;
     const players = info.players || [];
 
     /* The roster is redrawn only when it actually changed. This runs several
@@ -11204,6 +11616,10 @@ window.NS = window.NS || {};
     readyBtn.hidden = !!info.isHost;
     botRow.hidden = !info.isHost;
     botRow.querySelector('.bot-count').textContent = String(info.bots || 0);
+    /* Shown only when it is true: you, alone, against bots. With a second
+       person in the lobby the host ignores it, so offering it would be a
+       control that lies. */
+    playAs.hidden = !(info.isHost && real === 1 && (info.bots || 0) > 0);
     if (info.isHost) {
       startBtn.disabled = !!info.blocked;
       startBtn.textContent = info.blocked || 'Start the round';
@@ -11227,6 +11643,39 @@ window.NS = window.NS || {};
     }
   }
 
+  /* The one dial that is not in the settings list: which side to practise on.
+
+     It sits with the bot counter because that is what it belongs to, and it
+     shows the streak it is acting on when it is set to rotate -- a dial that
+     silently decides to give you the impostor on the third round is worse than
+     no dial, because you cannot tell whether it did anything. */
+  function buildPlayAs(settings, isHost, onChange) {
+    if (!lobbyNodes || !lobbyNodes.playAs) return;
+    const spec = C.SETTINGS.find((s) => s.key === 'soloRole');
+    const node = lobbyNodes.playAs;
+    node.textContent = '';
+    if (!spec) return;
+    node.appendChild(el('span', { class: 'bot-label', text: spec.name }));
+    const segments = el('div', { class: 'segments' });
+    for (const option of spec.options) {
+      segments.appendChild(el('button', {
+        class: 'segment' + (option === settings[spec.key] ? ' is-on' : ''),
+        type: 'button', text: option, disabled: !isHost,
+        onclick: () => onChange(spec.key, option),
+      }));
+    }
+    node.appendChild(segments);
+    if (settings[spec.key] === 'Rotate') {
+      const streak = U.store.get('streak', null);
+      node.appendChild(el('p', {
+        class: 'setting-hint',
+        text: streak && streak.n >= 2
+          ? 'Impostor next: ' + streak.n + ' rounds on the ' + streak.team + ' side.'
+          : 'Never the same side three rounds running.',
+      }));
+    }
+  }
+
   /* Settings are generated from the table in core/config.js, so a new dial
      appears here, travels to the guests and is clamped on arrival without
      anybody editing this file. */
@@ -11235,6 +11684,12 @@ window.NS = window.NS || {};
     const host = lobbyNodes.settingsHost;
     host.textContent = '';
     for (const spec of C.SETTINGS) {
+      /* Practice-only dials are not in this list. They travel and are clamped
+         with everything else, but a class of fourteen setting up a game should
+         not have to read past a control that does nothing for them -- it goes
+         in the practice card instead, next to the bot counter, which is the
+         only place somebody playing alone is looking. */
+      if (spec.practice) continue;
       const row = el('div', { class: 'setting' });
       row.appendChild(el('label', { class: 'setting-name', text: spec.name }));
       const value = settings[spec.key];
@@ -11276,6 +11731,8 @@ window.NS = window.NS || {};
       U.$$('button, input', row).forEach((n) => { n.disabled = !isHost; });
       host.appendChild(row);
     }
+
+    buildPlayAs(settings, isHost, onChange);
 
     const roles = el('div', { class: 'roles' });
     roles.appendChild(el('h4', { text: 'Roles' }));
@@ -11608,6 +12065,16 @@ window.NS = window.NS || {};
     session.settings = C.sanitise(session.settings);
     U.store.set('settings', session.settings);
     NS.host.setSettings(session.settings);
+    /* A toggle and a segmented choice carry their state in the markup, so the
+       panel has to be rebuilt for the change to be visible -- without this,
+       pressing Long set the kill range to Long and left Normal lit, which
+       reads as a button that does not work. Sliders are left alone on purpose:
+       they carry their value in the element being dragged, and rebuilding
+       mid-drag would take the thumb out from under your finger. */
+    const spec = C.SETTINGS.find((s) => s.key === key);
+    if (spec && (spec.kind === 'bool' || spec.kind === 'choice')) {
+      NS.screens.buildSettings(session.settings, session.isHost, changeSetting);
+    }
     refreshLobby();
   }
 

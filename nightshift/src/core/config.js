@@ -146,6 +146,16 @@
       hint: 'Some tasks show an animation others can watch, which clears you.' },
     { key: 'taskBar', name: 'Task bar', kind: 'choice', options: ['Always', 'Meetings', 'Never'], def: 'Always' },
     { key: 'ghostsDoTasks', name: 'Ghosts finish tasks', kind: 'bool', def: true },
+    /* Practice only, and it says so, because a dial that quietly decided who
+       was the impostor in a room of fourteen would ruin the game it is in.
+       With eight bots in the lobby an honest shuffle deals you impostor about
+       one round in nine, which over an evening of practice feels less like
+       chance and more like the game has decided what you are. Rotate is the
+       fix: it leaves the shuffle alone until you have been crew twice running,
+       and then puts you on the other side. */
+    { key: 'soloRole', name: 'Play as', kind: 'choice', practice: true,
+      options: ['Rotate', 'Random', 'Impostor', 'Crewmate'], def: 'Rotate',
+      hint: 'Practice only. Ignored the moment a real person joins.' },
   ];
 
   /* Roles are toggled separately from the numeric dials: each is off, or on

@@ -153,9 +153,13 @@ check(!counted || barAfter > barBefore || roles[1] !== 'crewmate',
 
 /* A meeting on the host, a vote on the guest, tallied on the host. */
 await host.evaluate(() => {
+  /* The host refuses an emergency while something critical is broken, which
+     is correct and, now that the bots reliably get where they are going,
+     happens often enough to make this step flaky. Clear the station first. */
   const H = window.NS.host.H;
   H.emergencyCooldown = 0;
   H.emergenciesUsed = {};
+  H.sabotage = null;
   window.NS.host.handle(window.NS.session.myId, { t: 'emergency' });
 });
 await guest.waitForSelector('.meeting', { timeout: 10000 });

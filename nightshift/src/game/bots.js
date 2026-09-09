@@ -74,7 +74,7 @@
       });
       NS.world.players.set(id, entity);
       brains.set(id, {
-        id, entity, path: null, step: 0, goal: null, order: i,
+        id, entity, path: null, step: 0, goal: null,
         busy: 0, think: rand() * 1.5, votes: -1, hold: 0, ventCool: 8 + rand() * 20,
       });
     }
@@ -92,6 +92,31 @@
     brain.goal = { x, y };
   }
 
+  /* Can a body of this width walk that line, or only a ray?
+
+     This is the difference between a bot that crosses the station and a bot
+     that stands in a doorway for the rest of the round. String-pulling used a
+     single line-of-sight ray, and a ray has no width: it slips past a corner
+     that eleven pixels of duck cannot. The bot would then push diagonally into
+     the wall, move zero pixels, throw the path away, plan the identical path,
+     take the identical shortcut, and wedge again -- forever, at a fixed step
+     of a fixed path, which is exactly what the sabotage traces showed. Three
+     of the crew frozen in a corridor is why the reactor melted down in a third
+     of all rounds and why the tasks never finished.
+
+     So the shortcut is tested along both flanks of the body as well as its
+     centre. Slightly inside the radius, because the wall-slide in map.move
+     already gives back a pixel or two at the edges. */
+  function roomToWalk(e, tx, ty) {
+    const dx = tx - e.x, dy = ty - e.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return true;
+    const px = (-dy / len) * (M.RADIUS - 2), py = (dx / len) * (M.RADIUS - 2);
+    return NS.los.clear(e.x, e.y, tx, ty)
+        && NS.los.clear(e.x + px, e.y + py, tx + px, ty + py)
+        && NS.los.clear(e.x - px, e.y - py, tx - px, ty - py);
+  }
+
   /* String-pulling: rather than walk the tile centres one by one, look ahead
      for the furthest waypoint still in a straight line and head for that. Grid
      paths without it read as a bot, which for once is the thing to avoid. */
@@ -100,7 +125,7 @@
     if (!brain.path || brain.step >= brain.path.length) { e.moving = false; return true; }
     let target = brain.path[brain.step];
     for (let i = Math.min(brain.path.length - 1, brain.step + 10); i > brain.step; i--) {
-      if (NS.los.clear(e.x, e.y, brain.path[i].x, brain.path[i].y)) { brain.step = i; target = brain.path[i]; break; }
+      if (roomToWalk(e, brain.path[i].x, brain.path[i].y)) { brain.step = i; target = brain.path[i]; break; }
     }
     const dx = target.x - e.x, dy = target.y - e.y;
     const len = Math.hypot(dx, dy);
@@ -108,9 +133,18 @@
     const move = Math.min(len, speed * dt);
     const moved = M.move(e.x, e.y, (dx / len) * move, (dy / len) * move);
     if (Math.abs(moved.x - e.x) < 0.01 && Math.abs(moved.y - e.y) < 0.01) {
-      /* Wedged on a corner. Throw the path away rather than vibrate: the next
-         think tick will pick a new one. */
+      /* Wedged anyway. Throwing the path away is not enough on its own -- the
+         next plan starts from the same pixel and can wedge in the same place.
+         A 32px corridor leaves a body of radius 11 five pixels of play either
+         side, so a bot that entered off-centre has nowhere to push; stepping
+         back towards the middle of the tile it is standing in gives it the
+         room to try again. */
       brain.path = null;
+      const cx = (Math.floor(e.x / M.TILE) + 0.5) * M.TILE;
+      const cy = (Math.floor(e.y / M.TILE) + 0.5) * M.TILE;
+      const back = M.move(e.x, e.y, U.clamp(cx - e.x, -5, 5), U.clamp(cy - e.y, -5, 5));
+      e.x = back.x; e.y = back.y;
+      e.tx = e.x; e.ty = e.y;
       return true;
     }
     e.x = moved.x; e.y = moved.y;
@@ -154,24 +188,77 @@
     return best;
   }
 
-  /* Which broken thing this bot is walking to, if any. Spots are handed out by
-     the bot's own index so two of them go to the two reactor pads instead of
-     both going to the left one -- a meltdown needs a person at each end, and a
-     crew of bots that all queued at the same pad lost every single time. */
-  function sabotageTarget(brain, H) {
+  /* Who is going to which pad.
+
+     A meltdown needs a person at each end at the same moment, so this has to
+     be a decision made across the whole crew rather than by each bot on its
+     own. It used to be: pad = order % 2. That covers both ends only while the
+     living crew happens to contain both parities, and by the second sabotage
+     of a round it often does not -- three survivors with even indices all
+     walked to the left pad, stood on it together, and watched the reactor
+     blow. Measured over a hundred rounds, a third of them ended that way.
+
+     So it is assigned instead, once per tick for everybody at once: each pad
+     claims the nearest crewmate who has not been claimed yet, and only then do
+     the leftovers pick a pad. Pads a human is already standing on are struck
+     off first, which is how a bot knows to go and cover the other one rather
+     than crowd the one that is already handled. */
+  function assignFixes(H) {
     const active = H.sabotage;
     if (!active) return null;
     const def = NS.sabotage.SABOTAGES[active.kind];
     if (!def || !def.fix || !def.spots.length) return null;
-    const open = [];
+
+    const spots = [];
     for (let i = 0; i < def.spots.length; i++) {
-      if (def.fix !== 'hold' && active.done && active.done[i]) continue;
-      open.push(i);
+      if (def.fix === 'hold') {
+        if (active.holds && active.holds[i] && active.holds[i].at > 0
+            && !brains.has(active.holds[i].by)) continue;
+      } else if (active.done && active.done[i]) continue;
+      const w = M.toWorld(M.SABOTAGE_SPOTS[def.spots[i]]);
+      spots.push({ index: i, x: w.x, y: w.y });
     }
-    if (!open.length) return null;
-    const index = open[brain.order % open.length];
-    const w = M.toWorld(M.SABOTAGE_SPOTS[def.spots[index]]);
-    return { index, x: w.x, y: w.y, fix: def.fix, critical: def.critical };
+    if (!spots.length) return null;
+
+    const crew = [];
+    for (const brain of brains.values()) {
+      const p = H.players[brain.id];
+      if (!p || !p.alive) continue;
+      if (C.ROLES[H.roles[brain.id] || 'crewmate'].team === 'impostor') continue;
+      crew.push(brain);
+    }
+    if (!crew.length) return null;
+
+    const out = new Map();
+    const taken = new Set();
+    for (const spot of spots) {
+      let pick = null, bestD = Infinity;
+      for (const brain of crew) {
+        if (taken.has(brain.id)) continue;
+        const d = U.dist2(brain.entity.x, brain.entity.y, spot.x, spot.y);
+        if (d < bestD) { bestD = d; pick = brain; }
+      }
+      if (!pick) break;
+      taken.add(pick.id);
+      out.set(pick.id, spot);
+    }
+    for (const brain of crew) {
+      if (out.has(brain.id)) continue;
+      let pick = spots[0], bestD = Infinity;
+      for (const spot of spots) {
+        const d = U.dist2(brain.entity.x, brain.entity.y, spot.x, spot.y);
+        if (d < bestD) { bestD = d; pick = spot; }
+      }
+      out.set(brain.id, pick);
+    }
+    return { def, spots: out };
+  }
+
+  function sabotageTarget(brain, plan) {
+    if (!plan) return null;
+    const spot = plan.spots.get(brain.id);
+    if (!spot) return null;
+    return { index: spot.index, x: spot.x, y: spot.y, fix: plan.def.fix, critical: plan.def.critical };
   }
 
   function wander(brain) {
@@ -186,6 +273,7 @@
       return;
     }
     const speed = H.settings.playerSpeed * NS.world.BASE_SPEED * 0.94;
+    const plan = assignFixes(H);
 
     for (const brain of brains.values()) {
       const p = H.players[brain.id];
@@ -227,7 +315,7 @@
          an impostor bot walking across the map to repair its own sabotage was
          the loudest tell in the game. */
       if (role.team !== 'impostor') {
-        const fix = sabotageTarget(brain, H);
+        const fix = sabotageTarget(brain, plan);
         if (fix) {
           const reach = NS.sabotage.REACH * 0.75;
           if (U.dist(e.x, e.y, fix.x, fix.y) < reach) {
@@ -257,19 +345,32 @@
         const cooldown = H.killCooldown[brain.id] || 0;
         if (cooldown <= 0) {
           const range = (C.KILL_RANGE[H.settings.killRange] || 108) * 0.9;
+          /* Nearest first, and that ordering is the whole point.
+
+             This used to walk host.livingIds(), which is the player table in
+             insertion order -- and the person who opened the page is always
+             the first row in it. So of every crewmate standing in range, the
+             human was the one tested first, every time, in every round. It
+             was not that the bots were hunting them; it was that the loop
+             asked about them before it asked about anybody else. Two people
+             next to a bot with a ready knife should be a coin toss decided by
+             which of them is closer, not by who booted the lobby. */
+          let target = null, best = range * range;
           for (const id of host.livingIds()) {
             if (id === brain.id) continue;
             if (C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor') continue;
             const other = NS.world.players.get(id);
             if (!other) continue;
-            if (U.dist2(e.x, e.y, other.x, other.y) < range * range
-                && NS.los.clear(e.x, e.y, other.x, other.y) && alone(brain, host, id)) {
-              host.handle(brain.id, { t: 'kill', target: id });
-              brain.busy = 0.8;
-              brain.path = null;
-              escape(brain, host);
-              break;
+            const d = U.dist2(e.x, e.y, other.x, other.y);
+            if (d < best && NS.los.clear(e.x, e.y, other.x, other.y) && alone(brain, host, id)) {
+              best = d; target = id;
             }
+          }
+          if (target) {
+            host.handle(brain.id, { t: 'kill', target });
+            brain.busy = 0.8;
+            brain.path = null;
+            escape(brain, host);
           }
         }
         /* Sabotage on a timer rather than a plan. It moves the crew around,

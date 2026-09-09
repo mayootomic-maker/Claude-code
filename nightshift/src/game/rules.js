@@ -32,12 +32,27 @@
      0 never appears, at 100 always does if there is somebody to take it. Each
      special role is handed out at most once, because two sheriffs shooting
      each other is a bug report waiting to happen. */
-  function dealRoles(playerIds, settings, rand) {
-    const ids = U.shuffle(playerIds, rand);
+  function dealRoles(playerIds, settings, rand, prefer) {
+    let ids = U.shuffle(playerIds, rand);
     const impostorCount = Math.min(
       Math.max(1, settings.impostors),
       impostorCap(ids.length),
       Math.max(1, Math.floor((ids.length - 1) / 2)));
+
+    /* One player may be moved to the side they asked for -- practice against
+       bots, and nowhere else; the host decides whether that is allowed and
+       this only carries it out. It is a move within the shuffle rather than an
+       assignment on top of it: dropped at a random index inside the half it
+       belongs to, so a forced crewmate can still be the medic or the jester,
+       and everybody else's roles are still dealt by the same deck. */
+    if (prefer && ids.indexOf(prefer.id) >= 0) {
+      const rest = ids.filter((id) => id !== prefer.id);
+      const at = prefer.team === 'impostor'
+        ? Math.floor(rand() * impostorCount)
+        : impostorCount + Math.floor(rand() * (rest.length + 1 - impostorCount));
+      rest.splice(at, 0, prefer.id);
+      ids = rest;
+    }
 
     const roles = {};
     const impostors = ids.slice(0, impostorCount);

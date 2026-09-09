@@ -22,16 +22,23 @@
   const U = NS.util;
   const rr = NS.characters.rr;
 
-  const HULL = '#1b2436';
-  const HULL_EDGE = '#2c3648';
-  const KEYLINE = '#3a4761';
+  const HULL = '#1e2941';
+  const HULL_EDGE = '#33415c';
+  const KEYLINE = '#44546f';
 
+  /* Wings you can tell apart at a glance, which is the whole job: the floor
+     under somebody's light is the evidence they are going to give in two
+     minutes. The old palette was five shades of the same desaturated navy, and
+     under the lamp they all resolved to the same grey -- so every room looked
+     like every other room and the map stopped being worth remembering. These
+     are still dark enough that an unlit corridor gives nothing away; they just
+     have somewhere to go when a light lands on them. */
   const TONES = {
-    clean: { floor: '#232d40', accent: '#37e0c8' },
-    plain: { floor: '#1e2739', accent: '#8d97ad' },
-    cold:  { floor: '#1c2a3d', accent: '#4d9fd6' },
-    hot:   { floor: '#2a2634', accent: '#ffb03a' },
-    hall:  { floor: '#171f2e', accent: '#8d97ad' },
+    clean: { floor: '#24384a', accent: '#3ff0d4' },
+    plain: { floor: '#262f42', accent: '#9aa6bd' },
+    cold:  { floor: '#1e3050', accent: '#5cb2ea' },
+    hot:   { floor: '#3a2a2f', accent: '#ffb03a' },
+    hall:  { floor: '#1a2334', accent: '#8d97ad' },
   };
 
   let canvas = null;
@@ -602,7 +609,16 @@
       }
     }
 
-    /* Floors. */
+    /* Floors, as plate rather than as paint.
+
+       A flat fill with a one-pixel grid on it is invisible in the dark and,
+       the moment a light lands on it, a sheet of grey -- which is what made
+       every room look like the same room. Deck plating instead: bolted panels
+       four tiles across with a lit top edge and a shadowed bottom one, so the
+       floor has a direction and the light has something to catch. All of it is
+       baked once into the offscreen station, so the cost is at load and the
+       frame loop never sees it. */
+    const PLATE = 4;
     for (let ty = 0; ty < M.H; ty++) {
       for (let tx = 0; tx < M.W; tx++) {
         if (!M.FLOOR[M.at(tx, ty)]) continue;
@@ -610,13 +626,41 @@
         const tone = room ? TONES[room.tone] : TONES.hall;
         ctx.fillStyle = tone.floor;
         ctx.fillRect(px(tx), px(ty), T, T);
-        const v = rand();
-        if (v > 0.88) { ctx.fillStyle = 'rgba(255,255,255,0.016)'; ctx.fillRect(px(tx), px(ty), T, T); }
-        else if (v < 0.09) { ctx.fillStyle = 'rgba(0,0,0,0.11)'; ctx.fillRect(px(tx), px(ty), T, T); }
+        /* One shade per plate, not per tile: the variation should read as
+           panels that were laid at different times, not as noise. */
+        const plate = ((Math.floor(tx / PLATE) * 73856093) ^ (Math.floor(ty / PLATE) * 19349663)) >>> 0;
+        const v = (plate % 1000) / 1000;
+        if (v > 0.72) { ctx.fillStyle = 'rgba(255,255,255,0.028)'; ctx.fillRect(px(tx), px(ty), T, T); }
+        else if (v < 0.24) { ctx.fillStyle = 'rgba(0,0,0,0.13)'; ctx.fillRect(px(tx), px(ty), T, T); }
       }
     }
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.032)';
+    /* Plate seams: a dark groove with a lit lip under it. */
+    for (let ty = 0; ty < M.H; ty++) {
+      for (let tx = 0; tx < M.W; tx++) {
+        if (!M.FLOOR[M.at(tx, ty)]) continue;
+        const x = px(tx), y = px(ty);
+        if (tx % PLATE === 0 && M.FLOOR[M.at(tx - 1, ty)]) {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x - 1, y, 2, T);
+          ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fillRect(x + 1, y, 1, T);
+        }
+        if (ty % PLATE === 0 && M.FLOOR[M.at(tx, ty - 1)]) {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x, y - 1, T, 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.075)'; ctx.fillRect(x, y + 1, T, 1);
+        }
+        /* A bolt at the plate corners. Four pixels of it, which is nothing
+           until a light crosses them. */
+        if (tx % PLATE === 0 && ty % PLATE === 0
+            && M.FLOOR[M.at(tx - 1, ty)] && M.FLOOR[M.at(tx, ty - 1)]) {
+          ctx.fillStyle = 'rgba(255,255,255,0.09)';
+          ctx.fillRect(x + 2, y + 2, 2, 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.fillRect(x + 2, y + 4, 2, 1);
+        }
+      }
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.022)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let ty = 0; ty < M.H; ty++) {
@@ -628,10 +672,39 @@
     }
     ctx.stroke();
 
+    /* Strip lights in the ceiling, baked onto the floor beneath them. The
+       player's own lamp is the only light that moves, but a station where
+       nothing else is lit at all reads as a cave rather than as a building --
+       and these are what the three per cent of station that bleeds through the
+       dark actually shows you, which is how a room stays recognisable at the
+       edge of your circle. */
+    for (const room of M.ROOMS) {
+      const tone = TONES[room.tone] || TONES.plain;
+      const cols = Math.max(1, Math.round(room.w / 7));
+      const rows = Math.max(1, Math.round(room.h / 7));
+      for (let i = 0; i < cols; i++) {
+        for (let j = 0; j < rows; j++) {
+          const cx = px(room.x + (room.w * (i + 0.5)) / cols);
+          const cy = px(room.y + (room.h * (j + 0.5)) / rows);
+          const r = px(3.1);
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          g.addColorStop(0, 'rgba(255,246,224,0.075)');
+          g.addColorStop(0.45, 'rgba(210,226,255,0.032)');
+          g.addColorStop(1, 'rgba(160,190,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+          ctx.fillStyle = tone.accent;
+          ctx.globalAlpha = 0.16;
+          rr(ctx, cx - 17, cy - 2.5, 34, 5, 2.5); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
     /* Room labels sit under the furniture so a console never has type on it. */
     for (const room of ROOMS_WITH_LABELS()) {
-      tracked(room.name.toUpperCase(), room.cx, room.cy, room.w > 12 ? 30 : 22,
-              room.w > 12 ? 11 : 7, TONES[room.tone].accent, 0.11);
+      tracked(room.name.toUpperCase(), room.cx, room.cy, room.w > 12 ? 26 : 19,
+              room.w > 12 ? 9 : 6, TONES[room.tone].accent, 0.075);
     }
 
     for (const room of M.ROOMS) {

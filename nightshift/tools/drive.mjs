@@ -75,6 +75,29 @@ for (let i = 0; i < 5; i++) {
 await page.waitForTimeout(400);
 await shot(page, 'lobby-full');
 
+/* The practice dial. Two things had to be true and neither was: it only shows
+   when you are on your own against bots, and a segmented control has to move
+   when you press it -- the whole settings panel was rendered once and never
+   again, so pressing Long set the kill range to Long and left Normal lit. */
+if (!(await page.$('.play-as:not([hidden])'))) {
+  problems.push('the practice role dial is not offered in a solo lobby');
+} else {
+  for (const [nth, want] of [[3, 'Impostor'], [4, 'Crewmate']]) {
+    await page.click('.play-as .segment:nth-child(' + nth + ')');
+    await page.waitForTimeout(150);
+    const state = await page.evaluate(() => ({
+      lit: (document.querySelector('.play-as .segment.is-on') || {}).textContent,
+      setting: window.NS.session.settings.soloRole,
+    }));
+    if (state.setting !== want) problems.push('pressing ' + want + ' did not set the practice dial');
+    if (state.lit !== want) problems.push('pressing ' + want + ' did not light it up');
+  }
+  /* Left on an honest shuffle so the rest of this run is dealt a role rather
+     than handed one, and both sides still turn up across runs. */
+  await page.click('.play-as .segment:nth-child(2)');
+  await page.waitForTimeout(150);
+}
+
 await page.click('.lobby-buttons .btn--primary');
 await page.waitForSelector('.reveal', { timeout: 15000 });
 await page.waitForTimeout(900);
@@ -185,8 +208,14 @@ const impostor = await page.evaluate(() => {
 });
 if (impostor) {
   await page.evaluate((id) => {
+    /* Clearing the cooldown is not enough on its own: an impostor bot may
+       already have something broken, and the host refuses a second sabotage
+       while one is live. That is the game being right and the harness needing
+       to say what it wants. */
     const H = window.NS.host.H;
     H.sabotageCooldown = 0;
+    H.sabotage = null;
+    if (H.phase !== 'play') { H.phase = 'play'; H.meeting = null; H.ejected = null; }
     window.NS.host.handle(id, { t: 'sabotage', k: 'reactor' });
   }, impostor);
   await page.waitForTimeout(600);
@@ -201,10 +230,14 @@ if (impostor) {
     const fixed = await page.evaluate(() => ({
       sabotage: window.NS.world.state.sabotage,
       phase: window.NS.world.state.phase,
+      winner: window.NS.host.H.winner,
     }));
+    /* A meeting is a legitimate way for a meltdown to end: a bot finds a body
+       on its way to the pads, calls it, and the host clears the station. The
+       only failure is the reactor still burning, or the round lost to it. */
     if (fixed.sabotage) problems.push('the bots never repaired the reactor');
-    else if (fixed.phase !== 'play') problems.push('the reactor ended the round: ' + fixed.phase);
-    else console.log('  the bots repaired the reactor');
+    else if (fixed.winner) problems.push('the reactor ended the round: ' + fixed.winner.reason);
+    else console.log('  the reactor was dealt with (' + fixed.phase + ')');
   }
 }
 
@@ -231,6 +264,8 @@ await page.evaluate(() => {
   const H = window.NS.host.H;
   H.emergencyCooldown = 0;
   H.emergenciesUsed = {};
+  /* And nothing critical broken: the host refuses a meeting during one. */
+  H.sabotage = null;
   window.NS.host.handle(window.NS.session.myId, { t: 'emergency' });
 });
 await page.waitForTimeout(300);

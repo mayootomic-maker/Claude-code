@@ -53,6 +53,16 @@ else's face), Phantom (vanish); and the Jester, who wins by being voted out.
 Each is a separate chance dial in the lobby, so a class can build the game it
 wants and turn off the ones it does not.
 
+**A Play as dial for practice.** The deal is an honest shuffle and stays one:
+measured over 270,000 hands, at nine players you are the impostor a shade over
+one round in nine, which is exactly right and, played alone against eight bots
+for an evening, feels like the game has decided what you are. So a lobby that
+is one person and nothing but bots gets a dial next to the bot counter --
+Rotate, Random, Impostor, Crewmate. Rotate is the default: it leaves the deal
+alone until you have been on the same side twice running, then puts you on the
+other one. It disappears the moment a second real person joins, and the host
+ignores it, because there would then be somebody it was unfair to.
+
 **Twenty-one tasks**, each a different thing to do rather than five reskinned
 progress bars — wiring, a card you have to swipe at the right speed, a
 distributor to time, asteroids to shoot, a reactor sequence to memorise, a
@@ -175,6 +185,7 @@ node tools/room.mjs            # the artifact transport, against a stand-in room
 node tools/deal.mjs            # 270,000 role deals against the rules' invariants
 node tools/argue.mjs           # stages a murder and prints the meeting it causes
 node tools/cine.mjs            # photographs the three cinematics mid-shot
+node tools/hunt.mjs            # runs whole rounds headless: who dies, who wins
 ```
 
 `drive.mjs` plays a practice round through every screen the game has, opens all
@@ -193,11 +204,41 @@ that would have made the published page look empty to everybody: the lobby
 filter and the player's colour were both stored under `c`, and the round could
 start before the view knew its own peer id.
 
+`hunt.mjs` runs the host, the pathfinder, the bot minds and the whole round
+loop headless at a fixed timestep, with no renderer and every seat played by a
+bot, and reports where the murders land and who wins. It exists because "I get
+killed every single time" is not a bug report you can act on and not one you
+can dismiss either -- and because two different people can be right about the
+same feeling for different reasons.
+
+It settled three things. Nobody is hunted: every seat's share of the first
+murder is within noise of one over the number of crew, including the seat the
+person who opened the lobby sits in, which is where the bias would have been if
+there was one. The role deal is fair, and `deal.mjs` measures that separately
+over 270,000 hands. And the game *was* rigged against the crew, just not in the
+way it felt: a third of all rounds ended in a reactor meltdown, because bots
+were freezing in doorways -- see below -- so nobody arrived at the pads. With
+that fixed the crew win a bit over half of rounds at the default settings, and
+the tasks actually finish.
+
 The bots are worth their own line: they walk to the nearest job they still owe
 rather than the first on the list (dealing in order parked seven of them in
-Storage at once), they repair a sabotage -- a crew of bots used to lose every
-reactor meltdown by ignoring it -- they walk their fake list if they are lying,
-and they leave through a vent after a kill.
+Storage at once), they repair a sabotage -- and the two people a meltdown needs
+are assigned across the whole crew by who is nearest, not by the parity of a
+bot's index, which covered both pads only while the survivors happened to
+include both parities -- they walk their fake list if they are lying, and they
+leave through a vent after a kill.
+
+The freezing was the worst bug in the game and it was invisible: bots shortcut
+their grid path by asking line-of-sight whether they can walk straight to a
+further waypoint, and a line-of-sight ray has no width. It slips past a corner
+that eleven pixels of duck cannot. The bot pushed diagonally into the wall,
+moved nothing, threw the path away, planned the identical path, took the
+identical shortcut, and wedged again -- forever. Three of the crew standing
+still in a corridor is why the reactor melted down, why the task bar stalled at
+two thirds, and why a round so often turned into a massacre. The shortcut is
+tested along both flanks of the body now, and a bot that wedges anyway steps
+back to the middle of its tile instead of retrying from the same pixel.
 
 Four bugs came out of running these that reading the code did not find. Every
 action button showed for crewmates, because `hidden` was losing to a `display`

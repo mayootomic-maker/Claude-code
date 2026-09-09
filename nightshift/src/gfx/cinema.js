@@ -76,7 +76,65 @@
     ctx.fillStyle = '#04060b';
     ctx.fillRect(0, 0, w, bar);
     ctx.fillRect(0, h - bar, w, bar);
+    /* A hairline on the inside edge. Black bars over a nearly black shot are
+       invisible, which wastes the one piece of grammar that tells a room to
+       stop pressing buttons and watch. */
+    ctx.fillStyle = 'rgba(230,236,246,0.10)';
+    ctx.fillRect(0, bar, w, 1);
+    ctx.fillRect(0, h - bar - 1, w, 1);
     return bar;
+  }
+
+  /* A lit stage rather than a dark room with two ducks in it.
+
+     A cinematic that is only a cut and a caption is a cut and a caption. What
+     makes a still of this read as a shot is that the light is doing something:
+     a pool under the subjects, a colour on it, and everything at the edge of
+     the frame falling away. It is two gradients and it does more for the beat
+     than any amount of movement. */
+  function stage(ctx, w, h, cx, cy, radius, tint) {
+    const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    pool.addColorStop(0, tint.core);
+    pool.addColorStop(0.55, tint.mid);
+    pool.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    vignette(ctx, w, h, cx, cy, 0.72);
+  }
+
+  function vignette(ctx, w, h, cx, cy, depth) {
+    const corner = Math.hypot(w, h) / 2;
+    const vig = ctx.createRadialGradient(cx, cy, corner * 0.3, cx, cy, corner);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,' + depth + ')');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  /* Radial streaks out of the point of impact. Drawn on the frame rather than
+     on the ducks, because the whole shot is what lurches, not the bird. */
+  function speedLines(ctx, w, h, cx, cy, amount, colour) {
+    if (amount <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = amount * 0.5;
+    ctx.strokeStyle = colour;
+    ctx.lineCap = 'round';
+    const reach = Math.hypot(w, h) * 0.5;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + i * 0.37;
+      const from = reach * (0.28 + ((i * 7) % 5) * 0.045);
+      const to = from + reach * (0.1 + ((i * 13) % 7) * 0.03) * amount;
+      ctx.lineWidth = 1.4 + ((i * 5) % 3);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * from, cy + Math.sin(a) * from);
+      ctx.lineTo(cx + Math.cos(a) * to, cy + Math.sin(a) * to);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function duck(ctx, colorIdx, hatIdx, scale, opts) {
@@ -120,8 +178,16 @@
         ctx.fillRect(0, 0, w, h);
 
         const cx = w / 2, cy = h / 2 + h * 0.02;
-        const scale = Math.min(w, h) / 190 * (s.calm ? 1 : (1 + span(t, 0, 0.5) * 0.22));
+        const scale = Math.min(w, h) / 152 * (s.calm ? 1 : (1 + span(t, 0, 0.5) * 0.22));
         const lunge = s.calm ? 1 : ease(span(t, 0.16, 0.34));
+        /* The light goes from cold to arterial across the lunge, so the frame
+           has turned by the time the strike lands. */
+        const heat = span(t, 0.14, 0.4);
+        stage(ctx, w, h, cx, cy + Math.min(w, h) * 0.06, Math.min(w, h) * 0.6, {
+          core: 'rgba(' + Math.round(96 + heat * 150) + ',' + Math.round(104 - heat * 62)
+            + ',' + Math.round(146 - heat * 70) + ',0.62)',
+          mid: 'rgba(' + Math.round(54 + heat * 110) + ',36,' + Math.round(92 - heat * 40) + ',0.24)',
+        });
         /* Measured in duck-widths rather than pixels, so the pair are framed
            the same on a phone and a projector -- a fixed pixel gap had them
            overlapping completely on a large screen, where the ducks are drawn
@@ -149,9 +215,10 @@
         });
         ctx.restore();
 
-        /* Impact: a hard red wipe, once. */
+        /* Impact: a hard red wipe, once, with the frame torn around it. */
         const hit = span(t, 0.3, 0.42);
         if (hit > 0 && hit < 1) {
+          if (!s.calm) speedLines(ctx, w, h, cx, cy, Math.sin(hit * Math.PI), '#ff8595');
           ctx.save();
           ctx.globalAlpha = Math.sin(hit * Math.PI) * 0.75;
           ctx.fillStyle = '#ff3f5b';
@@ -250,6 +317,7 @@
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
         ctx.globalAlpha = 1;
+        vignette(ctx, w, h, w / 2, h * 0.46, 0.6 * wash);
 
         /* The duck drops in and settles. */
         const drop = s.calm ? 1 : outCubic(span(t, 0.08, 0.42));

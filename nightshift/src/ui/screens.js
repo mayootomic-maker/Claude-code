@@ -381,6 +381,7 @@
       el('strong', { class: 'bot-count', text: '0' }),
       el('button', { class: 'btn btn--ghost btn--tight', type: 'button', text: '+', 'aria-label': 'One more bot', onclick: () => hooks.onBots(1) }),
     ]);
+    const playAs = el('div', { class: 'play-as', hidden: true });
 
     const leave = el('div', { class: 'lobby-links' }, [
       el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
@@ -392,6 +393,7 @@
       el('p', { class: 'lobby-hint', text: 'Everyone opens the same page and types this in.' }),
       status,
       botRow,
+      playAs,
       el('div', { class: 'lobby-buttons' }, [startBtn, readyBtn]),
       leave,
     ]);
@@ -408,7 +410,7 @@
       ]),
     ]));
 
-    lobbyNodes = { roster, status, settingsHost, startBtn, readyBtn, botRow, code };
+    lobbyNodes = { roster, status, settingsHost, startBtn, readyBtn, botRow, playAs, code };
     rosterSignature = '';
     return lobbyNodes;
   }
@@ -417,7 +419,7 @@
 
   function updateLobby(info) {
     if (!lobbyNodes) return;
-    const { roster, status, startBtn, readyBtn, botRow } = lobbyNodes;
+    const { roster, status, startBtn, readyBtn, botRow, playAs } = lobbyNodes;
     const players = info.players || [];
 
     /* The roster is redrawn only when it actually changed. This runs several
@@ -440,6 +442,10 @@
     readyBtn.hidden = !!info.isHost;
     botRow.hidden = !info.isHost;
     botRow.querySelector('.bot-count').textContent = String(info.bots || 0);
+    /* Shown only when it is true: you, alone, against bots. With a second
+       person in the lobby the host ignores it, so offering it would be a
+       control that lies. */
+    playAs.hidden = !(info.isHost && real === 1 && (info.bots || 0) > 0);
     if (info.isHost) {
       startBtn.disabled = !!info.blocked;
       startBtn.textContent = info.blocked || 'Start the round';
@@ -463,6 +469,39 @@
     }
   }
 
+  /* The one dial that is not in the settings list: which side to practise on.
+
+     It sits with the bot counter because that is what it belongs to, and it
+     shows the streak it is acting on when it is set to rotate -- a dial that
+     silently decides to give you the impostor on the third round is worse than
+     no dial, because you cannot tell whether it did anything. */
+  function buildPlayAs(settings, isHost, onChange) {
+    if (!lobbyNodes || !lobbyNodes.playAs) return;
+    const spec = C.SETTINGS.find((s) => s.key === 'soloRole');
+    const node = lobbyNodes.playAs;
+    node.textContent = '';
+    if (!spec) return;
+    node.appendChild(el('span', { class: 'bot-label', text: spec.name }));
+    const segments = el('div', { class: 'segments' });
+    for (const option of spec.options) {
+      segments.appendChild(el('button', {
+        class: 'segment' + (option === settings[spec.key] ? ' is-on' : ''),
+        type: 'button', text: option, disabled: !isHost,
+        onclick: () => onChange(spec.key, option),
+      }));
+    }
+    node.appendChild(segments);
+    if (settings[spec.key] === 'Rotate') {
+      const streak = U.store.get('streak', null);
+      node.appendChild(el('p', {
+        class: 'setting-hint',
+        text: streak && streak.n >= 2
+          ? 'Impostor next: ' + streak.n + ' rounds on the ' + streak.team + ' side.'
+          : 'Never the same side three rounds running.',
+      }));
+    }
+  }
+
   /* Settings are generated from the table in core/config.js, so a new dial
      appears here, travels to the guests and is clamped on arrival without
      anybody editing this file. */
@@ -471,6 +510,12 @@
     const host = lobbyNodes.settingsHost;
     host.textContent = '';
     for (const spec of C.SETTINGS) {
+      /* Practice-only dials are not in this list. They travel and are clamped
+         with everything else, but a class of fourteen setting up a game should
+         not have to read past a control that does nothing for them -- it goes
+         in the practice card instead, next to the bot counter, which is the
+         only place somebody playing alone is looking. */
+      if (spec.practice) continue;
       const row = el('div', { class: 'setting' });
       row.appendChild(el('label', { class: 'setting-name', text: spec.name }));
       const value = settings[spec.key];
@@ -512,6 +557,8 @@
       U.$$('button, input', row).forEach((n) => { n.disabled = !isHost; });
       host.appendChild(row);
     }
+
+    buildPlayAs(settings, isHost, onChange);
 
     const roles = el('div', { class: 'roles' });
     roles.appendChild(el('h4', { text: 'Roles' }));

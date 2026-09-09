@@ -106,5 +106,37 @@ for (const count of [4, 8, 14]) {
   }
 }
 
+/* The practice dial. It moves one player and nothing else: the round still
+   has the number of impostors the lobby asked for, everybody else is still
+   dealt by the shuffle, and a forced crewmate can still draw a crew power --
+   which is the difference between preferring a side and being handed a part. */
+{
+  const ids = [];
+  for (let i = 0; i < 9; i++) ids.push('p' + i);
+  const settings = C.defaults();
+  settings.impostors = 2;
+  let asImpostor = 0, asCrew = 0, powered = 0;
+  for (let n = 0; n < 4000; n++) {
+    const rand = U.mulberry32(n + 1);
+    const roles = R.dealRoles(ids, settings, rand, { id: 'p3', team: 'impostor' });
+    if (C.ROLES[roles.p3].team === 'impostor') asImpostor++;
+    if (Object.keys(roles).filter((id) => C.ROLES[roles[id]].team === 'impostor').length !== 2) {
+      fail('the impostor count moved when a role was preferred');
+      break;
+    }
+  }
+  for (let n = 0; n < 4000; n++) {
+    const rand = U.mulberry32(n + 1);
+    const roles = R.dealRoles(ids, settings, rand, { id: 'p3', team: 'crew' });
+    if (C.ROLES[roles.p3].team === 'crew') asCrew++;
+    if (roles.p3 !== 'crewmate') powered++;
+  }
+  if (asImpostor !== 4000) fail('asked for impostor, got it ' + asImpostor + '/4000 times');
+  if (asCrew !== 4000) fail('asked for crew, got it ' + asCrew + '/4000 times');
+  if (powered < 200) fail('a preferred crewmate never draws a crew power');
+  console.log('\npractice dial: impostor when asked ' + asImpostor + '/4000, crew when asked '
+              + asCrew + '/4000, of which ' + Math.round((powered / 4000) * 100) + '% still drew a power');
+}
+
 console.log(failures ? '\n' + failures + ' FAILURES' : '\nall clear: ' + (ROUNDS * 27) + ' deals, every invariant held');
 process.exit(failures ? 1 : 0);

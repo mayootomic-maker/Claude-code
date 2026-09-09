@@ -211,6 +211,16 @@
     session.settings = C.sanitise(session.settings);
     U.store.set('settings', session.settings);
     NS.host.setSettings(session.settings);
+    /* A toggle and a segmented choice carry their state in the markup, so the
+       panel has to be rebuilt for the change to be visible -- without this,
+       pressing Long set the kill range to Long and left Normal lit, which
+       reads as a button that does not work. Sliders are left alone on purpose:
+       they carry their value in the element being dragged, and rebuilding
+       mid-drag would take the thumb out from under your finger. */
+    const spec = C.SETTINGS.find((s) => s.key === key);
+    if (spec && (spec.kind === 'bool' || spec.kind === 'choice')) {
+      NS.screens.buildSettings(session.settings, session.isHost, changeSetting);
+    }
     refreshLobby();
   }
 
