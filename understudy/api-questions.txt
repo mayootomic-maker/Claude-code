@@ -182,4 +182,11 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # with setPermissions(PermissionSet) beside it. What is wanted from it is
 # whether this player may run setblock, so that the paste can take the other
 # route in silence instead of spending one refused command finding out.
-net.minecraft.server.permissions.PermissionSet 30
+# Answered: PermissionSet is an interface with NO_PERMISSIONS and
+# ALL_PERMISSIONS constants and one method, hasPermission(Permission). So the
+# question is what a Permission is and where the one that gates setblock is
+# named. If there is a constant for it, /paste can take the building route in
+# silence instead of spending one refused command finding out.
+net.minecraft.server.permissions.Permission 40
+net.minecraft.server.permissions.Permissions 60
+net.minecraft.commands.Commands 40
