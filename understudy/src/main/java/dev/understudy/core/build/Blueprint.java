@@ -270,7 +270,12 @@ public record Blueprint(String name, List<Placement> placements, int sizeX, int 
             "farmland", "dirt_path", "mud", "packed_mud", "clay", "moss_block",
             "stone", "deepslate", "andesite", "diorite", "granite", "tuff", "calcite",
             "sand", "red_sand", "gravel", "snow_block", "netherrack", "soul_sand",
-            "soul_soil", "end_stone", "sandstone", "red_sandstone");
+            "soul_soil", "end_stone", "sandstone", "red_sandstone",
+            // Water counts. A build cut from a seabed has water as most of its
+            // bottom layer, and it is every bit as much "the world this came
+            // with" as the dirt beside it — leaving it out put every ocean farm
+            // one block higher than the floor it belongs on.
+            "water");
 
     /**
      * Whether the bottom layer of this design is ground rather than floor.

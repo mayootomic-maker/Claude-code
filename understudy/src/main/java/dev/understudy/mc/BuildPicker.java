@@ -615,6 +615,35 @@ public final class BuildPicker extends Screen {
         }
     }
 
+    /**
+     * Break a line onto as many rows as it needs, up to a limit.
+     *
+     * Measured with the font rather than counted in characters, and split at
+     * the last space that fits so a word is not cut in half. The last row is
+     * clipped if the text outruns the limit, because at that point the reader
+     * has had the useful part.
+     */
+    private List<String> wrap(String text, int room, int rows) {
+        List<String> out = new ArrayList<>();
+        String left = text;
+        while (!left.isEmpty() && out.size() < rows) {
+            if (font == null || font.width(left) <= room) {
+                out.add(left);
+                break;
+            }
+            if (out.size() == rows - 1) {
+                out.add(clip(left, room));
+                break;
+            }
+            String head = font.plainSubstrByWidth(left, room);
+            int space = head.lastIndexOf(' ');
+            if (space > room / 8) head = head.substring(0, space);
+            out.add(head);
+            left = left.substring(head.length()).stripLeading();
+        }
+        return out;
+    }
+
     /** Cut a line to the width it has, in characters the font actually measures. */
     private String clip(String text, int room) {
         if (font == null || font.width(text) <= room) return text;

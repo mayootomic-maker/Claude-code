@@ -37,7 +37,28 @@ import java.util.Map;
 public final class Schematic {
 
     /** Anything larger is a region capture rather than a build, and would hang the menu. */
+    /**
+     * The most blocks a design may actually contain.
+     *
+     * Counted on what ends up in the blueprint, not on the box it was cut from.
+     * Those are wildly different numbers for anything worth importing: a sky
+     * farm is a tall thin selection that is almost entirely air, and measuring
+     * the selection rejected a 45x132x46 creeper farm — 273,240 cells — that
+     * holds well under twenty thousand real blocks. The cost of reading is one
+     * unpack per cell and nothing per air block, so the box was never the thing
+     * to be frightened of.
+     */
     public static final int MAX_BLOCKS = 200_000;
+
+    /**
+     * The most cells it will walk looking for them.
+     *
+     * The other half of the same guard, and the one the box belongs in: this is
+     * about not spending a minute scanning a selection somebody made by
+     * dragging across a continent. Eight million is a two-hundred-block cube,
+     * which reads in well under a second.
+     */
+    public static final long MAX_CELLS = 8_000_000L;
 
     public record Result(Blueprint blueprint, List<String> notes) {}
 
@@ -111,7 +132,15 @@ public final class Schematic {
                     + "(expected a .litematic, .schem or structure .nbt)");
         }
 
-        if (raw.isEmpty()) throw new IOException("that schematic has nothing in it but air");
+        if (raw.isEmpty()) {
+            // The notes usually say exactly why — a region skipped, a palette
+            // that would not read — and throwing a flat "nothing but air" over
+            // the top of them is how a file with a knowable problem becomes a
+            // file with a mysterious one.
+            throw new IOException(notes.isEmpty()
+                    ? "that schematic has nothing in it but air"
+                    : "nothing could be read from it: " + String.join("; ", notes));
+        }
 
         // Schematics are saved wherever they happened to be in someone's world,
         // with regions at arbitrary offsets and sometimes negative ones. A
@@ -179,12 +208,19 @@ public final class Schematic {
 
             int bits = Math.max(2, 32 - Integer.numberOfLeadingZeros(palette.size() - 1));
             long total = (long) sx * sy * sz;
-            if (total > MAX_BLOCKS) {
-                notes.add("region " + entry.getKey() + " skipped: " + total + " blocks is too big");
+            if (total > MAX_CELLS) {
+                notes.add("region " + entry.getKey() + " skipped: " + sx + "x" + sy + "x" + sz
+                        + " is more cells than this will walk");
                 continue;
             }
 
+            int before = out.size();
             for (int index = 0; index < total; index++) {
+                if (out.size() - before >= MAX_BLOCKS) {
+                    notes.add("region " + entry.getKey() + " has more than " + MAX_BLOCKS
+                            + " blocks — the rest was left out");
+                    break;
+                }
                 int state = unpack(packed, index, bits);
                 if (state < 0 || state >= palette.size()) continue;
                 String block = stateName(palette.get(state));
@@ -248,9 +284,9 @@ public final class Schematic {
         if (width <= 0 || height <= 0 || length <= 0 || palette == null || data.length == 0) {
             throw new IOException("that .schem is missing its size or its blocks");
         }
-        if ((long) width * height * length > MAX_BLOCKS) {
-            throw new IOException("that schematic is " + ((long) width * height * length)
-                    + " blocks, which is far too big to build");
+        if ((long) width * height * length > MAX_CELLS) {
+            throw new IOException("that schematic is " + width + "x" + height + "x" + length
+                    + ", which is more cells than this will walk");
         }
 
         // The palette maps name to id, which is the wrong way round for reading.

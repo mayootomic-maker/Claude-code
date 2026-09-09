@@ -243,7 +243,12 @@ class SchematicTest {
                 "BlockData", new Value.Bytes(new byte[]{0}));
         byte[] file = NbtWriter.gzip(root);
         IOException error = assertThrows(IOException.class, () -> Schematic.read("huge.schem", file));
-        assertTrue(error.getMessage().contains("too big"), error.getMessage());
+        // Still refused, and still says its size — but for the honest reason,
+        // which is the walking rather than the building. Eight hundred cubed is
+        // a hundred and ninety million cells; the tall thin sky farm that used
+        // to be caught by the same rule is a quarter of a million and reads.
+        assertTrue(error.getMessage().contains("800"), error.getMessage());
+        assertTrue(error.getMessage().contains("cells"), error.getMessage());
     }
 
     @Test
@@ -447,5 +452,28 @@ class SchematicTest {
         assertEquals(7, corner[0]);
         assertEquals(20, corner[1]);
         assertEquals(29, corner[2]);
+    }
+
+    /**
+     * A tall thin selection is not a big build.
+     *
+     * The size guard was measured on the box a schematic was cut from rather
+     * than on the blocks inside it, and the two are nothing like the same
+     * number for the things people actually import. A sky farm is a selection
+     * ninety per cent air: one real creeper farm was 45 x 132 x 46 — 273,240
+     * cells against a 200,000 limit — and held 9,505 blocks. It was refused,
+     * and refused with "nothing in it but air", because the region was skipped
+     * and the note saying why was thrown away underneath the empty result.
+     *
+     * So the limit counts what is kept, a much larger one covers what will be
+     * walked, and a read that comes back empty says what the notes said.
+     */
+    @Test
+    void theLimitIsOnBlocksRatherThanOnTheBoxTheyCameFrom() {
+        assertTrue(Schematic.MAX_CELLS > Schematic.MAX_BLOCKS,
+                "a cell budget no larger than the block budget is the old bug wearing a hat");
+        // Room for the shape that failed: a tall thin selection of a sky farm.
+        assertTrue(45L * 132L * 46L < Schematic.MAX_CELLS,
+                "a 45x132x46 selection is an ordinary sky farm and must read");
     }
 }
