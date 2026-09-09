@@ -8,6 +8,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -43,12 +44,13 @@ import java.util.function.Consumer;
  * creative it costs nothing; in survival it costs the materials, and it says
  * which before it starts.
  *
- * Whether the permission is there is settled by asking, once: one real block is
- * set and looked at. That is the only reliable question, because being an
- * operator is not the same as being allowed — a plugin, a claim or a plot world
- * can refuse setblock from someone the server calls one. A refusal is kept for
- * as long as you are in that world, so the first paste on a server without the
- * permission costs one refused command and every paste after it costs nothing.
+ * The permission is worked out before anything is sent. The client is told its
+ * own permissions at login, so on a server where you are not an operator
+ * nothing is attempted, no red refusal appears in your chat, and the build
+ * simply begins. Where the permission is there it is still only a maybe — a
+ * plugin, a claim or a plot world can refuse setblock from someone the server
+ * calls an operator — so one real block is set and looked at, once, and a
+ * refusal is remembered for as long as you are in that world.
  *
  * Rate. In your own world there is no packet and no limit, so it goes in one
  * go. On a server every command is a packet and servers kick for sending too
@@ -166,7 +168,7 @@ public final class PasteTask {
                     + "by block comes down the same way");
             return;
         }
-        if (local() == null && !mayCommand()) {
+        if (local() == null && (client.player == null || !mayCommand(client.player))) {
             // Only a paste that went through commands is ever recorded, so
             // reaching here means the permission was taken away in between.
             report.accept("this server will not run fill for you any more — "
@@ -208,8 +210,10 @@ public final class PasteTask {
         // take it down and it would hang in the air over the finished house.
         Ghosts.hide();
 
-        if (local() == null && !mayCommand()) {
-            buildInstead(plan, origin, "this server already refused to place blocks for you");
+        if (local() == null && !mayCommand(player)) {
+            buildInstead(plan, origin, allowed == Allowed.NO
+                    ? "this server already refused to place blocks for you"
+                    : "you are not an operator on this server, so nothing can be conjured here");
             return;
         }
 
@@ -237,20 +241,26 @@ public final class PasteTask {
     /**
      * Whether a command sent from here has any chance of landing.
      *
-     * Asked of the server rather than assumed, because the client's own idea of
-     * its permissions is not the whole answer anyway: a plugin, a claim or a
-     * plot world can refuse setblock from someone the server calls an operator.
-     * So the question is one real block, and the answer is kept for as long as
-     * you are in that world — a server that said no once is asked once, and
-     * every paste after the first goes straight to building with nothing sent.
+     * Two questions, cheapest first. The client is sent its own permissions at
+     * login, and setblock is gated on what used to be level two and is now
+     * COMMANDS_GAMEMASTER, so most of the time this is answered for free and
+     * without sending anything — which is the point, because the alternative is
+     * a red refusal in the chat of everyone who is not an operator.
+     *
+     * Having the permission is not the same as being allowed, though: a plugin,
+     * a claim or a plot world can still refuse. So where the answer is yes it
+     * is a maybe, and the one-block probe settles it. A refusal there is kept
+     * for as long as you are in that world, so it is asked once rather than
+     * before every paste.
      */
-    private boolean mayCommand() {
+    private boolean mayCommand(LocalPlayer player) {
         String world = Worlds.key(client);
         if (!world.equals(verdictFor)) {
             verdictFor = world;
             allowed = Allowed.UNKNOWN;
         }
-        return allowed != Allowed.NO;
+        if (allowed == Allowed.NO) return false;
+        return player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }
 
     /**

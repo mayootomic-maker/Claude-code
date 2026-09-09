@@ -361,13 +361,14 @@ public final class UnderstudyCommands {
             // Said before rather than after. The two routes feel different
             // enough — one is instant, one is a character walking a house up —
             // that finding out which you are getting after choosing a design is
-            // finding out too late.
-            say(source, "on a server it tries one block first: if that lands the whole "
-                    + "thing goes straight in");
-            say(source, "and if it does not, it is built block by block at instant speed "
-                    + "instead — same building, same place, no permission needed");
-            say(source, "so one red 'no permission' line from the server is expected, "
-                    + "once, and is not the paste failing");
+            // finding out too late. Free to ask: the permissions came with the
+            // login, so this costs no packet and no refusal in the chat.
+            say(source, source.getPlayer().permissions()
+                            .hasPermission(net.minecraft.server.permissions
+                                    .Permissions.COMMANDS_GAMEMASTER)
+                    ? "you are an operator here, so it goes straight in"
+                    : "not an operator here, so it will be built block by block at instant "
+                            + "speed instead — same building, same place, nothing to ask for");
         }
         return 1;
     }
