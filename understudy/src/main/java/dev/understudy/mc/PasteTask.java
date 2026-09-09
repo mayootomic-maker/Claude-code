@@ -170,13 +170,6 @@ public final class PasteTask {
                     + "by block comes down the same way");
             return;
         }
-        if (local() == null && !mayCommand()) {
-            // Only a paste that went through commands is ever recorded, so
-            // reaching here means the permission was taken away in between.
-            report.accept("this server will not run fill for you any more — "
-                    + "what was pasted has to come down by hand");
-            return;
-        }
         Pasted last = done.peekLast();
         if (!last.dimension().equals(dimension())) {
             report.accept("the last paste was in " + last.dimension() + " — go there to undo it");
@@ -188,10 +181,26 @@ public final class PasteTask {
         this.commands = Paste.erase(last.x(), last.y(), last.z(),
                 last.wide(), last.tall(), last.deep());
         this.next = 0;
-        this.running = true;
         this.probeTicks = -1;
         this.pending = null;
         Ghosts.hide();
+
+        // The same three routes as putting it there, in the same order, since
+        // taking it away is the same kind of work: the server does it, or
+        // nobody does.
+        if (local() == null && !mayCommand()) {
+            if (ServerPaste.available()) {
+                ServerPaste.send(dimension(), last.x(), last.y(), last.z(),
+                        last.wide(), last.tall(), last.deep(), this.commands);
+                report.accept("asked the server to remove the " + last.what() + " at "
+                        + last.x() + " " + last.y() + " " + last.z());
+                return;
+            }
+            report.accept("this server will not place blocks for you any more — "
+                    + "what was pasted has to come down by hand");
+            return;
+        }
+        this.running = true;
         report.accept("removing the " + last.what() + " at "
                 + last.x() + " " + last.y() + " " + last.z()
                 + " — the ground it was cleared off does not come back");
@@ -213,6 +222,9 @@ public final class PasteTask {
         Ghosts.hide();
 
         if (local() == null && !mayCommand()) {
+            List<String> theirs = Paste.commands(
+                    plan, origin.getX(), origin.getY(), origin.getZ(), true);
+            if (askTheServer(plan, origin, theirs)) return;
             buildInstead(plan, origin, allowed == Allowed.NO
                     ? "this server already refused to place blocks for you"
                     : "you are not an operator on this server, so nothing can be conjured here");
@@ -274,6 +286,32 @@ public final class PasteTask {
     public static boolean looksLikeAnOperator(LocalPlayer player) {
         return player != null
                 && player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
+    }
+
+    /**
+     * Hand the whole paste to the server, if this one takes them.
+     *
+     * The best outcome of the three and the quietest: no permission is needed
+     * by anybody, the blocks cost nothing, and there is no walk. It applies
+     * when whoever runs the server has the same jar in their mods folder —
+     * which on a server run by one of the people who wanted the mod is a thing
+     * that may simply already be true, so it is asked before anything is
+     * assumed rather than offered as a suggestion.
+     *
+     * Nothing comes back here. The server answers the player directly, in its
+     * own words, because it is the thing that decided — and a refusal invented
+     * on this side would be a guess at somebody else's rules.
+     */
+    private boolean askTheServer(Blueprint plan, BlockPos origin, List<String> theirs) {
+        if (!ServerPaste.available()) return false;
+        ServerPaste.send(dimension(), origin.getX(), origin.getY(), origin.getZ(),
+                plan.sizeX(), plan.sizeY(), plan.sizeZ(), theirs);
+        done.addLast(new Pasted(plan.name(), dimension(), origin.getX(), origin.getY(),
+                origin.getZ(), plan.sizeX(), plan.sizeY(), plan.sizeZ()));
+        while (done.size() > REMEMBERED) done.removeFirst();
+        report.accept("this server places pastes itself, so no permission is needed — "
+                + "sent the " + plan.name() + ", " + theirs.size() + " commands");
+        return true;
     }
 
     /**
@@ -346,7 +384,11 @@ public final class PasteTask {
                     stop("the server would not let that block be set");
                     return;
                 }
-                buildInstead(plan, at, "the server would not run setblock for you");
+                // The permission is gone but the server half may still be
+                // there, and it is the better answer of the two.
+                if (!askTheServer(plan, at, this.commands)) {
+                    buildInstead(plan, at, "the server would not run setblock for you");
+                }
                 return;
             }
             allowed = Allowed.YES;

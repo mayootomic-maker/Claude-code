@@ -98,7 +98,26 @@ operator — while your client is still told you are permission level zero. The
 verdict is remembered per world, so it costs one command on the first paste and
 nothing after.
 
-If the server does refuse, what happens depends on the game mode, and the honest
+If the server does refuse, there is one more thing it tries before giving up,
+and it is the best of the three. **The same jar works on a server.** Dropped
+into a server's own `mods` folder it makes that server place pastes itself,
+under its own authority — so nobody has to hold operator, which was the whole
+problem: operator is every command on the server, and handing it to somebody so
+they can put up a shed is not a trade anyone should make. Players are unaffected
+either way; whoever wants the client half installs it and whoever does not
+installs nothing and notices nothing. Fabric says which side declared what, so
+this is asked rather than configured: a server with the jar takes the paste, a
+server without it is never sent anything.
+
+What that server will accept is bounded, and deliberately (`core.build.Quota`):
+blocks only, never a command; a 64-cube at most; a ceiling on the commands as
+well as the blocks, because a box of one material is a handful of fills and the
+same box of noise is one setblock per block; and a cooldown, without which the
+cap is per-paste rather than per-minute. Every refusal is explained to the
+player who tried it, and every paste is written to the server log with a name
+and a place.
+
+Failing all of that, what happens depends on the game mode, and the honest
 version is worth stating plainly:
 
 - **Creative** — it builds it instead: the same plan in the same place, walked
