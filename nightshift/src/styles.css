@@ -268,6 +268,36 @@ body::after {
 .join-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 .join-row .btn { width: auto; }
 
+.open-wrap { margin-top: 18px; max-width: 400px; }
+.open-title {
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+.open-lobbies { display: flex; flex-direction: column; gap: 6px; }
+.open-lobby {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(18, 24, 38, .85);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, transform .12s ease;
+}
+.open-lobby:hover { border-color: var(--flare); transform: translateX(2px); }
+.open-code { font-family: var(--mono); font-size: 17px; letter-spacing: .14em; color: var(--flare); }
+.open-host { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.open-count { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.open-status { font-size: 12.5px; color: var(--faint); }
+.open-status:empty { display: none; }
+
 .title-note {
   max-width: 46ch;
   margin-top: 20px;
@@ -1093,7 +1123,9 @@ body::after {
 .chat-send { padding: 11px 18px; }
 
 body.in-meeting .hud,
-body.in-task .hud { display: none !important; }
+body.in-task .hud,
+body.in-cinema .hud,
+body.in-cinema .toasts { display: none !important; }
 
 /* ---- end ---------------------------------------------------------------- */
 

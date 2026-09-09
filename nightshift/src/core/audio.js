@@ -111,7 +111,79 @@
     src.start(t);
   }
 
+  /* A quack, made rather than sampled. Two things make it read: the pitch
+     falls hard over sixty milliseconds, and a bandpass sweeps down with it --
+     that pairing is what the ear hears as a duck rather than as a buzzer. The
+     tiny random spread stops fourteen of them sounding like one. */
+  function quack(o) {
+    const c = wake();
+    if (!c || muted) return;
+    const opts = o || {};
+    const t = c.currentTime + (opts.at || 0);
+    const base = (opts.freq || 620) * (0.9 + Math.random() * 0.2);
+    const dur = opts.dur || 0.17;
+
+    const osc = c.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(base * 1.5, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.55, t + dur);
+
+    const formant = c.createBiquadFilter();
+    formant.type = 'bandpass';
+    formant.Q.value = 4.5;
+    formant.frequency.setValueAtTime(base * 2.6, t);
+    formant.frequency.exponentialRampToValueAtTime(base * 0.9, t + dur);
+
+    const shelf = c.createBiquadFilter();
+    shelf.type = 'lowpass';
+    shelf.frequency.value = 3200;
+
+    const gain = c.createGain();
+    const peak = (opts.gain == null ? 0.2 : opts.gain);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(peak * 0.4, t + dur * 0.55);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(formant); formant.connect(shelf); shelf.connect(gain); gain.connect(master);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  }
+
   const SOUNDS = {
+    quack: () => quack({}),
+    quackHurt: () => { quack({ freq: 430, dur: 0.3, gain: 0.26 }); quack({ freq: 300, dur: 0.4, at: 0.1, gain: 0.16 }); },
+    quackHappy: () => { quack({ freq: 700, dur: 0.13, gain: 0.16 }); quack({ freq: 880, dur: 0.13, at: 0.12, gain: 0.14 }); },
+
+    /* Two stings, one per side of the round. Low is four notes falling into a
+       sub; high is a rising major shape. Both are short: a sting that outstays
+       its shot is a sting people learn to dread for the wrong reason. */
+    stingerLow: () => {
+      [330, 262, 208, 165].forEach((f, i) => tone({
+        freq: f, dur: 0.5, at: i * 0.055, type: 'sawtooth', gain: 0.13,
+        filter: 'lowpass', cutoff: 900, q: 2,
+      }));
+      tone({ freq: 55, bend: 38, dur: 1.5, type: 'sine', gain: 0.3 });
+      noise({ freq: 180, bend: 60, dur: 1.1, gain: 0.14, filter: 'lowpass' });
+    },
+    stingerHigh: () => {
+      [392, 523, 659, 784].forEach((f, i) => tone({
+        freq: f, dur: 0.6, at: i * 0.06, type: 'triangle', gain: 0.12,
+      }));
+      tone({ freq: 98, dur: 0.9, type: 'sine', gain: 0.2 });
+    },
+    airlock: () => {
+      noise({ freq: 900, bend: 90, dur: 1.6, gain: 0.3, filter: 'lowpass', q: 0.8 });
+      tone({ freq: 140, bend: 40, dur: 2.2, type: 'sawtooth', gain: 0.16, filter: 'lowpass', cutoff: 500 });
+      noise({ freq: 4000, bend: 700, dur: 0.5, gain: 0.16, filter: 'highpass' });
+    },
+    klaxon: () => {
+      for (let i = 0; i < 3; i++) {
+        tone({ freq: 440, dur: 0.26, at: i * 0.42, type: 'square', gain: 0.14, filter: 'lowpass', cutoff: 1400 });
+        tone({ freq: 330, dur: 0.26, at: i * 0.42 + 0.22, type: 'square', gain: 0.14, filter: 'lowpass', cutoff: 1400 });
+      }
+    },
+    whoosh: () => noise({ freq: 1800, bend: 220, dur: 0.45, gain: 0.16, filter: 'bandpass', q: 0.8 }),
     tap:      () => tone({ freq: 520, dur: 0.05, type: 'square', gain: 0.06 }),
     click:    () => { tone({ freq: 880, dur: 0.04, type: 'square', gain: 0.09 }); tone({ freq: 1320, dur: 0.05, at: 0.03, type: 'square', gain: 0.05 }); },
     deny:     () => { tone({ freq: 190, dur: 0.13, bend: 120, type: 'sawtooth', gain: 0.12, filter: 'lowpass', cutoff: 800 }); },
@@ -226,7 +298,7 @@
   }
 
   NS.audio = {
-    play, wake, unlock, setMuted, setVolume, ambience, footstep,
+    play, wake, unlock, setMuted, setVolume, ambience, footstep, quack,
     get unlocked() { return unlocked; },
     get muted() { return muted; },
     get volume() { return volume; },

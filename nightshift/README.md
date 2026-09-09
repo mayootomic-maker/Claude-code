@@ -1,7 +1,7 @@
 # Nightshift on Aurora-7
 
-A social deduction game — Among Us, extended — that a class can play from one
-file, with no accounts, no installs and no server to run.
+A social deduction game — Among Us, extended, with ducks — that a class can
+play from one file, with no accounts, no installs and no server to run.
 
 Open **`nightshift.html`**. Double-clicking it is the whole setup. One person
 presses **Start a game** and reads out the four-letter code; everyone else opens
@@ -22,6 +22,10 @@ drop the one file in and send the link.
 
 **A shared drive.** Anywhere everybody can download from works, since what they
 download is the game.
+
+**Games open now.** A host puts its lobby on a shared channel and everybody
+else gets a list to tap. Reading a four-letter code out still works and always
+will, but four letters across a noisy classroom is four letters mis-heard.
 
 **Two people on one computer, or trying the join flow on your own.** Put
 `#local` on the end of the address (`nightshift.html#local`) and open it in two
@@ -71,11 +75,41 @@ living, and have a window of their own to say it in. Afterwards, a recap of
 what actually happened, in order -- which is the only moment anybody sees the
 round whole.
 
-**Practice bots** that walk to their tasks, stand at them for as long as a
-person would, report bodies they can actually see, and kill when they are alone
-with somebody. Enough to learn the map, and enough to fill out a small class.
+**Bots that argue.** Every bot keeps a memory of what it actually saw — who,
+where, when — and nothing else. It cannot see through walls and it does not
+read the host's tables. When a body turns up it reasons over the window around
+the death: who was near, who is unaccounted for, who it can personally vouch
+for. Then it says so, out loud, in the meeting chat:
 
-**Fourteen colours and twelve hats**, all drawn rather than sprited. Colour is
+> **Sol:** I watched Rae do it.
+> **Rae:** Tasks in Cafeteria, nothing to report.
+> **Ike:** Where were you, Tam? I saw you in a corridor.
+
+An impostor bot keeps the same record and uses it to pick a claim that will not
+be contradicted — a room it really was in, before the kill. It watches which way
+the room is leaning and leans the same way. It defends itself when named.
+
+Testimony carries: a claim reaches every other bot as evidence, discounted by
+how much that listener already distrusts the speaker, which is what stops one
+loud liar from steering the room. Nothing a bot says is generated or looked up;
+it cannot name a room it was never in. That constraint is the whole point — the
+bots can be caught out. `node tools/argue.mjs` stages a murder and prints the
+meeting it produces.
+
+**Fourteen ducks and twelve hats**, drawn with paths rather than sprited, so a
+colour, a hat and a walk cycle combine freely. What makes one read as a duck at
+thirty pixels is not detail: it is a heavy low body, a round head set forward,
+a bill that breaks the outline, and a side-to-side waddle nothing else on the
+station does. They blink, look about, and quack — the quack is synthesised, and
+what sells it is the pitch falling hard over sixty milliseconds with a bandpass
+sweeping down alongside it.
+
+**Three cinematics**, for the three beats a table remembers: the kill, the
+airlock and being told who you are. Each is a short staged shot — letterbox in,
+the killer crossing the gap, the victim going over, feathers — and each is over
+in under three seconds, because a flourish you cannot skip is a flourish you
+resent by the fourth round. `prefers-reduced-motion` gets the same information
+as a held still frame. Colour is
 never the only thing telling two people apart: Options turns on a shape per
 colour, drawn on the suit and on every portrait.
 
@@ -139,6 +173,8 @@ node tools/drive.mjs --phone   # the same at phone size
 node tools/together.mjs        # two tabs: one hosts, one joins, across the seam
 node tools/room.mjs            # the artifact transport, against a stand-in room
 node tools/deal.mjs            # 270,000 role deals against the rules' invariants
+node tools/argue.mjs           # stages a murder and prints the meeting it causes
+node tools/cine.mjs            # photographs the three cinematics mid-shot
 ```
 
 `drive.mjs` plays a practice round through every screen the game has, opens all

@@ -20,6 +20,7 @@
   let current = null;
   let backdrop = null;
   let backdropStop = null;
+  let browser = null;
 
   const profile = {
     name: U.cleanName(U.store.get('name', ''), C.NAME_MAX),
@@ -89,6 +90,7 @@
   }
 
   function hideAll() {
+    if (browser) { browser.stop(); browser = null; }
     if (backdropStop) { backdropStop(); backdropStop = null; }
     if (current) { current.remove(); current = null; }
   }
@@ -210,6 +212,45 @@
       }, [el('strong', { text: 'Practice with bots' }), el('span', { text: 'On your own, right now' })]),
     ]);
 
+    /* Games you can walk into. Reading a code out still works and always
+       will, but four letters across a noisy room is four letters mis-heard,
+       and a list you can tap is the difference between starting in ten
+       seconds and starting in two minutes. */
+    const lobbyList = el('div', { class: 'open-lobbies', hidden: true });
+    const lobbyStatus = el('p', { class: 'open-status', text: '' });
+
+    function renderLobbies(list) {
+      lobbyList.textContent = '';
+      if (!list || !list.length) {
+        lobbyList.hidden = true;
+        lobbyStatus.textContent = 'No games open right now. Start one, or type a code.';
+        return;
+      }
+      lobbyList.hidden = false;
+      lobbyStatus.textContent = '';
+      for (const lobby of list.slice(0, 6)) {
+        lobbyList.appendChild(el('button', {
+          class: 'open-lobby', type: 'button',
+          onclick: () => { if (!needName()) hooks.onJoin(profile, lobby.code); },
+        }, [
+          el('strong', { class: 'open-code', text: lobby.code }),
+          el('span', { class: 'open-host', text: lobby.host + "'s game" }),
+          el('span', { class: 'open-count', text: lobby.players + (lobby.players === 1 ? ' player' : ' players') }),
+        ]));
+      }
+    }
+
+    const mode = NS.link.preferred();
+    if (online && mode !== 'local') {
+      lobbyStatus.textContent = 'Looking for games...';
+      browser = NS.link.browse({
+        mode,
+        onList: renderLobbies,
+        onStatus: (text) => { if (text) lobbyStatus.textContent = text; },
+        onError: (text) => { lobbyStatus.textContent = text; lobbyList.hidden = true; },
+      });
+    }
+
     const left = el('div', { class: 'title-left' }, [
       el('p', { class: 'eyebrow', text: 'Aurora-7 research station' }),
       el('h1', { class: 'wordmark' }, [
@@ -218,6 +259,11 @@
       el('p', { class: 'tagline', text: 'Fourteen people, a station that is falling apart, and at least one of them wants it to.' }),
       el('div', { class: 'field-row' }, [nameInput]),
       actions,
+      mode === 'local' ? null : el('div', { class: 'open-wrap' }, [
+        el('p', { class: 'open-title', text: 'Games open now' }),
+        lobbyList,
+        lobbyStatus,
+      ]),
       el('p', { class: 'title-note', text: transportNote() }),
       el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
     ]);

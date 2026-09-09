@@ -44,8 +44,132 @@
   const GONE = 9000;
 
   const roomAvailable = () => !!(window.claude && typeof window.claude.use === 'function');
+
+  /* One place decides which way this page talks, so the join screen and the
+     lobby browser can never pick differently. */
+  function preferred() {
+    if (window.location.hash === '#local' && typeof window.BroadcastChannel === 'function') return 'local';
+    return roomAvailable() ? 'room' : 'mqtt';
+  }
   const mqttAvailable = () => typeof window.WebSocket === 'function';
   const localAvailable = () => typeof window.BroadcastChannel === 'function';
+
+  const LOBBIES = ROOT + 'lobbies';
+  const ANNOUNCE_EVERY = 3000;
+  const FORGET_LOBBY = 11000;
+
+  /* ---- browsing ------------------------------------------------------------
+
+     Reading a four-letter code out works and will keep working, but in a room
+     of thirty it is four letters mis-heard six times. So a host also puts its
+     lobby on a shared channel, and everybody else gets a list to tap.
+
+     Nothing on that list is private: it is a name, a code and a head count on
+     a public bus, which is said on the screen that shows it. */
+
+  function browse(opts) {
+    const mode = opts.mode;
+    if (mode === 'room') return browseRoom(opts);
+    if (mode === 'mqtt') return browseMqtt(opts);
+    opts.onError('There is no way to look for games from here.');
+    return { stop() {} };
+  }
+
+  function browseMqtt(opts) {
+    const seen = new Map();
+    let client = null;
+    let index = 0;
+    let stopped = false;
+    let sweep = null;
+
+    const list = () => Array.from(seen.values())
+      .filter((l) => Date.now() - l.at < FORGET_LOBBY)
+      .sort((a, b) => b.players - a.players || a.code.localeCompare(b.code));
+
+    function connect() {
+      if (stopped) return;
+      if (index >= BROKERS.length) {
+        opts.onError('No public broker would answer, so there is no list to show. '
+          + 'A code still works if somebody reads one out.');
+        return;
+      }
+      const broker = BROKERS[index++];
+      opts.onStatus('Looking for games via ' + broker.name + '...');
+      client = NS.mqtt.connect({
+        url: broker.url,
+        clientId: 'nsb' + U.id(8),
+        onUp() {
+          if (stopped) { client.close(); return; }
+          client.subscribe(LOBBIES);
+          opts.onStatus('');
+          opts.onList(list());
+        },
+        onDown() { if (!stopped && !seen.size) connect(); },
+      });
+      if (!client) { connect(); return; }
+      client.onMessage((topic, msg) => {
+        if (stopped || topic !== LOBBIES || !msg || !msg.c) return;
+        const code = String(msg.c).slice(0, 8).toUpperCase();
+        if (msg.gone) { seen.delete(code); opts.onList(list()); return; }
+        seen.set(code, {
+          code,
+          host: U.cleanName(msg.h, 12) || 'Somebody',
+          players: Math.max(1, Math.min(14, msg.n | 0)),
+          at: Date.now(),
+        });
+        opts.onList(list());
+      });
+      sweep = setInterval(() => opts.onList(list()), 2000);
+    }
+
+    connect();
+    return {
+      stop() {
+        stopped = true;
+        clearInterval(sweep);
+        if (client) client.close();
+      },
+    };
+  }
+
+  /* In the artifact everybody is already in one room, so the lobbies are just
+     the hosts standing in it -- no announcement channel needed. */
+  function browseRoom(opts) {
+    let room = null;
+    let stopped = false;
+    let off = null;
+
+    function report() {
+      if (!room || stopped) return;
+      const found = new Map();
+      for (const peer of room.peers()) {
+        const pres = peer.presence;
+        if (!pres || !pres.H || !pres.lobby) continue;
+        const code = String(pres.lobby).toUpperCase();
+        const entry = found.get(code) || { code, host: U.cleanName(pres.n, 12) || 'Somebody', players: 0 };
+        found.set(code, entry);
+      }
+      for (const peer of room.peers()) {
+        const pres = peer.presence;
+        if (!pres || !pres.lobby) continue;
+        const entry = found.get(String(pres.lobby).toUpperCase());
+        if (entry) entry.players++;
+      }
+      opts.onList(Array.from(found.values()).sort((a, b) => b.players - a.players));
+    }
+
+    opts.onStatus('Looking for games...');
+    window.claude.use('room').then((got) => {
+      if (stopped) return;
+      if (!got) { opts.onError('This view cannot reach the room, so there is no list.'); return; }
+      room = got;
+      off = room.onPeers(report);
+      opts.onStatus('');
+      report();
+    }).catch(() => { if (!stopped) opts.onError('The room would not load.'); });
+
+    return { stop() { stopped = true; if (off) off(); } };
+  }
 
   /* ---- the shape everything above this file talks to --------------------- */
 
@@ -58,6 +182,7 @@
       send() {},
       presence() {},
       peers() { return []; },
+      announce() {},
       close() {},
     };
   }
@@ -191,6 +316,15 @@
       if (closed || !client || !client.ready) return;
       client.publish(tEvent, { i: self.id, k: kind, d: data });
     };
+    let lastAnnounce = 0;
+    self.announce = (info) => {
+      if (closed || !client || !client.ready) return;
+      const now = Date.now();
+      if (info && now - lastAnnounce < ANNOUNCE_EVERY) return;
+      lastAnnounce = now;
+      if (!info) client.publish(LOBBIES, { c: code, gone: 1 });
+      else client.publish(LOBBIES, { c: code, h: info.host, n: info.players });
+    };
     self.presence = (patch) => {
       for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
       dirty = true;
@@ -199,7 +333,13 @@
     self.close = () => {
       closed = true;
       clearInterval(pump); clearInterval(sweep);
-      if (client) { try { client.publish(tPresence, { i: self.id, gone: 1 }); } catch (e) {} client.close(); }
+      if (client) {
+        try {
+          client.publish(tPresence, { i: self.id, gone: 1 });
+          client.publish(LOBBIES, { c: code, gone: 1 });
+        } catch (e) {}
+        client.close();
+      }
     };
 
     pump = setInterval(publishPresence, Math.floor(1000 / PRESENCE_HZ));
@@ -427,5 +567,5 @@
     return openSolo(wired);
   }
 
-  NS.link = { open, roomAvailable, mqttAvailable, localAvailable, BROKERS };
+  NS.link = { open, browse, preferred, roomAvailable, mqttAvailable, localAvailable, BROKERS };
 })(window.NS);

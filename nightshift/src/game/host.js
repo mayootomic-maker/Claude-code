@@ -64,6 +64,7 @@
     H.emergenciesUsed = {}; H.emergencyCooldown = 0; H.sabotageCooldown = 0;
     H.shields = {}; H.invisible = {}; H.shifted = {}; H.watching = new Set();
     H.closedRooms = {}; H.log = []; H.startedAt = 0;
+    if (NS.minds) NS.minds.reset();
     M.clearDoors();
   }
 
@@ -381,6 +382,12 @@
       const p = H.players[from];
       const role = C.ROLES[H.roles[from] || 'crewmate'];
       if (!p || !p.alive || !(role.kill || role.ability === 'vent')) return;
+      const group = M.VENT_GROUPS[msg.g];
+      const spot = group && group[msg.i];
+      if (spot && NS.minds) {
+        const w = M.toWorld(spot);
+        NS.minds.witnessVent(H, from, w.x, w.y);
+      }
       send('sys', { t: 'E', e: 'vent', by: from, a: msg.a, g: msg.g, i: msg.i });
     },
 
@@ -518,12 +525,17 @@
     });
     delete H.invisible[id];
     delete H.shifted[id];
+    if (NS.minds) NS.minds.witnessKill(H, byId, id, x, y);
     send('sys', { t: 'E', e: 'kill', by: byId, target: id, x, y });
     H.dirty = true;
     checkWin();
   }
 
   function openMeeting(reason, by, bodyId) {
+    if (NS.minds) {
+      const found = bodyId && H.bodies.find((b) => b.id === bodyId);
+      if (found) NS.minds.noteBody(H, by, found);
+    }
     H.sabotage = null;
     for (const roomId in H.closedRooms) M.sealRoom(roomId, false);
     H.closedRooms = {};
@@ -539,6 +551,7 @@
       time: H.settings.discussionTime > 0 ? H.settings.discussionTime : H.settings.votingTime,
       votes: {},
     };
+    if (NS.minds) NS.minds.meetingOpened(H);
     record('meeting', {
       by: H.players[by] ? H.players[by].name : null,
       reason,
@@ -696,6 +709,7 @@
       /* Timers above get the real elapsed time so a throttled background tab
          does not slow the round down. Bots get a capped one, because moving
          them a whole second in one step teleports them through walls. */
+      if (NS.minds) NS.minds.observe(dt, H);
       if (NS.bots) NS.bots.step(Math.min(dt, 0.1), H);
       if (H.winner) finish();
     } else if (H.phase === 'meeting' && H.meeting) {
@@ -710,6 +724,13 @@
         }
       }
       if (NS.bots) NS.bots.meeting(dt, H);
+      /* The bots argue. Their lines go out on the ordinary chat channel,
+         attributed to the bot rather than to the host's own player. */
+      if (NS.minds) {
+        NS.minds.speak(dt, H, (botId, text) => {
+          send('chat', { t: 'msg', text, as: botId });
+        });
+      }
     } else if (H.phase === 'eject') {
       H.ejectLeft -= dt;
       if (H.ejectLeft <= 0) {

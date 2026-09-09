@@ -125,7 +125,11 @@
   }
 
   function closeLink() {
-    if (session.link) { session.link.close(); session.link = null; }
+    if (session.link) {
+      if (session.isHost) { try { session.link.announce(null); } catch (e) {} }
+      session.link.close();
+      session.link = null;
+    }
     NS.host.stop();
     session.isHost = false;
     session.hostId = null;
@@ -136,13 +140,8 @@
      two people on one laptop, and the only way to try the join flow before a
      class without a second device. Otherwise the artifact room where there is
      one, and a public broker everywhere else. */
-  function transport() {
-    if (location.hash === '#local' && NS.link.localAvailable()) return 'local';
-    return NS.link.roomAvailable() ? 'room' : 'mqtt';
-  }
-
-  const hostGame = () => openLink(transport(), U.roomCode(4), true);
-  const joinGame = (profile, code) => openLink(transport(), code, false);
+  const hostGame = () => openLink(NS.link.preferred(), U.roomCode(4), true);
+  const joinGame = (profile, code) => openLink(NS.link.preferred(), code, false);
   const soloGame = () => openLink('solo', 'SOLO', true);
 
   function leaveToTitle(why) {
@@ -419,7 +418,18 @@
       .filter((id) => id !== session.myId && W.state.roles[id] === 'impostor')
       .map((id) => W.players.get(id))
       .filter(Boolean);
-    NS.hud.showRole(W.myRole, C.ROLES[W.myRole].team === 'impostor' ? mates : []);
+    const def = C.ROLES[W.myRole] || C.ROLES.crewmate;
+    /* The sting first, then the card with the detail on it. Two beats: one to
+       feel, one to read. */
+    NS.cinema.play('reveal', {
+      team: def.team, name: def.name, sub: def.blurb,
+      colorIdx: W.me ? W.me.colorIdx : 0, hatIdx: W.me ? W.me.hatIdx : 0,
+    });
+    setTimeout(() => {
+      if (W.state.phase === 'reveal' || W.state.phase === 'play') {
+        NS.hud.showRole(W.myRole, def.team === 'impostor' ? mates : []);
+      }
+    }, NS.cinema.calm ? 900 : 2100);
   }
 
   function applySnapshot(s) {
@@ -572,7 +582,22 @@
       NS.input.setEnabled(false);
       const out = W.state.ejected;
       if (out) {
-        NS.hud.showEject(out);
+        NS.cinema.play('eject', {
+          name: out.name, colorIdx: out.colorIdx, hatIdx: out.hatIdx,
+          impostor: out.impostor,
+          line: out.id
+            ? (out.name + (W.state.settings.confirmEjects
+              ? (out.impostor ? ' was an impostor.' : ' was not an impostor.') : ' was ejected.'))
+            : (out.tie ? 'The vote tied.' : 'The crew skipped.'),
+          sub: out.id && W.state.settings.confirmEjects
+            ? (out.remaining === 1 ? '1 impostor remains.' : out.remaining + ' impostors remain.')
+            : 'Nobody went out of the airlock.',
+        });
+        /* The tally panel comes up as the airlock finishes, so the drama and
+           the evidence do not fight for the same seconds. */
+        setTimeout(() => {
+          if (W.state.phase === 'eject') NS.hud.showEject(out);
+        }, NS.cinema.calm ? 1200 : 3400);
         NS.bits.announce(out.id
           ? (out.name + ' was ejected'
             + (W.state.settings.confirmEjects ? (out.impostor ? ', and was an impostor.' : ', and was not an impostor.') : '.'))
@@ -634,19 +659,34 @@
     switch (e.e) {
       case 'kill': {
         const victim = W.players.get(e.target);
+        const killer = W.players.get(e.by);
         if (e.by === me) NS.hud.forceCooldown('kill', W.state.settings.killCooldown);
-        if (e.target === me) {
-          NS.audio.play('died');
-          NS.render.flash('#7a0f20', 0.8);
-          NS.render.shake(14);
-          NS.bits.toast('You are dead. Finish your tasks and watch.', 'bad', 6);
-          NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
-        } else if (seen(e.x, e.y)) {
-          NS.audio.play('kill');
-          NS.render.shake(7);
-        }
         NS.fx.kill(e.x, e.y);
+        NS.fx.feathers(e.x, e.y, victim ? victim.colorIdx : 0);
         if (victim) { victim.alive = false; victim.ghost = true; }
+
+        /* The kill cam runs for the two people it happened to, and for anyone
+           who was close enough to watch. Everybody else gets the noise and the
+           shake, because a cinematic for an event you did not witness would be
+           telling you something you should have had to see. */
+        const mine = e.target === me || e.by === me;
+        if ((mine || seen(e.x, e.y)) && killer && victim) {
+          NS.render.shake(mine ? 16 : 8);
+          NS.cinema.play('kill', {
+            killerColour: killer.colorIdx, killerHat: killer.hatIdx,
+            victimColour: victim.colorIdx, victimHat: victim.hatIdx,
+            line: e.target === me ? 'YOU ARE DEAD'
+              : e.by === me ? victim.name.toUpperCase() : victim.name.toUpperCase(),
+            sub: e.target === me
+              ? 'Finish your tasks. Talk to the other ghosts. Nobody living can hear you.'
+              : e.by === me ? 'Get out of the room.' : 'You saw the whole thing.',
+          });
+          if (e.target === me) {
+            NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
+          }
+        } else {
+          NS.audio.play('kill');
+        }
         break;
       }
       case 'shielded':
@@ -743,11 +783,19 @@
   function onChat(from, data) {
     if (!data || typeof data !== 'object' || data.t !== 'msg') return;
     const now = U.now();
-    if (now - (chatClock.get(from) || 0) < CHAT_GAP) return;
-    chatClock.set(from, now);
+    const key = (data && data.as) ? from + ':' + data.as : from;
+    if (now - (chatClock.get(key) || 0) < CHAT_GAP) return;
+    chatClock.set(key, now);
     const text = U.cleanName(data.text, C.CHAT_MAX);
     if (!text) return;
-    const who = W.players.get(from);
+    /* The host speaks for the bots, so a message may name which one it is
+       from. Only the host may do that, and only for an actual bot. */
+    let speaker = from;
+    if (data.as && from === session.hostId) {
+      const claimed = W.players.get(data.as);
+      if (claimed && claimed.bot) speaker = data.as;
+    }
+    const who = W.players.get(speaker);
     if (!who) return;
     const senderDead = !who.alive || who.ghost;
     const iAmDead = W.me && (!W.me.alive || W.me.ghost);
@@ -758,6 +806,8 @@
     NS.meeting.onChat({
       name: who.name, colorIdx: who.colorIdx, ghost: senderDead, text,
     });
+    /* Bots notice their own name going past. */
+    if (session.isHost && NS.minds && !who.bot) NS.minds.hear(NS.host.H, who.name, text);
   }
 
   /* ---- two loops, and why ------------------------------------------------ */
@@ -803,6 +853,16 @@
     watchHost();
     roomTone();
 
+    /* A host puts its lobby on the shared list while it is waiting. The link
+       throttles this; calling it every beat is how it stays current when
+       somebody joins or leaves. */
+    if (session.isHost && session.link && W.state.phase === 'lobby' && session.mode !== 'solo') {
+      session.link.announce({
+        host: NS.screens.profile.name,
+        players: NS.host.list().filter((id) => NS.host.H.players[id].connected).length,
+      });
+    }
+
     publishPresence();
     if (session.isHost) NS.host.tick(dt);
 
@@ -823,12 +883,16 @@
     lastFrame = now;
 
     const input = NS.input.read();
+    if (NS.cinema.active()) { input.x = 0; input.y = 0; }
     W.step(dt, input);
     NS.fx.step(dt);
 
     if (session.inGame && W.me) {
       NS.render.follow(W.me, dt);
       NS.render.drawScene(now, dt);
+    }
+    if (NS.cinema.active()) {
+      NS.render.drawOverlay((ctx, w, h) => NS.cinema.draw(ctx, w, h, dt));
     }
     NS.hud.update(dt);
     NS.meeting.update();

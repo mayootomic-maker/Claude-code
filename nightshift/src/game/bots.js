@@ -338,26 +338,20 @@
       const p = H.players[brain.id];
       if (!p || !p.alive) continue;
       if (H.meeting.votes[brain.id] !== undefined) continue;
-      if (brain.votes < 0) brain.votes = 3 + Math.random() * (H.settings.votingTime * 0.5);
+      /* Spread across the time that is actually left. Using the lobby's
+         voting time meant a shortened vote closed with most of them still
+         thinking about it. */
+      if (brain.votes < 0) {
+        brain.votes = 2 + Math.random() * Math.max(3, Math.min(22, H.meeting.time * 0.55));
+      }
       brain.votes -= dt;
       if (brain.votes > 0) continue;
       brain.votes = -1;
 
-      const alive = NS.host.livingIds().filter((id) => id !== brain.id);
-      const mine = C.ROLES[H.roles[brain.id] || 'crewmate'].team;
-      let target = 'skip';
-      if (mine === 'impostor') {
-        const crew = alive.filter((id) => C.ROLES[H.roles[id] || 'crewmate'].team !== 'impostor');
-        /* Vote with the room where possible: whoever already has votes on
-           them. It is not deduction, but it stops impostor bots from handing
-           themselves in by voting alone. */
-        const counts = {};
-        for (const v in H.meeting.votes) counts[H.meeting.votes[v]] = (counts[H.meeting.votes[v]] || 0) + 1;
-        crew.sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-        if (crew.length) target = counts[crew[0]] ? crew[0] : U.pick(crew, Math.random);
-      } else if (H.meeting.reason === 'body' && alive.length && Math.random() < 0.55) {
-        target = U.pick(alive, Math.random);
-      }
+      /* The vote comes out of what the bot saw and what it has heard in the
+         meeting -- see game/minds.js. It used to be a coin toss, which made
+         the argument decorative. */
+      const target = NS.minds ? NS.minds.voteFor(H, brain.id) : 'skip';
       NS.host.handle(brain.id, { t: 'vote', target });
     }
     for (const brain of brains.values()) if (H.meeting.votes[brain.id] !== undefined) brain.votes = -1;

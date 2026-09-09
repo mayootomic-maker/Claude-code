@@ -280,6 +280,36 @@ body::after {
 .join-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 .join-row .btn { width: auto; }
 
+.open-wrap { margin-top: 18px; max-width: 400px; }
+.open-title {
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  margin-bottom: 7px;
+}
+.open-lobbies { display: flex; flex-direction: column; gap: 6px; }
+.open-lobby {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(18, 24, 38, .85);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, transform .12s ease;
+}
+.open-lobby:hover { border-color: var(--flare); transform: translateX(2px); }
+.open-code { font-family: var(--mono); font-size: 17px; letter-spacing: .14em; color: var(--flare); }
+.open-host { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.open-count { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.open-status { font-size: 12.5px; color: var(--faint); }
+.open-status:empty { display: none; }
+
 .title-note {
   max-width: 46ch;
   margin-top: 20px;
@@ -1105,7 +1135,9 @@ body::after {
 .chat-send { padding: 11px 18px; }
 
 body.in-meeting .hud,
-body.in-task .hud { display: none !important; }
+body.in-task .hud,
+body.in-cinema .hud,
+body.in-cinema .toasts { display: none !important; }
 
 /* ---- end ---------------------------------------------------------------- */
 
@@ -1686,7 +1718,79 @@ window.NS = window.NS || {};
     src.start(t);
   }
 
+  /* A quack, made rather than sampled. Two things make it read: the pitch
+     falls hard over sixty milliseconds, and a bandpass sweeps down with it --
+     that pairing is what the ear hears as a duck rather than as a buzzer. The
+     tiny random spread stops fourteen of them sounding like one. */
+  function quack(o) {
+    const c = wake();
+    if (!c || muted) return;
+    const opts = o || {};
+    const t = c.currentTime + (opts.at || 0);
+    const base = (opts.freq || 620) * (0.9 + Math.random() * 0.2);
+    const dur = opts.dur || 0.17;
+
+    const osc = c.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(base * 1.5, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.55, t + dur);
+
+    const formant = c.createBiquadFilter();
+    formant.type = 'bandpass';
+    formant.Q.value = 4.5;
+    formant.frequency.setValueAtTime(base * 2.6, t);
+    formant.frequency.exponentialRampToValueAtTime(base * 0.9, t + dur);
+
+    const shelf = c.createBiquadFilter();
+    shelf.type = 'lowpass';
+    shelf.frequency.value = 3200;
+
+    const gain = c.createGain();
+    const peak = (opts.gain == null ? 0.2 : opts.gain);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(peak * 0.4, t + dur * 0.55);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(formant); formant.connect(shelf); shelf.connect(gain); gain.connect(master);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  }
+
   const SOUNDS = {
+    quack: () => quack({}),
+    quackHurt: () => { quack({ freq: 430, dur: 0.3, gain: 0.26 }); quack({ freq: 300, dur: 0.4, at: 0.1, gain: 0.16 }); },
+    quackHappy: () => { quack({ freq: 700, dur: 0.13, gain: 0.16 }); quack({ freq: 880, dur: 0.13, at: 0.12, gain: 0.14 }); },
+
+    /* Two stings, one per side of the round. Low is four notes falling into a
+       sub; high is a rising major shape. Both are short: a sting that outstays
+       its shot is a sting people learn to dread for the wrong reason. */
+    stingerLow: () => {
+      [330, 262, 208, 165].forEach((f, i) => tone({
+        freq: f, dur: 0.5, at: i * 0.055, type: 'sawtooth', gain: 0.13,
+        filter: 'lowpass', cutoff: 900, q: 2,
+      }));
+      tone({ freq: 55, bend: 38, dur: 1.5, type: 'sine', gain: 0.3 });
+      noise({ freq: 180, bend: 60, dur: 1.1, gain: 0.14, filter: 'lowpass' });
+    },
+    stingerHigh: () => {
+      [392, 523, 659, 784].forEach((f, i) => tone({
+        freq: f, dur: 0.6, at: i * 0.06, type: 'triangle', gain: 0.12,
+      }));
+      tone({ freq: 98, dur: 0.9, type: 'sine', gain: 0.2 });
+    },
+    airlock: () => {
+      noise({ freq: 900, bend: 90, dur: 1.6, gain: 0.3, filter: 'lowpass', q: 0.8 });
+      tone({ freq: 140, bend: 40, dur: 2.2, type: 'sawtooth', gain: 0.16, filter: 'lowpass', cutoff: 500 });
+      noise({ freq: 4000, bend: 700, dur: 0.5, gain: 0.16, filter: 'highpass' });
+    },
+    klaxon: () => {
+      for (let i = 0; i < 3; i++) {
+        tone({ freq: 440, dur: 0.26, at: i * 0.42, type: 'square', gain: 0.14, filter: 'lowpass', cutoff: 1400 });
+        tone({ freq: 330, dur: 0.26, at: i * 0.42 + 0.22, type: 'square', gain: 0.14, filter: 'lowpass', cutoff: 1400 });
+      }
+    },
+    whoosh: () => noise({ freq: 1800, bend: 220, dur: 0.45, gain: 0.16, filter: 'bandpass', q: 0.8 }),
     tap:      () => tone({ freq: 520, dur: 0.05, type: 'square', gain: 0.06 }),
     click:    () => { tone({ freq: 880, dur: 0.04, type: 'square', gain: 0.09 }); tone({ freq: 1320, dur: 0.05, at: 0.03, type: 'square', gain: 0.05 }); },
     deny:     () => { tone({ freq: 190, dur: 0.13, bend: 120, type: 'sawtooth', gain: 0.12, filter: 'lowpass', cutoff: 800 }); },
@@ -1801,7 +1905,7 @@ window.NS = window.NS || {};
   }
 
   NS.audio = {
-    play, wake, unlock, setMuted, setVolume, ambience, footstep,
+    play, wake, unlock, setMuted, setVolume, ambience, footstep, quack,
     get unlocked() { return unlocked; },
     get muted() { return muted; },
     get volume() { return volume; },
@@ -2551,8 +2655,132 @@ window.NS = window.NS || {};
   const GONE = 9000;
 
   const roomAvailable = () => !!(window.claude && typeof window.claude.use === 'function');
+
+  /* One place decides which way this page talks, so the join screen and the
+     lobby browser can never pick differently. */
+  function preferred() {
+    if (window.location.hash === '#local' && typeof window.BroadcastChannel === 'function') return 'local';
+    return roomAvailable() ? 'room' : 'mqtt';
+  }
   const mqttAvailable = () => typeof window.WebSocket === 'function';
   const localAvailable = () => typeof window.BroadcastChannel === 'function';
+
+  const LOBBIES = ROOT + 'lobbies';
+  const ANNOUNCE_EVERY = 3000;
+  const FORGET_LOBBY = 11000;
+
+  /* ---- browsing ------------------------------------------------------------
+
+     Reading a four-letter code out works and will keep working, but in a room
+     of thirty it is four letters mis-heard six times. So a host also puts its
+     lobby on a shared channel, and everybody else gets a list to tap.
+
+     Nothing on that list is private: it is a name, a code and a head count on
+     a public bus, which is said on the screen that shows it. */
+
+  function browse(opts) {
+    const mode = opts.mode;
+    if (mode === 'room') return browseRoom(opts);
+    if (mode === 'mqtt') return browseMqtt(opts);
+    opts.onError('There is no way to look for games from here.');
+    return { stop() {} };
+  }
+
+  function browseMqtt(opts) {
+    const seen = new Map();
+    let client = null;
+    let index = 0;
+    let stopped = false;
+    let sweep = null;
+
+    const list = () => Array.from(seen.values())
+      .filter((l) => Date.now() - l.at < FORGET_LOBBY)
+      .sort((a, b) => b.players - a.players || a.code.localeCompare(b.code));
+
+    function connect() {
+      if (stopped) return;
+      if (index >= BROKERS.length) {
+        opts.onError('No public broker would answer, so there is no list to show. '
+          + 'A code still works if somebody reads one out.');
+        return;
+      }
+      const broker = BROKERS[index++];
+      opts.onStatus('Looking for games via ' + broker.name + '...');
+      client = NS.mqtt.connect({
+        url: broker.url,
+        clientId: 'nsb' + U.id(8),
+        onUp() {
+          if (stopped) { client.close(); return; }
+          client.subscribe(LOBBIES);
+          opts.onStatus('');
+          opts.onList(list());
+        },
+        onDown() { if (!stopped && !seen.size) connect(); },
+      });
+      if (!client) { connect(); return; }
+      client.onMessage((topic, msg) => {
+        if (stopped || topic !== LOBBIES || !msg || !msg.c) return;
+        const code = String(msg.c).slice(0, 8).toUpperCase();
+        if (msg.gone) { seen.delete(code); opts.onList(list()); return; }
+        seen.set(code, {
+          code,
+          host: U.cleanName(msg.h, 12) || 'Somebody',
+          players: Math.max(1, Math.min(14, msg.n | 0)),
+          at: Date.now(),
+        });
+        opts.onList(list());
+      });
+      sweep = setInterval(() => opts.onList(list()), 2000);
+    }
+
+    connect();
+    return {
+      stop() {
+        stopped = true;
+        clearInterval(sweep);
+        if (client) client.close();
+      },
+    };
+  }
+
+  /* In the artifact everybody is already in one room, so the lobbies are just
+     the hosts standing in it -- no announcement channel needed. */
+  function browseRoom(opts) {
+    let room = null;
+    let stopped = false;
+    let off = null;
+
+    function report() {
+      if (!room || stopped) return;
+      const found = new Map();
+      for (const peer of room.peers()) {
+        const pres = peer.presence;
+        if (!pres || !pres.H || !pres.lobby) continue;
+        const code = String(pres.lobby).toUpperCase();
+        const entry = found.get(code) || { code, host: U.cleanName(pres.n, 12) || 'Somebody', players: 0 };
+        found.set(code, entry);
+      }
+      for (const peer of room.peers()) {
+        const pres = peer.presence;
+        if (!pres || !pres.lobby) continue;
+        const entry = found.get(String(pres.lobby).toUpperCase());
+        if (entry) entry.players++;
+      }
+      opts.onList(Array.from(found.values()).sort((a, b) => b.players - a.players));
+    }
+
+    opts.onStatus('Looking for games...');
+    window.claude.use('room').then((got) => {
+      if (stopped) return;
+      if (!got) { opts.onError('This view cannot reach the room, so there is no list.'); return; }
+      room = got;
+      off = room.onPeers(report);
+      opts.onStatus('');
+      report();
+    }).catch(() => { if (!stopped) opts.onError('The room would not load.'); });
+
+    return { stop() { stopped = true; if (off) off(); } };
+  }
 
   /* ---- the shape everything above this file talks to --------------------- */
 
@@ -2565,6 +2793,7 @@ window.NS = window.NS || {};
       send() {},
       presence() {},
       peers() { return []; },
+      announce() {},
       close() {},
     };
   }
@@ -2698,6 +2927,15 @@ window.NS = window.NS || {};
       if (closed || !client || !client.ready) return;
       client.publish(tEvent, { i: self.id, k: kind, d: data });
     };
+    let lastAnnounce = 0;
+    self.announce = (info) => {
+      if (closed || !client || !client.ready) return;
+      const now = Date.now();
+      if (info && now - lastAnnounce < ANNOUNCE_EVERY) return;
+      lastAnnounce = now;
+      if (!info) client.publish(LOBBIES, { c: code, gone: 1 });
+      else client.publish(LOBBIES, { c: code, h: info.host, n: info.players });
+    };
     self.presence = (patch) => {
       for (const k in patch) { if (patch[k] === null) delete mine[k]; else mine[k] = patch[k]; }
       dirty = true;
@@ -2706,7 +2944,13 @@ window.NS = window.NS || {};
     self.close = () => {
       closed = true;
       clearInterval(pump); clearInterval(sweep);
-      if (client) { try { client.publish(tPresence, { i: self.id, gone: 1 }); } catch (e) {} client.close(); }
+      if (client) {
+        try {
+          client.publish(tPresence, { i: self.id, gone: 1 });
+          client.publish(LOBBIES, { c: code, gone: 1 });
+        } catch (e) {}
+        client.close();
+      }
     };
 
     pump = setInterval(publishPresence, Math.floor(1000 / PRESENCE_HZ));
@@ -2934,7 +3178,7 @@ window.NS = window.NS || {};
     return openSolo(wired);
   }
 
-  NS.link = { open, roomAvailable, mqttAvailable, localAvailable, BROKERS };
+  NS.link = { open, browse, preferred, roomAvailable, mqttAvailable, localAvailable, BROKERS };
 })(window.NS);
 
 </script>
@@ -3192,6 +3436,515 @@ window.NS = window.NS || {};
 
 </script>
 <script>
+/* What the bots know, what they think, and what they are willing to say.
+
+   A bot that votes at random is not an opponent, it is a dice roll wearing a
+   hat -- and it makes the meeting, which is the whole game, meaningless. So
+   every bot keeps a small memory of what it actually saw, reasons from it, and
+   argues out loud.
+
+   Two halves, and they are deliberately asymmetric:
+
+   **The detective.** A crew bot records sightings -- who, where, when -- and
+   nothing else. It cannot see through walls and it does not consult the
+   host's tables. When a body turns up it reasons over the window around the
+   death: who was near, who was unaccounted for, who it can personally vouch
+   for. Its confidence is bounded by what it witnessed, so it is beatable by
+   anybody who is careful, and unbeatable by anybody who kills in front of it.
+
+   **The liar.** An impostor bot keeps the same record, and uses it to pick a
+   claim that will not be contradicted: a room it really was in, before the
+   kill. It watches which way the room is leaning and leans the same way. It
+   defends itself when named. It will occasionally report its own kill, which
+   is the strongest move in the game and the one that most reliably makes a
+   class shout.
+
+   Everything a bot says is derived from something it observed. None of it is
+   generated, none of it is looked up, and a bot cannot say a room name it was
+   never in. That constraint is the whole reason the meetings are worth having:
+   the bots can be caught out. */
+
+(function (NS) {
+  'use strict';
+
+  const U = NS.util;
+  const C = NS.config;
+  const M = NS.map;
+
+  const MEMORY_SECONDS = 100;
+  const SIGHT = 330;
+  const MURDER_WINDOW = 26;      // seconds before a body that count as "around then"
+
+  const minds = new Map();
+  let observeClock = 0;
+
+  function mind(id) {
+    if (!minds.has(id)) {
+      minds.set(id, {
+        id,
+        sightings: [],        // { t, who, room }
+        rooms: [],            // { t, room } -- where I was
+        witnessed: {},        // who -> { kill, vent, at }
+        bodies: [],           // { who, room, t, finder }
+        accusedBy: {},        // who -> t
+        heardClaims: {},      // who -> room
+        suspicion: {},
+        testimony: [],        // { from, about, kind, t }
+        nextSpeak: 0,
+        said: 0,
+        spokeAbout: {},
+      });
+    }
+    return minds.get(id);
+  }
+
+  function reset() {
+    minds.clear();
+    observeClock = 0;
+  }
+
+  const clock = (H) => Math.max(0, (U.now() - H.startedAt) / 1000);
+
+  function trim(list, now) {
+    while (list.length && now - list[0].t > MEMORY_SECONDS) list.shift();
+  }
+
+  /* ---- looking around ----------------------------------------------------- */
+
+  /* Runs a couple of times a second for every bot, and only records what that
+     bot could actually see: in range, and with no wall in the way. */
+  function observe(dt, H) {
+    if (H.phase !== 'play') return;
+    observeClock -= dt;
+    if (observeClock > 0) return;
+    observeClock = 0.45;
+
+    const now = clock(H);
+    const ids = Object.keys(H.players);
+
+    for (const id of ids) {
+      const self = H.players[id];
+      if (!self || !self.bot || !self.alive) continue;
+      const me = NS.world.players.get(id);
+      if (!me) continue;
+      const my = mind(id);
+
+      const room = M.roomAt(me.x, me.y);
+      const last = my.rooms[my.rooms.length - 1];
+      if (room && (!last || last.room !== room.name)) my.rooms.push({ t: now, room: room.name });
+      trim(my.rooms, now);
+
+      for (const other of ids) {
+        if (other === id) continue;
+        const them = H.players[other];
+        if (!them || !them.alive || them.ghost) continue;
+        const at = NS.world.players.get(other);
+        if (!at || at.inVent) continue;
+        if (H.invisible[other]) continue;
+        if (U.dist(me.x, me.y, at.x, at.y) > SIGHT) continue;
+        if (!NS.los.clear(me.x, me.y, at.x, at.y)) continue;
+        const where = M.roomAt(at.x, at.y);
+        my.sightings.push({ t: now, who: other, room: where ? where.name : 'a corridor' });
+      }
+      trim(my.sightings, now);
+      if (my.sightings.length > 90) my.sightings.splice(0, my.sightings.length - 90);
+    }
+  }
+
+  /* ---- being told things -------------------------------------------------- */
+
+  /* A kill only registers for a bot that could see it happen. This is the one
+     piece of certain evidence in the game and it has to be earned. */
+  function witnessKill(H, killerId, victimId, x, y) {
+    const now = clock(H);
+    for (const [id, my] of minds) {
+      const p = H.players[id];
+      if (!p || !p.alive || id === killerId) continue;
+      const me = NS.world.players.get(id);
+      if (!me) continue;
+      if (U.dist(me.x, me.y, x, y) > SIGHT) continue;
+      if (!NS.los.clear(me.x, me.y, x, y)) continue;
+      my.witnessed[killerId] = { kill: true, at: now };
+    }
+  }
+
+  function witnessVent(H, venterId, x, y) {
+    const now = clock(H);
+    for (const [id, my] of minds) {
+      const p = H.players[id];
+      if (!p || !p.alive || id === venterId) continue;
+      const me = NS.world.players.get(id);
+      if (!me) continue;
+      if (U.dist(me.x, me.y, x, y) > SIGHT) continue;
+      if (!NS.los.clear(me.x, me.y, x, y)) continue;
+      const seen = my.witnessed[venterId] || (my.witnessed[venterId] = { at: now });
+      seen.vent = true;
+      seen.at = now;
+    }
+  }
+
+  /* Everybody learns a body was found, because the meeting says so. Where and
+     when it happened is what they reason over. */
+  function noteBody(H, finderId, body) {
+    const now = clock(H);
+    const room = M.roomAt(body.x, body.y);
+    for (const [, my] of minds) {
+      my.bodies.push({
+        who: body.id, room: room ? room.name : 'a corridor', t: now, finder: finderId,
+      });
+      if (my.bodies.length > 6) my.bodies.shift();
+    }
+  }
+
+  /* A bot notices its own name in the chat and treats that as being accused.
+     Crude on purpose: matching a name is something a bot can genuinely do,
+     and pretending to understand the sentence would be a lie about how it
+     works. */
+  /* Testimony. A bot that only trusts its own eyes cannot be argued with, and
+     three of them saying "I watched Rae do it" while everybody votes for
+     somebody else is the meeting failing at the one thing it is for. So a
+     spoken claim is delivered to every other mind as evidence -- discounted
+     by how much the listener already distrusts the speaker, which is what
+     stops one loud liar from steering the room. */
+  function receiveClaim(H, fromId, claim) {
+    if (!claim || !claim.about) return;
+    for (const [id, my] of minds) {
+      if (id === fromId) continue;
+      const p = H.players[id];
+      if (!p || !p.alive || !p.bot) continue;
+      my.testimony.push({
+        from: fromId, about: claim.about, kind: claim.kind, t: clock(H),
+      });
+      if (my.testimony.length > 40) my.testimony.shift();
+    }
+  }
+
+  function hear(H, fromName, text) {
+    const lower = String(text || '').toLowerCase();
+    for (const [id, my] of minds) {
+      const p = H.players[id];
+      if (!p || !p.bot) continue;
+      if (lower.indexOf(p.name.toLowerCase()) < 0) continue;
+      my.accusedBy[fromName] = clock(H);
+    }
+    /* And everybody notes a room somebody claimed, so a second claim from the
+       same person can be checked against it. */
+    for (const room of M.ROOMS) {
+      if (lower.indexOf(room.name.toLowerCase()) < 0) continue;
+      for (const [, my] of minds) my.heardClaims[fromName] = room.name;
+      break;
+    }
+  }
+
+  /* ---- reasoning ---------------------------------------------------------- */
+
+  function withMeAround(my, who, at) {
+    return my.sightings.some((s) => s.who === who && Math.abs(s.t - at) < 8);
+  }
+
+  function lastSeenBefore(my, who, at) {
+    let best = null;
+    for (const s of my.sightings) {
+      if (s.who !== who || s.t > at) continue;
+      if (!best || s.t > best.t) best = s;
+    }
+    return best;
+  }
+
+  /* The suspicion model. Every term is something the bot could know. */
+  function weigh(H, id) {
+    const my = mind(id);
+    const scores = {};
+    const alive = Object.keys(H.players).filter((k) =>
+      H.players[k].alive && H.players[k].connected && k !== id);
+    for (const other of alive) scores[other] = 0;
+
+    const body = my.bodies[my.bodies.length - 1];
+    const when = body ? body.t : clock(H);
+
+    for (const other of alive) {
+      const saw = my.witnessed[other];
+      if (saw && saw.kill) scores[other] += 120;
+      if (saw && saw.vent) scores[other] += 75;
+
+      if (body) {
+        /* Anyone I saw in the room the body turned up in, shortly before it
+           did. This is the ordinary bread of an Among Us meeting. */
+        const near = my.sightings.some((s) =>
+          s.who === other && s.room === body.room && body.t - s.t < MURDER_WINDOW && s.t <= body.t);
+        if (near) scores[other] += 34;
+
+        /* And whoever I never saw at all in that window is unaccounted for --
+           weak, but it is what "where were you?" is actually asking. */
+        const anywhere = my.sightings.some((s) => s.who === other && Math.abs(s.t - body.t) < MURDER_WINDOW);
+        if (!anywhere) scores[other] += 12;
+
+        /* Someone I was standing next to when it happened cannot have done
+           it, and a bot should be as sure of that as a person would be. */
+        if (withMeAround(my, other, body.t)) scores[other] -= 55;
+
+        if (body.finder === other) scores[other] += 8;   // self-reports are a known move
+      }
+
+      /* Somebody who claimed a room I saw them nowhere near. */
+      const claim = my.heardClaims[H.players[other].name];
+      if (claim) {
+        const backing = my.sightings.some((s) => s.who === other && s.room === claim);
+        const contradicted = my.sightings.some((s) =>
+          s.who === other && s.room !== claim && Math.abs(s.t - when) < 14);
+        if (backing) scores[other] -= 20;
+        else if (contradicted) scores[other] += 26;
+      }
+
+      /* Somebody who spent the round pointing at me. */
+      if (my.accusedBy[H.players[other].name]) scores[other] += 10;
+    }
+
+    /* What other people said. An eyewitness claim is worth a great deal more
+       than a "they were nearby", and both are worth less coming from somebody
+       this bot already suspects. */
+    for (const claim of my.testimony) {
+      if (scores[claim.about] === undefined) continue;
+      const speakerTrust = 1 - Math.min(0.8, Math.max(0, (scores[claim.from] || 0) / 160));
+      const weight = claim.kind === 'witness' ? 58 : claim.kind === 'accuse' ? 20 : 0;
+      scores[claim.about] += weight * speakerTrust;
+    }
+
+    /* An impostor knows which of these are safe and steers the rest. */
+    if (C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor') {
+      for (const other of alive) {
+        if (C.ROLES[H.roles[other] || 'crewmate'].team === 'impostor') scores[other] = -999;
+      }
+      /* Lean the way the room is already leaning. A liar who votes alone is a
+         liar who gets voted next. */
+      const votes = (H.meeting && H.meeting.votes) || {};
+      for (const voter in votes) {
+        const target = votes[voter];
+        if (scores[target] !== undefined && scores[target] > -900) scores[target] += 30;
+      }
+      /* And whoever is looking at them. */
+      for (const name in my.accusedBy) {
+        const accuser = alive.find((k) => H.players[k].name === name);
+        if (accuser && scores[accuser] > -900) scores[accuser] += 45;
+      }
+    }
+
+    my.suspicion = scores;
+    return scores;
+  }
+
+  function voteFor(H, id) {
+    const my = mind(id);
+    const scores = weigh(H, id);
+    let best = null, bestScore = 0;
+    for (const other in scores) {
+      if (scores[other] > bestScore) { bestScore = scores[other]; best = other; }
+    }
+    const impostor = C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor';
+    /* A crew bot with nothing on anybody skips, which is the correct play and
+       the one that makes the times they do vote mean something. */
+    const threshold = impostor ? 18 : 30;
+    if (!best || bestScore < threshold) return 'skip';
+    void my;
+    return best;
+  }
+
+  /* ---- talking ------------------------------------------------------------ */
+
+  /* Prefer a phrasing nobody has just used. Three bots landing on the exact
+     same sentence in a row is the fastest way to remind everyone they are
+     bots. */
+  const recent = [];
+  function pick(list) {
+    const fresh = list.filter((t) => recent.indexOf(t) < 0);
+    const from = fresh.length ? fresh : list;
+    const choice = from[Math.floor(Math.random() * from.length)];
+    recent.push(choice);
+    if (recent.length > 9) recent.shift();
+    return choice;
+  }
+  const says = (text, claim) => (text ? { text, claim: claim || null } : null);
+
+  function myRoomAround(my, t) {
+    let best = null;
+    for (const r of my.rooms) {
+      if (r.t > t + 4) continue;
+      if (!best || r.t > best.t) best = r;
+    }
+    return best ? best.room : null;
+  }
+
+  function nameOf(H, id) { return H.players[id] ? H.players[id].name : 'someone'; }
+
+  function line(H, id) {
+    const my = mind(id);
+    const impostor = C.ROLES[H.roles[id] || 'crewmate'].team === 'impostor';
+    const body = my.bodies[my.bodies.length - 1];
+    const when = body ? body.t : clock(H);
+    const scores = my.suspicion && Object.keys(my.suspicion).length ? my.suspicion : weigh(H, id);
+
+    const top = Object.keys(scores).sort((a, b) => scores[b] - scores[a])[0];
+    const accusers = Object.keys(my.accusedBy);
+
+    /* 1. Something certain, said first and plainly. */
+    for (const who in my.witnessed) {
+      if (!H.players[who] || !H.players[who].alive) continue;
+      if (my.spokeAbout[who]) continue;
+      const saw = my.witnessed[who];
+      if (impostor && C.ROLES[H.roles[who] || 'crewmate'].team === 'impostor') continue;
+      my.spokeAbout[who] = true;
+      if (saw.kill) {
+        return says(pick([
+          'I watched ' + nameOf(H, who) + ' do it.',
+          'It is ' + nameOf(H, who) + '. I saw the kill.',
+          nameOf(H, who) + '. I was right there when it happened.',
+        ]), { kind: 'witness', about: who });
+      }
+      if (saw.vent) {
+        return says(pick([
+          nameOf(H, who) + ' came out of a vent.',
+          'I saw ' + nameOf(H, who) + ' vent. That is the game.',
+          'Vent. ' + nameOf(H, who) + '. I saw it with my own eyes.',
+        ]), { kind: 'witness', about: who });
+      }
+    }
+
+    /* 2. Being accused gets answered before anything else. */
+    if (accusers.length && !my.spokeAbout.defence) {
+      my.spokeAbout.defence = true;
+      const room = myRoomAround(my, when) || 'the corridor';
+      const witness = my.sightings.filter((s) =>
+        Math.abs(s.t - when) < 10 && H.players[s.who] && H.players[s.who].alive)[0];
+      if (witness) {
+        return says(pick([
+          'Not me. I was in ' + room + ' with ' + nameOf(H, witness.who) + '.',
+          'I was in ' + room + '. ' + nameOf(H, witness.who) + ' was with me, ask them.',
+        ]));
+      }
+      return says(pick([
+        'It is not me. I was in ' + room + ' the whole time.',
+        'I was doing tasks in ' + room + '.',
+        'Why me? I have been in ' + room + '.',
+      ]));
+    }
+
+    /* 3. The finder says where. */
+    if (body && body.finder === id && !my.spokeAbout.report) {
+      my.spokeAbout.report = true;
+      const near = my.sightings.filter((s) =>
+        s.room === body.room && body.t - s.t < MURDER_WINDOW
+        && H.players[s.who] && H.players[s.who].alive);
+      if (near.length) {
+        const suspect = near[near.length - 1].who;
+        return says(nameOf(H, body.who) + ' in ' + body.room + '. '
+          + nameOf(H, suspect) + ' was there.', { kind: 'accuse', about: suspect });
+      }
+      return says(pick([
+        nameOf(H, body.who) + ' in ' + body.room + '. I saw nobody.',
+        'Body in ' + body.room + '. It was cold, I was alone.',
+      ]));
+    }
+
+    /* 4. An accusation, if the evidence is worth one. */
+    if (top && scores[top] >= 30 && !my.spokeAbout['acc' + top]) {
+      my.spokeAbout['acc' + top] = true;
+      const seen = lastSeenBefore(my, top, when);
+      if (seen && body) {
+        const options = [
+          'I saw ' + nameOf(H, top) + ' in ' + seen.room + ' just before.',
+          'Where were you, ' + nameOf(H, top) + '? I saw you in ' + seen.room + '.',
+          nameOf(H, top) + ' was in ' + seen.room + ' right before it happened.',
+        ];
+        /* Only claim two rooms are neighbours when they are two rooms. */
+        if (seen.room !== body.room) {
+          options.push(nameOf(H, top) + ' was in ' + seen.room + ', right by ' + body.room + '.');
+        } else {
+          options.push(nameOf(H, top) + ' was in ' + body.room + ' with the body.');
+        }
+        return says(pick(options), { kind: 'accuse', about: top });
+      }
+      return says(pick([
+        'I have not seen ' + nameOf(H, top) + ' do a single thing.',
+        nameOf(H, top) + ' has been nowhere all round.',
+      ]), { kind: 'accuse', about: top });
+    }
+
+    /* 5. Otherwise, where I was. An impostor picks a room it really was in,
+          before the kill -- a lie that cannot be contradicted by anybody who
+          was watching, which is the only kind worth telling. */
+    if (!my.spokeAbout.alibi) {
+      my.spokeAbout.alibi = true;
+      const room = impostor
+        ? (myRoomAround(my, Math.max(0, when - 20)) || myRoomAround(my, when) || 'Storage')
+        : (myRoomAround(my, when) || 'the corridor');
+      const withMe = my.sightings.filter((s) =>
+        Math.abs(s.t - when) < 10 && H.players[s.who] && H.players[s.who].alive);
+      if (withMe.length && !impostor) {
+        return says(pick([
+          'I was in ' + room + ' with ' + nameOf(H, withMe[0].who) + '.',
+          room + '. ' + nameOf(H, withMe[0].who) + ' can back me up.',
+        ]));
+      }
+      return says(pick([
+        'I was in ' + room + '.',
+        'Tasks in ' + room + ', nothing to report.',
+        'I came from ' + room + '.',
+      ]));
+    }
+
+    /* 6. Filler that still carries information. */
+    const others = Object.keys(scores).filter((k) => H.players[k] && H.players[k].alive);
+    if (others.length && Math.random() < 0.6) {
+      return says(pick([
+        'Where was everyone?',
+        'Anybody see ' + nameOf(H, others[Math.floor(Math.random() * others.length)]) + '?',
+        'Who was with ' + nameOf(H, others[Math.floor(Math.random() * others.length)]) + '?',
+        'I have nothing on anyone. Skip?',
+      ]));
+    }
+    return null;
+  }
+
+  /* Bots talk on their own clock, spread across the discussion so it reads as
+     a conversation rather than a wall of text arriving at once. */
+  function speak(dt, H, say) {
+    if (!H.meeting) return;
+    for (const id of Object.keys(H.players)) {
+      const p = H.players[id];
+      if (!p || !p.bot || !p.alive) continue;
+      const my = mind(id);
+      if (my.nextSpeak <= 0 && my.said === 0) my.nextSpeak = 1.5 + Math.random() * 7;
+      my.nextSpeak -= dt;
+      if (my.nextSpeak > 0) continue;
+      if (my.said >= 3) { my.nextSpeak = 999; continue; }
+      my.said++;
+      my.nextSpeak = 4 + Math.random() * 9;
+      const said = line(H, id);
+      if (!said) continue;
+      say(id, said.text);
+      if (said.claim) receiveClaim(H, id, said.claim);
+    }
+  }
+
+  function meetingOpened(H) {
+    recent.length = 0;
+    for (const [, my] of minds) {
+      my.nextSpeak = 0;
+      my.said = 0;
+      my.spokeAbout = {};
+      my.testimony.length = 0;
+    }
+  }
+
+  NS.minds = {
+    reset, observe, witnessKill, witnessVent, noteBody, hear,
+    speak, voteFor, weigh, meetingOpened,
+    mindOf: (id) => minds.get(id) || null,
+  };
+})(window.NS);
+
+</script>
+<script>
 /* Everything this device believes about the station right now.
 
    Split by who owns what, because getting that wrong is what makes a
@@ -3419,9 +4172,10 @@ window.NS = window.NS || {};
        not blocked by walls. Hearing somebody you cannot see is most of what a
        dark corridor is for, and both sides of the game get to use it. */
     const EARSHOT = 360;
+    const now = U.now();
     for (const p of world.players.values()) {
-      p.walk += (p.moving ? dt * 9 : 0);
-      p.bob = p.moving ? Math.sin(p.walk) * 1.6 : 0;
+      p.walk += (p.moving ? dt * 7.5 : 0);
+      NS.characters.idle(p, dt, now);
       if (p.isMe || !p.moving || p.ghost || p.inVent || !p.connected) continue;
       p.stepClock = (p.stepClock || 0) + dt;
       if (p.stepClock < 0.27) continue;
@@ -3568,25 +4322,25 @@ window.NS = window.NS || {};
 
 </script>
 <script>
-/* Drawing a person.
+/* Ducks.
 
-   Everything is drawn with paths rather than sprites, which is what lets a
-   colour, a hat and a walk cycle combine freely -- fourteen colours by twelve
-   hats is a spritesheet nobody wants to maintain, and the shading has to
-   change with the colour anyway or the dark suits read as holes in the floor.
+   Every one is drawn with paths, so a colour, a hat and a walk cycle combine
+   freely and the same drawing serves the world, the portraits, the meeting
+   grid and the camera feeds. Nothing here is a sprite sheet.
 
-   The silhouette is the readable thing at the size these are on screen, so it
-   is the part that got the attention: a wide flat base, a high shoulder, and a
-   visor that sits proud of the head. You should be able to tell who is who
-   from the shape alone at the edge of the light, before the colour resolves. */
+   What makes a duck read as a duck at thirty pixels is not detail, it is the
+   silhouette and the walk: a heavy low body, a round head set forward on a
+   short neck, a bill that breaks the outline, and a side-to-side waddle that
+   nothing else in the game does. The shading is a single radial gradient plus
+   a rim light -- volume, not decoration, because a flat fill at this size
+   reads as a hole in the floor rather than an animal. */
 
 (function (NS) {
   'use strict';
 
   const C = NS.config;
+  const U = NS.util;
 
-  /* Rounded rectangles by hand: ctx.roundRect is recent enough that a school
-     iPad might not have it, and this is four lines. */
   function rr(ctx, x, y, w, h, r) {
     const rad = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
@@ -3598,135 +4352,260 @@ window.NS = window.NS || {};
     ctx.closePath();
   }
 
-  const BODY_W = 27;
+  /* The duck fits the space the old body took, so the camera, the name tags
+     and the interaction ranges are all still tuned. */
+  const BODY_W = 34;
   const BODY_H = 34;
-  const LEG_H = 8;
+  const HEAD_Y = -31;
+  const HEAD_R = 10.5;
 
-  /* The bean. Drawn facing right and mirrored for the other direction, so
-     there is one shape to get right rather than two to keep matching. */
-  function beanPath(ctx, w, h) {
-    const halfW = w / 2;
-    ctx.beginPath();
-    ctx.moveTo(-halfW, 0);
-    ctx.lineTo(-halfW, -h * 0.42);
-    ctx.bezierCurveTo(-halfW, -h * 0.86, -halfW * 0.72, -h, 0, -h);
-    ctx.bezierCurveTo(halfW * 0.86, -h, halfW, -h * 0.82, halfW, -h * 0.44);
-    ctx.lineTo(halfW, 0);
-    ctx.closePath();
+  const BILL = '#f0a63c';
+  const BILL_DARK = '#c47c1c';
+  const FOOT = '#e08a2a';
+
+  /* ---- parts --------------------------------------------------------------
+     All drawn facing right, in a space where (0,0) is between the feet and y
+     runs negative upward. The caller mirrors for the other direction. */
+
+  function drawFeet(ctx, walk, moving, lift) {
+    const swing = moving ? Math.sin(walk) : 0;
+    for (let i = 0; i < 2; i++) {
+      const side = i ? 1 : -1;
+      const phase = moving ? Math.sin(walk + (i ? 0 : Math.PI)) : 0;
+      const fx = 1.5 + side * 5.5 + phase * 3.2;
+      const fy = -Math.max(0, phase) * 3.4 - (lift || 0);
+      ctx.save();
+      ctx.translate(fx, fy);
+      ctx.fillStyle = i ? FOOT : BILL_DARK;   // the far foot sits in shadow
+      ctx.beginPath();
+      ctx.moveTo(-1.5, -4);
+      ctx.lineTo(6.5, 0.5);
+      ctx.lineTo(3.5, 1.5);
+      ctx.lineTo(5, 2.6);
+      ctx.lineTo(0.5, 2.2);
+      ctx.lineTo(-2.5, 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    return swing;
   }
 
-  function shade(ctx, colour, h) {
-    const g = ctx.createLinearGradient(0, -h, 0, 0);
+  /* A short upturned fan, not a spike. The first version was a long point at
+     tail height and every duck looked like it had a beak at both ends. */
+  function drawTail(ctx, colour, walk, moving) {
+    const wag = moving ? Math.sin(walk * 0.5) * 0.14 : 0;
+    ctx.save();
+    ctx.translate(-13, -23);
+    ctx.rotate(-0.6 + wag);
+    for (let i = 0; i < 3; i++) {
+      ctx.save();
+      ctx.rotate((i - 1) * 0.32);
+      ctx.fillStyle = i === 1 ? colour.body : colour.dark;
+      ctx.beginPath();
+      ctx.moveTo(1, 2.6);
+      ctx.quadraticCurveTo(-5, 2.2, -8.5, -1.4);
+      ctx.quadraticCurveTo(-5, -3, 1, -2.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawWing(ctx, colour, walk, moving, flap) {
+    const beat = flap ? Math.sin(walk * 2.4) * 0.55 : (moving ? Math.sin(walk) * 0.14 : 0);
+    ctx.save();
+    ctx.translate(-1, -19);
+    ctx.rotate(beat);
+    const g = ctx.createLinearGradient(0, -8, 0, 9);
+    g.addColorStop(0, colour.body);
+    g.addColorStop(1, colour.dark);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(6, -7);
+    ctx.quadraticCurveTo(11, 0, 3, 8.5);
+    ctx.quadraticCurveTo(-6, 9, -8.5, 1);
+    ctx.quadraticCurveTo(-6, -7, 6, -7);
+    ctx.closePath();
+    ctx.fill();
+    /* Three feather lines, which is all it takes to stop the wing reading as
+       a smudge of a slightly darker colour. */
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(4 - i * 3.4, 6.5 - i * 0.6);
+      ctx.quadraticCurveTo(-2 - i * 2, 3 - i, -6 - i * 0.8, -1.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBill(ctx, open) {
+    const spread = (open || 0) * 3.4;
+    ctx.save();
+    ctx.translate(7, HEAD_Y + 2);
+    const g = ctx.createLinearGradient(0, -4, 0, 5);
+    g.addColorStop(0, '#ffc76b');
+    g.addColorStop(1, BILL);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, -3.5 - spread * 1.5);
+    ctx.quadraticCurveTo(12, -4.5 - spread * 3, 15.5, -1.5 - spread * 3.5);
+    ctx.quadraticCurveTo(13, 0.5 - spread * 1.5, 0, 0.5 - spread * 1.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = BILL_DARK;
+    ctx.beginPath();
+    ctx.moveTo(0, 0.6 + spread * 1.2);
+    ctx.quadraticCurveTo(11, 1.4 + spread * 3, 14, 2.4 + spread * 4);
+    ctx.quadraticCurveTo(9, 4.4 + spread * 3, 0, 3.6 + spread * 1.4);
+    ctx.closePath();
+    ctx.fill();
+    /* One nostril. It is two pixels and it is the difference between a beak
+       and an orange wedge. */
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(5.5, -1.6 - spread, 1.1, 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawEye(ctx, blink, look) {
+    const x = 4.4, y = HEAD_Y - 2.2;
+    if (blink > 0.5) {
+      ctx.strokeStyle = '#1a1f2c';
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x - 2.6, y);
+      ctx.quadraticCurveTo(x, y + 1.6, x + 2.6, y);
+      ctx.stroke();
+      return;
+    }
+    ctx.fillStyle = '#fdfefe';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 3.4, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#12161f';
+    ctx.beginPath();
+    ctx.ellipse(x + 0.9 + (look || 0), y + 0.3, 2, 2.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.ellipse(x + 0.2 + (look || 0), y - 1, 0.9, 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function bodyGradient(ctx, colour) {
+    const g = ctx.createRadialGradient(-3, -25, 2, 0, -15, 24);
     g.addColorStop(0, colour.rim);
-    g.addColorStop(0.34, colour.body);
+    g.addColorStop(0.4, colour.body);
     g.addColorStop(1, colour.dark);
     return g;
   }
 
-  /* ---- hats -------------------------------------------------------------- */
+  /* ---- hats ---------------------------------------------------------------
+     Drawn with the crown of the head at the origin. A duck's head is smaller
+     than the old body's, so everything sits tighter. */
 
-  /* Each hat is drawn at the top of the head, in a space where (0,0) is the
-     crown and x grows the way the player faces. */
   const HAT_ART = {
     none() {},
     hardhat(ctx) {
       ctx.fillStyle = '#f2b134';
-      ctx.beginPath();
-      ctx.ellipse(0, 1, 15, 5, 0, Math.PI, 0);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(0, 1, 11, 10, 0, Math.PI, 0);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 1, 12, 4, 0, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 1, 9, 8.5, 0, Math.PI, 0); ctx.fill();
       ctx.fillStyle = '#d1941f';
-      ctx.fillRect(-1.6, -9, 3.2, 10);
+      ctx.fillRect(-1.3, -7.5, 2.6, 8.5);
     },
     beanie(ctx) {
       ctx.fillStyle = '#c0523f';
-      ctx.beginPath();
-      ctx.ellipse(0, 1, 12, 11, 0, Math.PI, 0);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 1, 9.5, 9, 0, Math.PI, 0); ctx.fill();
       ctx.fillStyle = '#e8e2d4';
-      rr(ctx, -12.5, -1, 25, 5, 2.5); ctx.fill();
-      ctx.fillStyle = '#e8e2d4';
-      ctx.beginPath(); ctx.arc(0, -12, 4, 0, Math.PI * 2); ctx.fill();
+      rr(ctx, -10, -1, 20, 4.4, 2.2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, -10, 3.4, 0, Math.PI * 2); ctx.fill();
     },
     headset(ctx) {
-      ctx.strokeStyle = '#2b3348'; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.arc(0, 2, 12, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+      ctx.strokeStyle = '#2b3348'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 2, 9.5, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
       ctx.fillStyle = '#39435c';
-      rr(ctx, -14.5, 0, 6, 10, 3); ctx.fill();
-      rr(ctx, 8.5, 0, 6, 10, 3); ctx.fill();
-      ctx.strokeStyle = '#39435c'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(11, 9); ctx.quadraticCurveTo(15, 15, 9, 17); ctx.stroke();
+      rr(ctx, -11.5, 0, 5, 8.5, 2.5); ctx.fill();
+      rr(ctx, 6.5, 0, 5, 8.5, 2.5); ctx.fill();
       ctx.fillStyle = '#34e0b8';
-      ctx.beginPath(); ctx.arc(8, 17.5, 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(9, 10, 1.9, 0, Math.PI * 2); ctx.fill();
     },
     antenna(ctx) {
-      ctx.strokeStyle = '#8d97ad'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0, 2); ctx.quadraticCurveTo(4, -8, 1, -16); ctx.stroke();
+      ctx.strokeStyle = '#8d97ad'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 2); ctx.quadraticCurveTo(3.5, -7, 1, -14); ctx.stroke();
       ctx.fillStyle = '#ff3f5b';
-      ctx.beginPath(); ctx.arc(1, -18, 3.4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,63,91,0.35)';
-      ctx.beginPath(); ctx.arc(1, -18, 6.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(1, -16, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,63,91,0.32)';
+      ctx.beginPath(); ctx.arc(1, -16, 5.8, 0, Math.PI * 2); ctx.fill();
     },
     crown(ctx) {
       ctx.fillStyle = '#f0c04a';
       ctx.beginPath();
-      ctx.moveTo(-11, 2); ctx.lineTo(-11, -7); ctx.lineTo(-5.5, -2); ctx.lineTo(0, -10);
-      ctx.lineTo(5.5, -2); ctx.lineTo(11, -7); ctx.lineTo(11, 2);
+      ctx.moveTo(-9, 2); ctx.lineTo(-9, -6); ctx.lineTo(-4.5, -1.5); ctx.lineTo(0, -8.5);
+      ctx.lineTo(4.5, -1.5); ctx.lineTo(9, -6); ctx.lineTo(9, 2);
       ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ff3f5b';
-      ctx.beginPath(); ctx.arc(0, -1, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, -0.5, 1.7, 0, Math.PI * 2); ctx.fill();
     },
     flower(ctx) {
-      ctx.strokeStyle = '#4ca85c'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-6, 3); ctx.quadraticCurveTo(-9, -4, -7, -9); ctx.stroke();
+      ctx.strokeStyle = '#4ca85c'; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(-5, 3); ctx.quadraticCurveTo(-7.5, -3, -6, -7.5); ctx.stroke();
       ctx.fillStyle = '#f18fb0';
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
-        ctx.beginPath(); ctx.ellipse(-7 + Math.cos(a) * 4, -10 + Math.sin(a) * 4, 3.4, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(-6 + Math.cos(a) * 3.4, -8.5 + Math.sin(a) * 3.4, 2.9, 2.9, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.fillStyle = '#f0c04a';
-      ctx.beginPath(); ctx.arc(-7, -10, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-6, -8.5, 2.2, 0, Math.PI * 2); ctx.fill();
     },
     cap(ctx) {
       ctx.fillStyle = '#3d6fe0';
-      ctx.beginPath(); ctx.ellipse(0, 2, 12, 10, 0, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, 2, 9.5, 8, 0, Math.PI, 0); ctx.fill();
       ctx.fillStyle = '#2b52ab';
-      rr(ctx, -17, -1, 8, 4.5, 2); ctx.fill();
+      rr(ctx, -14.5, -1, 7, 4, 2); ctx.fill();
       ctx.fillStyle = '#e8e2d4';
-      ctx.beginPath(); ctx.arc(2, -6, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(1.5, -5, 1.7, 0, Math.PI * 2); ctx.fill();
     },
     halo(ctx) {
-      ctx.strokeStyle = '#ffd77a'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.ellipse(0, -10, 11, 3.6, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,215,122,0.28)'; ctx.lineWidth = 7;
-      ctx.beginPath(); ctx.ellipse(0, -10, 11, 3.6, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffd77a'; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.ellipse(0, -9, 9, 3, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,215,122,0.3)'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.ellipse(0, -9, 9, 3, 0, 0, Math.PI * 2); ctx.stroke();
     },
     cone(ctx) {
       ctx.fillStyle = '#ff7a3d';
-      ctx.beginPath(); ctx.moveTo(-9, 2); ctx.lineTo(0, -17); ctx.lineTo(9, 2); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-7.5, 2); ctx.lineTo(0, -15); ctx.lineTo(7.5, 2); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#e8e2d4';
-      ctx.beginPath(); ctx.moveTo(-6.2, -5); ctx.lineTo(-4.4, -9); ctx.lineTo(4.4, -9); ctx.lineTo(6.2, -5); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-5.2, -4); ctx.lineTo(-3.7, -7.5); ctx.lineTo(3.7, -7.5); ctx.lineTo(5.2, -4);
+      ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#d1541f';
-      rr(ctx, -11, 0, 22, 4, 1.5); ctx.fill();
+      rr(ctx, -9.5, 0, 19, 3.4, 1.4); ctx.fill();
     },
     plant(ctx) {
       ctx.fillStyle = '#a3603c';
-      ctx.beginPath(); ctx.moveTo(-8, 3); ctx.lineTo(-6, -6); ctx.lineTo(6, -6); ctx.lineTo(8, 3); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-6.5, 3); ctx.lineTo(-5, -5); ctx.lineTo(5, -5); ctx.lineTo(6.5, 3);
+      ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#4ca85c';
       for (let i = -1; i <= 1; i++) {
         ctx.beginPath();
-        ctx.ellipse(i * 5, -12 - Math.abs(i) * -2, 3.6, 8, i * 0.5, 0, Math.PI * 2);
+        ctx.ellipse(i * 4.2, -10.5, 3, 6.5, i * 0.5, 0, Math.PI * 2);
         ctx.fill();
       }
     },
     band(ctx) {
       ctx.fillStyle = '#ff3f5b';
-      rr(ctx, -13, -1, 26, 5.5, 2.5); ctx.fill();
-      ctx.strokeStyle = '#ff3f5b'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-12, 2); ctx.quadraticCurveTo(-19, 5, -16, 12); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-12, 3); ctx.quadraticCurveTo(-21, 9, -14, 15); ctx.stroke();
+      rr(ctx, -10.5, -1, 21, 4.6, 2); ctx.fill();
+      ctx.strokeStyle = '#ff3f5b'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-9.5, 2); ctx.quadraticCurveTo(-15, 4.5, -13, 10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-9.5, 3); ctx.quadraticCurveTo(-17, 7.5, -11, 12); ctx.stroke();
     },
   };
 
@@ -3743,9 +4622,6 @@ window.NS = window.NS || {};
 
   /* ---- colourblind marks -------------------------------------------------- */
 
-  /* Drawn upright rather than mirrored with the body, so an arrow means the
-     same thing whichever way somebody is walking. Light fill on a dark ring so
-     it reads on every one of the fourteen suits, including Bone and Ink. */
   const SYMBOL_ART = {
     circle(ctx, r) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); },
     square(ctx, r) { ctx.fillRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7); },
@@ -3835,190 +4711,275 @@ window.NS = window.NS || {};
     ctx.restore();
   }
 
-  /* ---- the player -------------------------------------------------------- */
+  /* ---- the whole duck ----------------------------------------------------- */
 
-  /* `p` is a world entity. `opts.alpha` dims a peer standing in your light's
-     falloff; `opts.outline` is the teammate glow an impostor sees on another
-     impostor, and the only information the renderer adds that the game did
-     not already know. */
   function drawPlayer(ctx, p, opts) {
     const o = opts || {};
-    const colour = C.colorById((C.COLORS[p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx] || C.COLORS[0]).id);
+    const colour = C.COLORS[p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx] || C.COLORS[0];
     const scale = o.scale || 1;
     const ghost = p.ghost;
     const alpha = o.alpha == null ? 1 : o.alpha;
     if (alpha <= 0.02) return;
 
+    const walk = p.walk || 0;
+    const moving = !!p.moving;
+
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.scale(scale, scale);
-    ctx.globalAlpha = alpha * (ghost ? 0.46 : (p.invisible ? 0.16 : 1));
-
-    const walk = p.walk || 0;
-    const bob = ghost ? Math.sin(walk * 0.35 + p.x * 0.01) * 2.6 : (p.bob || 0);
+    ctx.globalAlpha = alpha * (ghost ? 0.68 : (p.invisible ? 0.16 : 1));
 
     if (!ghost) {
-      ctx.fillStyle = 'rgba(0,0,0,0.42)';
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.ellipse(0, 2, BODY_W * 0.52, 5.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(1, 1, 15, 4.6, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
+    /* The waddle. Everything below rocks around a point between the feet,
+       which is what a duck does and what nothing else on the station does --
+       you can pick a moving player out of the dark by the rhythm alone. */
+    const waddle = moving && !ghost ? Math.sin(walk) * 0.13 : 0;
+    const bob = ghost
+      ? Math.sin(walk * 0.35 + p.x * 0.01) * 3
+      : (moving ? Math.abs(Math.sin(walk)) * -2.2 : 0);
     ctx.translate(0, bob);
+    ctx.rotate(waddle);
 
     if (o.outline) {
       ctx.save();
+      ctx.globalAlpha = alpha * 0.6;
       ctx.strokeStyle = o.outline;
       ctx.lineWidth = 5;
-      ctx.globalAlpha = alpha * 0.55;
-      ctx.scale(p.dir, 1);
-      beanPath(ctx, BODY_W, BODY_H);
+      ctx.beginPath();
+      ctx.ellipse(0, -16, 17, 15, 0, 0, Math.PI * 2);
+      ctx.moveTo(p.dir * 7 + HEAD_R, HEAD_Y);
+      ctx.arc(p.dir * 7, HEAD_Y, HEAD_R, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
 
     ctx.save();
-    ctx.scale(p.dir, 1);
+    ctx.scale(p.dir < 0 ? -1 : 1, 1);
 
-    if (!ghost) {
-      /* Legs first, so the body overlaps them at the hip. */
-      const swing = p.moving ? Math.sin(walk) * 3.4 : 0;
-      ctx.fillStyle = colour.dark;
-      rr(ctx, -9.5, -LEG_H + swing * 0.2, 8, LEG_H + 2 + swing, 3.4); ctx.fill();
-      rr(ctx, 1.5, -LEG_H - swing * 0.2, 8, LEG_H + 2 - swing, 3.4); ctx.fill();
-    }
-
-    /* Backpack, behind the body and on the side away from the face. */
-    ctx.fillStyle = colour.dark;
-    rr(ctx, -BODY_W / 2 - 6.5, -BODY_H * 0.76, 8, BODY_H * 0.46, 4);
-    ctx.fill();
+    if (!ghost) drawFeet(ctx, walk, moving, 0);
+    drawTail(ctx, colour, walk, moving);
 
     if (ghost) {
-      /* A tail instead of legs: three scallops that drift with the bob. */
-      ctx.fillStyle = shade(ctx, colour, BODY_H);
+      /* A tail of scallops instead of a body bottom: the duck is still a duck,
+         it just stopped touching the floor. Lit from its own colour rather
+         than shaded down -- a ghost drawn with the solid gradient at half
+         opacity came out as a brown smudge you could not identify. */
+      const gg = ctx.createRadialGradient(-3, -25, 2, 0, -15, 26);
+      gg.addColorStop(0, colour.rim);
+      gg.addColorStop(0.5, colour.body);
+      gg.addColorStop(1, colour.dark);
+      ctx.fillStyle = gg;
       ctx.beginPath();
-      ctx.moveTo(-BODY_W / 2, -BODY_H * 0.42);
-      ctx.bezierCurveTo(-BODY_W / 2, -BODY_H * 0.86, -BODY_W * 0.36, -BODY_H, 0, -BODY_H);
-      ctx.bezierCurveTo(BODY_W * 0.43, -BODY_H, BODY_W / 2, -BODY_H * 0.82, BODY_W / 2, -BODY_H * 0.44);
-      ctx.lineTo(BODY_W / 2, -2);
+      ctx.moveTo(-16, -16);
+      ctx.quadraticCurveTo(-17, -30, 0, -31);
+      ctx.quadraticCurveTo(16, -30, 16, -14);
+      ctx.lineTo(16, -3);
       for (let i = 0; i < 3; i++) {
-        const x0 = BODY_W / 2 - (i * BODY_W) / 3;
-        ctx.quadraticCurveTo(x0 - BODY_W / 6, 5 + Math.sin(walk * 0.5 + i) * 2.4, x0 - BODY_W / 3, -2);
+        const x0 = 16 - (i * 32) / 3;
+        ctx.quadraticCurveTo(x0 - 32 / 6, 4 + Math.sin(walk * 0.5 + i) * 2.6, x0 - 32 / 3, -3);
       }
       ctx.closePath();
       ctx.fill();
     } else {
-      ctx.fillStyle = shade(ctx, colour, BODY_H);
-      beanPath(ctx, BODY_W, BODY_H);
+      ctx.fillStyle = bodyGradient(ctx, colour);
+      ctx.beginPath();
+      ctx.ellipse(0, -15.5, 16.5, 14.5, -0.06, 0, Math.PI * 2);
       ctx.fill();
-      /* A rim on the lit side keeps Ink and Slate off the floor colour. */
-      ctx.strokeStyle = colour.rim;
+      /* Belly: a lighter crescent low and forward, so the light has a
+         direction and the body is not a sphere. */
       ctx.globalAlpha *= 0.5;
-      ctx.lineWidth = 1.6;
-      ctx.save();
-      ctx.clip();
-      beanPath(ctx, BODY_W, BODY_H);
-      ctx.translate(1.6, -1.6);
-      ctx.stroke();
-      ctx.restore();
+      ctx.fillStyle = colour.rim;
+      ctx.beginPath();
+      ctx.ellipse(4, -10, 10, 6.5, -0.2, 0, Math.PI * 2);
+      ctx.fill();
       ctx.globalAlpha /= 0.5;
     }
 
-    /* Visor. The glint is a fixed highlight rather than a reflection of
-       anything -- it reads as glass and costs one arc. */
-    const vx = 4.2, vy = -BODY_H + 12.5;
-    const vg = ctx.createLinearGradient(vx - 8, vy - 7, vx + 8, vy + 7);
-    vg.addColorStop(0, '#cfe4f5');
-    vg.addColorStop(0.5, '#8fb4d4');
-    vg.addColorStop(1, '#5d7f9e');
-    ctx.fillStyle = vg;
+    drawWing(ctx, colour, walk, moving, !!p.flap);
+
+    /* Head, on a neck short enough to keep the silhouette compact. */
+    ctx.fillStyle = colour.dark;
     ctx.beginPath();
-    ctx.ellipse(vx, vy, 11.5, 8, -0.06, 0, Math.PI * 2);
+    ctx.ellipse(4.5, -24, 8, 7.5, 0.25, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(11,16,26,0.5)';
+
+    drawBill(ctx, p.quack || 0);
+
+    const hg = ctx.createRadialGradient(4, HEAD_Y - 5, 1, 7, HEAD_Y, HEAD_R + 3);
+    hg.addColorStop(0, ghost ? colour.body : colour.rim);
+    hg.addColorStop(0.55, ghost ? colour.body : colour.body);
+    hg.addColorStop(1, colour.dark);
+    ctx.fillStyle = hg;
     ctx.beginPath();
-    ctx.ellipse(vx, vy, 11.5, 8, -0.06, Math.PI * 0.15, Math.PI * 0.72);
+    ctx.arc(7, HEAD_Y, HEAD_R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+
+    drawEye(ctx, p.blink || 0, p.look || 0);
+
+    /* A rim light along the top, drawn last over head and body so it ties the
+       two shapes into one animal. */
+    ctx.globalAlpha *= 0.4;
+    ctx.strokeStyle = colour.rim;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.ellipse(vx - 3.6, vy - 2.8, 3.6, 2.4, -0.5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(7, HEAD_Y, HEAD_R - 0.8, Math.PI * 1.15, Math.PI * 1.75);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -15.5, 15.5, 13.5, -0.06, Math.PI * 1.15, Math.PI * 1.72);
+    ctx.stroke();
+    ctx.globalAlpha /= 0.4;
 
     ctx.restore();
 
     if (showSymbols && !ghost) {
       ctx.save();
-      ctx.translate(0, -BODY_H * 0.36);
-      drawSymbol(ctx, p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx, 5.4);
+      ctx.translate(0, -13);
+      drawSymbol(ctx, p.shiftIdx >= 0 ? p.shiftIdx : p.colorIdx, 5);
       ctx.restore();
     }
 
     ctx.save();
-    ctx.translate(0, -BODY_H - 1);
-    drawHat(ctx, p.hatIdx, p.dir);
+    ctx.translate(p.dir * 7, HEAD_Y - HEAD_R + 1);
+    drawHat(ctx, p.hatIdx, p.dir < 0 ? -1 : 1);
     ctx.restore();
 
     if (p.shielded) {
-      ctx.strokeStyle = 'rgba(52,224,184,0.75)';
+      ctx.strokeStyle = 'rgba(52,224,184,0.7)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(0, -BODY_H * 0.5, BODY_W * 0.82, BODY_H * 0.72, 0, 0, Math.PI * 2);
+      ctx.ellipse(1, -19, 22, 22, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     ctx.restore();
   }
 
-  /* A body reads as a person who fell, not as a prop: same bean, tipped, with
-     the visor still catching light. The stain is small on purpose -- this gets
-     played in classrooms. */
+  /* A dead duck is on its back with its feet in the air. It is the reading
+     everyone already has for a dead cartoon bird, it is legible from across a
+     dark room, and it is a great deal easier to have in a classroom than a
+     body in a pool of blood. */
   function drawBody(ctx, body) {
     const colour = C.COLORS[body.colorIdx] || C.COLORS[0];
+    const dir = body.facing < 0 ? -1 : 1;
     ctx.save();
     ctx.translate(body.x, body.y);
 
-    ctx.fillStyle = 'rgba(120,18,32,0.42)';
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
-    ctx.ellipse(0, 3, 26, 9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(160,26,44,0.5)';
-    ctx.beginPath();
-    ctx.ellipse(-9, 5, 11, 4.5, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(0, 5, 24, 6.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.scale(body.facing < 0 ? -1 : 1, 1);
-    ctx.rotate(-Math.PI / 2);
-    ctx.translate(0, 9);
-
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(0, 2, BODY_W * 0.5, 5, 0, 0, Math.PI * 2); ctx.fill();
-
+    /* Loose feathers where it happened. */
     ctx.fillStyle = colour.dark;
-    rr(ctx, -BODY_W / 2 - 6, -BODY_H * 0.7, 7.5, BODY_H * 0.42, 3.6); ctx.fill();
-    ctx.fillStyle = shade(ctx, colour, BODY_H);
-    beanPath(ctx, BODY_W, BODY_H * 0.82);
+    for (let i = 0; i < 5; i++) {
+      const a = i * 1.9;
+      ctx.save();
+      ctx.translate(Math.cos(a) * (18 + i * 2.5), 4 + Math.sin(a) * 6);
+      ctx.rotate(a);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 4.6, 1.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.scale(dir, 1);
+
+    /* Head, thrown back and low, with the bill up. Drawn first so the body
+       overlaps the neck. */
+    ctx.save();
+    ctx.translate(-18, -1);
+    ctx.rotate(0.5);
+    ctx.fillStyle = BILL;
+    ctx.beginPath();
+    ctx.moveTo(-4, -4.5);
+    ctx.quadraticCurveTo(-13, -6.5, -16, -3.5);
+    ctx.quadraticCurveTo(-12, -0.5, -4, -1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = BILL_DARK;
+    ctx.beginPath();
+    ctx.moveTo(-4, -0.8);
+    ctx.quadraticCurveTo(-11, 0.4, -14, -0.6);
+    ctx.quadraticCurveTo(-10, 2.2, -4, 2);
+    ctx.closePath();
+    ctx.fill();
+    const hg = ctx.createRadialGradient(-2, -6, 1, 0, -1, 11);
+    hg.addColorStop(0, colour.rim);
+    hg.addColorStop(1, colour.dark);
+    ctx.fillStyle = hg;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#12161f';
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    for (const ox of [-2.5, 3]) {
+      ctx.beginPath();
+      ctx.moveTo(ox - 2.2, -4); ctx.lineTo(ox + 2.2, 0.4);
+      ctx.moveTo(ox + 2.2, -4); ctx.lineTo(ox - 2.2, 0.4);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    /* Belly up: the light side of the duck facing the ceiling. */
+    const g = ctx.createRadialGradient(2, -10, 2, 2, -2, 20);
+    g.addColorStop(0, colour.rim);
+    g.addColorStop(0.55, colour.body);
+    g.addColorStop(1, colour.dark);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(2, -2, 16, 11.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#7e9ab5';
+    /* Feet, straight up. This is the whole read at a distance. */
+    ctx.strokeStyle = BILL_DARK;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 2; i++) {
+      const fx = -2 + i * 9;
+      ctx.beginPath();
+      ctx.moveTo(fx, -8);
+      ctx.lineTo(fx + (i ? 2.5 : -2), -19);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(fx + (i ? 2.5 : -2), -19);
+      ctx.rotate(i ? 0.3 : -0.3);
+      ctx.fillStyle = FOOT;
+      ctx.beginPath();
+      ctx.moveTo(0, 1.5);
+      ctx.lineTo(-4.5, -5.5); ctx.lineTo(-1.5, -4); ctx.lineTo(0, -6.5);
+      ctx.lineTo(1.5, -4); ctx.lineTo(4.5, -5.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    /* One wing flopped out to the side. */
+    ctx.save();
+    ctx.translate(9, 2);
+    ctx.rotate(0.9);
+    ctx.fillStyle = colour.dark;
     ctx.beginPath();
-    ctx.ellipse(4, -BODY_H * 0.82 + 11, 10, 7, 0, 0, Math.PI * 2);
+    ctx.moveTo(5, -6);
+    ctx.quadraticCurveTo(10, 0, 2.5, 7.5);
+    ctx.quadraticCurveTo(-5, 8, -7.5, 1);
+    ctx.quadraticCurveTo(-5, -6, 5, -6);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = 'rgba(11,16,26,0.55)';
-    ctx.beginPath();
-    ctx.ellipse(4, -BODY_H * 0.82 + 11, 10, 7, 0, Math.PI * 0.1, Math.PI * 0.8);
-    ctx.fill();
+    ctx.restore();
 
     ctx.restore();
   }
 
-  /* The lobby, the meeting grid and the role card all need a portrait. Same
-     drawing, standing still, centred in a box of `size`. */
-  /* The drawing's origin is the feet, and a hat reaches about 22 above the
-     head, so the content runs from -(BODY_H + 22) to +6. Centring on the body
-     alone -- which is what this did at first -- crops every hat against the
-     top of the box. */
-  const AVATAR_TOP = BODY_H + 24;
-  const AVATAR_BOTTOM = 7;
+  const AVATAR_TOP = 52;
+  const AVATAR_BOTTOM = 8;
+
   function drawAvatar(ctx, colorIdx, hatIdx, size, opts) {
     const o = opts || {};
     const scale = size / (AVATAR_TOP + AVATAR_BOTTOM);
@@ -4026,14 +4987,31 @@ window.NS = window.NS || {};
     ctx.translate(0, ((AVATAR_TOP - AVATAR_BOTTOM) / 2) * scale);
     drawPlayer(ctx, {
       x: 0, y: 0, dir: 1, colorIdx, hatIdx, shiftIdx: -1,
-      moving: false, walk: 0, bob: 0, ghost: !!o.ghost, alive: !o.ghost,
+      moving: false, walk: 0, ghost: !!o.ghost, alive: !o.ghost,
+      blink: 0, quack: o.quack || 0,
     }, { scale, alpha: o.alpha == null ? 1 : o.alpha, outline: o.outline });
     ctx.restore();
   }
 
+  /* Ducks blink, look about and quack. Driven from one place so every duck on
+     screen is not doing it in lockstep -- the offset is derived from the id so
+     it is stable rather than random every frame. */
+  function idle(p, dt, now) {
+    if (p.seed === undefined) {
+      let h = 0;
+      const id = String(p.id || '');
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997;
+      p.seed = h / 997;
+    }
+    const cycle = (now / 1000 + p.seed * 9) % 4.4;
+    p.blink = cycle > 4.24 ? 1 : 0;
+    p.look = Math.sin(now / 1400 + p.seed * 6) * 0.7;
+    if (p.quack > 0) p.quack = Math.max(0, p.quack - dt * 4);
+  }
+
   NS.characters = {
-    drawPlayer, drawBody, drawAvatar, drawHat, drawSymbol, setSymbols,
-    rr, BODY_W, BODY_H, beanPath,
+    drawPlayer, drawBody, drawAvatar, drawHat, drawSymbol, setSymbols, idle,
+    rr, BODY_W, BODY_H,
   };
 })(window.NS);
 
@@ -4829,6 +5807,17 @@ window.NS = window.NS || {};
     spark(x, y) {
       burst(x, y, 6, { colour: '#ffb03a', speed: 160, life: 0.4, size: 2.5, gravity: 300 });
     },
+    /* Feathers, because it is a duck. They fall slower than debris and drift,
+       which is the tell that something soft came apart. */
+    feathers(x, y, colorIdx) {
+      const colour = (NS.config.COLORS[colorIdx] || NS.config.COLORS[0]);
+      burst(x, y - 12, 14, {
+        colour: colour.body, speed: 130, life: 1.6, size: 4.5, gravity: 55, drag: 0.9, kind: 'puff',
+      });
+      burst(x, y - 8, 8, {
+        colour: colour.rim, speed: 80, life: 2, size: 3.5, gravity: 35, drag: 0.88, kind: 'puff',
+      });
+    },
     step(x, y) {
       spawn({ x, y: y + 2, vx: (Math.random() - 0.5) * 18, vy: -6, life: 0.45, size: 4, colour: '#3a4560', kind: 'puff' });
     },
@@ -4951,6 +5940,293 @@ window.NS = window.NS || {};
   }
 
   NS.fx = Object.assign({ spawn, burst, step, draw, drawFloaters, drawVisuals, visual, say, clear }, FX);
+})(window.NS);
+
+</script>
+<script>
+/* The moments the game stops for.
+
+   Three things in a round deserve to interrupt everything: a kill, an
+   ejection, and being told who you are. Everywhere else the game should get
+   out of the way -- but those three are the beats a table remembers, and
+   playing them as a toast in the corner throws them away.
+
+   Each is a short timeline drawn over the finished frame: bars in, a staged
+   shot, a hit, bars out. Nothing here reads game state on its own; it is
+   handed everything it needs when it starts, so a cinematic can never
+   disagree with the round or hold a reference to somebody who has since left.
+
+   All of it is skippable and all of it is short. A dramatic flourish you
+   cannot skip is a dramatic flourish you resent by the fourth round. */
+
+(function (NS) {
+  'use strict';
+
+  const U = NS.util;
+  const C = NS.config;
+
+  let calm = false;
+  try {
+    const q = window.matchMedia('(prefers-reduced-motion: reduce)');
+    calm = q.matches;
+    if (q.addEventListener) q.addEventListener('change', (e) => { calm = e.matches; });
+  } catch (e) { calm = false; }
+
+  let scene = null;
+
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const outCubic = (t) => 1 - Math.pow(1 - t, 3);
+  const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
+  const span = (t, a, b) => clamp01((t - a) / (b - a));
+
+  function play(kind, data) {
+    const spec = SCENES[kind];
+    if (!spec) return;
+    /* Reduced motion gets the information without the camera work: a still
+       frame, held, with the same words on it. */
+    scene = {
+      kind, spec, t: 0,
+      length: calm ? Math.min(spec.length, 1.6) : spec.length,
+      calm, data: data || {},
+    };
+    /* The HUD is DOM and sits above the canvas, so it has to be told to get
+       out of the way -- otherwise the task bar and the action buttons float
+       over the shot. */
+    document.body.classList.add('in-cinema');
+    if (spec.enter) spec.enter(scene.data, calm);
+  }
+
+  const active = () => !!scene;
+  function stop() {
+    scene = null;
+    document.body.classList.remove('in-cinema');
+  }
+
+  function step(dt) {
+    if (!scene) return;
+    scene.t += dt;
+    if (scene.t >= scene.length) {
+      const done = scene.spec.done;
+      const data = scene.data;
+      scene = null;
+      document.body.classList.remove('in-cinema');
+      if (done) done(data);
+    }
+  }
+
+  /* Letterbox. The bars are the whole grammar: as soon as they move, everyone
+     knows to stop pressing things and watch. */
+  function bars(ctx, w, h, amount) {
+    const bar = Math.round(h * 0.13 * amount);
+    if (bar <= 0) return 0;
+    ctx.fillStyle = '#04060b';
+    ctx.fillRect(0, 0, w, bar);
+    ctx.fillRect(0, h - bar, w, bar);
+    return bar;
+  }
+
+  function duck(ctx, colorIdx, hatIdx, scale, opts) {
+    NS.characters.drawPlayer(ctx, Object.assign({
+      x: 0, y: 0, dir: 1, colorIdx, hatIdx, shiftIdx: -1,
+      moving: false, walk: 0, blink: 0, look: 0, quack: 0, ghost: false,
+    }, opts || {}), { scale });
+  }
+
+  function title(ctx, w, y, text, size, colour, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '800 ' + size + 'px Archivo, "Archivo Black", system-ui, sans-serif';
+    ctx.lineWidth = size * 0.16;
+    ctx.strokeStyle = 'rgba(4,6,11,0.85)';
+    ctx.strokeText(text, w / 2, y);
+    ctx.fillStyle = colour;
+    ctx.fillText(text, w / 2, y);
+    ctx.restore();
+  }
+
+  const SCENES = {
+
+    /* ---- the kill -------------------------------------------------------
+       Held on the two of them, close. The lunge is the whole shot: the
+       killer crosses the gap in four frames and the victim goes over. */
+    kill: {
+      length: 2.5,
+      enter(data) {
+        NS.audio.play('stingerLow');
+        NS.audio.play('quackHurt');
+      },
+      draw(ctx, w, h, s) {
+        const t = s.t / s.length;
+        const inBars = span(t, 0, 0.1);
+        const outBars = 1 - span(t, 0.88, 1);
+        const amount = Math.min(inBars, outBars);
+        ctx.fillStyle = 'rgba(4,6,11,' + (0.55 + 0.35 * span(t, 0, 0.14)).toFixed(3) + ')';
+        ctx.fillRect(0, 0, w, h);
+
+        const cx = w / 2, cy = h / 2 + h * 0.02;
+        const scale = Math.min(w, h) / 190 * (s.calm ? 1 : (1 + span(t, 0, 0.5) * 0.22));
+        const lunge = s.calm ? 1 : ease(span(t, 0.16, 0.34));
+        /* Measured in duck-widths rather than pixels, so the pair are framed
+           the same on a phone and a projector -- a fixed pixel gap had them
+           overlapping completely on a large screen, where the ducks are drawn
+           bigger but the gap was not. */
+        const gap = (1.5 - lunge * 0.62) * 34 * scale;
+
+        /* The victim, tipping over once the killer arrives. */
+        const fall = ease(span(t, 0.32, 0.62));
+        ctx.save();
+        ctx.translate(cx + gap * 0.5, cy);
+        ctx.rotate(fall * 1.5);
+        ctx.translate(0, fall * 16);
+        duck(ctx, s.data.victimColour, s.data.victimHat, scale * 0.9, {
+          dir: -1, blink: fall > 0.3 ? 1 : 0, quack: fall < 0.3 ? 1 : 0,
+        });
+        ctx.restore();
+
+        /* The killer, arriving. */
+        ctx.save();
+        ctx.translate(cx - gap * 0.5, cy);
+        const crouch = Math.sin(clamp01(lunge) * Math.PI) * 0.14;
+        ctx.rotate(crouch);
+        duck(ctx, s.data.killerColour, s.data.killerHat, scale * 0.95, {
+          dir: 1, flap: true, walk: s.t * 22, moving: true,
+        });
+        ctx.restore();
+
+        /* Impact: a hard red wipe, once. */
+        const hit = span(t, 0.3, 0.42);
+        if (hit > 0 && hit < 1) {
+          ctx.save();
+          ctx.globalAlpha = Math.sin(hit * Math.PI) * 0.75;
+          ctx.fillStyle = '#ff3f5b';
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+        }
+
+        const bar = bars(ctx, w, h, amount);
+        const words = span(t, 0.5, 0.62) * (1 - span(t, 0.9, 1));
+        if (words > 0 && s.data.line) {
+          title(ctx, w, h - bar - h * 0.09, s.data.line, Math.max(20, Math.min(46, w * 0.045)),
+            '#ff6b7f', words);
+        }
+        if (words > 0 && s.data.sub) {
+          title(ctx, w, h - bar - h * 0.045, s.data.sub, Math.max(13, Math.min(20, w * 0.02)),
+            '#cfd9e8', words * 0.85);
+        }
+      },
+    },
+
+    /* ---- the airlock -----------------------------------------------------
+       A long shot of somebody going away from you. The starfield does the
+       work: the duck barely moves, everything else does. */
+    eject: {
+      length: 5.4,
+      enter(data) {
+        NS.audio.play('airlock');
+        if (data.name) NS.bits.announce(data.line || '');
+      },
+      draw(ctx, w, h, s) {
+        const t = s.t / s.length;
+        ctx.fillStyle = '#04060b';
+        ctx.fillRect(0, 0, w, h);
+
+        /* Stars, streaming past faster than the duck is drifting, which is
+           what sells the speed. */
+        const drift = s.t * (s.calm ? 20 : 120);
+        ctx.fillStyle = '#cfd9e8';
+        for (let i = 0; i < 130; i++) {
+          const seed = i * 137.5;
+          const y = (seed % h);
+          const x = ((seed * 3.7 + drift * (0.4 + (i % 5) / 5)) % (w + 80)) - 40;
+          const size = i % 9 === 0 ? 2.4 : 1.2;
+          ctx.globalAlpha = i % 9 === 0 ? 0.9 : 0.4;
+          ctx.fillRect(w - x, y, size, size);
+        }
+        ctx.globalAlpha = 1;
+
+        const g = ctx.createRadialGradient(w * 0.78, h * 1.1, 10, w * 0.78, h * 1.1, h * 1.1);
+        g.addColorStop(0, 'rgba(255,176,58,0.4)');
+        g.addColorStop(0.5, 'rgba(190,90,60,0.2)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+
+        if (s.data.name) {
+          const cross = span(t, 0.05, 0.78);
+          const x = -w * 0.15 + cross * w * 1.3;
+          const y = h * 0.44 + Math.sin(s.t * 1.4) * h * 0.05;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(s.calm ? 0.3 : s.t * 1.9);
+          duck(ctx, s.data.colorIdx, s.data.hatIdx, Math.min(w, h) / 260, { ghost: false, dir: 1 });
+          ctx.restore();
+        }
+
+        const bar = bars(ctx, w, h, Math.min(span(t, 0, 0.08), 1 - span(t, 0.92, 1)));
+        const words = span(t, 0.3, 0.42);
+        title(ctx, w, h * 0.72, s.data.line || '', Math.max(20, Math.min(44, w * 0.042)),
+          s.data.impostor ? '#ff6b7f' : '#cfd9e8', words);
+        if (s.data.sub) {
+          title(ctx, w, h * 0.79, s.data.sub, Math.max(13, Math.min(19, w * 0.019)), '#8d9ab1', words * 0.9);
+        }
+        void bar;
+      },
+    },
+
+    /* ---- who you are ----------------------------------------------------- */
+    reveal: {
+      length: 2.6,
+      enter(data) {
+        NS.audio.play(data.team === 'impostor' ? 'stingerLow' : 'stingerHigh');
+      },
+      draw(ctx, w, h, s) {
+        const t = s.t / s.length;
+        const wash = span(t, 0, 0.12);
+        ctx.fillStyle = 'rgba(4,6,11,' + (0.92 * wash).toFixed(3) + ')';
+        ctx.fillRect(0, 0, w, h);
+
+        const accent = s.data.team === 'impostor' ? '#ff3f5b'
+          : s.data.team === 'jester' ? '#f18fb0' : '#34e0b8';
+        const g = ctx.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, Math.max(w, h) * 0.6);
+        g.addColorStop(0, accent + '2e');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.globalAlpha = wash * (1 - span(t, 0.85, 1));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = 1;
+
+        /* The duck drops in and settles. */
+        const drop = s.calm ? 1 : outCubic(span(t, 0.08, 0.42));
+        const bounce = Math.sin(span(t, 0.35, 0.6) * Math.PI) * 0.1;
+        ctx.save();
+        ctx.translate(w / 2, h * 0.44 - (1 - drop) * h * 0.4);
+        ctx.scale(1 + bounce, 1 - bounce);
+        duck(ctx, s.data.colorIdx, s.data.hatIdx, Math.min(w, h) / 175, {
+          dir: 1, quack: span(t, 0.4, 0.55) * (1 - span(t, 0.55, 0.75)),
+        });
+        ctx.restore();
+
+        const words = span(t, 0.34, 0.5) * (1 - span(t, 0.88, 1));
+        title(ctx, w, h * 0.68, (s.data.name || '').toUpperCase(),
+          Math.max(30, Math.min(76, w * 0.07)), accent, words);
+        if (s.data.sub) {
+          title(ctx, w, h * 0.76, s.data.sub, Math.max(13, Math.min(19, w * 0.019)), '#cfd9e8', words * 0.9);
+        }
+        bars(ctx, w, h, Math.min(span(t, 0, 0.1), 1 - span(t, 0.9, 1)));
+      },
+    },
+  };
+
+  function draw(ctx, w, h, dt) {
+    if (!scene) return;
+    step(dt);
+    if (!scene) return;
+    scene.spec.draw(ctx, w, h, scene);
+  }
+
+  NS.cinema = { play, draw, active, stop, get calm() { return calm; } };
 })(window.NS);
 
 </script>
@@ -5368,8 +6644,17 @@ window.NS = window.NS || {};
     }
   }
 
+  /* Draw straight onto the finished frame in screen space. The cinematics use
+     it, and nothing else should: anything that belongs in the world belongs in
+     drawScene where the darkness can reach it. */
+  function drawOverlay(fn) {
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fn(ctx, cssW, cssH);
+  }
+
   NS.render = {
-    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened,
+    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened, drawOverlay,
     visionRadius,
     get scale() { return scale; },
     get width() { return cssW; },
@@ -5446,6 +6731,7 @@ window.NS = window.NS || {};
     H.emergenciesUsed = {}; H.emergencyCooldown = 0; H.sabotageCooldown = 0;
     H.shields = {}; H.invisible = {}; H.shifted = {}; H.watching = new Set();
     H.closedRooms = {}; H.log = []; H.startedAt = 0;
+    if (NS.minds) NS.minds.reset();
     M.clearDoors();
   }
 
@@ -5763,6 +7049,12 @@ window.NS = window.NS || {};
       const p = H.players[from];
       const role = C.ROLES[H.roles[from] || 'crewmate'];
       if (!p || !p.alive || !(role.kill || role.ability === 'vent')) return;
+      const group = M.VENT_GROUPS[msg.g];
+      const spot = group && group[msg.i];
+      if (spot && NS.minds) {
+        const w = M.toWorld(spot);
+        NS.minds.witnessVent(H, from, w.x, w.y);
+      }
       send('sys', { t: 'E', e: 'vent', by: from, a: msg.a, g: msg.g, i: msg.i });
     },
 
@@ -5900,12 +7192,17 @@ window.NS = window.NS || {};
     });
     delete H.invisible[id];
     delete H.shifted[id];
+    if (NS.minds) NS.minds.witnessKill(H, byId, id, x, y);
     send('sys', { t: 'E', e: 'kill', by: byId, target: id, x, y });
     H.dirty = true;
     checkWin();
   }
 
   function openMeeting(reason, by, bodyId) {
+    if (NS.minds) {
+      const found = bodyId && H.bodies.find((b) => b.id === bodyId);
+      if (found) NS.minds.noteBody(H, by, found);
+    }
     H.sabotage = null;
     for (const roomId in H.closedRooms) M.sealRoom(roomId, false);
     H.closedRooms = {};
@@ -5921,6 +7218,7 @@ window.NS = window.NS || {};
       time: H.settings.discussionTime > 0 ? H.settings.discussionTime : H.settings.votingTime,
       votes: {},
     };
+    if (NS.minds) NS.minds.meetingOpened(H);
     record('meeting', {
       by: H.players[by] ? H.players[by].name : null,
       reason,
@@ -6078,6 +7376,7 @@ window.NS = window.NS || {};
       /* Timers above get the real elapsed time so a throttled background tab
          does not slow the round down. Bots get a capped one, because moving
          them a whole second in one step teleports them through walls. */
+      if (NS.minds) NS.minds.observe(dt, H);
       if (NS.bots) NS.bots.step(Math.min(dt, 0.1), H);
       if (H.winner) finish();
     } else if (H.phase === 'meeting' && H.meeting) {
@@ -6092,6 +7391,13 @@ window.NS = window.NS || {};
         }
       }
       if (NS.bots) NS.bots.meeting(dt, H);
+      /* The bots argue. Their lines go out on the ordinary chat channel,
+         attributed to the bot rather than to the host's own player. */
+      if (NS.minds) {
+        NS.minds.speak(dt, H, (botId, text) => {
+          send('chat', { t: 'msg', text, as: botId });
+        });
+      }
     } else if (H.phase === 'eject') {
       H.ejectLeft -= dt;
       if (H.ejectLeft <= 0) {
@@ -6524,26 +7830,20 @@ window.NS = window.NS || {};
       const p = H.players[brain.id];
       if (!p || !p.alive) continue;
       if (H.meeting.votes[brain.id] !== undefined) continue;
-      if (brain.votes < 0) brain.votes = 3 + Math.random() * (H.settings.votingTime * 0.5);
+      /* Spread across the time that is actually left. Using the lobby's
+         voting time meant a shortened vote closed with most of them still
+         thinking about it. */
+      if (brain.votes < 0) {
+        brain.votes = 2 + Math.random() * Math.max(3, Math.min(22, H.meeting.time * 0.55));
+      }
       brain.votes -= dt;
       if (brain.votes > 0) continue;
       brain.votes = -1;
 
-      const alive = NS.host.livingIds().filter((id) => id !== brain.id);
-      const mine = C.ROLES[H.roles[brain.id] || 'crewmate'].team;
-      let target = 'skip';
-      if (mine === 'impostor') {
-        const crew = alive.filter((id) => C.ROLES[H.roles[id] || 'crewmate'].team !== 'impostor');
-        /* Vote with the room where possible: whoever already has votes on
-           them. It is not deduction, but it stops impostor bots from handing
-           themselves in by voting alone. */
-        const counts = {};
-        for (const v in H.meeting.votes) counts[H.meeting.votes[v]] = (counts[H.meeting.votes[v]] || 0) + 1;
-        crew.sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
-        if (crew.length) target = counts[crew[0]] ? crew[0] : U.pick(crew, Math.random);
-      } else if (H.meeting.reason === 'body' && alive.length && Math.random() < 0.55) {
-        target = U.pick(alive, Math.random);
-      }
+      /* The vote comes out of what the bot saw and what it has heard in the
+         meeting -- see game/minds.js. It used to be a coin toss, which made
+         the argument decorative. */
+      const target = NS.minds ? NS.minds.voteFor(H, brain.id) : 'skip';
       NS.host.handle(brain.id, { t: 'vote', target });
     }
     for (const brain of brains.values()) if (H.meeting.votes[brain.id] !== undefined) brain.votes = -1;
@@ -9489,6 +10789,7 @@ window.NS = window.NS || {};
   let current = null;
   let backdrop = null;
   let backdropStop = null;
+  let browser = null;
 
   const profile = {
     name: U.cleanName(U.store.get('name', ''), C.NAME_MAX),
@@ -9558,6 +10859,7 @@ window.NS = window.NS || {};
   }
 
   function hideAll() {
+    if (browser) { browser.stop(); browser = null; }
     if (backdropStop) { backdropStop(); backdropStop = null; }
     if (current) { current.remove(); current = null; }
   }
@@ -9679,6 +10981,45 @@ window.NS = window.NS || {};
       }, [el('strong', { text: 'Practice with bots' }), el('span', { text: 'On your own, right now' })]),
     ]);
 
+    /* Games you can walk into. Reading a code out still works and always
+       will, but four letters across a noisy room is four letters mis-heard,
+       and a list you can tap is the difference between starting in ten
+       seconds and starting in two minutes. */
+    const lobbyList = el('div', { class: 'open-lobbies', hidden: true });
+    const lobbyStatus = el('p', { class: 'open-status', text: '' });
+
+    function renderLobbies(list) {
+      lobbyList.textContent = '';
+      if (!list || !list.length) {
+        lobbyList.hidden = true;
+        lobbyStatus.textContent = 'No games open right now. Start one, or type a code.';
+        return;
+      }
+      lobbyList.hidden = false;
+      lobbyStatus.textContent = '';
+      for (const lobby of list.slice(0, 6)) {
+        lobbyList.appendChild(el('button', {
+          class: 'open-lobby', type: 'button',
+          onclick: () => { if (!needName()) hooks.onJoin(profile, lobby.code); },
+        }, [
+          el('strong', { class: 'open-code', text: lobby.code }),
+          el('span', { class: 'open-host', text: lobby.host + "'s game" }),
+          el('span', { class: 'open-count', text: lobby.players + (lobby.players === 1 ? ' player' : ' players') }),
+        ]));
+      }
+    }
+
+    const mode = NS.link.preferred();
+    if (online && mode !== 'local') {
+      lobbyStatus.textContent = 'Looking for games...';
+      browser = NS.link.browse({
+        mode,
+        onList: renderLobbies,
+        onStatus: (text) => { if (text) lobbyStatus.textContent = text; },
+        onError: (text) => { lobbyStatus.textContent = text; lobbyList.hidden = true; },
+      });
+    }
+
     const left = el('div', { class: 'title-left' }, [
       el('p', { class: 'eyebrow', text: 'Aurora-7 research station' }),
       el('h1', { class: 'wordmark' }, [
@@ -9687,6 +11028,11 @@ window.NS = window.NS || {};
       el('p', { class: 'tagline', text: 'Fourteen people, a station that is falling apart, and at least one of them wants it to.' }),
       el('div', { class: 'field-row' }, [nameInput]),
       actions,
+      mode === 'local' ? null : el('div', { class: 'open-wrap' }, [
+        el('p', { class: 'open-title', text: 'Games open now' }),
+        lobbyList,
+        lobbyStatus,
+      ]),
       el('p', { class: 'title-note', text: transportNote() }),
       el('button', { class: 'link-btn', type: 'button', text: 'How it works', onclick: showHelp }),
     ]);
@@ -10181,7 +11527,11 @@ window.NS = window.NS || {};
   }
 
   function closeLink() {
-    if (session.link) { session.link.close(); session.link = null; }
+    if (session.link) {
+      if (session.isHost) { try { session.link.announce(null); } catch (e) {} }
+      session.link.close();
+      session.link = null;
+    }
     NS.host.stop();
     session.isHost = false;
     session.hostId = null;
@@ -10192,13 +11542,8 @@ window.NS = window.NS || {};
      two people on one laptop, and the only way to try the join flow before a
      class without a second device. Otherwise the artifact room where there is
      one, and a public broker everywhere else. */
-  function transport() {
-    if (location.hash === '#local' && NS.link.localAvailable()) return 'local';
-    return NS.link.roomAvailable() ? 'room' : 'mqtt';
-  }
-
-  const hostGame = () => openLink(transport(), U.roomCode(4), true);
-  const joinGame = (profile, code) => openLink(transport(), code, false);
+  const hostGame = () => openLink(NS.link.preferred(), U.roomCode(4), true);
+  const joinGame = (profile, code) => openLink(NS.link.preferred(), code, false);
   const soloGame = () => openLink('solo', 'SOLO', true);
 
   function leaveToTitle(why) {
@@ -10475,7 +11820,18 @@ window.NS = window.NS || {};
       .filter((id) => id !== session.myId && W.state.roles[id] === 'impostor')
       .map((id) => W.players.get(id))
       .filter(Boolean);
-    NS.hud.showRole(W.myRole, C.ROLES[W.myRole].team === 'impostor' ? mates : []);
+    const def = C.ROLES[W.myRole] || C.ROLES.crewmate;
+    /* The sting first, then the card with the detail on it. Two beats: one to
+       feel, one to read. */
+    NS.cinema.play('reveal', {
+      team: def.team, name: def.name, sub: def.blurb,
+      colorIdx: W.me ? W.me.colorIdx : 0, hatIdx: W.me ? W.me.hatIdx : 0,
+    });
+    setTimeout(() => {
+      if (W.state.phase === 'reveal' || W.state.phase === 'play') {
+        NS.hud.showRole(W.myRole, def.team === 'impostor' ? mates : []);
+      }
+    }, NS.cinema.calm ? 900 : 2100);
   }
 
   function applySnapshot(s) {
@@ -10628,7 +11984,22 @@ window.NS = window.NS || {};
       NS.input.setEnabled(false);
       const out = W.state.ejected;
       if (out) {
-        NS.hud.showEject(out);
+        NS.cinema.play('eject', {
+          name: out.name, colorIdx: out.colorIdx, hatIdx: out.hatIdx,
+          impostor: out.impostor,
+          line: out.id
+            ? (out.name + (W.state.settings.confirmEjects
+              ? (out.impostor ? ' was an impostor.' : ' was not an impostor.') : ' was ejected.'))
+            : (out.tie ? 'The vote tied.' : 'The crew skipped.'),
+          sub: out.id && W.state.settings.confirmEjects
+            ? (out.remaining === 1 ? '1 impostor remains.' : out.remaining + ' impostors remain.')
+            : 'Nobody went out of the airlock.',
+        });
+        /* The tally panel comes up as the airlock finishes, so the drama and
+           the evidence do not fight for the same seconds. */
+        setTimeout(() => {
+          if (W.state.phase === 'eject') NS.hud.showEject(out);
+        }, NS.cinema.calm ? 1200 : 3400);
         NS.bits.announce(out.id
           ? (out.name + ' was ejected'
             + (W.state.settings.confirmEjects ? (out.impostor ? ', and was an impostor.' : ', and was not an impostor.') : '.'))
@@ -10690,19 +12061,34 @@ window.NS = window.NS || {};
     switch (e.e) {
       case 'kill': {
         const victim = W.players.get(e.target);
+        const killer = W.players.get(e.by);
         if (e.by === me) NS.hud.forceCooldown('kill', W.state.settings.killCooldown);
-        if (e.target === me) {
-          NS.audio.play('died');
-          NS.render.flash('#7a0f20', 0.8);
-          NS.render.shake(14);
-          NS.bits.toast('You are dead. Finish your tasks and watch.', 'bad', 6);
-          NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
-        } else if (seen(e.x, e.y)) {
-          NS.audio.play('kill');
-          NS.render.shake(7);
-        }
         NS.fx.kill(e.x, e.y);
+        NS.fx.feathers(e.x, e.y, victim ? victim.colorIdx : 0);
         if (victim) { victim.alive = false; victim.ghost = true; }
+
+        /* The kill cam runs for the two people it happened to, and for anyone
+           who was close enough to watch. Everybody else gets the noise and the
+           shake, because a cinematic for an event you did not witness would be
+           telling you something you should have had to see. */
+        const mine = e.target === me || e.by === me;
+        if ((mine || seen(e.x, e.y)) && killer && victim) {
+          NS.render.shake(mine ? 16 : 8);
+          NS.cinema.play('kill', {
+            killerColour: killer.colorIdx, killerHat: killer.hatIdx,
+            victimColour: victim.colorIdx, victimHat: victim.hatIdx,
+            line: e.target === me ? 'YOU ARE DEAD'
+              : e.by === me ? victim.name.toUpperCase() : victim.name.toUpperCase(),
+            sub: e.target === me
+              ? 'Finish your tasks. Talk to the other ghosts. Nobody living can hear you.'
+              : e.by === me ? 'Get out of the room.' : 'You saw the whole thing.',
+          });
+          if (e.target === me) {
+            NS.bits.announce('You were killed. You are a ghost now; you can still finish tasks.');
+          }
+        } else {
+          NS.audio.play('kill');
+        }
         break;
       }
       case 'shielded':
@@ -10799,11 +12185,19 @@ window.NS = window.NS || {};
   function onChat(from, data) {
     if (!data || typeof data !== 'object' || data.t !== 'msg') return;
     const now = U.now();
-    if (now - (chatClock.get(from) || 0) < CHAT_GAP) return;
-    chatClock.set(from, now);
+    const key = (data && data.as) ? from + ':' + data.as : from;
+    if (now - (chatClock.get(key) || 0) < CHAT_GAP) return;
+    chatClock.set(key, now);
     const text = U.cleanName(data.text, C.CHAT_MAX);
     if (!text) return;
-    const who = W.players.get(from);
+    /* The host speaks for the bots, so a message may name which one it is
+       from. Only the host may do that, and only for an actual bot. */
+    let speaker = from;
+    if (data.as && from === session.hostId) {
+      const claimed = W.players.get(data.as);
+      if (claimed && claimed.bot) speaker = data.as;
+    }
+    const who = W.players.get(speaker);
     if (!who) return;
     const senderDead = !who.alive || who.ghost;
     const iAmDead = W.me && (!W.me.alive || W.me.ghost);
@@ -10814,6 +12208,8 @@ window.NS = window.NS || {};
     NS.meeting.onChat({
       name: who.name, colorIdx: who.colorIdx, ghost: senderDead, text,
     });
+    /* Bots notice their own name going past. */
+    if (session.isHost && NS.minds && !who.bot) NS.minds.hear(NS.host.H, who.name, text);
   }
 
   /* ---- two loops, and why ------------------------------------------------ */
@@ -10859,6 +12255,16 @@ window.NS = window.NS || {};
     watchHost();
     roomTone();
 
+    /* A host puts its lobby on the shared list while it is waiting. The link
+       throttles this; calling it every beat is how it stays current when
+       somebody joins or leaves. */
+    if (session.isHost && session.link && W.state.phase === 'lobby' && session.mode !== 'solo') {
+      session.link.announce({
+        host: NS.screens.profile.name,
+        players: NS.host.list().filter((id) => NS.host.H.players[id].connected).length,
+      });
+    }
+
     publishPresence();
     if (session.isHost) NS.host.tick(dt);
 
@@ -10879,12 +12285,16 @@ window.NS = window.NS || {};
     lastFrame = now;
 
     const input = NS.input.read();
+    if (NS.cinema.active()) { input.x = 0; input.y = 0; }
     W.step(dt, input);
     NS.fx.step(dt);
 
     if (session.inGame && W.me) {
       NS.render.follow(W.me, dt);
       NS.render.drawScene(now, dt);
+    }
+    if (NS.cinema.active()) {
+      NS.render.drawOverlay((ctx, w, h) => NS.cinema.draw(ctx, w, h, dt));
     }
     NS.hud.update(dt);
     NS.meeting.update();

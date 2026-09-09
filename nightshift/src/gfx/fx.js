@@ -81,6 +81,17 @@
     spark(x, y) {
       burst(x, y, 6, { colour: '#ffb03a', speed: 160, life: 0.4, size: 2.5, gravity: 300 });
     },
+    /* Feathers, because it is a duck. They fall slower than debris and drift,
+       which is the tell that something soft came apart. */
+    feathers(x, y, colorIdx) {
+      const colour = (NS.config.COLORS[colorIdx] || NS.config.COLORS[0]);
+      burst(x, y - 12, 14, {
+        colour: colour.body, speed: 130, life: 1.6, size: 4.5, gravity: 55, drag: 0.9, kind: 'puff',
+      });
+      burst(x, y - 8, 8, {
+        colour: colour.rim, speed: 80, life: 2, size: 3.5, gravity: 35, drag: 0.88, kind: 'puff',
+      });
+    },
     step(x, y) {
       spawn({ x, y: y + 2, vx: (Math.random() - 0.5) * 18, vy: -6, life: 0.45, size: 4, colour: '#3a4560', kind: 'puff' });
     },

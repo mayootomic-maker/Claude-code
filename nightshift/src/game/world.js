@@ -225,9 +225,10 @@
        not blocked by walls. Hearing somebody you cannot see is most of what a
        dark corridor is for, and both sides of the game get to use it. */
     const EARSHOT = 360;
+    const now = U.now();
     for (const p of world.players.values()) {
-      p.walk += (p.moving ? dt * 9 : 0);
-      p.bob = p.moving ? Math.sin(p.walk) * 1.6 : 0;
+      p.walk += (p.moving ? dt * 7.5 : 0);
+      NS.characters.idle(p, dt, now);
       if (p.isMe || !p.moving || p.ghost || p.inVent || !p.connected) continue;
       p.stepClock = (p.stepClock || 0) + dt;
       if (p.stepClock < 0.27) continue;

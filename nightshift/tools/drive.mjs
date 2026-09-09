@@ -35,9 +35,11 @@ const page = await context.newPage();
 page.on('console', (m) => {
   if (m.type() !== 'error' && m.type() !== 'warning') return;
   const text = m.text();
-  /* The font host is unreachable in this container by design, and a file://
-     page has no favicon. Neither is the game's problem. */
-  if (/fonts\.googleapis|favicon|ERR_/.test(text)) return;
+  /* This container has no outbound network by design: the font host and the
+     public brokers are both unreachable, and the browser logs that itself.
+     Neither is the game's problem, and the lobby browser reporting it on
+     screen is the behaviour under test elsewhere. */
+  if (/fonts\.googleapis|favicon|ERR_|WebSocket|broker\./.test(text)) return;
   problems.push('console ' + m.type() + ': ' + text);
 });
 page.on('pageerror', (e) => problems.push('page error: ' + e.message + '\n' + (e.stack || '')));
@@ -74,7 +76,7 @@ await page.waitForTimeout(400);
 await shot(page, 'lobby-full');
 
 await page.click('.lobby-buttons .btn--primary');
-await page.waitForSelector('.reveal', { timeout: 10000 });
+await page.waitForSelector('.reveal', { timeout: 15000 });
 await page.waitForTimeout(900);
 await shot(page, 'reveal');
 
@@ -240,6 +242,7 @@ if (await page.evaluate(() => window.NS.world.state.phase !== 'meeting')) {
       cooldown: window.NS.host.H.emergencyCooldown,
     })));
 }
+await page.waitForFunction(() => window.NS.world.state.phase === 'meeting', null, { timeout: 15000 });
 await page.waitForSelector('.meeting', { timeout: 10000 });
 await page.waitForTimeout(900);
 await shot(page, 'meeting-discussion');

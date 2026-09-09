@@ -411,8 +411,17 @@
     }
   }
 
+  /* Draw straight onto the finished frame in screen space. The cinematics use
+     it, and nothing else should: anything that belongs in the world belongs in
+     drawScene where the darkness can reach it. */
+  function drawOverlay(fn) {
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fn(ctx, cssW, cssH);
+  }
+
   NS.render = {
-    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened,
+    attach, resize, drawScene, follow, centreOn, worldToScreen, shake, flash, ventOpened, drawOverlay,
     visionRadius,
     get scale() { return scale; },
     get width() { return cssW; },
