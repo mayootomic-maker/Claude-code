@@ -89,9 +89,17 @@ there. In your own world it goes through the integrated server's own console,
 which is permission level four whether or not cheats are on, so a survival world
 you never enabled cheats in still works.
 
-On somebody else's server it uses your own permission if you have it. If you do
-not, what happens depends on the game mode, and the honest version is worth
-stating plainly:
+On somebody else's server it asks by setting one real block and looking at it.
+Nothing the client knows about itself is trusted to answer that, because the
+useful case is exactly where the two disagree: a permissions plugin grants
+commands one at a time, so an owner can give you `minecraft.command.setblock`
+and `minecraft.command.fill` and nothing else — a tiny grant, nothing like
+operator — while your client is still told you are permission level zero. The
+verdict is remembered per world, so it costs one command on the first paste and
+nothing after.
+
+If the server does refuse, what happens depends on the game mode, and the honest
+version is worth stating plainly:
 
 - **Creative** — it builds it instead: the same plan in the same place, walked
   up block by block at instant speed. Costs nothing but the walk. Creative is a

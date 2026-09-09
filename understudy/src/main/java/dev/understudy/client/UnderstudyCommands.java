@@ -400,28 +400,27 @@ public final class UnderstudyCommands {
         }
         UnderstudyClient.askForPicker(true);
         if (Minecraft.getInstance().getSingleplayerServer() == null) {
-            // Said before rather than after. The two routes feel different
-            // enough — one is instant, one is a character walking a house up —
-            // that finding out which you are getting after choosing a design is
-            // finding out too late. Free to ask: the permissions came with the
-            // login, so this costs no packet and no refusal in the chat.
-            boolean mayCommand = source.getPlayer().permissions()
-                    .hasPermission(net.minecraft.server.permissions
-                            .Permissions.COMMANDS_GAMEMASTER);
-            if (mayCommand) {
+            // Said before rather than after. The routes feel different enough
+            // — one is instant, one is a character walking a house up, one is
+            // a refusal — that finding out which you are getting after
+            // choosing a design is finding out too late.
+            if (PasteTask.looksLikeAnOperator(source.getPlayer())) {
                 say(source, "you are an operator here, so it goes straight in");
-            } else if (dev.understudy.mc.Hotbar.creative(source.getPlayer())) {
-                say(source, "not an operator here — but creative, so it is built block by "
-                        + "block at instant speed instead, which costs nothing but the walk");
             } else {
-                // Said now rather than after a design has been chosen and a
-                // plot dragged out. Survival plus no permission is the one
-                // combination with no answer, and pretending otherwise wastes
-                // more of your time than the refusal does.
-                say(source, "§enot an operator here and not in creative — a paste cannot "
-                        + "happen: blocks come from the server and it will not make them");
-                say(source, "creative on that server does it, and is far less to hand out "
-                        + "than op. Otherwise /build puts it up with materials.");
+                // The login says level zero, and that is not the answer. A
+                // permissions plugin grants commands one at a time, so being an
+                // ordinary player and being able to run setblock are entirely
+                // compatible — and that combination is the whole reason this
+                // tries rather than assumes. What it costs when the server does
+                // refuse is one red line, once per world, which is worth saying
+                // in advance so it does not read as the mod being broken.
+                say(source, "it will try one block first — a server can grant setblock "
+                        + "on its own, without op, so the login is not the answer");
+                say(source, dev.understudy.mc.Hotbar.creative(source.getPlayer())
+                        ? "if that is refused: creative, so it is built block by block at "
+                                + "instant speed instead, costing nothing but the walk"
+                        : "if that is refused, one red line will say so, and in survival "
+                                + "there is no paste to be had — it will tell you what to ask for");
             }
         }
         return 1;

@@ -170,7 +170,7 @@ public final class PasteTask {
                     + "by block comes down the same way");
             return;
         }
-        if (local() == null && (client.player == null || !mayCommand(client.player))) {
+        if (local() == null && !mayCommand()) {
             // Only a paste that went through commands is ever recorded, so
             // reaching here means the permission was taken away in between.
             report.accept("this server will not run fill for you any more — "
@@ -212,7 +212,7 @@ public final class PasteTask {
         // take it down and it would hang in the air over the finished house.
         Ghosts.hide();
 
-        if (local() == null && !mayCommand(player)) {
+        if (local() == null && !mayCommand()) {
             buildInstead(plan, origin, allowed == Allowed.NO
                     ? "this server already refused to place blocks for you"
                     : "you are not an operator on this server, so nothing can be conjured here");
@@ -243,26 +243,37 @@ public final class PasteTask {
     /**
      * Whether a command sent from here has any chance of landing.
      *
-     * Two questions, cheapest first. The client is sent its own permissions at
-     * login, and setblock is gated on what used to be level two and is now
-     * COMMANDS_GAMEMASTER, so most of the time this is answered for free and
-     * without sending anything — which is the point, because the alternative is
-     * a red refusal in the chat of everyone who is not an operator.
+     * Only what the server has actually told us. This used to refuse outright
+     * when the vanilla permission level said no, and that was wrong in the one
+     * case that matters most: a permissions plugin grants commands one at a
+     * time. Somebody running LuckPerms can be given `minecraft.command.setblock`
+     * and `minecraft.command.fill` and nothing else — which is a tiny grant,
+     * nothing like operator, and exactly the thing to ask a friend for — and
+     * their client is still told they are permission level zero. Refusing on
+     * the level meant never trying, on precisely the servers where it works.
      *
-     * Having the permission is not the same as being allowed, though: a plugin,
-     * a claim or a plot world can still refuse. So where the answer is yes it
-     * is a maybe, and the one-block probe settles it. A refusal there is kept
-     * for as long as you are in that world, so it is asked once rather than
-     * before every paste.
+     * So the level is a hint for the wording and never a gate. The question is
+     * one real block, and the answer is kept for as long as you are in that
+     * world: asked once, not before every paste.
      */
-    private boolean mayCommand(LocalPlayer player) {
+    private boolean mayCommand() {
         String world = Worlds.key(client);
         if (!world.equals(verdictFor)) {
             verdictFor = world;
             allowed = Allowed.UNKNOWN;
         }
-        if (allowed == Allowed.NO) return false;
-        return player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
+        return allowed != Allowed.NO;
+    }
+
+    /**
+     * What the login said, which is not the whole story — see mayCommand.
+     *
+     * Used only to word what is said before a paste, so somebody who is plainly
+     * an operator is not warned about a refusal that is not coming.
+     */
+    public static boolean looksLikeAnOperator(LocalPlayer player) {
+        return player != null
+                && player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER);
     }
 
     /**
@@ -300,8 +311,10 @@ public final class PasteTask {
         report.accept(why + ", and in survival there is nothing this can do about it");
         report.accept("blocks come from the server. Without the permission it can only "
                 + "place what you are actually carrying, which is /build, not a paste.");
-        report.accept("what does work: creative on that server (not op — much less to "
-                + "give away), or an operator running the paste, or your own world");
+        report.accept("the smallest thing to ask the owner for is the two commands, not op:");
+        report.accept("  luckperms  user <you> permission set minecraft.command.setblock true");
+        report.accept("  luckperms  user <you> permission set minecraft.command.fill true");
+        report.accept("creative on that server also works, and grants no commands at all");
     }
 
     public void stop(String why) {
