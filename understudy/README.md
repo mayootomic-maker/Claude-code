@@ -89,13 +89,21 @@ there. In your own world it goes through the integrated server's own console,
 which is permission level four whether or not cheats are on, so a survival world
 you never enabled cheats in still works.
 
-On somebody else's server it uses your own permission if you have it, and if you
-do not, it **builds it instead** — the same plan in the same place, walked up
-block by block at instant speed. That fallback is the point rather than a
-consolation. Operator is every command on the server, and handing it out so a
-friend can put up a shed is not a trade anyone should make; placing a block is
-something a player may already do. It works out which route it is taking before
-sending anything, so on a server where you are not an operator nothing is
+On somebody else's server it uses your own permission if you have it. If you do
+not, what happens depends on the game mode, and the honest version is worth
+stating plainly:
+
+- **Creative** — it builds it instead: the same plan in the same place, walked
+  up block by block at instant speed. Costs nothing but the walk. Creative is a
+  much smaller thing for a server owner to hand out than operator, which is
+  every command on the server.
+- **Survival** — it cannot happen, and the mod says so instead of starting
+  something that cannot finish. The server owns the world and it owns your
+  inventory. A command needs the permission; a placement needs the item, and the
+  server is the one counting items. A client cannot add to that count, and one
+  that pretended to would only draw blocks that vanish on the next update.
+
+It works out which of those it is before sending anything, so nothing is
 attempted and no red error appears in the chat.
 
 **`/stash`** — puts a chest down beside you and fills it with a second set:
@@ -105,6 +113,13 @@ hand that nobody does. It never takes the kit you are wearing — every line of
 the list says how many must stay with you, and only the surplus moves — and it
 writes down where it put the chest, so `/stash where` can say. `/stash needs`
 lists what to be carrying for a full one. In creative it is stocked in full.
+
+`/stash flight` is the same idea for the other way of getting stranded: rockets,
+a spare pair of wings, and the membrane to mend them with. And `/stash <item>
+[n]` stashes anything at all — `/stash rockets 64`, `/stash ender_pearls 42`,
+`/stash arrows+bread 32` for that many of each. Short names and plurals reach
+the right item, and nothing is held back from something you named yourself:
+choosing it is the whole of the instruction.
 
 Nothing about `/stash` is a command sent to the server: it holds a chest,
 right-clicks the ground and shift-clicks stacks across, which is what a player

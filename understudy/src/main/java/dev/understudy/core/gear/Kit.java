@@ -2,11 +2,12 @@ package dev.understudy.core.gear;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 
 /**
- * What goes in a chest you leave behind in case you die.
+ * What goes in a chest you leave behind.
  *
  * A death chest is not a storage chest and the difference is the whole design.
  * Storage is about everything you own; this is about the twenty minutes after
@@ -70,6 +71,145 @@ public final class Kit {
         }
     }
 
+    /** The kit you get when you type nothing else. */
+    public static final String RECOVERY = "recovery";
+    /** Rockets and a spare pair of wings, for getting somewhere rather than back. */
+    public static final String FLIGHT = "flight";
+
+    /** The named kits, for help text and for completing what is being typed. */
+    public static List<String> presets() {
+        return List.of(RECOVERY, FLIGHT);
+    }
+
+    /** A named kit, or null if that word is not one. */
+    public static List<Line> preset(String name) {
+        String clean = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        return switch (clean) {
+            case RECOVERY -> recovery();
+            case FLIGHT -> flight();
+            default -> null;
+        };
+    }
+
+    /**
+     * Rockets, wings, and the membrane to mend them with.
+     *
+     * A different problem from the recovery chest and worth its own list. This
+     * one is not about a death, it is about the flight running out somewhere
+     * inconvenient — so what it holds is the two things you cannot improvise
+     * in the air, plus enough food to walk if it comes to that.
+     */
+    public static List<Line> flight() {
+        return List.of(
+                new Line("firework_rocket", 64, 32),
+                new Line("elytra", 1, 1),
+                new Line("phantom_membrane", 4, 0),
+                new Line("cooked_beef", 16, 8));
+    }
+
+    /**
+     * Anything you name, in whatever quantity you name.
+     *
+     * Several at once joined with a plus, the same way /get takes them, because
+     * a chest holding one thing is rarely the chest anyone wanted. The count
+     * applies to each named thing rather than being shared out between them —
+     * "sixty-four of each" is what people mean by it, and splitting a number
+     * across a list nobody counted is a silent surprise.
+     *
+     * Nothing is kept back from an order. The kits protect the set you are
+     * wearing because you did not choose their contents; naming a thing and a
+     * number is choosing, and second-guessing that would just mean the chest
+     * quietly holds less than you asked for.
+     */
+    public static List<Line> order(String request, int count) {
+        List<Line> out = new ArrayList<>();
+        List<String> seen = new ArrayList<>();
+        if (request == null) return List.of();
+        for (String each : request.split("\\+")) {
+            String item = clean(each);
+            if (item.isEmpty() || seen.contains(item)) continue;
+            seen.add(item);
+            out.add(new Line(item, Math.max(1, count), 0));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * One typed name, tidied.
+     *
+     * The namespace goes, spaces and dashes become underscores, and the locale
+     * is pinned — `toLowerCase()` with a Turkish default turns IRON into ıron
+     * and every lookup after it fails without saying why. That bug has been
+     * found in this codebase three times now.
+     *
+     * The trim happens before the spaces are replaced and the edges are stripped
+     * after, or "  iron ingot  " arrives as "__iron_ingot__" — whitespace turned
+     * into underscores is no longer whitespace, and trim stops seeing it.
+     */
+    public static String clean(String name) {
+        if (name == null) return "";
+        String tidy = name.toLowerCase(Locale.ROOT)
+                .replace("minecraft:", "")
+                .trim()
+                .replace(' ', '_')
+                .replace('-', '_');
+        int from = 0;
+        int to = tidy.length();
+        while (from < to && tidy.charAt(from) == '_') from++;
+        while (to > from && tidy.charAt(to - 1) == '_') to--;
+        return tidy.substring(from, to);
+    }
+
+    /**
+     * Short names people actually type for things the registry calls something
+     * else.
+     *
+     * Deliberately short. Guessing at names is how a lookup table becomes a
+     * dictionary nobody maintains, and the plural rules below already cover
+     * most of what a list like this would otherwise be full of — "arrows",
+     * "torches", "ender_pearls" all reach the right item without an entry
+     * here. What is left is the handful where the everyday word and the
+     * registry name are simply different words.
+     */
+    private static final Map<String, String> ALSO_KNOWN_AS = Map.of(
+            "rocket", "firework_rocket",
+            "firework", "firework_rocket",
+            "pearl", "ender_pearl",
+            "wing", "elytra",
+            "wings", "elytra",
+            "steak", "cooked_beef",
+            "gapple", "golden_apple",
+            "xp_bottle", "experience_bottle");
+
+    /**
+     * What this typed word might be, best guess first.
+     *
+     * The caller walks these against the registry and takes the first that
+     * exists, which keeps the only list of real item names in the one place
+     * that has it. Plurals are here rather than there because "torches" is a
+     * fact about English, not about Minecraft, and it is testable without a
+     * game.
+     */
+    public static List<String> candidates(String typed) {
+        String name = clean(typed);
+        if (name.isEmpty()) return List.of();
+        List<String> out = new ArrayList<>();
+        add(out, name);
+        add(out, ALSO_KNOWN_AS.get(name));
+        if (name.endsWith("ies")) add(out, name.substring(0, name.length() - 3) + "y");
+        if (name.endsWith("es")) add(out, name.substring(0, name.length() - 2));
+        if (name.endsWith("s")) {
+            String one = name.substring(0, name.length() - 1);
+            add(out, one);
+            add(out, ALSO_KNOWN_AS.get(one));
+        }
+        return List.copyOf(out);
+    }
+
+    private static void add(List<String> out, String name) {
+        if (name != null && !name.isEmpty() && !out.contains(name)) out.add(name);
+    }
+
     /**
      * The kit, in the order it matters after a death.
      *
@@ -108,10 +248,10 @@ public final class Kit {
      * pickaxe should say so while you are standing next to it, not when you
      * come back to it dead.
      */
-    public static Stocked from(Map<String, Integer> carried, boolean free) {
+    public static Stocked from(List<Line> lines, Map<String, Integer> carried, boolean free) {
         List<Give> giving = new ArrayList<>();
         List<String> shortOf = new ArrayList<>();
-        for (Line line : recovery()) {
+        for (Line line : lines) {
             int count = free ? line.want() : spare(carried, line);
             if (count > 0) giving.add(new Give(line.item(), count));
             else shortOf.add(line.item());
@@ -131,9 +271,9 @@ public final class Kit {
      * Want plus keepBack, because to put a spare pickaxe in a box you need two
      * pickaxes — which is the thing that is obvious afterwards and not before.
      */
-    public static Map<String, Integer> shoppingList() {
+    public static Map<String, Integer> shoppingList(List<Line> lines) {
         Map<String, Integer> out = new LinkedHashMap<>();
-        for (Line line : recovery()) out.put(line.item(), line.want() + line.keepBack());
+        for (Line line : lines) out.put(line.item(), line.want() + line.keepBack());
         return out;
     }
 

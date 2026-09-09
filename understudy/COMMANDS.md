@@ -33,8 +33,11 @@
 | `/sort` | put your things in the chests they belong in |
 | `/sort all` | the same, including the kit you carry |
 | `/stash` | a chest of spares here, for after you die |
+| `/stash flight` | rockets and a spare elytra instead |
+| `/stash <item> [n]` | a chest of anything: /stash rockets 64 |
+| `/stash a+b 32` | several things at once, that many of each |
 | `/stash where` | the stashes it has put down in this world |
-| `/stash needs` | what to carry so a stash fills up properly |
+| `/stash needs [kit]` | what to carry so a kit fills up properly |
 | `/enchant [item]` | at a table with its fifteen shelves |
 | `/travel <x> <y> <z>` | walk there |
 | `/travel stop` | stop walking |

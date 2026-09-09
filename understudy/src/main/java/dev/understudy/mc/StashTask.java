@@ -84,6 +84,8 @@ public final class StashTask {
     /** What actually went in, for the report at the end. */
     private final Map<String, Integer> stocked = new LinkedHashMap<>();
     private List<String> shortOf = List.of();
+    /** What this chest is, as a phrase the reports can drop straight into. */
+    private String label = "recovery chest";
     private int waited;
     private int cooldown;
 
@@ -98,7 +100,9 @@ public final class StashTask {
     }
 
     public String status() {
-        return running() ? "stashing: " + outstanding.size() + " lines left" : "idle";
+        return running()
+                ? "stashing a " + label + ": " + outstanding.size() + " lines left"
+                : "idle";
     }
 
     /**
@@ -106,14 +110,36 @@ public final class StashTask {
      *
      * Everything that can be known before touching the world is checked here,
      * because a refusal you get immediately is worth ten times one you get
-     * after the chest is already on the ground.
+     * after the chest is already on the ground. A misspelled item is the case
+     * that matters most: the chest would otherwise go down, open, fill with
+     * nothing and close again, which looks exactly like a broken feature
+     * rather than like a typo.
      */
-    public void start() {
+    public void start(List<Kit.Line> wanted, String what, boolean kit) {
         LocalPlayer player = client.player;
         if (player == null || client.level == null) {
             report.accept("not in a world yet");
             return;
         }
+        if (wanted.isEmpty()) {
+            report.accept("nothing named to stash");
+            return;
+        }
+
+        List<Kit.Line> lines = new ArrayList<>();
+        List<String> nonsense = new ArrayList<>();
+        for (Kit.Line line : wanted) {
+            String real = inTheGame(line.item());
+            if (real == null) nonsense.add(line.item());
+            else lines.add(new Kit.Line(real, line.want(), line.keepBack()));
+        }
+        if (!nonsense.isEmpty()) {
+            report.accept("no item called " + String.join(", ", nonsense));
+            if (lines.isEmpty()) return;
+            report.accept("stashing the rest anyway");
+        }
+
+        label = what;
         creative = Hotbar.creative(player);
         Map<String, Integer> carried = Carried.contents(player);
 
@@ -122,11 +148,14 @@ public final class StashTask {
             return;
         }
 
-        Kit.Stocked plan = Kit.from(carried, creative);
+        Kit.Stocked plan = Kit.from(lines, carried, creative);
         if (plan.isEmpty()) {
-            report.accept("nothing spare to stash — a death chest is a second set, "
-                    + "and everything you have is your first");
-            report.accept("/stash needs  —  what to bring to fill one");
+            report.accept("nothing to spare for a " + label + " — no spare "
+                    + String.join(", ", plan.shortOf()));
+            if (kit) {
+                report.accept("a kit is a second set, not the one you are wearing — "
+                        + "/stash needs says what to carry for a full one");
+            }
             return;
         }
 
@@ -144,8 +173,22 @@ public final class StashTask {
         waited = 0;
         cooldown = 0;
         phase = Phase.PLACE;
-        report.accept("stashing a recovery chest at " + where.getX() + " " + where.getY()
+        report.accept("stashing a " + label + " at " + where.getX() + " " + where.getY()
                 + " " + where.getZ() + " — " + Kit.describe(plan));
+    }
+
+    /**
+     * The registry name behind a word somebody typed, or null.
+     *
+     * The candidates come from core — the alias and the plural rules are facts
+     * about English rather than about this version of the game — and the
+     * registry is the only thing that can say which of them is real.
+     */
+    private String inTheGame(String typed) {
+        for (String candidate : Kit.candidates(typed)) {
+            if (itemNamed(candidate) != null) return candidate;
+        }
+        return null;
     }
 
     public void stop(String why) {
@@ -399,11 +442,16 @@ public final class StashTask {
             parts.add(line.getValue() + " " + line.getKey());
         }
         report.accept("stashed: " + String.join(", ", parts));
-        List<String> missing = new ArrayList<>(shortOf);
-        for (String item : outstanding.keySet()) if (!missing.contains(item)) missing.add(item);
-        if (!missing.isEmpty()) {
-            report.accept("none spare: " + String.join(", ", missing)
-                    + "  —  /stash needs");
+        if (!shortOf.isEmpty()) {
+            report.accept("none spare: " + String.join(", ", shortOf));
+        }
+        if (!outstanding.isEmpty()) {
+            // A different problem from having none, and worth saying so: the
+            // thing is in your inventory, in a stack too big to give away
+            // without dipping under what has to stay with you. Nothing can be
+            // done about it from here except tell you.
+            report.accept("could not split a stack for: "
+                    + String.join(", ", outstanding.keySet()));
         }
         report.accept("it is at " + where.getX() + " " + where.getY() + " " + where.getZ()
                 + "; /stash where lists them");

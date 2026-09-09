@@ -36,13 +36,15 @@ import java.util.function.Consumer;
  *
  * And operator is not a thing to ask a friend for so you can put up a shed. It
  * is every command on the server, and a group of people who all have it is a
- * group where one bad afternoon is unrecoverable. So the second route is a
- * bonus rather than a requirement: if the permission is there it is used
- * because it is instant, and if it is not, the paste is not refused — it is
- * *built*. The character walks it up block by block at instant speed, which
- * needs no permission at all because placing a block is what a player does. In
- * creative it costs nothing; in survival it costs the materials, and it says
- * which before it starts.
+ * group where one bad afternoon is unrecoverable. So without it, in creative,
+ * the paste is not refused — it is *built*, walked up block by block at instant
+ * speed, which needs no permission at all because placing a block is what a
+ * player does and creative supplies the blocks.
+ *
+ * In survival without the permission there is no third route and this does not
+ * invent one. The server owns the world and it owns your inventory: a command
+ * needs the permission, a placement needs the item, and the count of items is
+ * the server's. See buildInstead for what is said instead.
  *
  * The permission is worked out before anything is sent. The client is told its
  * own permissions at login, so on a server where you are not an operator
@@ -264,24 +266,42 @@ public final class PasteTask {
     }
 
     /**
-     * Put it up the long way instead, and say why before anything happens.
+     * What is left when the commands are not available.
      *
-     * Not a consolation prize. It is the same building in the same place from
-     * the same plan; what it costs is a walk, and in survival the materials —
-     * which is the honest price of not being an operator, and is worth stating
-     * rather than discovering when the gatherer wanders off after oak logs.
+     * In creative, the whole thing: the blocks cost nothing, so it is the same
+     * building in the same place from the same plan and all it costs is the
+     * walk. That is a real answer and it is taken without asking.
+     *
+     * In survival on somebody else's server, nothing is left, and this says so
+     * rather than starting something that cannot finish. There is no client-side
+     * route to a block appearing out of nothing there: the server owns the world
+     * and it owns your inventory. A command needs the permission. A placement
+     * needs the item, and the server is the one counting the items — a client
+     * cannot add to that count, and a client that pretends to only draws blocks
+     * that vanish on the next update. The three things that do work are all
+     * somebody granting something, so they are named instead of guessed at.
+     *
+     * Falling through to the gatherer was the wrong call and it is why this is
+     * written out at length. It is technically the same building, and it means
+     * an evening of mining for a house that was supposed to take a second —
+     * which is not the feature with a caveat, it is a different feature.
      */
     private void buildInstead(Blueprint plan, BlockPos origin, String why) {
         running = false;
         commands = List.of();
         pending = null;
-        report.accept(why + " — building it instead, at instant speed");
-        report.accept(Hotbar.creative(client.player)
-                ? "creative, so the blocks cost nothing; it just has to walk it"
-                : "survival, so it needs the materials — /plan " + plan.name()
-                        + " says what they are");
-        BuildTask.speed(BuildTask.Speed.INSTANT);
-        otherwise.accept(plan, origin);
+        if (Hotbar.creative(client.player)) {
+            report.accept(why + " — building it instead, at instant speed");
+            report.accept("creative, so the blocks cost nothing; it just has to walk it");
+            BuildTask.speed(BuildTask.Speed.INSTANT);
+            otherwise.accept(plan, origin);
+            return;
+        }
+        report.accept(why + ", and in survival there is nothing this can do about it");
+        report.accept("blocks come from the server. Without the permission it can only "
+                + "place what you are actually carrying, which is /build, not a paste.");
+        report.accept("what does work: creative on that server (not op — much less to "
+                + "give away), or an operator running the paste, or your own world");
     }
 
     public void stop(String why) {

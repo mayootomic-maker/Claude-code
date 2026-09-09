@@ -106,7 +106,8 @@ public final class UnderstudyCommands {
                             .suggests((context, builder) -> {
                                 // Complete after a plus too, so a list can be
                                 // typed the same way a single name is.
-                                String typed = builder.getRemaining().toLowerCase();
+                                String typed = builder.getRemaining()
+                                        .toLowerCase(java.util.Locale.ROOT);
                                 int plus = typed.lastIndexOf('+');
                                 String done = plus < 0 ? "" : typed.substring(0, plus + 1);
                                 String partial = typed.substring(plus + 1);
@@ -159,7 +160,8 @@ public final class UnderstudyCommands {
                     .executes(context -> projects(context.getSource()))
                     .then(argument("which", StringArgumentType.word())
                             .suggests((context, builder) -> {
-                                String typed = builder.getRemaining().toLowerCase();
+                                String typed = builder.getRemaining()
+                                        .toLowerCase(java.util.Locale.ROOT);
                                 for (String id : Project.ids()) {
                                     if (id.startsWith(typed)) builder.suggest(id);
                                 }
@@ -172,7 +174,8 @@ public final class UnderstudyCommands {
                     .executes(context -> enchant(context.getSource(), null))
                     .then(argument("item", StringArgumentType.word())
                             .suggests((context, builder) -> {
-                                String typed = builder.getRemaining().toLowerCase();
+                                String typed = builder.getRemaining()
+                                        .toLowerCase(java.util.Locale.ROOT);
                                 for (String item : Carried.contents(
                                         Minecraft.getInstance().player).keySet()) {
                                     if (item.startsWith(typed)
@@ -196,10 +199,48 @@ public final class UnderstudyCommands {
             // permission: it holds a chest, right-clicks the ground and
             // shift-clicks stacks across, which is what a player does.
             dispatcher.register(literal("stash")
-                    .executes(context -> stash(context.getSource()))
+                    .executes(context -> stash(context.getSource(),
+                            dev.understudy.core.gear.Kit.RECOVERY, A_STACK, false))
                     .then(literal("where").executes(context -> stashWhere(context.getSource())))
-                    .then(literal("needs").executes(context -> stashNeeds(context.getSource())))
-                    .then(literal("stop").executes(context -> stop(context.getSource()))));
+                    .then(literal("needs")
+                            .executes(context -> stashNeeds(context.getSource(),
+                                    dev.understudy.core.gear.Kit.RECOVERY))
+                            .then(argument("kit", StringArgumentType.word())
+                                    .suggests((context, builder) -> {
+                                        for (String kit : dev.understudy.core.gear.Kit.presets()) {
+                                            builder.suggest(kit);
+                                        }
+                                        return builder.buildFuture();
+                                    })
+                                    .executes(context -> stashNeeds(context.getSource(),
+                                            StringArgumentType.getString(context, "kit")))))
+                    .then(literal("stop").executes(context -> stop(context.getSource())))
+                    // A kit by name, or anything at all by name and number.
+                    // Same plus-separated shape as /get, because a chest with
+                    // one thing in it is rarely the chest anyone wanted.
+                    .then(argument("what", StringArgumentType.word())
+                            .suggests((context, builder) -> {
+                                String typed = builder.getRemaining()
+                                        .toLowerCase(java.util.Locale.ROOT);
+                                int plus = typed.lastIndexOf('+');
+                                String done = plus < 0 ? "" : typed.substring(0, plus + 1);
+                                String partial = typed.substring(plus + 1);
+                                if (plus < 0) {
+                                    for (String kit : dev.understudy.core.gear.Kit.presets()) {
+                                        if (kit.startsWith(partial)) builder.suggest(kit);
+                                    }
+                                }
+                                for (String item : Planner.obtainable()) {
+                                    if (item.startsWith(partial)) builder.suggest(done + item);
+                                }
+                                return builder.buildFuture();
+                            })
+                            .executes(context -> stash(context.getSource(),
+                                    StringArgumentType.getString(context, "what"), A_STACK, false))
+                            .then(argument("n", IntegerArgumentType.integer(1, 6400))
+                                    .executes(context -> stash(context.getSource(),
+                                            StringArgumentType.getString(context, "what"),
+                                            IntegerArgumentType.getInteger(context, "n"), true)))));
 
             dispatcher.register(literal("understudy")
                     .then(literal("stop").executes(context -> stop(context.getSource())))
@@ -211,7 +252,8 @@ public final class UnderstudyCommands {
                             .executes(context -> help(context.getSource(), null))
                             .then(argument("topic", StringArgumentType.word())
                                     .suggests((context, builder) -> {
-                                        String typed = builder.getRemaining().toLowerCase();
+                                        String typed = builder.getRemaining()
+                                        .toLowerCase(java.util.Locale.ROOT);
                                         for (String id : Manual.topics()) {
                                             if (id.startsWith(typed)) builder.suggest(id);
                                         }
@@ -363,12 +405,24 @@ public final class UnderstudyCommands {
             // that finding out which you are getting after choosing a design is
             // finding out too late. Free to ask: the permissions came with the
             // login, so this costs no packet and no refusal in the chat.
-            say(source, source.getPlayer().permissions()
-                            .hasPermission(net.minecraft.server.permissions
-                                    .Permissions.COMMANDS_GAMEMASTER)
-                    ? "you are an operator here, so it goes straight in"
-                    : "not an operator here, so it will be built block by block at instant "
-                            + "speed instead — same building, same place, nothing to ask for");
+            boolean mayCommand = source.getPlayer().permissions()
+                    .hasPermission(net.minecraft.server.permissions
+                            .Permissions.COMMANDS_GAMEMASTER);
+            if (mayCommand) {
+                say(source, "you are an operator here, so it goes straight in");
+            } else if (dev.understudy.mc.Hotbar.creative(source.getPlayer())) {
+                say(source, "not an operator here — but creative, so it is built block by "
+                        + "block at instant speed instead, which costs nothing but the walk");
+            } else {
+                // Said now rather than after a design has been chosen and a
+                // plot dragged out. Survival plus no permission is the one
+                // combination with no answer, and pretending otherwise wastes
+                // more of your time than the refusal does.
+                say(source, "§enot an operator here and not in creative — a paste cannot "
+                        + "happen: blocks come from the server and it will not make them");
+                say(source, "creative on that server does it, and is far less to hand out "
+                        + "than op. Otherwise /build puts it up with materials.");
+            }
         }
         return 1;
     }
@@ -547,7 +601,8 @@ public final class UnderstudyCommands {
         // instead of twice. Asking for them one at a time is two trips down the
         // same tunnel.
         java.util.LinkedHashMap<String, Integer> wants = new java.util.LinkedHashMap<>();
-        for (String each : rawItem.toLowerCase().replace("minecraft:", "").split("\\+")) {
+        for (String each : rawItem.toLowerCase(java.util.Locale.ROOT)
+                .replace("minecraft:", "").split("\\+")) {
             if (!each.isBlank()) wants.merge(each, count, Integer::sum);
         }
         if (wants.isEmpty()) {
@@ -614,15 +669,53 @@ public final class UnderstudyCommands {
         return 1;
     }
 
-    /** Put a recovery chest down here and fill it with whatever is spare. */
-    private static int stash(FabricClientCommandSource source) {
+    /**
+     * How many of something you get by not saying how many.
+     *
+     * A stack. It is the amount people mean by "some" for anything that
+     * stacks, and for anything that does not the game caps it at one on the
+     * way past, so there is no number here that is wrong for both.
+     */
+    private static final int A_STACK = 64;
+
+    /**
+     * Put a chest down here and fill it.
+     *
+     * `what` is either the name of a kit — a list the mod knows, with its own
+     * amounts and its own rules about what has to stay with you — or the name
+     * of anything at all, in which case the number is yours and nothing is
+     * held back. Naming a thing is choosing it; a kit you did not write the
+     * contents of is the only case where second-guessing you is right.
+     */
+    private static int stash(FabricClientCommandSource source, String what, int count,
+                             boolean saidHowMany) {
         UnderstudyClient.resume();
         StashTask task = UnderstudyClient.stash();
         if (task == null) {
             say(source, "not in a world yet");
             return 0;
         }
-        task.start();
+        java.util.List<dev.understudy.core.gear.Kit.Line> kit =
+                dev.understudy.core.gear.Kit.preset(what);
+        if (kit != null) {
+            if (saidHowMany) {
+                say(source, what + " is a kit — its amounts come with it, so the "
+                        + count + " was ignored");
+            }
+            task.start(kit, what + " chest", true);
+            return 1;
+        }
+        java.util.List<dev.understudy.core.gear.Kit.Line> order =
+                dev.understudy.core.gear.Kit.order(what, count);
+        if (order.isEmpty()) {
+            say(source, "nothing named — /stash <item> [n], or one of: "
+                    + String.join(", ", dev.understudy.core.gear.Kit.presets()));
+            return 0;
+        }
+        String named = order.size() == 1
+                ? order.getFirst().item()
+                : order.size() + " things";
+        task.start(order, "chest of " + named, false);
         return 1;
     }
 
@@ -649,14 +742,22 @@ public final class UnderstudyCommands {
         return 1;
     }
 
-    /** What to be carrying for a full one, spare and kept side by side. */
-    private static int stashNeeds(FabricClientCommandSource source) {
-        say(source, "a full recovery chest needs, on you, one chest and:");
-        for (dev.understudy.core.gear.Kit.Line line : dev.understudy.core.gear.Kit.recovery()) {
+    /** What to be carrying for a full kit, spare and kept side by side. */
+    private static int stashNeeds(FabricClientCommandSource source, String which) {
+        java.util.List<dev.understudy.core.gear.Kit.Line> kit =
+                dev.understudy.core.gear.Kit.preset(which);
+        if (kit == null) {
+            say(source, "no kit called " + which + " — there is "
+                    + String.join(" and ", dev.understudy.core.gear.Kit.presets()));
+            return 0;
+        }
+        say(source, "a full " + which + " chest needs, on you, one chest and:");
+        for (dev.understudy.core.gear.Kit.Line line : kit) {
             say(source, "  " + (line.want() + line.keepBack()) + " " + line.item()
                     + "  —  " + line.want() + " for the chest, " + line.keepBack() + " stays");
         }
         say(source, "in creative it needs none of it: the chest is stocked in full");
+        say(source, "or name your own: /stash " + kit.getFirst().item() + " 64");
         return 1;
     }
 
