@@ -189,4 +189,19 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # and it is answered from the login, costing no packet and no refusal in the
 # chat of everyone who is not an operator.
 #
-# Nothing open.
+# NOBODY HOLDING OPERATOR. The only arrangement where that is true and a paste
+# still happens is the server agreeing to place the blocks itself — so the same
+# jar grows a server half, dropped in once by whoever runs the server, and no
+# player is given anything. Which players install the client half stays their
+# own business, as it always was.
+#
+# The policy is written and tested already (core.build.Quota): blocks only,
+# a cap on the box and on the commands, a cooldown, and a reason for every
+# refusal. What is left is the plumbing, and none of its names are guessable.
+net.fabricmc.api.ModInitializer 12
+net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry 25
+net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking 45
+net.fabricmc.fabric.api.networking.v1.ClientPlayNetworking 40
+net.minecraft.network.protocol.common.custom.CustomPacketPayload 25
+net.minecraft.network.codec.ByteBufCodecs 35
+net.minecraft.server.level.ServerPlayer 45
