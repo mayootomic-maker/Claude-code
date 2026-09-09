@@ -198,10 +198,24 @@ net.fabricmc.fabric.api.client.keybinding.v2.KeyBindingHelper 12
 # The policy is written and tested already (core.build.Quota): blocks only,
 # a cap on the box and on the commands, a cooldown, and a reason for every
 # refusal. What is left is the plumbing, and none of its names are guessable.
-net.fabricmc.api.ModInitializer 12
-net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry 25
-net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking 45
-net.fabricmc.fabric.api.networking.v1.ClientPlayNetworking 40
-net.minecraft.network.protocol.common.custom.CustomPacketPayload 25
-net.minecraft.network.codec.ByteBufCodecs 35
-net.minecraft.server.level.ServerPlayer 45
+# Answered so far:
+#   ModInitializer.onInitialize() — the server half's entrypoint
+#   PayloadTypeRegistry.serverboundPlay() -> PayloadTypeRegistry<RegistryFriendlyByteBuf>
+#     with register(CustomPacketPayload$Type<T>, StreamCodec<? super B, T>)
+#   ServerPlayNetworking.registerGlobalReceiver(Type<T>, PlayPayloadHandler<T>),
+#     send(ServerPlayer, payload), canSend(ServerPlayer, Type)
+#   CustomPacketPayload.createType(String) and codec(StreamMemberEncoder, StreamDecoder)
+#   ByteBufCodecs has VAR_INT and STRING_UTF8 but no list in its first thirty
+#     lines, so the payload writes its own list through FriendlyByteBuf rather
+#     than composing one
+#
+# ClientPlayNetworking was not found under api.networking.v1 — client-only
+# Fabric classes live under api.client.networking.v1, which is where the rest
+# of this mod's client hooks come from too. Asked again in the right place.
+net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking 40
+# And the two shapes a receiver is written against, which cannot be guessed:
+# what the handler's single method takes, and what the context offers.
+net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking$PlayPayloadHandler 12
+net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking$Context 15
+net.minecraft.network.protocol.common.custom.CustomPacketPayload$Type 12
+net.minecraft.network.codec.StreamCodec 20

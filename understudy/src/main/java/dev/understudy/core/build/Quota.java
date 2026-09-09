@@ -14,9 +14,8 @@ import java.util.List;
  *
  * Three limits, and each one is a different failure:
  *
- *  - **What.** Only blocks, ever. That is `Ticket`'s whitelist, reused rather
- *    than rewritten, and it is what stops a paste from being a way to run a
- *    command.
+ *  - **What.** Only blocks, ever — `placesABlock` below, which is the rule that
+ *    stops a paste from being a way to run a command.
  *  - **How much.** A cap on the box and on the number of commands. A mistake
  *    with the drag handles is a real thing that happens, and the difference
  *    between a wrong building and a flattened region is this number.
