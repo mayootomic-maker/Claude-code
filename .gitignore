@@ -13,3 +13,7 @@ app/e2e/shots/
 .env
 .env.*
 !.env.example
+
+# Python bytecode from the Blender build scripts.
+__pycache__/
+*.pyc

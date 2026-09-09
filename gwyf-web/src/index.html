@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en" data-theme="velvet">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gamble With Your Friends</title>
+<meta name="description" content="A casino crawler for the browser. One shared bank account, one shared debt, five minutes a day, and three friends who can spend it all.">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app" class="app" hidden>
+
+
+
+  <main class="stage">
+  <!-- The overlay, laid out in corners over the 3D rather than as a bar above
+       it. That is how the game this follows arranges it, and it is also what
+       gives the room the whole frame: everything here is information about a
+       run, and none of it needs a strip of its own. -->
+  <header class="hud" id="hud">
+    <div class="hud__corner hud__corner--tl">
+      <div class="hud__row">
+        <button class="hud__mark" id="btnTitle" title="Back to the menu" aria-label="Back to the menu">♠</button>
+        <span class="tickets"><span class="tickets__icon" aria-hidden="true">🎟</span><b id="statTickets">0</b></span>
+      </div>
+      <p class="hud__label">Challenge</p>
+      <div class="card card--challenge" id="challengeCard">
+        <div class="card__head">
+          <span class="card__title" id="challengeName">Tonight’s quota</span>
+          <span class="card__reward" id="challengeReward"></span>
+        </div>
+        <p class="card__note" id="challengeNote">Reach the quota before the doors close.</p>
+        <div class="quotabar"><i id="quotaFill" style="width:0%"></i></div>
+      </div>
+    </div>
+
+    <div class="hud__corner hud__corner--tc">
+      <p class="hud__label">Day ends in</p>
+      <strong class="clock" id="statClock" data-live>5:00</strong>
+      <div class="heat" id="heatWrap" data-state="cold" hidden>
+        <div class="heat__bar"><i id="heatFill" style="width:0%"></i></div>
+        <span class="heat__label" id="heatLabel">Nobody is watching</span>
+      </div>
+    </div>
+
+    <div class="hud__corner hud__corner--tr">
+      <div class="hud__tools">
+        <button class="icobtn" id="btnTower" title="Back to the lift" aria-label="Back to the lift">🛗</button>
+        <button class="icobtn" id="btnShop" title="The back office (B)" aria-label="Open the back office">🧳</button>
+        <button class="icobtn" id="btnSound" title="Sound" aria-pressed="true" aria-label="Toggle sound">🔊</button>
+        <button class="icobtn" id="btnTable" title="Play together (M)" aria-label="Play together">🤝</button>
+        <button class="icobtn" id="btnMenu" title="Settings and mods (F1)" aria-label="Settings and mods">⚙</button>
+      </div>
+      <p class="hud__label hud__label--right">Day <b id="statDay">1</b></p>
+      <strong class="money money--bank" id="statBank" data-live>$0</strong>
+      <span class="money money--quota">/ <span id="statQuota">$0</span></span>
+      <span class="money money--debt">owed <span id="statDebt">$0</span></span>
+      <ul class="ledger" id="crewList" aria-label="Everyone at the table"></ul>
+    </div>
+  </header>
+    <canvas id="scene" aria-label="The table"></canvas>
+
+    <div class="reticle" id="reticle" aria-hidden="true"><i></i></div>
+
+    <div class="floortag" id="floorTag" aria-hidden="true"></div>
+
+    <div class="banner" id="banner" data-tone="good" hidden>
+      <span class="banner__text" id="bannerText"></span>
+      <span class="banner__clock" id="bannerClock"></span>
+    </div>
+
+    <div class="guide" id="guide" hidden>
+      <span class="guide__arrow" id="guideArrow" aria-hidden="true">↑</span>
+      <span class="guide__text" id="guideText"></span>
+    </div>
+
+    <div class="useprompt" id="usePrompt" hidden>
+      <kbd>E</kbd><span id="useLabel"></span><em id="useNote"></em>
+    </div>
+
+    <button class="resume" id="resumeBtn" hidden>
+      <span class="resume__key">Click</span> to look around
+      <em>WASD walk · Shift run · Space jump · Ctrl crouch · E use · Esc release</em>
+    </button>
+
+    <button class="leave" id="leaveBtn" hidden>&larr; Step away</button>
+
+    <div class="touch" id="touchLayer" hidden>
+      <div class="touch__pad" id="touchStick" aria-label="Walk">
+        <span class="touch__ring"></span>
+        <span class="touch__knob" id="touchKnob"></span>
+      </div>
+      <div class="touch__acts">
+        <button class="touch__act" id="touchEmote" aria-label="Emotes">😀</button>
+        <button class="touch__act" id="touchCrouch" aria-label="Crouch">Duck</button>
+        <button class="touch__act" id="touchJump" aria-label="Jump">Jump</button>
+      </div>
+      <button class="touch__use" id="touchUse">Use</button>
+    </div>
+
+    <div class="stage__overlay" id="stageOverlay" aria-hidden="true">
+      <div class="live" id="liveReadout" hidden></div>
+
+      <div class="resultcard" id="resultCard" hidden>
+        <span class="resultcard__headline" id="resultHeadline"></span>
+        <span class="resultcard__amount" id="resultAmount"></span>
+      </div>
+    </div>
+
+    <div class="shouts" id="shoutBar" hidden>
+      <button class="shout" id="btnShout">
+        <span class="shout__icon" aria-hidden="true">📢</span>
+        <span class="shout__text">Shout them down</span>
+        <span class="shout__count" id="shoutCount">3</span>
+      </button>
+    </div>
+  </main>
+
+  <aside class="rail" id="rail">
+    <div class="rail__head">
+      <span class="rail__icon" id="gameIcon" aria-hidden="true">🪙</span>
+      <div>
+        <h2 class="rail__title" id="gameName">Coin Toss</h2>
+        <p class="rail__blurb" id="gameBlurb"></p>
+      </div>
+    </div>
+
+    <div class="rail__section">
+      <h3 class="rail__label">Your bet</h3>
+      <div class="bets" id="betList" role="radiogroup" aria-label="Bet"></div>
+      <div class="extra" id="betExtra"></div>
+    </div>
+
+    <div class="rail__section">
+      <h3 class="rail__label" id="stakeLabel">Stake</h3>
+      <div class="stake">
+        <button class="stake__step" id="stakeDown" aria-label="Lower the stake">−</button>
+        <input class="stake__input" id="stakeInput" inputmode="numeric" aria-labelledby="stakeLabel" value="25">
+        <button class="stake__step" id="stakeUp" aria-label="Raise the stake">+</button>
+      </div>
+      <div class="chips" id="chipRow"></div>
+    </div>
+
+    <p class="status" id="gameStatus" role="status"></p>
+
+    <button class="play" id="btnPlay">
+      <span id="playText">Place it</span>
+      <span class="play__sub" id="playSub"></span>
+    </button>
+
+    <div class="prompt" id="promptBox" role="group" aria-label="Your move"></div>
+
+    <div class="rail__section rail__section--odds">
+      <button class="disclose" id="oddsToggle" aria-expanded="false" aria-controls="oddsPanel">
+        <span>What the house takes</span><span class="disclose__chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="odds" id="oddsPanel" hidden></div>
+    </div>
+
+    <div class="rail__section rail__section--crew">
+
+    </div>
+  </aside>
+
+  <footer class="ticker" id="ticker" aria-live="polite" aria-label="What everyone is saying"></footer>
+</div>
+
+<div class="title" id="title" hidden>
+    <div class="title__grain" aria-hidden="true"></div>
+    <div class="title__inner">
+      <p class="title__eyebrow">One account · four people · five minutes a day</p>
+      <h1 class="title__name"><em>Gamble</em> With Your Friends</h1>
+      <p class="title__blurb">A tower of casinos, a quota every night, and three friends
+        who can spend the account without asking.</p>
+      <div class="title__menu" id="titleMenu"></div>
+      <p class="title__foot">
+        <span id="titleTickets">0 tickets</span> ·
+        <span>WASD to walk · mouse to look · E to use</span>
+      </p>
+    </div>
+  </div>
+
+  <div class="screens" id="screens"></div>
+
+<div class="boot" id="boot">
+  <div class="boot__inner">
+    <div class="boot__mark" aria-hidden="true">♠</div>
+    <p class="boot__text" id="bootText">Opening the doors…</p>
+    <div class="boot__bar"><i id="bootFill"></i></div>
+  </div>
+</div>
+
+<noscript>
+  <div class="boot"><div class="boot__inner">
+    <div class="boot__mark">♠</div>
+    <p class="boot__text">This one needs JavaScript. The whole casino is JavaScript.</p>
+  </div></div>
+</noscript>
+
+<script src="../vendor/three.min.js"></script>
+<script src="../vendor/cannon.min.js"></script>
+<script src="core/rng.js"></script>
+<script src="core/config.js"></script>
+<script src="core/state.js"></script>
+<script src="core/audio.js"></script>
+<script src="core/heat.js"></script>
+<script src="core/events.js"></script>
+<script src="gfx/models.js"></script>
+<script src="gfx/env.js"></script>
+<script src="gfx/stage.js"></script>
+<script src="gfx/physics.js"></script>
+<script src="gfx/cards.js"></script>
+<script src="games/registry.js"></script>
+<script src="games/coinflip.js"></script>
+<script src="games/dice.js"></script>
+<script src="games/slots.js"></script>
+<script src="games/wheel.js"></script>
+<script src="games/cups.js"></script>
+<script src="games/scratcher.js"></script>
+<script src="games/war.js"></script>
+<script src="games/duckrace.js"></script>
+<script src="games/roulette.js"></script>
+<script src="games/blackjack.js"></script>
+<script src="games/highlow.js"></script>
+<script src="games/plinko.js"></script>
+<script src="games/crash.js"></script>
+<script src="games/mines.js"></script>
+<script src="games/ladder.js"></script>
+<script src="games/chamber.js"></script>
+<script src="world/collision.js"></script>
+<script src="world/zones.js"></script>
+<script src="world/level.js"></script>
+<script src="world/player.js"></script>
+<script src="world/crew.js"></script>
+<script src="net/mqtt.js"></script>
+<script src="net/link.js"></script>
+<script src="net/session.js"></script>
+<script src="ui/loading.js"></script>
+<script src="ui/touch.js"></script>
+<script src="ui/title.js"></script>
+<script src="ui/emotes.js"></script>
+<script src="ui/screens.js"></script>
+<script src="ui/modmenu.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

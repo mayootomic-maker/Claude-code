@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "understudy",
+  "version": "${version}",
+  "name": "Understudy",
+  "description": "Plays your character for you when you would rather not. The mod itself is client-side; the same jar on a server lets people paste builds without anyone being given operator.",
+  "authors": [
+    "Understudy"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "dev.understudy.client.UnderstudyClient"
+    ],
+    "main": [
+      "dev.understudy.server.UnderstudyServer"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_dependency}",
+    "java": ">=25"
+  }
+}

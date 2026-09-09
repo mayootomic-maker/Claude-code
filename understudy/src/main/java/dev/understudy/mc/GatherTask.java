@@ -1,0 +1,739 @@
+package dev.understudy.mc;
+
+import dev.understudy.core.adapt.Timings;
+import dev.understudy.core.craft.Catalogue;
+import dev.understudy.core.craft.Gather;
+import dev.understudy.core.craft.Planner;
+import dev.understudy.core.mind.Agenda;
+import dev.understudy.core.adapt.Measured;
+import dev.understudy.core.memory.Atlas;
+import dev.understudy.core.sort.Worth;
+import dev.understudy.core.path.Spiral;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+
+/**
+ * Actually going and getting the materials the plan asks for.
+ *
+ * The planner works out what to gather and in what order; this walks to it and
+ * breaks it. It only does the gathering half — a crafting step in the plan is
+ * left to the player for now, and says so rather than stalling silently.
+ *
+ * Progress is measured by what ends up in the inventory, not by how many blocks
+ * were broken. Those are different numbers: a drop can land in water, roll into
+ * a hole, or be picked up by somebody else, and counting swings rather than
+ * items is how a gatherer decides it is finished while holding nothing.
+ */
+public final class GatherTask {
+
+    /** Close enough to break a block. Vanilla reach is a little over four. */
+    private static final double REACH = 4.2;
+    /** Ticks to wait for the head to come round before swinging anyway. */
+    private static final int AIM_PATIENCE = 12;
+    /** Give up on a block that will not break in fifteen seconds. */
+    private static final int MAX_MINING_TICKS = 300;
+    /** Re-scan for a target no more than this often; a full scan is not free. */
+    private static final int SCAN_INTERVAL = 10;
+    /**
+     * Offsets looked at per tick.
+     *
+     * The search volume is a third of a million blocks. Doing it in one go is a
+     * visible hitch every half second even once each block is cheap, and a
+     * hitch every half second is what "the UI lags" means. So it is resumable:
+     * a slice per tick, nearest first, which in practice finds something in the
+     * first few hundred anyway.
+     */
+    private static final int SCAN_BUDGET = 12_000;
+    /** How far each leg of a strip mine goes. Half the scan radius, so no gaps. */
+    private static final int STRIDE = 24;
+    /** Legs before admitting this stretch of world does not have any. */
+    private static final int MAX_LEGS = 14;
+    /** Deep enough that it is dark and things spawn. */
+    private static final int DARK_BELOW = 40;
+    /**
+     * How far it is worth walking to something remembered.
+     *
+     * Beyond this a fresh tunnel finds ore sooner than the walk takes, and the
+     * memory is likelier to be stale anyway.
+     */
+    /**
+     * Life left in a tool below which it is worth replacing now.
+     *
+     * A tenth of a stone pickaxe is thirteen blocks, which is about one seam.
+     * Any earlier and it spends the session making pickaxes; any later and the
+     * break happens somewhere inconvenient, which is the whole problem.
+     */
+    private static final double NEARLY_WORN = 0.1;
+    /**
+     * How often to check the kit, in ticks.
+     *
+     * Rarely, because it costs a right-click and a hand: doing it every tick
+     * would interrupt the swing it is meant to protect.
+     */
+    private static final int UPKEEP_EVERY = 200;
+
+    /** Close enough to a remembered fight that it is probably the same one. */
+    private static final double TROUBLE_RANGE = 24.0;
+    /**
+     * Twenty minutes of game time, after which trouble stops counting.
+     *
+     * Whatever it was is long dead by then and the place is a place again. A
+     * memory of danger that never expires turns the world into somewhere the
+     * mod will not go.
+     */
+    private static final long TROUBLE_STALE = 20L * 60 * 20;
+
+    private static final int REMEMBERED_RANGE = 400;
+    /** The four compass headings a strip mine can run along. */
+    private static final int[][] LEGS = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+
+    private final Minecraft client;
+    private final TravelTask travel;
+    private final CraftTask craft;
+    private final SmeltTask smelt;
+    private final HuntTask hunt;
+    private final Consumer<String> report;
+
+    private List<Planner.Action> plan = new ArrayList<>();
+    private int step;
+    private boolean running;
+
+    private BlockPos target;
+    private Direction face = Direction.UP;
+    private int miningTicks;
+    private int aiming;
+    private int sinceScan;
+    private int untilUpkeep;
+    private int gathered;
+    private String waitingOn;
+    private boolean attempted;
+    private Runnable onDone;
+    private int legs;
+    private int heading;
+    private final Atlas atlas;
+    /**
+     * What things really cost, fed back into the estimates.
+     *
+     * The gatherer is the only thing that ever finds out. Every plan it is
+     * handed is priced on guesses about how long it takes to find a seam, and
+     * this is where the guess meets the world.
+     */
+    private final Measured measured;
+    /** When the current Collect started, and how many were held then. */
+    private long stepStartedAt;
+    private int heldAtStart;
+    private int scanCursor;
+    private BlockPos scanBuried;
+    private List<Block> wantedBlocks = List.of();
+    private String wantedFor;
+    private final Set<String> fetched = new HashSet<>();
+
+    public GatherTask(Minecraft client, TravelTask travel, CraftTask craft, SmeltTask smelt,
+                      HuntTask hunt, Atlas atlas, Measured measured, Consumer<String> report) {
+        this.atlas = atlas;
+        this.measured = measured;
+        this.client = client;
+        this.travel = travel;
+        this.craft = craft;
+        this.smelt = smelt;
+        this.hunt = hunt;
+        this.report = report;
+    }
+
+    public boolean running() {
+        return running;
+    }
+
+    public void start(Planner.Plan wanted, Runnable then) {
+        this.onDone = then;
+        // Copied rather than referenced: a missing tool splices its own steps
+        // into this list, and a plan is not the sort of thing that arrives
+        // knowing it will be edited.
+        this.plan = new ArrayList<>(wanted.actions());
+        this.step = 0;
+        this.running = !plan.isEmpty();
+        this.target = null;
+        this.gathered = 0;
+        this.waitingOn = null;
+        this.attempted = false;
+        this.legs = 0;
+        this.heading = 0;
+        this.fetched.clear();
+        this.stepStartedAt = 0;
+        if (running) {
+            report.accept("gathering: " + plan.size() + " steps, about "
+                    + Math.round(wanted.seconds() / 60) + " minutes");
+        }
+    }
+
+    public void stop(String why) {
+        if (!running) return;
+        running = false;
+        onDone = null; // a cancelled gather must not go on to build
+        hunt.stop(null);
+        plan = new ArrayList<>();
+        target = null;
+        releaseMining();
+        report.accept("stopped gathering — " + why);
+    }
+
+    public String status() {
+        if (!running) return "idle";
+        if (step >= plan.size()) return "gathering: done";
+        return "gathering: " + plan.get(step).describe()
+                + (waitingOn == null ? "" : " (" + waitingOn + ")");
+    }
+
+    /**
+     * The standing job, as the agenda understands it.
+     *
+     * Only tools are listed, and that is the whole distinction: fetching the
+     * materials is what this task *is*, so naming them as things it still needs
+     * would have the agenda forever telling it to go and get what it is already
+     * going to get. A missing pickaxe is different in kind — it stops the job
+     * dead, and it is the case the EQUIP branch exists for.
+     */
+    public Agenda.Job job() {
+        if (!running || step >= plan.size()) return null;
+        List<String> tools = new ArrayList<>();
+        for (int i = step; i < plan.size(); i++) {
+            if (plan.get(i) instanceof Planner.Collect collect
+                    && collect.tool() != null && !tools.contains(collect.tool())) {
+                tools.add(collect.tool());
+            }
+        }
+        return new Agenda.Job(plan.get(step).describe(), tools, List.of());
+    }
+
+    /**
+     * What this tick is going to be spent on.
+     *
+     * Reported rather than measured inside, so the accounting happens once in
+     * the tick loop and every tick lands in exactly one bucket.
+     */
+    public Timings.Phase phase() {
+        if (hunt.running()) return hunt.phase();
+        if (travel.running()) return Timings.Phase.TRAVELLING;
+        if (craft.running() || smelt.running()) return Timings.Phase.HANDLING;
+        if (target != null) return aiming > 0 ? Timings.Phase.AIMING : Timings.Phase.MINING;
+        return Timings.Phase.SEARCHING;
+    }
+
+    public void tick() {
+        if (!running) return;
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null || client.gameMode == null) return;
+
+        if (step >= plan.size()) {
+            finish();
+            return;
+        }
+
+        Planner.Action action = plan.get(step);
+        if (action instanceof Planner.Collect collect) {
+            collect(player, collect);
+        } else if (action instanceof Planner.Make make) {
+            make(player, make);
+        }
+    }
+
+    /**
+     * Make a step: at a grid if it is a recipe, at a furnace if it is a smelt.
+     *
+     * Which of the two it is comes from the plan rather than from guessing, and
+     * each of them says up front whether it can take the job — so a step that
+     * neither can do is reported as such instead of stalling the plan behind it.
+     */
+    private void make(LocalPlayer player, Planner.Make wanted) {
+        if (Hotbar.count(player, wanted.item()) >= wanted.count()) {
+            waitingOn = null;
+            attempted = false;
+            step++;
+            return;
+        }
+        if (craft.running() || smelt.running()) return;
+
+        if (!attempted) {
+            attempted = true;
+            Hud.setStatus(wanted.describe());
+            if (craft.start(wanted)) return;
+            if (smelt.start(wanted)) return;
+            waitingOn = "cannot " + wanted.describe() + " by itself";
+            report.accept(waitingOn + " — do that one and it carries on");
+            return;
+        }
+        // The crafter had a go and the count did not move, so something is
+        // missing that the plan thought would be there. Moving on beats
+        // repeating the same failed attempt every tick.
+        report.accept("could not " + wanted.describe() + " — moving on");
+        attempted = false;
+        step++;
+    }
+
+    private void collect(LocalPlayer player, Planner.Collect wanted) {
+        // The clock starts when the step does, so what is recorded is the whole
+        // cost of getting the thing — the walk, the search and the digging —
+        // which is what the estimate is trying to predict.
+        if (stepStartedAt == 0 && client.level != null) {
+            stepStartedAt = client.level.getGameTime();
+            heldAtStart = Hotbar.count(player, wanted.item());
+        }
+        if (Hotbar.count(player, wanted.item()) >= wanted.count()) {
+            recordWhatItCost(player, wanted);
+            releaseMining();
+            target = null;
+            step++;
+            gathered = 0;
+            Hud.setStatus("");
+            return;
+        }
+
+        // Nowhere to put it. Mining on would drop everything on the floor and
+        // the count this job measures itself by would never move again, which
+        // is a loop rather than a job.
+        //
+        // Stopping used to be the whole answer, which is not what a person does
+        // — they glance at the bag, throw out the two stacks of cobblestone
+        // they picked up on the way down, and carry on. So that is tried first,
+        // and stopping is what happens when there is genuinely nothing spare.
+        if (!Hotbar.roomFor(player, wanted.item())) {
+            releaseMining();
+            if (!makeRoom(player)) {
+                stop("inventory full and nothing in it worth throwing away");
+            }
+            return;
+        }
+
+        // Meat is not a block. The hunt is a task of its own for the same
+        // reason crafting and smelting are: it takes several seconds and many
+        // ticks, and the plan simply waits for it the way it waits for a furnace.
+        if (wanted.hunted()) {
+            if (hunt.running()) return;
+            releaseMining();
+            target = null;
+            if (!hunt.start(wanted)) {
+                report.accept("nothing here knows how to get " + wanted.item() + " — moving on");
+                stepStartedAt = 0;
+                step++;
+            }
+            return;
+        }
+
+        // A seam at y minus fifty is dark and things spawn in it, and one
+        // skeleton ends the whole job. This is cheaper than that.
+        if (Torchlight.keepLit(client, player)) return;
+
+        // Looking after itself used to happen only between jobs, because that
+        // is where the autopilot lives — so a two-hour gather ran through three
+        // nights bare-headed with a full set of iron in the bag. A job that
+        // runs for hours has to do its own upkeep.
+        if (--untilUpkeep <= 0) {
+            untilUpkeep = UPKEEP_EVERY;
+            if (Fight.wearTheBest(client, player)) return;
+        }
+        if (Bedtime.tick(client, player, report)) return;
+
+        // A tool about to break, while standing on the stone a new one is made
+        // of. Replacing it here is the same recovery the break would force,
+        // minus the walk back up out of the mine. It asks for one more than it
+        // is holding, because asking for "a pickaxe" while holding a worn one
+        // makes a planner that can count say there is nothing to do.
+        if (wanted.tool() != null && Hotbar.count(player, wanted.tool()) > 0
+                && Hotbar.lifeLeft(player, wanted.tool()) < NEARLY_WORN) {
+            int spare = Hotbar.count(player, wanted.tool()) + 1;
+            if (fetchTool(player, wanted.tool(), spare, "spare",
+                    "the " + wanted.tool() + " is nearly worn out — making another now")) {
+                return;
+            }
+        }
+        if (wanted.tool() != null && !Hotbar.hold(client, wanted.tool())) {
+            // Not having the tool is not a reason to stop; it is a reason to go
+            // and make one. The plan thought there would be one here — it broke,
+            // or a craft failed upstream — so work out what a fresh one costs
+            // and put those steps in front of this one.
+            if (fetchTool(player, wanted.tool(), 1, "any",
+                    "no " + wanted.tool() + " — making one first")) {
+                return;
+            }
+            if (waitingOn == null) {
+                waitingOn = "no " + wanted.tool() + " to mine " + wanted.item()
+                        + " with, and no way to make one";
+                report.accept(waitingOn);
+            }
+            return;
+        }
+        waitingOn = null;
+
+        if (target == null || !matches(target, wanted)) {
+            if (sinceScan-- > 0) return;
+            sinceScan = SCAN_INTERVAL;
+            target = findNearest(player, wanted);
+            miningTicks = 0;
+            if (target == null) {
+                // Still walking or digging somewhere it might be: let that finish.
+                if (travel.running()) return;
+                // Nothing in range, but it may have been seen before. Walking
+                // to a vein noticed twenty minutes ago beats digging a fresh
+                // tunnel, and is the one thing here a person cannot do.
+                if (goToRemembered(player, wanted)) return;
+                if (prospect(player, wanted)) return;
+                report.accept("no " + wanted.item() + " anywhere around here"
+                        + (wanted.bestY() == Gather.ANYWHERE
+                                ? " — move somewhere it grows and it will pick up again"
+                                : " — dug " + legs + " legs at y=" + wanted.bestY()
+                                        + " and found none; try somewhere else"));
+                releaseMining();
+                step++;
+                legs = 0;
+                return;
+            }
+            legs = 0; // found some: the search starts over if this vein runs out
+        }
+
+        double distance = Math.sqrt(player.blockPosition().distSqr(target));
+        Hud.setStatus(String.format("gathering %s (%d of %d)", wanted.item(),
+                Hotbar.count(player, wanted.item()), wanted.count()));
+
+        if (distance > REACH) {
+            // Walking is somebody else's job, and it already knows how to do it
+            // smoothly and how to get unstuck.
+            // Digging allowed: the block may well be sealed in rock, and
+            // walking to a seam of ore is a contradiction in terms.
+            if (!travel.running()) travel.start(target.above(), true);
+            return;
+        }
+        if (travel.running()) travel.stop("arrived");
+        mine(player);
+    }
+
+    private void mine(LocalPlayer player) {
+        face = faceToward(player, target);
+        Aim.at(player, target);
+        // Look at it before hitting it. Swinging at a block the view has not
+        // reached yet is the single most obviously non-human thing a mod does,
+        // and the turn costs two ticks.
+        //
+        // Bounded, because "wait until it is looking at it" is a stall the
+        // moment anything stops the head settling, and a mod that quietly
+        // stops mining is worse than one that swings a fraction early.
+        if (!Aim.onTarget() && ++aiming < AIM_PATIENCE) return;
+        aiming = 0;
+
+        if (miningTicks == 0) {
+            client.gameMode.startDestroyBlock(target, face);
+        }
+        client.gameMode.continueDestroyBlock(target, face);
+        player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+        miningTicks++;
+
+        if (client.level.getBlockState(target).isAir()) {
+            gathered++;
+            atlas.forget(target.getX(), target.getY(), target.getZ());
+            releaseMining();
+            target = null;
+            sinceScan = 0; // the next one is probably right here
+            return;
+        }
+        if (miningTicks > MAX_MINING_TICKS) {
+            // Bedrock, an unbreakable block, or something being protected.
+            releaseMining();
+            target = null;
+        }
+    }
+
+    private void releaseMining() {
+        if (client.gameMode != null) client.gameMode.stopDestroyBlock();
+        miningTicks = 0;
+    }
+
+    private void finish() {
+        running = false;
+        Hud.setStatus("");
+        report.accept("everything on the list is gathered");
+        Runnable next = onDone;
+        onDone = null;
+        if (next != null) next.run();
+    }
+
+    /**
+     * The closest block that drops what is wanted, searched outward.
+     *
+     * Exposed ones first, and only then the ones sealed in rock. That order is
+     * the whole difference between walking to a tree you can see and tunnelling
+     * to it. But "sealed in rock" is where every ore in the game is — and so is
+     * the stone three blocks under a grass field — so refusing those outright,
+     * which is what this used to do, meant the gatherer could mine only what
+     * somebody had already dug a cave to.
+     */
+    private BlockPos findNearest(LocalPlayer player, Planner.Collect wanted) {
+        resolveWanted(wanted);
+        BlockPos from = player.blockPosition();
+        List<int[]> offsets = Spiral.offsets();
+
+        int looked = 0;
+        while (scanCursor < offsets.size() && looked++ < SCAN_BUDGET) {
+            int[] offset = offsets.get(scanCursor++);
+            BlockPos at = from.offset(offset[0], offset[1], offset[2]);
+            if (!isWanted(at)) continue;
+            // Write it down. The scan looks at a third of a million blocks and
+            // used to keep the one it wanted; the other thirteen veins it saw
+            // on the way are exactly what makes the next trip quick.
+            atlas.saw(wantedFor, at.getX(), at.getY(), at.getZ(), client.level.getGameTime());
+            // Exposed wins outright — it is reachable by walking. A buried one
+            // is worth a tunnel, but only once nothing better turns up, so it
+            // is remembered rather than returned.
+            if (!buried(at)) {
+                restartScan();
+                return at;
+            }
+            if (scanBuried == null) scanBuried = at;
+        }
+
+        if (scanCursor < offsets.size()) return null; // more to look at next tick
+        BlockPos buriedOne = scanBuried;
+        restartScan();
+        return buriedOne;
+    }
+
+    private void restartScan() {
+        scanCursor = 0;
+        scanBuried = null;
+    }
+
+    /**
+     * Turn the step's item into the blocks that drop it, once.
+     *
+     * This used to happen per candidate block, and behind it was a list the
+     * catalogue rebuilt from scratch on every call. Two lookups that each look
+     * free, inside a loop that runs a third of a million times.
+     */
+    private void resolveWanted(Planner.Collect wanted) {
+        if (wanted.item().equals(wantedFor)) return;
+        wantedFor = wanted.item();
+        restartScan();
+        // Looked up by walking the registry rather than by building an id:
+        // the id class was renamed this version, and the registry's own
+        // block -> name direction is the one that has not moved in years.
+        // A thousand-odd blocks, once per step, against a scan of a third of a
+        // million per second — this is not the expensive end.
+        List<String> names = Planner.sourcesOf(wanted.item());
+        List<Block> blocks = new ArrayList<>();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            if (names.contains(BuiltInRegistries.BLOCK.getKey(block).getPath())) blocks.add(block);
+        }
+        wantedBlocks = List.copyOf(blocks);
+    }
+
+    /** Identity against a resolved block, so no string is built per candidate. */
+    private boolean isWanted(BlockPos at) {
+        if (client.level == null) return false;
+        BlockState state = client.level.getBlockState(at);
+        if (state.isAir()) return false;
+        return wantedBlocks.contains(state.getBlock());
+    }
+
+    /**
+     * Head for somewhere this was seen before.
+     *
+     * Only worth it if the memory is nearer than a strip mine is long; beyond
+     * that, digging where you stand finds ore sooner than walking across the
+     * world to a vein someone may since have taken.
+     */
+    private boolean goToRemembered(LocalPlayer player, Planner.Collect wanted) {
+        BlockPos here = player.blockPosition();
+        Atlas.Sighting seen = pickRemembered(player, wanted, here);
+        if (seen == null) return false;
+        double away = seen.distanceTo(here.getX(), here.getY(), here.getZ());
+
+        // Believe it only until it is disproved. If the block is loaded and is
+        // not what was remembered, the memory is wrong and goes now rather than
+        // sending the walk there again next time.
+        BlockPos at = new BlockPos(seen.x(), seen.y(), seen.z());
+        if (client.level.hasChunk(at.getX() >> 4, at.getZ() >> 4) && !isWanted(at)) {
+            atlas.forget(at.getX(), at.getY(), at.getZ());
+            return false;
+        }
+        report.accept("remembered " + wanted.item() + " " + Math.round(away) + " blocks away");
+        travel.start(at.above(), true);
+        return true;
+    }
+
+    /**
+     * The nearest remembered seam that is not somewhere a fight went badly.
+     *
+     * The mod used to walk back into the same cave, meet the same skeletons,
+     * disengage, and walk back in again — a loop that looks exactly like being
+     * stuck and is worse, because every lap costs health. The atlas already
+     * knows where the trouble was; this is it being asked.
+     *
+     * It falls back to the nearest one anyway when every candidate is somewhere
+     * bad, because refusing to go anywhere is not better than going carefully.
+     */
+    private Atlas.Sighting pickRemembered(LocalPlayer player, Planner.Collect wanted,
+                                          BlockPos here) {
+        long now = client.level.getGameTime();
+        Atlas.Sighting fallback = null;
+        for (Atlas.Sighting seen : atlas.known(wanted.item())) {
+            double away = seen.distanceTo(here.getX(), here.getY(), here.getZ());
+            if (away > REMEMBERED_RANGE) continue;
+            if (fallback == null
+                    || away < fallback.distanceTo(here.getX(), here.getY(), here.getZ())) {
+                fallback = seen;
+            }
+            if (atlas.troubleNear(seen.x(), seen.y(), seen.z(), TROUBLE_RANGE, now, TROUBLE_STALE)) {
+                continue;
+            }
+            return seen;
+        }
+        if (fallback != null) {
+            report.accept("the nearest " + wanted.item()
+                    + " is somewhere that went badly before — going anyway, carefully");
+        }
+        return fallback;
+    }
+
+    /**
+     * Nothing in range. Go where it is instead of saying there is none.
+     *
+     * Ore does not come to you, and "no diamond in sight" while standing in a
+     * field is true and useless. So: down to the height the game actually puts
+     * it at, and then a strip mine — one straight leg at a time, rescanning
+     * between them, because the scan reaches further than a leg is long and a
+     * straight tunnel exposes more new rock than a wandering one.
+     *
+     * It is bounded. Fourteen legs is about three hundred blocks of tunnel, and
+     * if that turns up nothing the honest answer is that this stretch of world
+     * does not have any, not another hour of digging.
+     */
+    private boolean prospect(LocalPlayer player, Planner.Collect wanted) {
+        if (wanted.bestY() == Gather.ANYWHERE) return false;
+        if (legs >= MAX_LEGS) return false;
+        BlockPos from = player.blockPosition();
+
+        BlockPos goal;
+        if (Math.abs(from.getY() - wanted.bestY()) > 4) {
+            goal = new BlockPos(from.getX(), wanted.bestY(), from.getZ());
+            report.accept("no " + wanted.item() + " up here — digging down to y="
+                    + wanted.bestY());
+        } else {
+            // One heading for the whole search, picked from where we happen to
+            // be so two jobs in the same spot do not retrace the same tunnel.
+            if (heading == 0) heading = 1 + Math.floorMod(from.getX() + from.getZ(), 4);
+            int[] along = LEGS[heading - 1];
+            goal = from.offset(along[0] * STRIDE, 0, along[1] * STRIDE);
+            Hud.setStatus("looking for " + wanted.item() + " (leg " + (legs + 1) + ")");
+        }
+        legs++;
+        Torchlight.keepLit(client, player);
+        travel.start(goal, true);
+        return true;
+    }
+
+    /**
+     * Plan a replacement tool and splice it in ahead of the step that needs it.
+     *
+     * Once per tool per job: if a fresh wooden pickaxe still leaves us without
+     * one, the problem is not that nobody tried, and repeating the attempt for
+     * the rest of the session would hide whatever the real failure is.
+     */
+    /**
+     * Put the steps to make a tool in front of whatever is being done.
+     *
+     * @param count  how many to end up with. One when there is none; one more
+     *               than is held when the held one is nearly gone, because the
+     *               planner counts what you have and "get me a pickaxe" while
+     *               holding a pickaxe is correctly answered with nothing.
+     * @param why    which of those two cases this is, so each gets one go per
+     *               job rather than the pair of them sharing one
+     */
+    private boolean fetchTool(LocalPlayer player, String tool, int count, String why,
+                              String saying) {
+        if (!fetched.add(why + ":" + tool)) return false;
+        Planner.Plan makeIt = new Planner(Catalogue.solver(), measured)
+                .plan(Map.of(tool, count), Carried.contents(player));
+        if (!makeIt.possible() || makeIt.actions().isEmpty()) return false;
+
+        report.accept(saying + " (" + makeIt.actions().size() + " steps)");
+        plan.addAll(step, makeIt.actions());
+        attempted = false;
+        return true;
+    }
+
+    /**
+     * Throw out the least missed thing in the bag.
+     *
+     * Deliberately narrow: only genuinely plentiful stone and dirt, only whole
+     * spare stacks of it, and never anything the running plan asked for. Worth
+     * decides all of that; this only presses the button, and says what went, so
+     * a bag that comes home lighter is never a mystery.
+     */
+    /**
+     * Tell the estimates what that actually took.
+     *
+     * Only on a step that finished by getting the thing. A step satisfied
+     * because it was already in the bag measured nothing, and a step abandoned
+     * measured something else.
+     */
+    private void recordWhatItCost(LocalPlayer player, Planner.Collect wanted) {
+        if (measured == null || client.level == null || stepStartedAt == 0) return;
+        int got = Hotbar.count(player, wanted.item()) - heldAtStart;
+        double seconds = (client.level.getGameTime() - stepStartedAt) / 20.0;
+        measured.saw(wanted.item(), seconds, got);
+        stepStartedAt = 0;
+    }
+
+    private boolean makeRoom(LocalPlayer player) {
+        Set<String> needed = new HashSet<>();
+        for (int i = step; i < plan.size(); i++) {
+            Planner.Action action = plan.get(i);
+            if (action instanceof Planner.Collect collect) {
+                needed.add(collect.item());
+            } else if (action instanceof Planner.Make make) {
+                needed.add(make.item());
+                needed.addAll(make.recipe().inputs().keySet());
+            }
+        }
+        String spare = Worth.leastMissed(Carried.contents(player), needed);
+        if (spare == null || !Hotbar.hold(client, spare)) return false;
+        report.accept("bag full — dropping the " + spare + " to make room");
+        player.drop(true);
+        return true;
+    }
+
+    private boolean matches(BlockPos at, Planner.Collect wanted) {
+        resolveWanted(wanted);
+        return isWanted(at);
+    }
+
+    private boolean buried(BlockPos at) {
+        for (Direction direction : Direction.values()) {
+            if (client.level.getBlockState(at.relative(direction)).isAir()) return false;
+        }
+        return true;
+    }
+
+    private Direction faceToward(LocalPlayer player, BlockPos at) {
+        BlockPos eye = BlockPos.containing(player.getEyePosition());
+        for (Direction direction : Direction.values()) {
+            BlockPos neighbour = at.relative(direction);
+            if (client.level.getBlockState(neighbour).isAir()
+                    && neighbour.distSqr(eye) < at.distSqr(eye)) {
+                return direction;
+            }
+        }
+        return Direction.UP;
+    }
+
+}

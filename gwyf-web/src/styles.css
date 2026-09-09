@@ -1,0 +1,1681 @@
+/* Gamble With Your Friends -- the room around the table.
+
+   The palette is the one the GambleMenu mod menu uses in the real game: warm
+   charcoal with a gold accent, and semantic colours that mean the same thing
+   here as they do there. Each floor recolours a single accent variable, so a
+   floor change repaints the whole interface without a second stylesheet. */
+
+:root {
+  color-scheme: dark;
+
+  --bg:            #120e0d;
+  --bg-deep:       #0a0807;
+  --surface:       #1e1716;
+  --surface-alt:   #281f1d;
+  --surface-hi:    #2e2422;
+  --surface-sunk:  #0f0b0a;
+  --line:          #322623;
+  --line-strong:   #4a3a35;
+  --line-focus:    #6b5349;
+
+  --text:          #f2ebe6;
+  --text-muted:    #a89890;
+  --text-faint:    #6b5d57;
+
+  --danger:        #f0616d;
+  --warn:          #e9b44c;
+  --success:       #5cd98c;
+  --info:          #6fa8dc;
+
+  --accent:        #d9a441;
+  --accent-ink:    #241704;
+
+  --font-display: 'Bebas Neue', 'Oswald', 'Haettenschweiler', 'Arial Narrow', sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --rail-w: 22.5rem;
+  --radius: 0.625rem;
+  --radius-lg: 1rem;
+  --shadow: 0 1.5rem 3rem -1rem rgb(0 0 0 / 0.7);
+  --shadow-sm: 0 0.35rem 1rem -0.35rem rgb(0 0 0 / 0.6);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Floors repaint one variable each. */
+[data-floor='lobby']     { --accent: #d9a441; --accent-ink: #241704; }
+[data-floor='velvet']    { --accent: #ff5fd8; --accent-ink: #2c0524; }
+[data-floor='vault']     { --accent: #8fe6ff; --accent-ink: #04202c; }
+[data-floor='penthouse'] { --accent: #e8c46a; --accent-ink: #2a1c04; }
+
+* { box-sizing: border-box; }
+
+/* The `hidden` attribute is a user-agent `display: none`, so any class that
+   sets a display value beats it. Half the overlays in here are grids, which
+   means the boot screen stayed on top of the whole page invisibly eating
+   clicks, and the result card never went away. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: clamp(14px, 0.55vw + 12px, 17px);
+  line-height: 1.5;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { overflow: hidden; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+button:disabled { cursor: not-allowed; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+.num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+
+/* --- app shell ----------------------------------------------------------- */
+
+.app {
+  display: grid;
+  /* The world's floating overlays -- the ticker, the touch pad -- hang off
+     this, so it has to be the containing block. */
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  grid-template-rows: minmax(0, 1fr) auto;
+  /* No row for the HUD: it lives inside the stage now and lies over the 3D. */
+  grid-template-areas:
+    'stage  rail'
+    'ticker rail';
+  height: 100dvh;
+  background:
+    radial-gradient(120% 90% at 50% -10%, #1d1512 0%, var(--bg) 45%, var(--bg-deep) 100%);
+}
+
+/* --- hud ----------------------------------------------------------------- */
+
+.hud {
+  grid-area: hud;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(180deg, #181211, #120e0d);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03), var(--shadow-sm);
+  z-index: 5;
+}
+
+.hud__brand { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+.hud__mark {
+  display: grid; place-items: center;
+  width: 2rem; height: 2rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(160deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
+  color: var(--accent-ink);
+  font-size: 1.05rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+.hud__title {
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  letter-spacing: 0.055em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.hud__title em { color: var(--accent); font-style: normal; padding: 0 0.12em; }
+
+.hud__stats { display: flex; gap: 0.5rem; margin-left: auto; flex-wrap: nowrap; min-width: 0; }
+
+.stat {
+  display: flex; flex-direction: column; gap: 0.05rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 6.5rem;
+}
+.stat__label {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--text-faint); white-space: nowrap;
+}
+.stat__value {
+  font-family: var(--font-display); font-size: 1.34rem; line-height: 1.06;
+  letter-spacing: 0.02em; font-variant-numeric: tabular-nums;
+}
+.stat--bank .stat__value { color: var(--success); }
+.stat--debt .stat__value { color: var(--danger); }
+.stat--quota .stat__value { color: var(--warn); }
+.stat--tickets .stat__value { color: var(--info); }
+.stat.is-bumped { animation: bump 0.42s var(--ease); }
+
+@keyframes bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.09); }
+  100% { transform: scale(1); }
+}
+
+.quotabar {
+  height: 3px; margin-top: 0.28rem; border-radius: 3px;
+  background: var(--surface-sunk); overflow: hidden;
+}
+.quotabar i {
+  display: block; height: 100%; background: var(--warn);
+  transition: width 0.45s var(--ease);
+}
+.quotabar.is-met i { background: var(--success); }
+
+.hud__clock { display: flex; flex-direction: column; align-items: flex-end; padding-left: 0.5rem; }
+.clock {
+  font-family: var(--font-display); font-size: 1.85rem; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.03em;
+}
+.clock.is-low { color: var(--danger); animation: pulse 1s steps(2, end) infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+.hud__tools { display: flex; gap: 0.3rem; }
+.icobtn {
+  width: 2.2rem; height: 2.2rem; border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 1rem;
+  display: grid; place-items: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+}
+.icobtn:hover { background: var(--surface-hi); border-color: var(--line-strong); }
+.icobtn:active { transform: translateY(1px); }
+.icobtn.is-on { border-color: var(--accent); color: var(--accent); }
+
+/* --- stage --------------------------------------------------------------- */
+
+.stage { grid-area: stage; position: relative; min-height: 0; min-width: 0; }
+#scene { display: block; width: 100%; height: 100%; }
+
+.stage__overlay {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  pointer-events: none;
+}
+
+.resultcard {
+  /* Low in the frame, not dead centre. Centred, it lands squarely over the
+     payline, the wheel and the dice -- covering the thing the player is
+     waiting to see at the exact moment they are waiting to see it. */
+  align-self: end;
+  margin-bottom: clamp(1rem, 7vh, 4rem);
+  display: grid; justify-items: center; gap: 0.15rem;
+  padding: 0.9rem 2.2rem;
+  border-radius: var(--radius-lg);
+  background: rgb(10 8 7 / 0.82);
+  border: 1px solid var(--line-strong);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow);
+  animation: cardIn 0.35s var(--ease);
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(0.9rem) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.resultcard__headline {
+  font-family: var(--font-display); font-size: 2.4rem; line-height: 1;
+  letter-spacing: 0.045em;
+}
+.resultcard__amount {
+  font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.resultcard[data-tone='win']  .resultcard__amount { color: var(--success); }
+.resultcard[data-tone='huge'] .resultcard__amount { color: var(--warn); }
+.resultcard[data-tone='huge'] .resultcard__headline { color: var(--warn); }
+.resultcard[data-tone='lose'] .resultcard__amount { color: var(--danger); }
+.resultcard[data-tone='push'] .resultcard__amount { color: var(--text-muted); }
+
+.shouts { position: absolute; left: 1rem; bottom: 1rem; }
+.shout {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--warn);
+  background: rgb(20 14 10 / 0.85);
+  color: var(--warn);
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+  animation: shoutIn 0.3s var(--ease);
+}
+.shout:hover { background: rgb(35 24 14 / 0.9); }
+.shout__count {
+  font-variant-numeric: tabular-nums;
+  background: var(--warn); color: var(--accent-ink);
+  border-radius: 999px; padding: 0 0.45rem; font-size: 0.8rem;
+}
+@keyframes shoutIn { from { opacity: 0; transform: translateY(0.6rem); } }
+
+/* The touch action buttons: a column up the right-hand side, above the Use
+   button that was there on its own. Stacked rather than spread, because a thumb
+   on a phone reaches up the edge of the screen far more easily than across it,
+   and Use stays at the bottom where it has always been so nobody has to relearn
+   the one control they already know. */
+.touch__acts {
+  /* Above the Use button, which keeps its own place at the bottom right: it is
+     the one touch control anybody has already learnt and moving it to make
+     room for three new ones would be a poor trade. */
+  position: absolute; right: 1.25rem; bottom: 9.6rem;
+  display: grid; gap: 0.55rem; justify-items: stretch;
+}
+.touch__act {
+  pointer-events: auto;
+  touch-action: manipulation;
+  min-width: 5.5rem; min-height: 3rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgb(18 13 10 / 0.72);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.95rem;
+  backdrop-filter: blur(3px);
+}
+.touch__act:active { background: rgb(40 28 16 / 0.85); border-color: var(--accent); }
+
+/* --- the emote wheel ------------------------------------------------------
+
+   Over the game rather than in front of it: no backdrop, nothing dimmed, and
+   the pointer stays locked. You are meant to be able to wave at somebody who is
+   walking away from you, which you cannot do from a modal.
+
+   Eight wedges on a ring, positioned from custom properties the script sets, so
+   moving an emote in the vocabulary moves it here with no CSS to change. */
+
+.emotes {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  pointer-events: none;
+  z-index: 40;
+  animation: emotesIn 0.14s var(--ease);
+}
+/* The ring has to be big enough that eight wedges do not touch.
+
+   At 46vmin the wedges overlapped: the arc between two of them came out
+   narrower than a wedge is wide, so the ones at the diagonals sat under their
+   neighbours and could not be clicked at all -- the keyboard worked and the
+   mouse silently did not, on half the wheel. Caught by a harness clicking
+   Dance and being handed Clap. The radius is set against the wedge width now
+   rather than against the viewport alone. */
+.emotes__ring {
+  position: relative;
+  width: min(70vmin, 32rem); aspect-ratio: 1;
+}
+.emotes__pick {
+  position: absolute;
+  /* Placed with `left`/`top` rather than a percentage translate.
+
+     A percentage in `translate` resolves against the element's own size, not
+     its parent's -- so `35%` meant a third of a four-rem button, about a
+     centimetre, and all eight wedges sat in a heap in the middle of the ring
+     covering each other. Half of them could not be clicked at all: the
+     keyboard worked and the mouse silently did not. `left` and `top`
+     percentages resolve against the containing block, which is what was meant
+     all along, and the centring translate is then a plain -50%. */
+  left: calc(50% + var(--x)); top: calc(50% + var(--y));
+  translate: -50% -50%;
+  pointer-events: auto;
+  display: grid; justify-items: center; gap: 0.15rem;
+  width: 4.6rem;
+  padding: 0.4rem 0.3rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: rgb(16 11 9 / 0.86);
+  color: var(--ink);
+  font-weight: 600; font-size: 0.85rem;
+  backdrop-filter: blur(4px);
+}
+.emotes__pick:hover, .emotes__pick:focus-visible {
+  border-color: var(--accent); background: rgb(32 22 14 / 0.92);
+}
+.emotes__key {
+  display: grid; place-items: center;
+  width: 1.35rem; height: 1.35rem;
+  border-radius: 0.35rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-variant-numeric: tabular-nums; font-size: 0.78rem;
+}
+.emotes__label { opacity: 0.92; }
+.emotes__hint {
+  position: absolute; left: 50%; bottom: 14%;
+  translate: -50% 0;
+  margin: 0; color: var(--ink-dim); font-size: 0.82rem;
+}
+@keyframes emotesIn { from { opacity: 0; scale: 0.94; } }
+/* Transform and opacity only, so removing the animation moves nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .emotes { animation: none; }
+}
+
+/* --- rail ---------------------------------------------------------------- */
+
+.rail {
+  grid-area: rail;
+  display: flex; flex-direction: column; gap: 0.85rem;
+  padding: 0.9rem;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #16100f, #0d0a09);
+  border-left: 1px solid var(--line);
+}
+.rail::-webkit-scrollbar { width: 10px; }
+.rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+
+.rail__head { display: flex; gap: 0.65rem; align-items: flex-start; }
+.rail__icon {
+  font-size: 1.5rem; width: 2.5rem; height: 2.5rem; flex: none;
+  display: grid; place-items: center;
+  border-radius: var(--radius);
+  background: var(--surface-alt); border: 1px solid var(--line);
+}
+.rail__title { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 0.04em; line-height: 1; }
+.rail__blurb { margin: 0.3rem 0 0; font-size: 0.82rem; color: var(--text-muted); }
+
+.rail__section { display: flex; flex-direction: column; gap: 0.45rem; }
+.rail__label {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.11em;
+  color: var(--text-faint); font-weight: 600;
+}
+
+.bets { display: grid; gap: 0.35rem; }
+.bet {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.7rem; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.bet:hover { background: var(--surface-hi); border-color: var(--line-strong); }
+.bet[aria-checked='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.bet__name { font-weight: 600; }
+.bet__note { display: block; font-size: 0.74rem; color: var(--text-faint); font-weight: 400; }
+.bet__pays {
+  font-family: var(--font-display); font-size: 1.2rem; letter-spacing: 0.03em;
+  color: var(--accent); font-variant-numeric: tabular-nums;
+}
+
+.extra:empty { display: none; }
+
+.stake { display: grid; grid-template-columns: 2.4rem 1fr 2.4rem; gap: 0.35rem; }
+.stake__step {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); font-size: 1.15rem; line-height: 1;
+}
+.stake__step:hover { background: var(--surface-hi); }
+.stake__input {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-sunk); text-align: center;
+  font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  padding: 0.2rem 0.4rem; min-width: 0;
+}
+.stake__input:invalid { border-color: var(--danger); }
+
+.chips { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.chipbtn {
+  flex: 1 1 3rem;
+  padding: 0.3rem 0.2rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); font-size: 0.8rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chipbtn:hover:not(:disabled) { background: var(--surface-hi); border-color: var(--line-strong); }
+.chipbtn:disabled { opacity: 0.35; }
+
+.play {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: linear-gradient(170deg, var(--accent), color-mix(in srgb, var(--accent) 62%, #000));
+  color: var(--accent-ink);
+  font-family: var(--font-display); font-size: 1.55rem; letter-spacing: 0.05em;
+  line-height: 1.05;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), var(--shadow-sm);
+  transition: transform 0.1s, filter 0.15s;
+  display: grid; gap: 0.05rem;
+}
+.play:hover:not(:disabled) { filter: brightness(1.08); }
+.play:active:not(:disabled) { transform: translateY(2px); }
+.play:disabled { filter: grayscale(0.7) brightness(0.6); }
+.play__sub {
+  font-family: var(--font-body); font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.02em; opacity: 0.72;
+}
+.play__sub:empty { display: none; }
+
+.disclose {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 0.35rem 0;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.11em;
+  color: var(--text-faint); font-weight: 600;
+}
+.disclose:hover { color: var(--text-muted); }
+.disclose__chev { transition: transform 0.2s var(--ease); }
+.disclose[aria-expanded='true'] .disclose__chev { transform: rotate(180deg); }
+
+.odds {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  /* The table scrolls inside its own box rather than pushing the page sideways. */
+  overflow: hidden auto; max-width: 100%;
+}
+.odds table { min-width: 17rem; }
+.odds__scroll { overflow-x: auto; }
+.odds table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.odds th, .odds td { padding: 0.3rem 0.55rem; text-align: right; }
+.odds th:first-child, .odds td:first-child { text-align: left; }
+.odds thead th {
+  background: var(--surface-alt); color: var(--text-faint);
+  font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.odds tbody tr + tr { border-top: 1px solid var(--line); }
+.odds td { font-variant-numeric: tabular-nums; }
+.odds__edge { color: var(--danger); }
+.odds__edge--good { color: var(--success); }
+.odds__foot {
+  padding: 0.45rem 0.55rem; font-size: 0.72rem; color: var(--text-faint);
+  border-top: 1px solid var(--line); background: var(--surface-sunk);
+}
+
+.crew { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.mate {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface);
+}
+.mate__dot { width: 0.6rem; height: 0.6rem; border-radius: 99px; box-shadow: 0 0 0.5rem currentColor; }
+.mate__name { font-weight: 600; font-size: 0.85rem; }
+.mate__where { display: block; font-size: 0.72rem; color: var(--text-faint); }
+.mate__net { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.mate.is-hot { border-color: var(--danger); animation: hot 1.1s ease-in-out infinite; }
+@keyframes hot { 50% { border-color: var(--line); } }
+
+/* --- ticker -------------------------------------------------------------- */
+
+.ticker {
+  grid-area: ticker;
+  height: 6.5rem; overflow-y: auto;
+  padding: 0.5rem 1rem;
+  display: flex; flex-direction: column-reverse; gap: 0.2rem;
+  background: var(--bg-deep);
+  border-top: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+.ticker::-webkit-scrollbar { width: 8px; }
+.ticker::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+.line { color: var(--text-muted); animation: lineIn 0.3s var(--ease); }
+@keyframes lineIn { from { opacity: 0; transform: translateX(-0.4rem); } }
+.line b { color: var(--text); font-weight: 600; }
+.line--good b, .line--good { color: var(--success); }
+.line--bad b, .line--bad { color: var(--danger); }
+.line--warn b, .line--warn { color: var(--warn); }
+.line--house { color: var(--accent); font-style: italic; }
+
+/* --- screens ------------------------------------------------------------- */
+
+.screens:empty { display: none; }
+.screen {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center;
+  padding: 1.5rem;
+  background: rgb(6 4 4 / 0.86);
+  backdrop-filter: blur(10px);
+  animation: fade 0.25s var(--ease);
+  overflow-y: auto;
+}
+@keyframes fade { from { opacity: 0; } }
+
+.sheet {
+  width: min(60rem, 100%);
+  background: linear-gradient(180deg, var(--surface), #150f0e);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: clamp(1.1rem, 3vw, 2rem);
+  animation: sheetIn 0.32s var(--ease);
+}
+@keyframes sheetIn { from { opacity: 0; transform: translateY(1.5rem) scale(0.985); } }
+.sheet--narrow { width: min(34rem, 100%); }
+.sheet--wide { width: min(72rem, 100%); }
+
+.sheet__kicker {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--accent); font-weight: 700;
+}
+.sheet__title {
+  font-family: var(--font-display); font-size: clamp(2.2rem, 6vw, 3.6rem);
+  letter-spacing: 0.03em; line-height: 0.98; margin: 0.2rem 0 0.4rem;
+}
+.sheet__lede { color: var(--text-muted); max-width: 46ch; margin: 0 0 1rem; }
+.sheet__actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1.2rem; }
+
+.btn {
+  padding: 0.6rem 1.1rem; border-radius: var(--radius);
+  border: 1px solid var(--line-strong); background: var(--surface-alt);
+  font-weight: 600; transition: background 0.15s, transform 0.1s, border-color 0.15s;
+}
+.btn:hover:not(:disabled) { background: var(--surface-hi); border-color: var(--line-focus); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; }
+.btn--primary {
+  background: linear-gradient(170deg, var(--accent), color-mix(in srgb, var(--accent) 62%, #000));
+  color: var(--accent-ink); border-color: transparent;
+  font-family: var(--font-display); font-size: 1.25rem; letter-spacing: 0.05em;
+  padding: 0.55rem 1.4rem;
+}
+.btn--danger { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); color: var(--danger); }
+.btn--ghost { background: transparent; }
+
+/* the lift */
+.floors { display: grid; gap: 0.7rem; }
+.floorcard {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center;
+  padding: 0.9rem 1.1rem; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color 0.18s, background 0.18s, transform 0.14s;
+}
+.floorcard:hover:not(:disabled) { transform: translateX(0.25rem); border-color: var(--floor-accent, var(--accent)); }
+.floorcard:disabled { opacity: 0.5; }
+.floorcard__no {
+  font-family: var(--font-display); font-size: 2.4rem; line-height: 0.9;
+  color: var(--floor-accent, var(--accent)); width: 2.2rem;
+}
+.floorcard__name { font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.035em; }
+.floorcard__blurb { font-size: 0.8rem; color: var(--text-muted); margin: 0.15rem 0 0; }
+.floorcard__games { font-size: 0.74rem; color: var(--text-faint); margin-top: 0.3rem; }
+.floorcard__lock { font-size: 0.78rem; color: var(--warn); text-align: right; white-space: nowrap; }
+
+.gamegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.6rem; }
+.gamecard {
+  display: grid; gap: 0.25rem; padding: 0.85rem; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); transition: transform 0.14s, border-color 0.18s, background 0.18s;
+}
+.gamecard:hover { transform: translateY(-0.2rem); border-color: var(--accent); background: var(--surface-hi); }
+/* On the lift panel the tables are a list of what is up there, not buttons --
+   you walk to a machine, you do not teleport into it. */
+.gamecard--static { cursor: default; }
+.gamecard--static:hover { transform: none; border-color: var(--line); background: var(--surface); }
+.gamecard__icon { font-size: 1.7rem; }
+.gamecard__name { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.035em; }
+.gamecard__edge { font-size: 0.72rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* shop */
+.shoptabs { display: flex; gap: 0.3rem; margin-bottom: 0.9rem; border-bottom: 1px solid var(--line); }
+.shoptab {
+  padding: 0.5rem 0.9rem; font-weight: 600; color: var(--text-faint);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.shoptab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
+
+.wares { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.6rem; }
+.ware {
+  display: grid; grid-template-columns: auto 1fr; gap: 0.7rem;
+  padding: 0.75rem; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  transition: border-color 0.16s, background 0.16s;
+}
+.ware:hover:not(:disabled) { border-color: var(--accent); background: var(--surface-hi); }
+.ware:disabled { opacity: 0.45; }
+.ware__icon { font-size: 1.5rem; }
+.ware__name { font-weight: 700; display: flex; justify-content: space-between; gap: 0.5rem; }
+.ware__price { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ware__desc { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem; }
+.ware.is-owned { border-color: var(--success); }
+.ware.is-owned .ware__price { color: var(--success); }
+
+/* day report */
+.report { display: grid; gap: 0.5rem; }
+.reportrow {
+  display: grid; grid-template-columns: 1fr auto; gap: 1rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.reportrow:last-child { border-bottom: 0; }
+.reportrow--total { font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.03em; }
+.reportrow__good { color: var(--success); }
+.reportrow__bad { color: var(--danger); }
+
+/* mod menu */
+.modmenu {
+  position: fixed; top: 4rem; left: 50%; transform: translateX(-50%);
+  width: min(46rem, calc(100% - 2rem)); max-height: min(72vh, 40rem);
+  z-index: 60;
+  display: grid; grid-template-columns: 12rem minmax(0, 1fr);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: sheetIn 0.22s var(--ease);
+}
+.modmenu__side { background: var(--bg-deep); border-right: 1px solid var(--line); padding: 0.6rem; overflow-y: auto; }
+.modmenu__body { padding: 0.9rem; overflow-y: auto; }
+.modmenu__head {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 0.9rem; background: #181211; border-bottom: 1px solid var(--line);
+}
+.modmenu__title { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.05em; }
+.modmenu__warn { font-size: 0.74rem; color: var(--warn); margin-left: auto; }
+.modtab {
+  display: block; width: 100%; text-align: left; padding: 0.4rem 0.6rem;
+  border-radius: var(--radius); font-size: 0.86rem; color: var(--text-muted);
+}
+.modtab[aria-selected='true'] { background: var(--surface-hi); color: var(--text); }
+.modrow {
+  display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; align-items: center;
+  padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--line);
+}
+.modrow:last-child { border-bottom: 0; }
+.modrow__name { font-weight: 600; font-size: 0.9rem; }
+.modrow__desc { font-size: 0.76rem; color: var(--text-faint); }
+.switch {
+  width: 2.6rem; height: 1.45rem; border-radius: 99px; padding: 2px;
+  background: var(--line); border: 1px solid var(--line-strong);
+  display: flex; transition: background 0.16s;
+}
+.switch i {
+  width: 1.1rem; height: 1.1rem; border-radius: 99px; background: var(--text-faint);
+  transition: transform 0.16s var(--ease), background 0.16s;
+}
+.switch[aria-checked='true'] { background: color-mix(in srgb, var(--accent) 55%, #000); border-color: var(--accent); }
+.switch[aria-checked='true'] i { transform: translateX(1.15rem); background: var(--accent); }
+
+/* boot / errors */
+.boot {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  background: radial-gradient(80% 60% at 50% 40%, #1b1412, #080605 75%);
+}
+.boot__inner { display: grid; justify-items: center; gap: 0.9rem; text-align: center; padding: 2rem; max-width: 34rem; }
+.boot__mark {
+  font-size: 3.2rem; color: var(--accent);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe { 50% { opacity: 0.45; transform: scale(0.94); } }
+.boot__text { margin: 0; color: var(--text-muted); }
+.boot__bar { width: 14rem; height: 3px; background: var(--surface-alt); border-radius: 99px; overflow: hidden; }
+.boot__bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s var(--ease); }
+.boot.is-error .boot__mark { animation: none; color: var(--danger); }
+
+/* --- responsive ---------------------------------------------------------- */
+
+@media (max-width: 60rem) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 42vh auto minmax(0, 1fr);
+    grid-template-areas: 'stage' 'ticker' 'rail';
+  }
+  .rail { border-left: 0; border-top: 1px solid var(--line); }
+  .ticker { height: 4rem; }
+  .hud { flex-wrap: wrap; gap: 0.5rem; }
+  .hud__stats { order: 3; width: 100%; margin-left: 0; overflow-x: auto; }
+  .hud__clock { margin-left: auto; }
+  .stat { min-width: 5.4rem; padding: 0.25rem 0.55rem; }
+  .stat__value { font-size: 1.15rem; }
+  .modmenu { grid-template-columns: 1fr; top: 3.5rem; }
+  .modmenu__side { display: flex; gap: 0.3rem; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .modtab { white-space: nowrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* --- in-hand prompt and live readout ------------------------------------- */
+
+.status {
+  margin: 0; min-height: 1.2em;
+  font-size: 0.82rem; color: var(--text-muted);
+}
+.status:empty { display: none; }
+
+.prompt { display: grid; gap: 0.35rem; }
+.prompt:empty { display: none; }
+.promptbtn {
+  display: grid; gap: 0.1rem; padding: 0.6rem 0.9rem; text-align: left;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--surface-alt);
+  transition: background 0.14s, border-color 0.14s, transform 0.1s;
+}
+.promptbtn:hover { background: var(--surface-hi); border-color: var(--line-focus); }
+.promptbtn:active { transform: translateY(1px); }
+.promptbtn__label { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.045em; }
+.promptbtn__hint { font-size: 0.74rem; color: var(--text-faint); }
+.promptbtn--gold { border-color: var(--accent); }
+.promptbtn--gold .promptbtn__label { color: var(--accent); }
+.promptbtn--cash { border-color: var(--success); }
+.promptbtn--cash .promptbtn__label { color: var(--success); }
+.promptbtn--danger { border-color: var(--danger); }
+.promptbtn--danger .promptbtn__label { color: var(--danger); }
+
+.live {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 11vw, 6rem);
+  line-height: 1; letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 2.5rem rgb(0 0 0 / 0.85);
+  color: var(--success);
+}
+.live[data-tone='huge'] { color: var(--warn); }
+.live[data-tone='lose'] { color: var(--danger); }
+
+/* roulette's number picker */
+.numgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.18rem; }
+.numcell {
+  padding: 0.28rem 0; border-radius: 0.3rem; font-size: 0.78rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; border: 1px solid transparent;
+}
+.numcell--red { background: #6d1a22; }
+.numcell--black { background: #1b1513; }
+.numcell--zero { background: #145232; grid-column: span 6; }
+.numcell:hover { filter: brightness(1.4); }
+.numcell[aria-pressed='true'] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* the table can be clicked during some hands */
+.stage.is-picking #scene { cursor: pointer; }
+
+.exportbox {
+  width: 100%; min-height: 11rem; margin-top: 0.6rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface-sunk); color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.4;
+  resize: vertical;
+}
+
+/* --- loading screens ------------------------------------------------------ */
+
+.loading {
+  position: fixed; inset: 0; z-index: 80;
+  display: grid; place-items: center;
+  padding: 2rem;
+  background:
+    radial-gradient(72% 55% at 50% 42%, color-mix(in srgb, var(--load-accent) 12%, #100b0a), #070505 72%);
+  animation: fade 0.2s var(--ease);
+}
+.loading.is-going { animation: fadeOut 0.32s var(--ease) forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+
+.loading__inner {
+  display: grid; justify-items: center; text-align: center;
+  gap: 0.3rem; max-width: 34rem;
+}
+.loading__eyebrow {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.22em;
+  color: var(--load-accent); font-weight: 700;
+}
+.loading__floor {
+  font-family: var(--font-display);
+  font-size: clamp(5rem, 22vh, 11rem); line-height: 0.82;
+  color: var(--load-accent);
+  opacity: 0.28;
+  letter-spacing: 0.02em;
+  margin-bottom: -0.15em;
+}
+.loading__title {
+  font-family: var(--font-display); font-size: clamp(2.2rem, 7vw, 3.4rem);
+  letter-spacing: 0.04em; line-height: 1;
+}
+.loading__blurb {
+  margin: 0.35rem 0 1.1rem; color: var(--text-muted); max-width: 30rem;
+  font-size: 0.92rem;
+}
+.loading__bar {
+  width: min(20rem, 70vw); height: 3px; border-radius: 99px;
+  background: rgb(255 255 255 / 0.08); overflow: hidden;
+}
+.loading__bar i {
+  display: block; height: 100%; width: 0;
+  background: var(--load-accent);
+  transition: width 0.35s var(--ease);
+}
+.loading__step {
+  margin: 0.5rem 0 0; min-height: 1.1em;
+  font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.loading__tip {
+  margin: 1.6rem 0 0; max-width: 26rem;
+  font-size: 0.86rem; color: var(--text-muted); font-style: italic;
+}
+
+/* --- walking around ------------------------------------------------------- */
+
+/* In the world the canvas takes the whole width; the betting rail only exists
+   once you are standing at a machine. */
+/* Walking, the world is the whole window.
+
+   It was not: the ticker held a 6.5rem grid row open underneath the stage, so
+   at 1440x900 the game was rendered into 1440x790 with an eighth of the screen
+   given over to a black box containing one line of text. In the world it
+   floats over the bottom-left corner instead, fading out, taking no layout and
+   no clicks. */
+.app.is-world {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'stage';
+}
+.app.is-world .rail { display: none; }
+.app.is-world .ticker {
+  position: absolute;
+  left: 0; bottom: 0; width: min(30rem, 46vw); height: auto; max-height: 8rem;
+  padding: 0.5rem 1rem 1.1rem;
+  background: linear-gradient(0deg, rgb(0 0 0 / 0.55), transparent);
+  border-top: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+}
+.app.is-world .ticker .line { opacity: 0.9; }
+/* Older lines fade out rather than piling up over the floor. */
+.app.is-world .ticker .line:nth-child(3) { opacity: 0.45; }
+.app.is-world .ticker .line:nth-child(n + 4) { display: none; }
+.app.is-world #scene { cursor: none; }
+.app.is-world.is-unlocked #scene { cursor: pointer; }
+
+.reticle {
+  position: absolute; inset: 0; display: none;
+  place-items: center; pointer-events: none;
+}
+.app.is-world .reticle { display: grid; }
+.reticle i {
+  width: 5px; height: 5px; border-radius: 99px;
+  background: rgb(255 255 255 / 0.75);
+  box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.55);
+  transition: transform 0.14s var(--ease), background 0.14s;
+}
+.app.is-world.is-aiming .reticle i {
+  transform: scale(2.1);
+  background: var(--accent);
+}
+
+.floortag {
+  position: absolute; top: 0.85rem; left: 1rem;
+  font-family: var(--font-display); font-size: 1.15rem; letter-spacing: 0.09em;
+  color: var(--text-muted); text-shadow: 0 1px 4px rgb(0 0 0 / 0.9);
+  pointer-events: none;
+  display: none;
+}
+.app.is-world .floortag { display: block; }
+
+.useprompt {
+  position: absolute; left: 50%; bottom: 4.2rem; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: rgb(10 8 7 / 0.78);
+  border: 1px solid var(--line-strong);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  animation: promptIn 0.16s var(--ease);
+  max-width: min(28rem, 90vw);
+}
+@keyframes promptIn { from { opacity: 0; transform: translate(-50%, 0.4rem); } }
+.useprompt kbd {
+  font-family: var(--font-body); font-weight: 700; font-size: 0.78rem;
+  min-width: 1.5rem; text-align: center;
+  padding: 0.12rem 0.35rem; border-radius: 0.3rem;
+  background: var(--accent); color: var(--accent-ink);
+}
+.useprompt span { font-weight: 600; white-space: nowrap; }
+.useprompt em {
+  font-style: normal; font-size: 0.78rem; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.resume {
+  /* Covers the canvas so a click anywhere grabs the pointer, but stays out of
+     the way visually -- a full-screen wash over the room you are being invited
+     to look at is a strange invitation. */
+  position: absolute; inset: 0; z-index: 3;
+  display: grid; align-content: end; justify-items: center; gap: 0.3rem;
+  /* Low, so the guide above it has somewhere to sit. At 2.6rem the two were
+     printing through each other in the middle of the bottom edge. */
+  padding-bottom: 1.1rem;
+  background: linear-gradient(to top, rgb(6 4 4 / 0.62) 0%, rgb(6 4 4 / 0) 26%);
+  font-family: var(--font-display); font-size: 1.25rem; letter-spacing: 0.05em;
+  color: var(--text);
+}
+.resume__key {
+  background: var(--accent); color: var(--accent-ink);
+  padding: 0 0.4rem; border-radius: 0.3rem;
+}
+.resume em {
+  font-family: var(--font-body); font-style: normal;
+  font-size: 0.8rem; letter-spacing: 0; color: var(--text-muted);
+}
+
+.leave {
+  position: absolute; top: 0.8rem; right: 1rem; z-index: 3;
+  padding: 0.42rem 0.8rem; border-radius: var(--radius);
+  border: 1px solid var(--line-strong); background: rgb(10 8 7 / 0.8);
+  font-weight: 600; font-size: 0.85rem; backdrop-filter: blur(6px);
+}
+.leave:hover { background: var(--surface-hi); border-color: var(--accent); }
+
+@media (max-width: 60rem) {
+  .app.is-world { grid-template-rows: minmax(0, 1fr) auto; }
+}
+
+
+/* --- touch controls ------------------------------------------------------
+   Only ever visible on a device with a touchscreen and no mouse; ui/touch.js
+   decides and unhides the layer. The pad is a landing zone rather than a
+   joystick you have to hit -- the stick recentres wherever the thumb lands, so
+   the ring is a hint, not a target. */
+
+.touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.touch__pad {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 46%;
+  max-width: 15rem;
+  height: 42%;
+  pointer-events: auto;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+
+.touch__ring {
+  width: 7.5rem;
+  height: 7.5rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 9, 10, 0.28);
+  transition: border-color 140ms ease;
+}
+
+.touch__pad.is-held .touch__ring { border-color: rgba(255, 255, 255, 0.34); }
+
+.touch__knob {
+  position: absolute;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  background: rgba(240, 232, 220, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
+.touch__use {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 3.5rem;
+  pointer-events: auto;
+  touch-action: manipulation;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: rgba(20, 15, 12, 0.72);
+  color: var(--accent);
+  font: 700 1.05rem/1 var(--display, inherit);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.touch__use:active { background: var(--accent); color: #14100c; }
+
+/* The mouse-only affordances have nothing to say on a phone. */
+.is-touch .resume,
+.is-touch .useprompt kbd { display: none; }
+
+
+/* --- phones --------------------------------------------------------------
+   Under about 34rem the four stat cards stop fitting across the top and the
+   labels get cut off mid-word -- "SHARED ACCOUN". Shrinking the label and the
+   card is enough to fit all four, which is better than truncating the one that
+   says what your money is. */
+
+@media (max-width: 34rem) {
+  .hud { padding: 0.45rem 0.6rem; gap: 0.35rem; }
+  .hud__title { font-size: 1.02rem; }
+  .hud__stats { gap: 0.35rem; }
+  .stat { min-width: 0; flex: 1 1 0; padding: 0.22rem 0.4rem; }
+  .stat__label { font-size: 0.52rem; letter-spacing: 0.06em; }
+  .stat__value { font-size: 0.98rem; }
+  .clock__time { font-size: 1.6rem; }
+}
+
+/* The thumbstick sits over the bottom-left of the screen and the use button
+   over the bottom-right, so the prompt that tells you what the button does has
+   to move up out from under both of them. */
+.is-touch .useprompt { bottom: 10.5rem; }
+.is-touch .shouts { bottom: auto; top: 2.6rem; left: 0.7rem; }
+
+
+/* A settings row that carries a slider rather than a switch. */
+.modrow__slider { display: flex; align-items: center; gap: 0.6rem; }
+.modrow__slider input[type='range'] { width: 8rem; accent-color: var(--accent); }
+.modrow__slider output {
+  min-width: 3.2rem; text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem; color: var(--text-muted);
+}
+
+
+/* --- grain and vignette --------------------------------------------------
+   Every in-game frame of the real thing carries a fine halftone dither and a
+   soft darkening into the corners. Both are done here in CSS over the canvas
+   rather than as render passes: a full-screen pass costs a second draw of the
+   whole frame on a machine that may already be struggling, and this costs
+   nothing at all. */
+
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  /* Two background layers, and deliberately no box-shadow.
+
+     The first pass drew the vignette as an inset box-shadow with a 12rem blur.
+     A blur that size is recomputed over the whole stage every frame, and on a
+     software rasteriser it cost more than the 3D did -- the table harness went
+     from passing to timing out on a screenshot. A radial gradient is rasterised
+     once and costs nothing after that.
+
+     The dither is a 3px dot grid, barely there; any coarser and it reads as a
+     dirty screen rather than as print. */
+  background-image:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.035) 0.5px, transparent 0.6px),
+    radial-gradient(ellipse 78% 78% at 50% 48%, transparent 40%, rgb(0 0 0 / 0.62) 100%);
+  background-size: 3px 3px, 100% 100%;
+}
+
+/* At a table the grain stays and the vignette tightens -- the real game's
+   close shots are noticeably darker at the edges than its walking ones. */
+.app.is-table .stage::after {
+  background-image:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.035) 0.5px, transparent 0.6px),
+    radial-gradient(ellipse 70% 70% at 50% 48%, transparent 32%, rgb(0 0 0 / 0.72) 100%);
+}
+
+
+/* --- where to go next ----------------------------------------------------
+   A room with four counters in it and no idea which one you want is a room you
+   wander. This names the next thing and points at it: the arrow turns to the
+   target relative to where you are facing, so it reads as a direction rather
+   than as a label. It hides itself the moment you are stood at the thing. */
+
+.guide {
+  position: absolute;
+  left: 50%;
+  top: 1.1rem;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.36rem 0.8rem 0.36rem 0.6rem;
+  border-radius: 999px;
+  background: rgb(10 8 7 / 0.72);
+  border: 1px solid var(--line-strong);
+  pointer-events: none;
+  z-index: 4;
+  max-width: min(26rem, 84vw);
+}
+
+.guide__arrow {
+  display: grid;
+  place-items: center;
+  width: 1.5rem; height: 1.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  /* Set from script; the transition keeps it from snapping as you turn. */
+  transition: transform 90ms linear;
+}
+
+.guide__text {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.is-table .guide { display: none; }
+
+
+/* --- the table with other people at it ----------------------------------- */
+
+.netways { display: grid; gap: 0.9rem; margin-top: 0.9rem; }
+@media (min-width: 44rem) { .netways { grid-template-columns: 1fr 1fr; } }
+
+.netway {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.85rem;
+}
+.netway h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+}
+
+@media (min-width: 44rem) { .netway--wide { grid-column: 1 / -1; } }
+
+/* The public list. Rows are a fixed three-column grid rather than flex so the
+   Join buttons line up down the right edge whatever length the names are --
+   a ragged column of buttons reads as a list of unrelated things. */
+.lobbies { list-style: none; margin: 0.7rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
+.lobby {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunk);
+}
+.lobby__who { font-weight: 600; }
+.lobby__meta { color: var(--text-muted); font-size: 0.76rem; font-family: var(--font-mono); }
+.btn--small { padding: 0.25rem 0.7rem; font-size: 0.76rem; }
+
+.netflow { margin-top: 1rem; display: grid; gap: 0.6rem; }
+.netflow textarea,
+.field textarea,
+.field input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-sunk);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  resize: vertical;
+}
+.field { display: grid; gap: 0.25rem; margin-top: 0.6rem; }
+.field > span {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.field input { font-family: var(--font-body); font-size: 0.95rem; }
+
+
+/* One more icon in the top bar was enough to push the stat cards past the
+   edge and start cutting their labels off mid-word again. Between a phone and
+   a wide desktop the labels get a size that fits rather than a scrollbar. */
+@media (max-width: 78rem) {
+  .hud { gap: 0.7rem; }
+  .hud__stats { gap: 0.45rem; }
+  .stat { min-width: 0; padding: 0.28rem 0.5rem; }
+  .stat__label { font-size: 0.56rem; letter-spacing: 0.05em; }
+}
+
+
+/* --- the title screen -----------------------------------------------------
+   Over the top of a live room: the stage keeps rendering behind this, with the
+   camera on a slow arc, so the first thing you see is the place you are about
+   to walk around rather than a picture of it.
+
+   The palette is the original's menus rather than the game's own -- near black,
+   a faint lattice, grey cards with lighter strokes, one crimson button. */
+
+.title {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  /* Dark enough to read white text over, light enough that the room behind is
+     obviously a room. The first pass was almost opaque and the live backdrop
+     might as well have been a black rectangle. */
+  background:
+    radial-gradient(ellipse 78% 64% at 50% 45%, rgb(6 4 4 / 0.30), rgb(2 2 2 / 0.82) 88%),
+    linear-gradient(180deg, rgb(2 2 2 / 0.55), rgb(2 2 2 / 0.2) 30%, rgb(2 2 2 / 0.72));
+  animation: titleIn 420ms var(--ease);
+}
+
+@keyframes titleIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* The lattice. A repeating diamond, faint enough to read as paper rather than
+   as pattern -- it is the one texture the original's menus carry. */
+.title__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    repeating-linear-gradient(45deg, rgb(255 255 255 / 0.022) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.022) 0 1px, transparent 1px 14px);
+}
+
+.title__inner {
+  position: relative;
+  width: min(34rem, 100%);
+  text-align: center;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.title__eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.title__name {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 9vw, 4.6rem);
+  line-height: 0.92;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-shadow: 0 0.4rem 1.6rem rgb(0 0 0 / 0.95), 0 0 3rem rgb(0 0 0 / 0.8);
+}
+.title__name em { color: var(--accent); font-style: normal; }
+
+.title__blurb {
+  color: var(--text);
+  text-shadow: 0 0.2rem 1rem rgb(0 0 0 / 0.9);
+  font-size: 0.95rem;
+  max-width: 26rem;
+  margin: 0 auto;
+  text-wrap: balance;
+}
+
+.title__menu { display: grid; gap: 0.5rem; margin-top: 0.5rem; }
+
+.titlebtn {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.72rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid #4a4c4a;
+  background: #2a2a2a;
+  color: var(--text);
+  text-align: left;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease), transform 120ms var(--ease);
+}
+.titlebtn:hover, .titlebtn:focus-visible { background: #343434; border-color: #6f7370; }
+.titlebtn:active { transform: translateY(1px); }
+
+.titlebtn__label {
+  font-family: var(--font-display);
+  font-size: 1.32rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.titlebtn__note { display: block; font-size: 0.74rem; color: var(--text-muted); margin-top: 0.16rem; }
+.titlebtn__key {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.titlebtn--primary { background: #82182c; border-color: #b8304a; }
+.titlebtn--primary:hover, .titlebtn--primary:focus-visible { background: #99203a; border-color: #d94a66; }
+.titlebtn--primary .titlebtn__note { color: rgb(255 255 255 / 0.72); }
+
+.title__foot {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 34rem) {
+  .title__blurb { font-size: 0.86rem; }
+  .titlebtn__label { font-size: 1.1rem; }
+  .title__foot span + span { display: block; }
+}
+
+
+/* The mark is a way back to the menu now, so it has to look pressable. */
+.hud__mark { cursor: pointer; border: 0; transition: transform 120ms var(--ease); }
+.hud__mark:hover, .hud__mark:focus-visible { transform: scale(1.06); }
+
+/* Nothing of the game's own interface belongs over the title screen. */
+.is-title .hud,
+.is-title .rail,
+.is-title .ticker,
+.is-title .useprompt,
+.is-title .guide,
+.is-title .resume,
+.is-title .touch { display: none !important; }
+
+
+/* --- the overlay HUD ------------------------------------------------------
+   Corners over the 3D rather than a bar above it, which is how the game this
+   follows arranges it and what gives the room the whole frame. Everything here
+   is a fact about the run; none of it needs a strip of its own.
+
+   The old `.hud` rules above still style the boot screen and the table rail, so
+   these are additive and deliberately specific rather than a rewrite. */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud__corner {
+  position: absolute;
+  display: grid;
+  gap: 0.28rem;
+  pointer-events: none;
+  /* A soft ground under every corner so white text survives a bright carpet. */
+  text-shadow: 0 0.1rem 0.7rem rgb(0 0 0 / 0.95), 0 0 1.6rem rgb(0 0 0 / 0.7);
+}
+.hud__corner--tl { top: 0.85rem; left: 0.9rem; width: min(19rem, 42vw); }
+.hud__corner--tc { top: 0.85rem; left: 50%; transform: translateX(-50%); justify-items: center; }
+.hud__corner--tr { top: 0.85rem; right: 0.9rem; justify-items: end; text-align: right; }
+
+.hud__row { display: flex; align-items: center; gap: 0.5rem; pointer-events: auto; }
+
+.hud__label {
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.hud__label--right { margin-top: 0.35rem; }
+.hud__label b { color: var(--text); font-weight: 700; }
+
+.tickets {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.2rem 0.6rem 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #fed138;
+  background: rgb(10 8 6 / 0.6);
+  color: #fed138;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tickets__icon { font-size: 0.85em; }
+
+.card--challenge {
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: var(--radius);
+  background: rgb(8 7 7 / 0.62);
+  padding: 0.45rem 0.6rem 0.5rem;
+  display: grid;
+  gap: 0.22rem;
+  text-shadow: none;
+}
+.card--challenge.is-met { border-color: #45de46; background: rgb(10 34 14 / 0.72); }
+.card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.card__title { font-weight: 700; font-size: 0.86rem; }
+.card__reward { color: #fed138; font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.card__note {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.card--challenge .quotabar { margin-top: 0.15rem; }
+
+.hud__corner--tc .clock {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 4.4vw, 3.1rem);
+  line-height: 0.9;
+  letter-spacing: 0.03em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.hud__corner--tc .clock.is-low { color: var(--danger); }
+
+/* Marks a payout the kit has raised, so the boosted number is visibly not the
+   one printed on the machine. */
+.odds__kit {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0.05rem 0.3rem; border-radius: 0.25rem;
+  background: var(--success); color: #06210f; font-weight: 700;
+}
+
+/* --- the shop's shelves --------------------------------------------------
+   Twenty-four items in one grid is a list; three labelled shelves with a line
+   saying what each is for is a shop. */
+.shelf__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem; letter-spacing: 0.05em;
+  margin: 1.3rem 0 0.15rem;
+}
+.shelf__title:first-of-type { margin-top: 0.9rem; }
+.shelf__note { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.55rem; }
+
+/* What an item does to the odds, pulled out of its prose so it can be read
+   without reading. */
+.ware__effect {
+  /* Its own line: inline, it ran straight into the first word of the
+     description and read as part of the sentence. */
+  display: block;
+  margin: 0.2rem 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--success);
+}
+
+/* Kit whose machine is standing on the floor the lift is going to tonight.
+   With twelve pieces of kit and five machines dealt, this is the difference
+   between a shop and a shelf of guesses. */
+.ware__tonight {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 0.25rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-body); font-weight: 700;
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* How far along a repeatable ticket perk is. */
+.ware__track { display: flex; gap: 0.22rem; align-items: center; margin: 0.2rem 0 0.15rem; }
+.pip {
+  width: 0.5rem; height: 0.5rem; border-radius: 99px;
+  border: 1px solid var(--line-strong); background: transparent;
+}
+.pip--on { background: var(--accent); border-color: var(--accent); }
+.pipnum { font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent); }
+
+.money { font-variant-numeric: tabular-nums; line-height: 1.05; }
+.money--bank {
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  color: #43e345;
+  letter-spacing: 0.02em;
+}
+.money--quota { font-size: 0.98rem; font-weight: 700; color: #f13e54; }
+.money--debt { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+.hud__tools { display: flex; gap: 0.3rem; pointer-events: auto; margin-bottom: 0.2rem; }
+
+/* Everyone at the table, and what they are up or down. */
+.ledger {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0.35rem 0.5rem;
+  display: grid;
+  gap: 0.18rem;
+  min-width: 9.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(8 7 7 / 0.5);
+  text-shadow: none;
+}
+.ledger__row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.ledger__net { font-weight: 700; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.ledger__name { font-size: 0.78rem; color: var(--text-muted); }
+.ledger__row.is-hot .ledger__name { color: var(--warn); font-weight: 700; }
+
+/* At a table the corners get out of the way of the game. */
+.app.is-table .hud__corner--tl,
+.app.is-table .ledger { opacity: 0.35; }
+
+@media (max-width: 44rem) {
+  .hud__corner--tl { width: min(13rem, 46vw); }
+  .card__note { display: none; }
+  .money--debt { display: none; }
+  .ledger { display: none; }
+}
+
+
+/* The corners came later than these two and landed on top of them. */
+/* Clear of the use prompt underneath it. At 5.4rem the two overlapped: the
+   prompt's pill is 2.4rem tall and the guide sat 1.2rem above its bottom. */
+.guide { top: auto; bottom: 7.8rem; }
+.is-touch .guide { bottom: 13rem; }
+
+/* Bottom right, because bottom left is the ticker's now and the two were
+   printing the room's name straight through the last thing anybody said. */
+.floortag {
+  top: auto;
+  bottom: 1.2rem;
+  left: auto;
+  right: 1.1rem;
+}
+.is-touch .floortag { bottom: 7.5rem; }
+
+/* Nothing to prompt about before the pointer is taken: E does nothing while
+   the game is asking you to click, and the two labels were printing over each
+   other in the middle of the screen.
+
+   Not on a phone. A touch device never takes the pointer, so it is unlocked
+   for the whole game and this would hide the use prompt permanently -- the one
+   label that says what the button under your thumb is about to do. */
+html:not(.is-touch) .app.is-unlocked .useprompt { display: none !important; }
+
+
+/* --- heat -----------------------------------------------------------------
+   Under the clock, because it is the second number the day turns on. Colour
+   carries the state and the words say it as well: the bar alone would be one
+   more thing to learn. */
+
+.heat { display: grid; justify-items: center; gap: 0.18rem; margin-top: 0.3rem; }
+.heat__bar {
+  width: 9rem; height: 0.3rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  overflow: hidden;
+}
+.heat__bar i {
+  display: block; height: 100%;
+  background: var(--text-muted);
+  transition: width 220ms var(--ease), background 220ms var(--ease);
+}
+.heat__label {
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.heat[data-state='warm'] .heat__bar i { background: var(--warn); }
+.heat[data-state='warm'] .heat__label { color: var(--warn); }
+.heat[data-state='hot'] .heat__bar i { background: #ff7a2e; }
+.heat[data-state='hot'] .heat__label { color: #ff9f2e; }
+.heat[data-state='out'] .heat__bar i { background: var(--danger); }
+.heat[data-state='out'] .heat__label { color: var(--danger); }
+.heat[data-state='out'] { animation: heatPulse 1s ease-in-out infinite; }
+@keyframes heatPulse { 50% { opacity: 0.55; } }
+
+/* The use prompt borrows the same warning colours. */
+.useprompt[data-tone='warn'] { border-color: var(--warn); }
+.useprompt[data-tone='warn'] em { color: var(--warn); }
+.useprompt[data-tone='bad'] { border-color: var(--danger); }
+.useprompt[data-tone='bad'] em { color: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .heat[data-state='out'] { animation: none; }
+}
+
+
+/* --- what the floor is doing ---------------------------------------------
+   One banner under the clock, with the time it has left on it. Events are the
+   only thing in the game that expire, so the countdown is the message. */
+
+.banner {
+  position: absolute;
+  top: 8.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.42rem 0.55rem 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgb(10 8 7 / 0.82);
+  pointer-events: none;
+  z-index: 5;
+  max-width: min(30rem, 88vw);
+  animation: bannerIn 220ms var(--ease);
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translate(-50%, -0.4rem); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.banner__text {
+  font-weight: 600;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.banner__clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-width: 2.1rem;
+  text-align: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+.banner[data-tone='good'] { border-color: var(--success); }
+.banner[data-tone='good'] .banner__text { color: var(--success); }
+.banner[data-tone='bad'] { border-color: var(--danger); }
+.banner[data-tone='bad'] .banner__text { color: var(--danger); }
+
+.app.is-table .banner { top: auto; bottom: 7.5rem; }
+
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }

@@ -1,0 +1,8 @@
+# Anchored to the project root. Unanchored, "build/" also matches
+# src/main/java/dev/understudy/core/build/ — which silently kept the entire
+# building system out of the repository while every local test still passed,
+# because the files were there on disk. CI is what noticed.
+/build/
+/.gradle/
+/run/
+*.log

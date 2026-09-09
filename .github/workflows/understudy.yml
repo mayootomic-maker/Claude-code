@@ -1,0 +1,195 @@
+name: Understudy
+
+# Nothing in this repository's container can compile a Fabric mod: the egress
+# policy blocks maven.fabricmc.net, meta.fabricmc.net and every Mojang host, so
+# there is no Minecraft to compile against and no mappings to compile with. CI
+# has the network the container does not, which makes this workflow the only
+# compiler the mod has — and the jar it uploads is how a build actually reaches
+# a launcher.
+
+on:
+  push:
+    branches: ['**']
+    paths: ['understudy/**', '.github/workflows/understudy.yml']
+  pull_request:
+    paths: ['understudy/**', '.github/workflows/understudy.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Mod jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: understudy
+    steps:
+      - uses: actions/checkout@v4
+
+      # Minecraft 26.2 requires Java 25; loom will not even set the game up on
+      # anything older. 21 is what this project started on and is now too old.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # Loom fetches Minecraft, the mappings and fifty remapped mod jars on
+      # every cold run, which is most of the wall clock. Caching them turns a
+      # five-minute round trip into a one-minute one, and the compile loop here
+      # is the only compiler this mod has.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            understudy/.gradle/loom-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('understudy/gradle.properties', 'understudy/build.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # Ask Fabric what actually exists rather than trusting the pins in
+      # gradle.properties. This runs before the build and never fails it, so a
+      # stale pin shows up as a visible mismatch in the log instead of a
+      # dependency resolution error twenty lines deep in a stack trace.
+      # Resolve the toolchain for whatever minecraft_version is set, instead of
+      # pinning four versions by hand and getting them wrong. The mod was built
+      # for 1.21.4 while the game had moved to a year-based scheme and was on
+      # 26.2, so Fabric refused to load it at all — the whole "nothing works"
+      # report was a version mismatch nobody could see from the inside.
+      #
+      # Everything chosen is printed, so the pins can be frozen later if a
+      # reproducible build matters more than tracking the game.
+      - name: Resolve the Fabric toolchain
+        run: |
+          set -euo pipefail
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          echo "target Minecraft: $MC"
+
+          LOADER=$(curl -sf "https://meta.fabricmc.net/v2/versions/loader" | jq -r '[.[] | select(.stable)][0].version // empty')
+          API=$(curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
+                | grep -o "<version>[^<]*+${MC}</version>" | sed 's/<[^>]*>//g' | tail -1)
+          LOOM=$(curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-loom/net.fabricmc.fabric-loom.gradle.plugin/maven-metadata.xml" \
+                | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' \
+                | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+
+          echo "  loader:     ${LOADER:-NOT FOUND}"
+          echo "  fabric-api: ${API:-NOT FOUND}"
+          echo "  loom:       ${LOOM:-NOT FOUND}"
+
+          # No mappings lookup. Minecraft 26.x ships unobfuscated, so there is
+          # no mapping artifact to resolve — see the check below.
+          missing=""
+          [ -z "$LOADER" ] && missing="$missing loader"
+          [ -z "$API" ]    && missing="$missing fabric-api"
+          [ -z "$LOOM" ]   && missing="$missing loom"
+          if [ -n "$missing" ]; then
+            echo "::error::Fabric publishes no$missing for Minecraft $MC."
+            echo
+            echo "game versions Fabric knows about, around this one:"
+            curl -sf "https://meta.fabricmc.net/v2/versions/game" \
+              | jq -r '[.[] | select(.version | startswith("26"))][0:20] | .[].version' | sed 's/^/  /'
+            echo
+            echo "fabric-api builds mentioning 26:"
+            curl -sf "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml" \
+              | grep -o '<version>[^<]*26[^<]*</version>' | sed 's/<[^>]*>//g' | tail -10 | sed 's/^/  /'
+            exit 1
+          fi
+
+          sed -i "s|^loader_version=.*|loader_version=${LOADER}|" gradle.properties
+          sed -i "s|^fabric_version=.*|fabric_version=${API}|" gradle.properties
+          sed -i "s|^loom_version=.*|loom_version=${LOOM}|" gradle.properties
+          echo
+          echo "resolved gradle.properties:"
+          grep -E '^(minecraft_version|minecraft_dependency|loader_version|fabric_version|loom_version)=' gradle.properties | sed 's/^/  /'
+
+      # The build declares no mappings because Minecraft 26.x ships unobfuscated:
+      # Mojang stopped publishing client_mappings after 1.21.11, and Fabric's
+      # intermediary for 26.2 is the 0.0.0 placeholder. That is load-bearing, and
+      # it is a decision Mojang could reverse. If client_mappings ever reappears
+      # for the target version, this fails here with the reason rather than
+      # letting the compile fail on ten thousand unresolved symbols.
+      - name: The target is still unobfuscated
+        run: |
+          set -euo pipefail
+          MC=$(grep '^minecraft_version=' gradle.properties | cut -d= -f2)
+          url=$(curl -sf https://piston-meta.mojang.com/mc/game/version_manifest_v2.json \
+                | jq -r --arg i "$MC" '.versions[] | select(.id == $i) | .url')
+          if [ -z "$url" ]; then
+            echo "::error::Mojang's manifest lists no version $MC."
+            exit 1
+          fi
+          if curl -sf "$url" | jq -e '.downloads.client_mappings' > /dev/null; then
+            echo "::error::Minecraft $MC now publishes client_mappings. It is obfuscated again, so build.gradle needs a mappings declaration back."
+            exit 1
+          fi
+          echo "Minecraft $MC ships no client_mappings — unobfuscated, no mappings needed."
+
+      - run: chmod +x gradlew
+
+      # Output is kept so the failure diagnostic can re-print the errors after
+      # its own output. PIPESTATUS, not tee's exit code, decides the step.
+      - name: Build and test
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon build 2>&1 | tee /tmp/build.log
+
+      # Only the remapped jar. build/libs also holds a sources jar, and an
+      # artifact containing two jars is an invitation to install the wrong one
+      # — which is indistinguishable, in game, from the mod being broken.
+      - name: Show what was built
+        run: ls -la build/libs/
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: understudy-mod
+          path: |
+            understudy/build/libs/*.jar
+            !understudy/build/libs/*-sources.jar
+          if-no-files-found: error
+
+      #
+      # Minecraft 26 ships unobfuscated but undocumented, so the real names are
+      # in the jar and the only cost of reading them is asking. api-questions.txt
+      # holds whatever the code does not yet know; this answers all of it on
+      # every run, so a question never costs a round trip of its own.
+      #
+      # It runs even on a green build. Making it conditional on failure meant
+      # the only way to ask a question was to break the build first.
+      #
+      # And it runs near the end, after the jar is uploaded, which is not
+      # tidiness. The
+      # log viewer returns the tail of a run and nothing else, so a dump in the
+      # middle is a dump that cannot be read — which is exactly what happened to
+      # the render answers twice, costing two rounds to learn nothing.
+      - name: Answer the open API questions
+        if: always()
+        continue-on-error: true
+        run: |
+          [ -s api-questions.txt ] || exit 0
+          cp=$(./gradlew --no-daemon -q printCompileClasspath 2>/dev/null | tail -1)
+          [ -n "$cp" ] || { echo "no classpath; the build failed before configuring"; exit 0; }
+
+          grep -vE '^\s*(#|$)' api-questions.txt | while read -r cls limit; do
+            echo; echo "===== $cls ====="
+            case "$limit" in
+              ''|*[!0-9]*)
+                # A word rather than a number means grep for that member.
+                javap -p -cp "$cp" "$cls" 2>&1 | grep -i "${limit:-.}" | head -12 | sed 's/^/  /'
+                ;;
+              *)
+                javap -cp "$cp" "$cls" 2>&1 | head -"$limit" | sed 's/^/  /'
+                ;;
+            esac
+          done
+
+      # Compiler errors are the very last thing in the log, after the API dump
+      # and everything else. The log viewer shows the tail and nothing else, so
+      # "last" is the only position that cannot be cut — and on a red build the
+      # errors are what is needed, ahead of every other diagnostic.
+      - name: The errors, again, at the end
+        if: failure()
+        continue-on-error: true
+        run: |
+          grep -E '^\s*(/home.*error:|[0-9]+ errors?|error:)' /tmp/build.log \
+            | sed 's|.*/understudy/src/|src/|' | tail -40

@@ -1,0 +1,6 @@
+# Memory files, if someone points --memory-dir at the project.
+*.json.tmp
+
+# flying-squid writes a world folder for the end-to-end run; it belongs in a
+# temporary directory, and this catches the case where it does not.
+null/
