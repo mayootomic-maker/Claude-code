@@ -29,6 +29,9 @@ final class ServerPaste {
 
     /** Whether this server declared it will take one. */
     static boolean available() {
+        // If the channel never registered on this side there is nothing to ask
+        // with, and asking would be the second half of the same crash.
+        if (!dev.understudy.server.UnderstudyServer.ready()) return false;
         try {
             return ClientPlayNetworking.canSend(PastePayload.TYPE);
         } catch (RuntimeException notConnected) {

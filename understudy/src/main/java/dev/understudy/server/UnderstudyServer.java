@@ -11,6 +11,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -48,16 +51,48 @@ public final class UnderstudyServer implements ModInitializer {
      * Not persisted. A restart forgiving a cooldown is not worth a file, and
      * the entry costs two longs for somebody who has actually pasted.
      */
+    private static final Logger LOGGER = LoggerFactory.getLogger("understudy");
+
     private final Map<UUID, Long> lastPaste = new HashMap<>();
+
+    /**
+     * Whether the channel came up, so the client half can stop asking if not.
+     */
+    private static volatile boolean ready;
+
+    public static boolean ready() {
+        return ready;
+    }
 
     @Override
     public void onInitialize() {
-        // Registered from the entrypoint that runs on both sides, so the type
-        // exists exactly once whichever half is loaded. Doing it in each half
-        // registers it twice on a client, which throws.
-        PayloadTypeRegistry.serverboundPlay().register(PastePayload.TYPE, PastePayload.CODEC);
-        ServerPlayNetworking.registerGlobalReceiver(PastePayload.TYPE,
-                (paste, context) -> place(context.server(), context.player(), paste));
+        // Everything here is inside a catch, and that is not laziness.
+        //
+        // This entrypoint runs on the client too — it is the one that runs on
+        // both, which is why the payload is registered from it rather than
+        // twice. Which means anything that throws in here does not break a
+        // feature, it stops Minecraft from starting, for somebody who was
+        // never going to use the server half in the first place. A whole game
+        // that will not launch is a far worse failure than a paste that has to
+        // take the long way.
+        //
+        // It is said loudly rather than swallowed. A channel that quietly
+        // failed to register looks exactly like a server that does not have
+        // the mod, and those want completely different things done about them.
+        try {
+            // Registered from the entrypoint that runs on both sides, so the
+            // type exists exactly once whichever half is loaded. Doing it in
+            // each half registers it twice on a client, which throws.
+            PayloadTypeRegistry.serverboundPlay().register(PastePayload.TYPE, PastePayload.CODEC);
+            ServerPlayNetworking.registerGlobalReceiver(PastePayload.TYPE,
+                    (paste, context) -> placeSafely(context.server(), context.player(), paste));
+            ready = true;
+        } catch (Throwable failed) {
+            ready = false;
+            LOGGER.error("[understudy] the paste channel would not register, so this "
+                    + "server cannot place pastes for anyone. Everything else still works.",
+                    failed);
+        }
     }
 
     private void place(MinecraftServer server, ServerPlayer who, PastePayload paste) {
@@ -108,6 +143,18 @@ public final class UnderstudyServer implements ModInitializer {
             done++;
         }
         who.sendSystemMessage(Component.literal("pasted — " + done + " commands"));
+    }
+
+    /** Guarded the same way, for the same reason: a bad paste is not a crash. */
+    private void placeSafely(MinecraftServer server, ServerPlayer who, PastePayload paste) {
+        try {
+            place(server, who, paste);
+        } catch (Throwable failed) {
+            LOGGER.error("[understudy] a paste from {} failed part way through",
+                    who.getName().getString(), failed);
+            who.sendSystemMessage(Component.literal(
+                    "that paste failed part way through — the server log says why"));
+        }
     }
 
     /**
