@@ -3,12 +3,19 @@
   "id": "understudy",
   "version": "${version}",
   "name": "Understudy",
-  "description": "Plays your character for you when you would rather not. Client-side only.",
-  "authors": ["Understudy"],
+  "description": "Plays your character for you when you would rather not. The mod itself is client-side; the same jar on a server lets people paste builds without anyone being given operator.",
+  "authors": [
+    "Understudy"
+  ],
   "license": "MIT",
-  "environment": "client",
+  "environment": "*",
   "entrypoints": {
-    "client": ["dev.understudy.client.UnderstudyClient"]
+    "client": [
+      "dev.understudy.client.UnderstudyClient"
+    ],
+    "main": [
+      "dev.understudy.server.UnderstudyServer"
+    ]
   },
   "depends": {
     "fabricloader": ">=0.16.0",
