@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "claude-dcp": {
+      "source": {
+        "source": "github",
+        "repo": "sasa-tomic/claude-dcp"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "dcp@claude-dcp": true
+  }
+}
