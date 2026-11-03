@@ -64,6 +64,8 @@ Don't add features. Fix, polish and prepare it for release.
 5. "It's a bit too hard right now."
 6. "It first needs a tutorial."
 7. "There are still things on the road that should not be there."
+8. "The maps, textures etc. could be better, and it should have that
+   cinematic, cozy feel."
 
 ## Work, in this order
 
@@ -211,7 +213,102 @@ completion in local save data only.
   or snow spray comes from the wheels, not the car centre.
 - Interpolated render pose (see Performance). This is half of "the cars lag".
 
-### 8. Release blockers found in the 2.0.0 APK
+### 8. Look and feel: cinematic and cozy
+
+What 2.0 does now: ACES tone mapping, terrain coloured per vertex with no
+real surface textures, Lambert/Phong/Standard materials mixed, hemisphere
+lighting, and weather and time-of-day variants already in the data. The
+letterbox bars (`#bars`) exist but are hardly used. It reads as clean but
+flat and synthetic.
+
+Target mood: **a warm Sunday-morning rally film**. Golden low sun, long soft
+shadows, dust hanging in the light, a crowd cheering from a hillside, then
+back to a quiet service park with a cup of coffee. Cinematic when you drive,
+cozy between stages. Every item below has to fit inside the performance
+budget from section 1. If something costs frames, it scales down with the
+quality tier or goes.
+
+**Lighting and grading**
+- One art-directed lighting preset per rally and time of day: sun angle,
+  colour temperature, sky, fog colour and density, exposure. Favour golden
+  hour, soft overcast and blue hour over flat midday. Store them as data so
+  they're easy to tune.
+- A colour-grading LUT per biome (warm, slightly lifted shadows, gently
+  desaturated greens) applied in one cheap final pass, together with a soft
+  vignette, very subtle film grain and a light bloom on the sun, headlights
+  and wet surfaces. On low quality, use only the grade, with no bloom.
+- Height and distance fog with aerial perspective, so the hills fade into the
+  sky colour. That's the cheapest way to get depth, and it hides the draw
+  distance.
+- Baked ambient occlusion in vertex colours for scenery, plus a contact
+  shadow under the car. Use a consistent material model (Standard everywhere,
+  or a single custom lit shader). Don't mix three.
+- Light shafts or sun glare as a cheap screen-space sprite. No volumetrics.
+
+**Maps and textures**
+- Replace the flat vertex colours with tiling detail textures: gravel, snow,
+  ice, mud, sand, tarmac, grass, rock, forest floor. Use a texture array or
+  atlas, blended by the existing surface and biome data, with a macro
+  variation map so tiling doesn't show, and triplanar mapping on cliffs and
+  rock cuts. Sources: CC0 only (ambientCG, Poly Haven), recorded in
+  `CREDITS.md`. Ship them as KTX2/Basis with mipmaps and keep texture
+  memory ≤ 128 MB on medium.
+- A road that tells a story: a worn racing line, ruts and loose gravel at
+  the edges, tyre marks into hairpins, puddles after rain, snow banks on the
+  Swedish stages, red dust trails in Kenya. Use decals or a road mask, not
+  extra geometry.
+- Skies: a painted gradient or HDR-style sky per preset with clouds, plus
+  layered distant silhouettes (mountains, coastlines, forest ridges) so the
+  horizon never looks empty.
+- One recognisable **landmark per country**, original and not a real
+  copyrighted building: a lighthouse and terraced vineyards in Portugal, a
+  shrine gate and cedar forest in Japan, a stone harbour town on the
+  Mediterranean coast, wooden lakeside saunas in Finland, a baobab and a
+  zebra herd in Kenya. That's what players screenshot.
+- Track design pass: every stage gets a rhythm (flowing section, technical
+  section, a big moment like a jump, splash or crest with a view), readable
+  corners with signage and chevrons before the tight ones, and no blind
+  corner without a pace note. Remove dead-straight filler.
+- Life: crowds that wave and step back as you pass, marshals, a helicopter
+  over the big jump, birds taking off, flags, smoke from chimneys. All of it
+  is instanced and cheap, and none of it ever stands on the road (section 3).
+
+**Camera and presentation**
+- Pre-stage: a 6–8 s flyover of the stage start with letterbox bars, the
+  stage name in large type, and the co-driver's "Ready... go" (skippable with
+  a tap).
+- While driving: a chase camera with slight lag, FOV that opens with speed,
+  gentle shake only on rough surfaces and landings (the "reduce camera shake"
+  option turns it off), and a short slow-motion shot over the big jump only
+  when the player chooses it in Options.
+- Finish: a replay of the stage's best moment from a trackside camera, then
+  the results card. Make the photo mode presets (golden hour, film, vintage
+  1986) match the grading.
+- Cinematic camera angles for the menus and garage. The car rotates slowly
+  on a turntable under warm lamps.
+
+**Cozy layer**
+- Service park and garage: a warm, lamp-lit tent, tools on the wall, a
+  mechanic, rain tapping on the roof when the next stage is wet. This is
+  where the player rests between stages, so it has to feel calm.
+- Music: an original soft acoustic/lo-fi menu theme and a quieter driving
+  bed that ducks under the co-driver, with separate music, effects, engine and
+  voice sliders. Use only music you own or have licensed, and record it in
+  `CREDITS.md`.
+- Ambience per biome: birds and wind in the forest, waves on the coast,
+  cicadas in the Mediterranean, crowd cheers at spectator spots.
+- Rally "postcards": completing a rally unlocks a hand-drawn-style card of
+  that country, shown in a scrapbook. That's progression that feels personal
+  instead of grindy.
+- Tone: encouraging copy ("Nice line through the hairpins"), no harsh red
+  failure screens, soft UI transitions (transform/opacity only, collapsed by
+  `prefers-reduced-motion`).
+
+Done when: side-by-side screenshots of the same five spots (one per biome)
+in 2.0 and 3.0 are committed to `store/compare/`, and 3.0 still meets the
+section 1 frame-time target on medium.
+
+### 9. Release blockers found in the 2.0.0 APK
 
 - **The admin backdoor ships in the bundle.** The redeem table contains the
   literal string `TOMIC-ADMIN-7731` (hashed at runtime, but the plaintext is
@@ -254,7 +351,7 @@ completion in local save data only.
   and in an in-game Credits screen. Fonts are OFL (Inter, Barlow Condensed);
   keep the licence files. Three.js is MIT.
 
-### 9. Android build and Play Console: everything needed to publish
+### 10. Android build and Play Console: everything needed to publish
 
 Build:
 - versionCode **5**, versionName **3.0.0**.
@@ -266,7 +363,8 @@ Build:
 - targetSdk 36 (already meets Play's requirement), minSdk 26.
 - R8/minify and resource shrinking on. Remove unused fonts and resources.
   Compress images (WebP/AVIF at the size they're actually displayed). Target
-  a download of < 15 MB.
+  a download of < 40 MB (the new textures cost more than 2.0's
+  5.7 MB; keep the base download under Play's 200 MB limit without asset packs).
 - Adaptive icon (foreground plus background layers, plus a monochrome layer
   for themed icons). 2.0 only has a single vector.
 - Splash: Android 12+ `SplashScreen` API with the brand colour `#0b0d10`, so
@@ -324,6 +422,35 @@ Policy and forms in Play Console:
   < 0.47 %. Add a lightweight local crash log the player can export from
   Options. No third-party SDK, which keeps the "no analytics" promise true.
 
+Developer account and legal (do these early, some take days):
+- **Developer identity verification** in Play Console (government ID; for an
+  organisation account a D-U-N-S number, which can take weeks). "Tomić
+  Studios" as the developer name needs an organisation account if it should
+  be a company and not your personal name.
+- **EU trader status (Digital Services Act)**: you must declare whether you
+  are a trader. Free, no ads and no in-app purchases usually means
+  non-trader, but if you declare trader status your address and phone
+  number are shown publicly on the store page.
+- **Name check**: search the Play Store, App Store and trademark registers
+  (EUIPO, WIPO, Swiss IGE) for "Apex Drift" before launch. If another game
+  already uses the name, rename now, not after the listing has reviews.
+- Reserve the support email and a simple website (the privacy policy can
+  live there) under the studio name.
+
+Launch readiness:
+- A device test matrix: one low-end (≈ 3 GB RAM, Mali/Adreno 6xx), one
+  mid-range, one high-end, one tablet, one foldable if possible. Run the
+  tutorial, one full rally, a pause and resume after 10 minutes in the
+  background, a rotation lock, a phone call during a stage, and flight mode.
+- Thermal and battery: a 20-minute session must not throttle into
+  stuttering. Add an optional 30 fps battery-saver mode.
+- Release notes ("What's new") for 3.0.0 in EN and DE.
+- A plan for the first update: how to collect feedback (support email,
+  Play reviews; reply to every review in the first weeks) and a 3.0.1 slot
+  for crash fixes from Android vitals.
+- Staged rollout in production: 20 % → 50 % → 100 % over a few days, and
+  halt it if crash rate or ANRs spike.
+
 Accessibility and quality polish:
 - Colour-blind-safe HUD and pace-note arrows (never colour only), text size
   option, remappable keyboard controls, subtitles for co-driver calls, and a
@@ -333,10 +460,12 @@ Accessibility and quality polish:
   low-memory.
 - Localise every UI string in EN and DE, not only the voice.
 
-### 10. Definition of done
+### 11. Definition of done
 
 - Every item under "Player feedback" is fixed and verified in the running
   build, not only in tests.
+- The look-and-feel comparison screenshots exist and the game reads as warm
+  and cinematic at every quality tier.
 - `npm run verify` (or the repo's equivalent) passes: typecheck, unit tests,
   the stage-clearance test, and the 48-stage soak with zero console errors.
 - `PERF.md` shows before/after numbers that meet the targets.
