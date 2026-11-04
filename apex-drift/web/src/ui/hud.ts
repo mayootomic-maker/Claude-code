@@ -112,7 +112,7 @@ export class Hud {
     const v = car.speed * (this.mph ? 2.237 : 3.6)
     this.speed.textContent = String(Math.round(v))
     // The real gearbox: gear and revs straight from the drivetrain.
-    this.gear.textContent = String(car.gear)
+    this.gear.textContent = car.gear < 0 ? "R" : String(car.gear)
     this.arc.style.strokeDasharray = `${((Math.min(car.rpm, car.redline) / car.redline) * 245).toFixed(0)} 400`
     this.arc.style.stroke = car.rpm > car.redline * 0.94 ? 'var(--bad)' : ''
     this.warn.textContent = t('wrongWay')

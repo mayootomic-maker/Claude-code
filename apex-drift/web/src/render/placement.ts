@@ -109,7 +109,8 @@ export function planTile(ctx: PlanCtx, cx: number, cz: number, key: number, dens
       out.push({ kind: 'house', sub: rally.houses, x, z, r: FOOTPRINT.house, yaw: a.heading + (r() < 0.5 ? 0 : Math.PI), size: 1, seed: (r() * 1e9) | 0 })
     }
   }
-  return out
+  // Nothing grows or stands in a lake.
+  return out.filter((p) => ctx.ground.water(p.x, p.z) === null)
 }
 
 /** Chevron boards before tight corners and the crowds that gather at the good spots. */

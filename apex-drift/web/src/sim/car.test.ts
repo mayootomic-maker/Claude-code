@@ -17,7 +17,7 @@ function flat(): Ground {
     half: 1e9,
     length: 1e9,
   }
-  return { height: () => 0, natural: () => 0, edge: 1e9, limitAt: () => 1e9, route: route as unknown as Route }
+  return { height: () => 0, natural: () => 0, water: () => null, edge: 1e9, limitAt: () => 1e9, route: route as unknown as Route }
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)

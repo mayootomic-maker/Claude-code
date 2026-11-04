@@ -14,6 +14,8 @@ export interface Ground {
   height(x: number, z: number): number
   /** Natural terrain only, ignoring water and bridges; used for scenery placement. */
   natural(x: number, z: number): number
+  /** Lake surface height if (x, z) is open water, else null. */
+  water(x: number, z: number): number | null
   /** Where the drivable edge is, from the centreline. */
   readonly edge: number
   /** How far from the centreline the car may go at distance s: verges are drivable, forest and bridges are not. */
@@ -30,6 +32,9 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Ground 
   const n = noise2(seed * 31 + 7)
   const sideN = noise2(seed * 17 + 5)
   const edge = route.half + rally.edge.shoulder
+  // Regional character: mountain roads hang on steep valley sides, plains roll gently.
+  const STEEP = ['alpine', 'andes', 'japan', 'wales'].includes(rally.biome) ? 1.7 : rally.biome === 'savannah' || rally.biome === 'nordic' ? 0.6 : 1
+  const TERRACED = rally.biome === 'med' || rally.biome === 'iberia' || rally.biome === 'andes'
   const hard = rally.edge.up === 'rockwall' || rally.edge.up === 'mosswall' || rally.edge.down === 'rail' || rally.edge.up === 'snowbank'
   const limit = edge + (hard ? 0.4 : 5)
 
@@ -39,11 +44,31 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Ground 
     const off = Math.max(0, c.dist - edge)
     // The road is cut into a hillside whose fall line changes slowly along the
     // stage: one side climbs (rock walls, banks), the other drops away.
-    const fall = sideN(c.s / 400, 0.3) * rel.side * 0.42
-    const side = Math.sign(c.d) * fall * off
+    const fall = sideN(c.s / 400, 0.3) * rel.side * 0.42 * STEEP
+    let side = Math.sign(c.d) * fall * off
+    // Mediterranean and Andean hillsides are farmed in terraces.
+    if (TERRACED && Math.abs(side) > 1.5) side = Math.sign(side) * (Math.floor(Math.abs(side) / 2.6) * 2.6 + smoothstep(0.75, 1, (Math.abs(side) / 2.6) % 1) * 2.6)
     const rough = fbm2(n, x / 90, z / 90, 4) * Math.min(14, rel.amp * 0.08) * smoothstep(0, 40, off)
     const ditch = -0.45 * smoothstep(0, 1.5, off) * (1 - smoothstep(2.5, 6, off))
-    return c.y + side + rough + ditch - 0.06
+    let h = c.y + side + rough + ditch - 0.06
+    // Lakes: basins in the low, flat country, well back from the road.
+    const lk = lake(x, z, off)
+    if (lk > 0) h = h * (1 - lk) + (c.y - 3.2) * lk
+    return h
+  }
+
+  const lakeN = noise2(seed * 5 + 11)
+  const LAKE_T = -0.42 + rally.water.lakes * 0.07
+  /** 0 on land, rising to 1 in the middle of a lake. */
+  const lake = (x: number, z: number, off: number): number => {
+    if (!rally.water.lakes || off < 16) return 0
+    const v = fbm2(lakeN, x / 360, z / 360, 3)
+    return smoothstep(LAKE_T, LAKE_T - 0.1, v) * smoothstep(16, 30, off)
+  }
+  const water = (x: number, z: number): number | null => {
+    const c = route.closest(x, z, 600)
+    if (!c) return null
+    return lake(x, z, c.dist - edge) > 0.35 ? c.y - 1.6 : null
   }
 
   const height = (x: number, z: number): number => {
@@ -84,5 +109,5 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Ground 
   // On a bridge the parapets stand just outside the road edge.
   const limitAt = (s: number): number => (route.featureAt(s, 'bridge') ? route.half + 0.3 - BODY : legLimit(s))
 
-  return { height, natural, edge, limitAt, route }
+  return { height, natural, water, edge, limitAt, route }
 }

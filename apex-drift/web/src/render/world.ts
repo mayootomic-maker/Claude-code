@@ -51,6 +51,7 @@ export class World {
   private readonly propMat: THREE.MeshLambertMaterial
   private readonly roadMat: THREE.MeshLambertMaterial
   private readonly waterMat: THREE.MeshLambertMaterial
+  private readonly lakeMat: THREE.MeshStandardMaterial
   private readonly time = { value: 0 }
   private readonly route: Route
   private readonly noise = noise2(9)
@@ -93,6 +94,8 @@ export class World {
     }
     const kind = roadKind(rally)
     this.roadMat = new THREE.MeshLambertMaterial({ map: roadTexture(kind, roadBase(rally), q.aniso) })
+    // Still water mirrors the sky: low roughness picks up the environment map.
+    this.lakeMat = new THREE.MeshStandardMaterial({ color: 0x23404a, roughness: 0.06, metalness: 0.6, transparent: true, opacity: 0.9 })
     this.waterMat = new THREE.MeshLambertMaterial({ color: 0x4f6b70, transparent: true, opacity: 0.78, depthWrite: false })
     this.planTiles()
     this.planSegments()
@@ -152,6 +155,7 @@ export class World {
     this.propMat.dispose()
     this.roadMat.dispose()
     this.waterMat.dispose()
+    this.lakeMat.dispose()
   }
 
   // ---------------------------------------------------------------- planning
@@ -232,6 +236,7 @@ export class World {
         const snowLine = this.rally.snowLine ?? 9999
         const snow = this.snowAll ? 1 - smoothstep(0.7, 1.1, slope) * 0.6 : smoothstep(snowLine - 30, snowLine + 30, hgt[k])
         c.lerp(c2.setHex(pal.snow), snow)
+        if (this.ground.water(x, z) !== null) c.lerp(c2.setHex(0xb8a77e), 0.6)
         col[k * 3] = c.r
         col[k * 3 + 1] = c.g
         col[k * 3 + 2] = c.b
@@ -255,6 +260,22 @@ export class World {
     g.add(mesh)
     const props = this.scatter(t)
     if (props) g.add(props)
+    // Lake surface: one flat sheet at the tile's water level, only where the basin is.
+    let lvl = 0, wet = 0
+    for (let j = 0; j < n; j += 4)
+      for (let i = 0; i < n; i += 4) {
+        const w = this.ground.water(x0 + i * RES, z0 + j * RES)
+        if (w !== null) {
+          lvl += w
+          wet++
+        }
+      }
+    if (wet) {
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(TILE, TILE).rotateX(-Math.PI / 2), this.lakeMat)
+      sheet.position.set(t.cx, lvl / wet, t.cz)
+      sheet.renderOrder = 1
+      g.add(sheet)
+    }
     t.group = g
     this.group.add(g)
   }
