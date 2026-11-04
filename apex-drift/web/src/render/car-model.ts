@@ -255,7 +255,8 @@ function bodyShell(s: Spec, axF: number, axR: number): THREE.BufferGeometry {
     return s.flare * Math.max(0, 1 - (d / (s.wheel + 0.35)) ** 2)
   }
   const half = (z: number) => {
-    const end = Math.min(z - rear, front - z)
+    // Clamped: the last ring can land a rounding error past the nose, and sqrt of a negative is NaN.
+    const end = Math.max(0, Math.min(z - rear, front - z))
     const round = Math.sqrt(Math.min(1, end / 0.32)) * 0.22 + 0.78
     return (W / 2 - s.flare) * round + flareAt(z)
   }
@@ -449,7 +450,8 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
   applyUV(shell, L, s.roof, W)
   add(shell, paint, 0, 0, 0)
   const shoulderHalf = (z: number) => {
-    const end = Math.min(z - rear, front - z)
+    // Clamped: the last ring can land a rounding error past the nose, and sqrt of a negative is NaN.
+    const end = Math.max(0, Math.min(z - rear, front - z))
     return (W / 2 - s.flare) * (Math.sqrt(Math.min(1, end / 0.32)) * 0.22 + 0.78) * 0.93
   }
   add(glasshouse(s, shoulderHalf), glass, 0, 0, 0)
