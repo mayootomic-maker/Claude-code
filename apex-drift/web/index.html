@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d10">
+<title>Apex Drift</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<canvas id="gl" aria-label="Rally stage"></canvas>
+<div id="bars" class="bars" aria-hidden="true"></div>
+<section id="sting" class="screen" aria-label="Tomić Studios"></section>
+<section id="title" class="screen hidden"></section>
+<section id="menu" class="screen hidden"></section>
+<section id="loading" class="screen hidden" aria-live="polite"></section>
+<section id="hud" class="hidden"></section>
+<section id="overlay" class="screen overlay hidden"></section>
+<div id="toast" role="status" class="hidden"></div>
+<div id="rotate"><p></p></div>
+<noscript><p style="padding:24px">Apex Drift needs JavaScript.</p></noscript>
+<script type="module" src="./src/main.ts"></script>
+</body>
+</html>

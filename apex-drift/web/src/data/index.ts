@@ -128,3 +128,20 @@ export function rally(id: string): RallyDef {
   if (!r) throw new Error(`Unknown rally ${id}`)
   return r
 }
+
+/**
+ * The driving school: Finnish gravel with a layout chosen so the lessons
+ * arrive in order (gentle corners first, one hairpin at 1.1 km, easy run-in
+ * to the finish). Seed found by searching; see the tutorial test.
+ */
+export const SCHOOL: RallyDef = (() => {
+  const fin = RALLIES.find((r) => r.id === 'finland') ?? RALLIES[0]
+  return {
+    ...fin,
+    id: 'school',
+    style: { ...fin.style, hairpin: 0.18, switchbacks: 0, fast: 0.1, esses: 0.1 },
+    relief: { ...fin.relief, jump: 0, crest: 0 },
+    spectators: 0.4,
+    stages: [{ name: 'Driving school', km: 1.9, seed: 9628, look: 'morning', weather: 'clear' }],
+  }
+})()

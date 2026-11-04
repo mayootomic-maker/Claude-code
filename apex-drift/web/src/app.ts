@@ -1,0 +1,976 @@
+import { Audio, haptic } from './audio/audio'
+import { clamp } from './core/math'
+import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
+import { CoDriver } from './game/codriver'
+import { level, medalFor, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
+import { setLang, subtitle, t, type TKey } from './game/i18n'
+import { Controls } from './game/input'
+import { paceNotes } from './game/pacenotes'
+import { openStore, type Settings, type Store } from './game/save'
+import { Renderer, StageView, type Tier } from './render/view'
+import { DT } from './sim/car'
+import { StageSim, type Difficulty } from './sim/stage'
+import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
+import { gearbox, Hud } from './ui/hud'
+
+const VERSION = '3.0.0'
+type Screen = 'sting' | 'title' | 'menu' | 'loading' | 'race'
+type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results'
+
+interface RaceCtx {
+  rally: RallyDef
+  stageIdx: number
+  mode: 'career' | 'free' | 'school'
+  sim: StageSim
+  view: StageView
+  hud: Hud
+  codriver: CoDriver
+  phase: RacePhase
+  introT: number
+  finishT: number
+  paused: boolean
+  gold: number | null
+  school: School | null
+  cheered: Set<number>
+  benchmark: number[] | null
+}
+
+interface School {
+  step: number
+  shownAt: number
+  hairpin: number
+  firstCall: string | null
+}
+
+const native = (): { exitApp?: () => void; version?: () => string } | undefined => (window as unknown as { ApexNative?: { exitApp(): void; version(): string } }).ApexNative
+
+export class App {
+  private readonly store: Store
+  private readonly audio = new Audio()
+  private readonly renderer: Renderer
+  private readonly controls: Controls
+  private screen: Screen = 'sting'
+  private race: RaceCtx | null = null
+  private acc = 0
+  private last = performance.now()
+  private menuStack: (() => void)[] = []
+  private readonly ui: Record<'sting' | 'title' | 'menu' | 'loading' | 'hud' | 'overlay', HTMLElement>
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    let storage: Storage | null = null
+    try {
+      storage = window.localStorage
+    } catch {
+      storage = null
+    }
+    this.store = openStore(storage)
+    const s = this.store.save
+    setLang(s.settings.lang)
+    document.documentElement.style.setProperty('--text', String(s.settings.textSize))
+    const tier: Tier = s.settings.quality !== 'auto' ? s.settings.quality : s.tier ?? 'medium'
+    this.renderer = new Renderer(canvas, tier)
+    this.controls = new Controls(() => this.store.save.settings)
+    this.controls.onAction = (a) => this.action(a)
+    this.ui = {
+      sting: $('#sting'), title: $('#title'), menu: $('#menu'), loading: $('#loading'), hud: $('#hud'), overlay: $('#overlay'),
+    }
+    if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch')
+    addEventListener('touchstart', () => document.body.classList.add('touch'), { once: true, passive: true })
+    addEventListener('resize', () => this.resize())
+    addEventListener('apex:pause', () => this.background())
+    document.addEventListener('visibilitychange', () => document.hidden && this.background())
+    ;(window as unknown as { __apexBack: () => boolean }).__apexBack = () => this.back()
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault()
+      this.contextLost()
+    })
+    this.audio.onSay = (w) => {
+      if (this.store.save.settings.subtitles && this.race) this.race.hud.subtitle(subtitle(w))
+    }
+    if (this.store.recovered) setTimeout(() => toast(t('saveRecovered'), 6000), 3000)
+    else if (this.store.volatile) setTimeout(() => toast(t('saveVolatile'), 6000), 3000)
+    // Ask the browser to keep our storage; it may say no, which is why saves are validated.
+    void navigator.storage?.persist?.()
+    this.resize()
+    this.sting()
+    requestAnimationFrame((n) => this.loop(n))
+  }
+
+  // ======================================================================= flow
+
+  private show(s: Screen): void {
+    this.screen = s
+    for (const k of ['sting', 'title', 'menu', 'loading'] as const) this.ui[k].classList.toggle('hidden', k !== s)
+    this.ui.hud.classList.toggle('hidden', s !== 'race')
+    document.body.classList.toggle('driving', s === 'race')
+  }
+
+  private sting(): void {
+    this.show('sting')
+    html(this.ui.sting, `<div><div class="mark">${CHEVRON}</div><p class="studio">TOMIĆ <b>STUDIOS</b></p><p class="presents">${t('presents')}</p></div>`)
+    const go = () => {
+      clearTimeout(timer)
+      removeEventListener('pointerdown', go)
+      removeEventListener('keydown', go)
+      this.title()
+    }
+    const timer = window.setTimeout(go, 2600)
+    addEventListener('pointerdown', go, { once: true })
+    addEventListener('keydown', go, { once: true })
+  }
+
+  private title(): void {
+    this.show('title')
+    html(this.ui.title, `
+      <p class="kicker">Tomić Studios</p>
+      <h1 class="wordmark display"><span>Apex </span><span>Drift</span></h1>
+      <p class="tag">${t('tagline')}</p>
+      <p class="tap">${document.body.classList.contains('touch') ? t('tapToStart') : t('pressKey')}</p>
+      <p class="ver">${t('version', { v: VERSION })}</p>`)
+    const go = () => {
+      removeEventListener('keydown', go)
+      this.ui.title.removeEventListener('pointerdown', go)
+      this.audio.unlock()
+      this.applyMix()
+      this.audio.playMusic('menu')
+      void this.audio.loadVoice(this.store.save.settings.voiceLang)
+      // First run goes straight to the driving school.
+      if (!this.store.save.tutorialDone) this.startSchool()
+      else this.home()
+    }
+    this.ui.title.addEventListener('pointerdown', go)
+    addEventListener('keydown', go)
+  }
+
+  private menu(render: () => string, bind: (root: HTMLElement) => void, art?: string, push = true): void {
+    this.show('menu')
+    if (push) this.menuStack.push(() => this.menu(render, bind, art, false))
+    const s = this.store.save
+    const lv = level(s.xp)
+    this.ui.menu.style.setProperty('--menu-art', art ? `url('${art}')` : null)
+    html(this.ui.menu, `
+      <header class="topbar"><span class="brand">${CHEVRON}APEX DRIFT</span><span class="spacer"></span>
+        <span class="pill">${esc(s.name)} · ${t('level', { n: lv.level })}</span><span class="pill"><b>${s.credits.toLocaleString()}</b> cr</span></header>
+      <main class="view">${render()}</main>`)
+    const root = $('.view', this.ui.menu)
+    root.querySelectorAll<HTMLElement>('[data-back]').forEach((b) => b.addEventListener('click', () => this.back()))
+    root.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) this.audio.click()
+    })
+    bind(root)
+  }
+
+  private home(): void {
+    this.menuStack = []
+    const s = this.store.save
+    const ev = s.event
+    const nextRally = ev ? RALLIES.find((r) => r.id === ev.rally) : RALLIES.find((r, i) => unlocked(s, i) && !s.finished.includes(r.id)) ?? RALLIES[0]
+    const careerSub = ev && nextRally ? t('continueRally', { rally: nextRally.name }) : t('careerSub')
+    this.menu(() => `
+      <div class="home">
+        <button class="tile big" data-go="career" style="background-image:url('img/c-${nextRally?.id ?? 'finland'}.jpg')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
+        <button class="tile" data-go="free" style="background-image:url('img/poly-park.jpg')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="school" style="background-image:url('img/c-finland.jpg')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
+        <button class="tile" data-go="garage" style="background-image:url('img/garage.jpg')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
+        <button class="tile" data-go="options"><span class="t display">${t('options')}</span></button>
+        <button class="tile" data-go="credits"><span class="t display">${t('credits')}</span></button>
+      </div>`, (root) => {
+      root.querySelectorAll<HTMLElement>('[data-go]').forEach((b) => b.addEventListener('click', () => {
+        const go = b.dataset.go
+        if (go === 'career') this.careerList('career')
+        else if (go === 'free') this.careerList('free')
+        else if (go === 'school') this.startSchool()
+        else if (go === 'garage') this.garage()
+        else if (go === 'options') this.options('controls')
+        else this.creditsScreen()
+      }))
+    }, 'img/garage.jpg')
+  }
+
+  private careerList(mode: 'career' | 'free'): void {
+    const s = this.store.save
+    this.menu(() => `
+      <button class="back" data-back>${t('back')}</button>
+      <h1 class="display">${mode === 'career' ? t('career') : t('quickStage')}</h1>
+      <div class="rallies">${RALLIES.map((r, i) => {
+        const open = unlocked(s, i)
+        const medals = r.stages.map((_, k) => s.best[`${r.id}:${k}:${s.settings.difficulty}`]?.medal ?? null)
+        return `<button class="tile rally ${open ? '' : 'locked'}" data-r="${i}" style="background-image:url('img/c-${r.id}.jpg');animation-delay:${i * 30}ms" ${open ? '' : 'aria-disabled="true"'}>
+          <span class="kicker"><span class="flag">${r.flag.map((c) => `<i style="background:${c}"></i>`).join('')}</span>${esc(r.nation)}</span>
+          <span class="t display">${esc(r.name)}</span>
+          <span class="s">${open ? t('stages', { n: r.stages.length, km: r.stages.reduce((a, x) => a + x.km, 0).toFixed(1) }) : t('locked', { rally: RALLIES[i - 1]?.name ?? '' })}</span>
+          <span class="medals">${medals.map((m) => `<span class="medal ${m ?? ''}"></span>`).join('')}</span>
+        </button>`
+      }).join('')}</div>`, (root) => {
+      root.querySelectorAll<HTMLElement>('[data-r]').forEach((b) => b.addEventListener('click', () => {
+        const i = Number(b.dataset.r)
+        if (!unlocked(this.store.save, i)) {
+          toast(t('locked', { rally: RALLIES[i - 1]?.name ?? '' }))
+          return
+        }
+        this.rallyDetail(RALLIES[i], mode)
+      }))
+    })
+  }
+
+  private rallyDetail(r: RallyDef, mode: 'career' | 'free', sel = 0): void {
+    const s = this.store.save
+    const d = s.settings.difficulty
+    const ev = s.event && s.event.rally === r.id ? s.event : null
+    this.menu(() => `
+      <button class="back" data-back>${t('back')}</button>
+      <div class="detail">
+        <div class="card">
+          <p class="kicker">${esc(r.nation)} · ${t(`surface_${r.surface}` as TKey)}</p>
+          <h1 class="display">${esc(r.name)}</h1>
+          <p class="muted">${esc(r.blurb)}</p>
+          <p class="kicker" style="margin-top:16px">${t('difficulty')}</p>
+          <div class="seg" role="radiogroup">${(['rookie', 'driver', 'pro'] as Difficulty[]).map((x) => `<button class="${x === d ? 'on' : ''}" data-d="${x}" role="radio" aria-checked="${x === d}">${t(x)}</button>`).join('')}</div>
+          <p class="muted" style="font-size:0.88em">${t(`${d}Sub` as TKey)}</p>
+          ${mode === 'career' ? `<div class="row" style="margin-top:14px">
+            <button class="btn" data-start>${ev ? t('resumeRally', { n: ev.times.length + 1 }) : t('startRally')}</button>
+            ${ev ? `<button class="btn ghost" data-abandon>${t('abandon')}</button>` : ''}</div>` : ''}
+        </div>
+        <div class="card stagelist">${r.stages.map((st, k) => {
+          const best = s.best[`${r.id}:${k}:${d}`]
+          const done = ev && k < ev.times.length
+          return `<button class="stagerow ${mode === 'free' && k === sel ? 'sel' : ''}" data-k="${k}">
+            <span class="n">${k + 1}</span>
+            <span class="meta">${esc(st.name)}${st.power ? ` · <b style="color:var(--amber)">${t('power')}</b>` : ''}
+              <small>${st.km.toFixed(1)} km · ${t(`look_${st.look}` as TKey)} · ${t(`weather_${st.weather}` as TKey)}${done ? ` · ${fmtTime(ev.times[k])}` : ''}</small></span>
+            <span class="medal ${best?.medal ?? ''}" title="${best ? t('best', { time: fmtTime(best.time) }) : t('noTime')}"></span>
+          </button>`
+        }).join('')}
+        ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}</div>
+      </div>`, (root) => {
+      root.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
+        this.store.save.settings.difficulty = b.dataset.d as Difficulty
+        this.store.write()
+        this.menuStack.pop()
+        this.rallyDetail(r, mode, sel)
+      }))
+      root.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
+        if (mode !== 'free') return
+        this.menuStack.pop()
+        this.rallyDetail(r, mode, Number(b.dataset.k))
+      }))
+      root.querySelector('[data-start]')?.addEventListener('click', () => {
+        const save = this.store.save
+        if (!save.event || save.event.rally !== r.id) save.event = { rally: r.id, times: [], difficulty: save.settings.difficulty }
+        this.store.write()
+        this.load(r, save.event.times.length, 'career')
+      })
+      root.querySelector('[data-abandon]')?.addEventListener('click', () => {
+        this.store.save.event = null
+        this.store.write()
+        this.menuStack.pop()
+        this.rallyDetail(r, mode)
+      })
+      root.querySelector('[data-drive]')?.addEventListener('click', () => this.load(r, sel, 'free'))
+    }, `img/c-${r.id}.jpg`)
+  }
+
+  private garage(carSel?: string): void {
+    const s = this.store.save
+    const lv = level(s.xp).level
+    const sel = carSel ?? s.car
+    const car = CARS.find((c) => c.id === sel) ?? CARS[0]
+    const p = carPhys(car.id)
+    const stats = [
+      [t('power_'), Math.min(1, p.power / 3e5)], [t('grip'), clamp((p.grip - 0.9) / 0.25 + 0.25, 0, 1)], [t('weight'), clamp((p.mass - 650) / 900, 0, 1)],
+    ] as const
+    const drive = p.frontDrive >= 0.99 ? t('driveFront') : p.frontDrive <= 0.01 ? t('driveRear') : t('driveAll')
+    const price = (lvl: number) => Math.round(1500 * lvl * lvl ** 0.5 / 100) * 100
+    const visible = LIVERIES.filter((l) => l.unlock.type === 'none' || l.unlock.type === 'shop' || l.unlock.type === 'level' || s.owned.liveries.includes(l.id))
+    const ownsL = (l: LiveryDef) => l.unlock.type === 'none' || s.owned.liveries.includes(l.id) || (l.unlock.type === 'level' && lv >= l.unlock.n)
+    this.menu(() => `
+      <button class="back" data-back>${t('back')}</button>
+      <div class="garage">
+        <div class="card">
+          <p class="kicker">${esc(car.era)} · ${esc(car.tag)}</p>
+          <h1 class="display">${esc(car.name)}</h1>
+          ${stats.map(([k, v]) => `<div class="stat"><span class="muted">${k}</span><span class="bar"><i style="width:${(v * 100).toFixed(0)}%"></i></span></div>`).join('')}
+          <div class="stat"><span class="muted">${t('drive')}</span><span>${drive} · ${Math.round(p.power / 745.7)} hp · ${p.mass} kg</span></div>
+          <div class="row" style="margin-top:12px">${s.owned.cars.includes(car.id)
+            ? `<button class="btn" data-pick ${s.car === car.id ? 'disabled' : ''}>${s.car === car.id ? t('selected') : t('select')}</button>`
+            : lv < car.level ? `<button class="btn" disabled>${t('needLevel', { n: car.level })}</button>`
+            : `<button class="btn" data-buy ${s.credits < price(car.level) ? 'disabled' : ''}>${t('buy', { price: price(car.level).toLocaleString() })}</button>`}</div>
+          <div class="cars" style="margin-top:14px">${CARS.map((c) => `<button class="carbtn ${c.id === sel ? 'sel' : ''} ${s.owned.cars.includes(c.id) ? '' : 'lock'}" data-car="${c.id}">${esc(c.name)}<small>${esc(c.era)} · ${t('level', { n: c.level })}</small></button>`).join('')}</div>
+        </div>
+        <div class="card">
+          <p class="kicker">Livery</p>
+          <div class="swatches">${visible.map((l) => {
+            const own = ownsL(l)
+            const sub = own ? (s.livery === l.id ? t('selected') : t('select')) : l.unlock.type === 'shop' ? t('buy', { price: l.unlock.price.toLocaleString() }) : l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret')
+            return `<button class="swatch ${s.livery === l.id ? 'sel' : ''}" data-l="${l.id}"><span class="chip" style="background:linear-gradient(135deg,#${l.base.toString(16).padStart(6, '0')} 55%,#${l.stripe.toString(16).padStart(6, '0')} 55%)"></span><span>${esc(l.name)}<small>${sub}</small></span></button>`
+          }).join('')}</div>
+        </div>
+      </div>`, (root) => {
+      root.querySelectorAll<HTMLElement>('[data-car]').forEach((b) => b.addEventListener('click', () => {
+        this.menuStack.pop()
+        this.garage(b.dataset.car)
+      }))
+      root.querySelector('[data-pick]')?.addEventListener('click', () => {
+        this.store.save.car = car.id
+        this.store.write()
+        this.menuStack.pop()
+        this.garage(car.id)
+      })
+      root.querySelector('[data-buy]')?.addEventListener('click', () => {
+        const cost = price(car.level)
+        if (this.store.save.credits < cost) return toast(t('notEnough'))
+        this.store.save.credits -= cost
+        this.store.save.owned.cars.push(car.id)
+        this.store.save.car = car.id
+        this.store.write()
+        this.menuStack.pop()
+        this.garage(car.id)
+      })
+      root.querySelectorAll<HTMLElement>('[data-l]').forEach((b) => b.addEventListener('click', () => {
+        const l = LIVERIES.find((x) => x.id === b.dataset.l)
+        if (!l) return
+        const save = this.store.save
+        if (!ownsL(l)) {
+          if (l.unlock.type !== 'shop') return toast(l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret'))
+          if (save.credits < l.unlock.price) return toast(t('notEnough'))
+          save.credits -= l.unlock.price
+          save.owned.liveries.push(l.id)
+        }
+        save.livery = l.id
+        this.store.write()
+        this.menuStack.pop()
+        this.garage(sel)
+      }))
+    }, 'img/garage.jpg')
+  }
+
+  private options(tab: 'controls' | 'audio' | 'display' | 'gameplay' | 'data'): void {
+    const st = this.store.save.settings
+    const seg = <K extends keyof Settings>(key: K, opts: readonly Settings[K][], label: (v: Settings[K]) => string) =>
+      `<div class="seg">${opts.map((o) => `<button class="${st[key] === o ? 'on' : ''}" data-set="${String(key)}" data-v="${String(o)}">${label(o)}</button>`).join('')}</div>`
+    const tog = (key: keyof Settings) => `<button class="toggle ${st[key] ? 'on' : ''}" data-tog="${key}" role="switch" aria-checked="${!!st[key]}"></button>`
+    const range = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${st[key]}" data-range="${key}">`
+    const opt = (label: string, ctl: string) => `<div class="opt"><label>${label}</label>${ctl}</div>`
+    const body: Record<typeof tab, () => string> = {
+      controls: () => [
+        opt(t('steering'), seg('steering', ['buttons', 'tilt'] as const, (v) => t(`steer_${v}` as TKey))),
+        opt(t('autoGas'), tog('autoGas')),
+        opt(t('sensitivity'), range('sensitivity', 0.5, 2, 0.1)),
+        opt(t('tiltInvert'), tog('tiltInvert')),
+        opt(t('haptics'), tog('haptics')),
+      ].join(''),
+      audio: () => [
+        opt(t('master'), range('master', 0, 1, 0.05)), opt(t('music'), range('music', 0, 1, 0.05)),
+        opt(t('engine'), range('engine', 0, 1, 0.05)), opt(t('sfx'), range('sfx', 0, 1, 0.05)), opt(t('voice'), range('voice', 0, 1, 0.05)),
+        opt(t('notes'), seg('notes', ['full', 'corners', 'off'] as const, (v) => t(`notes_${v}` as TKey))),
+        opt(t('voiceLang'), seg('voiceLang', ['en', 'de'] as const, (v) => (v === 'en' ? 'English' : 'Deutsch'))),
+        opt(t('subtitles'), tog('subtitles')),
+      ].join(''),
+      display: () => [
+        opt(t('quality'), seg('quality', ['auto', 'low', 'medium', 'high'] as const, (v) => t(`q_${v}` as TKey))),
+        opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet'] as const, (v) => t(`camera_${v}` as TKey))),
+        opt(t('shake'), tog('shake')),
+        opt(t('units'), seg('units', ['kmh', 'mph'] as const, (v) => (v === 'kmh' ? 'km/h' : 'mph'))),
+        opt(t('textSize'), seg('textSize', [1, 1.15, 1.3] as const, (v) => `${Math.round(v * 100)}%`)),
+        opt(t('lang'), seg('lang', ['en', 'de'] as const, (v) => (v === 'en' ? 'English' : 'Deutsch'))),
+      ].join(''),
+      gameplay: () => [
+        opt(t('difficulty'), seg('difficulty', ['rookie', 'driver', 'pro'] as const, (v) => t(v))),
+        opt(t('name'), `<input type="text" maxlength="20" value="${esc(this.store.save.name)}" data-name>`),
+        opt(t('replaySchool'), `<button class="btn ghost" data-school>${t('school')}</button>`),
+      ].join(''),
+      data: () => [
+        opt(t('privacy'), `<button class="btn ghost" data-privacy>${t('privacy')}</button>`),
+        opt(t('erase'), `<button class="btn ghost" data-erase style="color:var(--bad)">${t('erase')}</button>`),
+        opt(t('version', { v: VERSION }), ''),
+      ].join(''),
+    }
+    this.menu(() => `
+      <button class="back" data-back>${t('back')}</button>
+      <h1 class="display">${t('options')}</h1>
+      <div class="options">
+        <div class="seg tabs">${(['controls', 'audio', 'display', 'gameplay', 'data'] as const).map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
+        ${body[tab]()}
+      </div>`, (root) => {
+      const redraw = () => {
+        this.menuStack.pop()
+        this.options(tab)
+      }
+      root.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+        this.menuStack.pop()
+        this.options(b.dataset.tab as typeof tab)
+      }))
+      root.querySelectorAll<HTMLElement>('[data-set]').forEach((b) => b.addEventListener('click', () => {
+        const key = b.dataset.set as keyof Settings
+        const raw = b.dataset.v ?? ''
+        const cur = st[key]
+        ;(st as unknown as Record<string, unknown>)[key] = typeof cur === 'number' ? Number(raw) : raw
+        this.settingsChanged(key)
+        redraw()
+      }))
+      root.querySelectorAll<HTMLElement>('[data-tog]').forEach((b) => b.addEventListener('click', () => {
+        const key = b.dataset.tog as keyof Settings
+        ;(st as unknown as Record<string, unknown>)[key] = !st[key]
+        this.settingsChanged(key)
+        redraw()
+      }))
+      root.querySelectorAll<HTMLInputElement>('[data-range]').forEach((inp) => inp.addEventListener('input', () => {
+        const key = inp.dataset.range as keyof Settings
+        ;(st as unknown as Record<string, unknown>)[key] = Number(inp.value)
+        this.settingsChanged(key)
+      }))
+      root.querySelector<HTMLInputElement>('[data-name]')?.addEventListener('change', (e) => {
+        const v = (e.target as HTMLInputElement).value.trim().slice(0, 20)
+        if (v) this.store.save.name = v
+        this.store.write()
+      })
+      root.querySelector('[data-school]')?.addEventListener('click', () => this.startSchool())
+      root.querySelector('[data-privacy]')?.addEventListener('click', () => {
+        // Shown inside the app: it works offline, and back returns to the game.
+        const o = this.ui.overlay
+        o.classList.remove('hidden')
+        html(o, `<div class="dialog" style="width:min(760px,100%);height:100%;display:flex;flex-direction:column"><iframe src="privacy.html" title="${t('privacy')}" style="flex:1;border:0;border-radius:10px;background:#1a2027"></iframe><div class="col"><button class="btn" data-close>${t('back')}</button></div></div>`)
+        $('[data-close]', o).addEventListener('click', () => o.classList.add('hidden'))
+      })
+      root.querySelector('[data-erase]')?.addEventListener('click', () => this.confirm(t('eraseConfirm'), () => {
+        this.store.reset()
+        toast(t('erased'))
+        this.home()
+      }))
+    })
+  }
+
+  private settingsChanged(key: keyof Settings): void {
+    const st = this.store.save.settings
+    this.store.write()
+    if (key === 'lang') setLang(st.lang)
+    if (key === 'textSize') document.documentElement.style.setProperty('--text', String(st.textSize))
+    if (['master', 'music', 'sfx', 'engine', 'voice'].includes(key)) this.applyMix()
+    if (key === 'voiceLang') void this.audio.loadVoice(st.voiceLang)
+    if (key === 'quality' && st.quality !== 'auto') this.renderer.setTier(st.quality)
+    if (key === 'tiltInvert' || key === 'steering') this.requestTilt()
+  }
+
+  /** iOS-style permission prompt for motion sensors, where the browser has one. */
+  private requestTilt(): void {
+    const D = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }
+    if (this.store.save.settings.steering === 'tilt' && D.requestPermission) void D.requestPermission().catch(() => toast(t('steer_buttons')))
+  }
+
+  private applyMix(): void {
+    const s = this.store.save.settings
+    this.audio.setMix({ master: s.master, music: s.music, sfx: s.sfx, engine: s.engine, voice: s.voice })
+  }
+
+  private creditsScreen(): void {
+    this.menu(() => `
+      <button class="back" data-back>${t('back')}</button>
+      <div class="card" style="max-width:640px">
+        <div class="row" style="gap:12px"><span style="width:48px;display:inline-block">${CHEVRON}</span><h1 class="display" style="margin:0">Apex Drift</h1></div>
+        <p>${t('creditsBody')}</p>
+        <p class="kicker">${t('licences')}</p>
+        <p class="muted">${t('licenceText')}</p>
+        <p class="muted">${t('version', { v: VERSION })}</p>
+      </div>`, () => undefined)
+  }
+
+  private confirm(msg: string, yes: () => void, no?: () => void): void {
+    const o = this.ui.overlay
+    o.classList.remove('hidden')
+    html(o, `<div class="dialog" role="alertdialog"><p>${esc(msg)}</p><div class="row"><button class="btn" data-y>${t('yes')}</button><button class="btn ghost" data-n>${t('no')}</button></div></div>`)
+    $('[data-y]', o).addEventListener('click', () => {
+      o.classList.add('hidden')
+      yes()
+    })
+    $('[data-n]', o).addEventListener('click', () => {
+      o.classList.add('hidden')
+      no?.()
+    })
+  }
+
+  // ======================================================================= race
+
+  private startSchool(): void {
+    this.load(SCHOOL, 0, 'school')
+  }
+
+  private load(rally: RallyDef, stageIdx: number, mode: RaceCtx['mode']): void {
+    this.disposeRace()
+    const st = rally.stages[stageIdx]
+    const s = this.store.save
+    this.show('loading')
+    const tips = ['loadingTip0', 'loadingTip1', 'loadingTip2', 'loadingTip3', 'loadingTip4'] as const
+    this.ui.loading.style.backgroundImage = `url('img/c-${rally.id === 'school' ? 'finland' : rally.id}.jpg')`
+    html(this.ui.loading, `
+      <div class="info"><p class="kicker">${mode === 'school' ? t('school') : `${esc(rally.name)} · ${t('stageOf', { n: stageIdx + 1, total: rally.stages.length })}`}</p>
+        <h1 class="display">${esc(mode === 'school' ? t('school') : st.name)}</h1>
+        <dl class="facts"><dt>${t('length')}</dt><dd>${st.km.toFixed(1)} km</dd><dt>${t('surface')}</dt><dd>${t(`surface_${rally.surface}` as TKey)}</dd><dt>${t('conditions')}</dt><dd>${t(`look_${st.look}` as TKey)} · ${t(`weather_${st.weather}` as TKey)}</dd></dl></div>
+      <p class="tip">${t(tips[(st.seed + stageIdx) % tips.length])}</p>
+      <div class="progress"><i></i></div>`)
+    const bar = $('.progress i', this.ui.loading)
+    // Build in steps so the loading screen paints and the bar moves.
+    const steps: (() => void)[] = []
+    let sim: StageSim | null = null
+    let view: StageView | null = null
+    steps.push(() => {
+      sim = new StageSim({ rally, stage: st, car: s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty })
+    })
+    steps.push(() => {
+      if (!sim) return
+      const lv = LIVERIES.find((l) => l.id === s.livery) ?? LIVERIES[0]
+      view = new StageView(sim, this.renderer, lv)
+      view.camMode = s.settings.camera
+      view.shake = s.settings.shake ? 1 : 0
+      this.resize(view)
+    })
+    steps.push(() => view?.prewarm())
+    steps.push(() => void this.audio.loadVoice(s.settings.voiceLang))
+    let i = 0
+    const next = () => {
+      try {
+        steps[i++]()
+      } catch (e) {
+        this.fatal(e)
+        return
+      }
+      bar.style.width = `${Math.round((i / steps.length) * 100)}%`
+      if (i < steps.length) setTimeout(next, 30)
+      else if (sim && view) this.begin(rally, stageIdx, mode, sim, view)
+    }
+    setTimeout(next, 60)
+  }
+
+  private begin(rally: RallyDef, stageIdx: number, mode: RaceCtx['mode'], sim: StageSim, view: StageView): void {
+    const s = this.store.save
+    const hud = new Hud(this.ui.hud, s.settings.units === 'mph')
+    hud.setStage(mode === 'school' ? t('school') : `${rally.name} · ${rally.stages[stageIdx].name}`, sim)
+    this.controls.bindTouch(this.ui.hud)
+    this.ui.hud.querySelectorAll<HTMLElement>('[data-act]').forEach((b) => b.addEventListener('click', () => this.action(b.dataset.act as 'pause')))
+    const notes = paceNotes(sim.route, sim.start, sim.finish)
+    const gold = mode === 'school' ? null : stageMedals(rally, stageIdx, sim.setup.difficulty).gold
+    const hairpin = notes.find((n) => n.kind === 'corner' && n.grade === 0)?.s ?? sim.finish
+    this.race = {
+      rally, stageIdx, mode, sim, view, hud, phase: 'intro', introT: 0, finishT: 0, paused: false, gold,
+      codriver: new CoDriver(notes, s.settings.notes),
+      school: mode === 'school' ? { step: 0, shownAt: 0, hairpin, firstCall: null } : null,
+      cheered: new Set(),
+      benchmark: s.settings.quality === 'auto' && !s.tier ? [] : null,
+    }
+    this.show('race')
+    this.ui.overlay.classList.add('hidden')
+    $('#bars').classList.add('on')
+    hud.bigText(null)
+    this.audio.playMusic('drive')
+    this.audio.startCar()
+    this.audio.setRain(rally.stages[stageIdx].weather === 'rain')
+    this.audio.say(s.settings.voiceLang, ['goodluck'])
+    this.acc = 0
+  }
+
+  private disposeRace(): void {
+    const r = this.race
+    if (!r) return
+    r.view.dispose()
+    this.race = null
+    this.controls.release()
+    this.audio.stopCar()
+    this.audio.setRain(false)
+    this.audio.clearCalls()
+    $('#bars').classList.remove('on')
+    document.querySelector('.coach')?.remove()
+  }
+
+  private loop(now: number): void {
+    requestAnimationFrame((n) => this.loop(n))
+    const dt = Math.min(0.1, (now - this.last) / 1000)
+    this.last = now
+    const r = this.race
+    if (!r || this.screen !== 'race') return
+    if (!r.paused) this.tick(r, dt)
+    const mode = r.phase === 'intro' ? 'intro' : r.phase === 'finished' || r.phase === 'results' ? 'orbit' : 'drive'
+    r.view.frame(r.paused ? 1 : this.acc / DT, r.paused ? 0 : dt, mode, r.introT / 6)
+    this.renderer.sample(dt * 1000)
+    if (r.benchmark) this.benchmark(r, dt * 1000)
+  }
+
+  /**
+   * The first stage on a new device measures itself during the flyover and
+   * picks a graphics tier, so a slow phone never starts on settings it can't run.
+   */
+  private benchmark(r: RaceCtx, ms: number): void {
+    const b = r.benchmark
+    if (!b || r.phase !== 'intro') return
+    b.push(ms)
+    if (b.length < 150) return
+    const sorted = [...b].sort((a, c) => a - c)
+    const p90 = sorted[Math.floor(sorted.length * 0.9)]
+    const tier: Tier = p90 > 24 ? 'low' : p90 < 12 && this.renderer.tier === 'medium' ? 'high' : 'medium'
+    this.store.save.tier = tier
+    this.store.write()
+    r.benchmark = null
+    if (tier !== this.renderer.tier) toast(`${t('quality')}: ${t(tier === 'low' ? 'q_low' : tier === 'high' ? 'q_high' : 'q_medium')}`)
+  }
+
+  private tick(r: RaceCtx, dt: number): void {
+    const s = this.store.save
+    const sim = r.sim
+    const school = r.school
+    // In the driving school, a waiting lesson slows time instead of stopping it.
+    const scale = school && school.step > 0 && school.shownAt > 0 && this.coachWaiting(r) ? 0.35 : 1
+    if (r.phase === 'intro') {
+      r.introT += dt
+      if (r.introT >= 6) {
+        r.phase = 'countdown'
+        $('#bars').classList.remove('on')
+        r.view.snapCamera()
+      }
+      return
+    }
+    this.acc += dt * scale
+    const input = this.controls.read(dt)
+    while (this.acc >= DT) {
+      sim.step(r.phase === 'running' ? input : { steer: 0, throttle: 0, brake: 0, handbrake: false })
+      this.acc -= DT
+      if (sim.car.events.impact > 2) {
+        this.audio.thump(Math.min(1, sim.car.events.impact / 15))
+        haptic(Math.min(80, 20 + sim.car.events.impact * 4), s.settings.haptics)
+      }
+      if (sim.car.events.landed > 2.5) {
+        this.audio.thump(Math.min(0.8, sim.car.events.landed / 10))
+        haptic(30, s.settings.haptics)
+      }
+    }
+    if (r.phase === 'countdown') {
+      if (r.hud.countdown(sim.countdown)) this.audio.click()
+      if (sim.phase === 'running') {
+        r.phase = 'running'
+        r.hud.bigText(t('go'), true)
+        this.audio.say(s.settings.voiceLang, ['go'])
+        haptic(40, s.settings.haptics)
+        setTimeout(() => r.phase === 'running' && r.hud.bigText(null), 900)
+      }
+    }
+    if (r.phase === 'running') {
+      const call = r.codriver.update(sim.car.s, sim.car.speed)
+      if (call) {
+        this.audio.say(s.settings.voiceLang, call)
+        if (school && !school.firstCall) school.firstCall = subtitle(call)
+      }
+      r.hud.showNote(r.codriver.upcoming(sim.car.s))
+      // A cheer as you pass a crowd at a hairpin or jump.
+      for (const n of paceNotes(sim.route, sim.start, sim.finish)) {
+        if (Math.abs(n.s - sim.car.s) < 15 && !r.cheered.has(n.s) && ((n.kind === 'corner' && n.grade <= 2) || n.kind === 'jump')) {
+          r.cheered.add(n.s)
+          if (Math.random() < 0.7) this.audio.cheer()
+        }
+      }
+      if (school) this.coach(r, input)
+      if (sim.phase === 'finished') this.finished(r)
+    }
+    if (r.phase === 'finished') {
+      r.finishT += dt
+      if (r.finishT > 2.2) this.results(r)
+    }
+    const g = gearbox(sim.car.speed)
+    this.audio.updateCar(g.rpm, r.phase === 'running' ? input.throttle : 0.1, sim.car.speed, sim.car.surface !== 'asphalt' && sim.car.surface !== 'wet', sim.car.slipR, !sim.car.airborne)
+    r.hud.update(sim, r.gold)
+  }
+
+  // ------------------------------------------------------------- driving school
+
+  private coachWaiting(r: RaceCtx): boolean {
+    return !!document.querySelector('.coach[data-wait]') && r.phase === 'running'
+  }
+
+  private coach(r: RaceCtx, inp: { steer: number; throttle: number; brake: number; handbrake: boolean }): void {
+    const sc = r.school
+    if (!sc) return
+    const s = r.sim.car.s
+    const keys = !document.body.classList.contains('touch')
+    const autoGas = this.store.save.settings.autoGas
+    const show = (text: string, waitFor: 'action' | 'button', step: number) => {
+      document.querySelector('.coach')?.remove()
+      const el = document.createElement('div')
+      el.className = 'coach'
+      el.setAttribute('role', 'status')
+      if (waitFor === 'action') el.dataset.wait = '1'
+      el.innerHTML = `<span class="k">${step}</span><p>${esc(text)}</p>${waitFor === 'button' ? `<button class="btn ghost" data-ok>${t('gotIt')}</button>` : ''}`
+      document.body.appendChild(el)
+      el.querySelector('[data-ok]')?.addEventListener('click', () => el.remove())
+      sc.shownAt = performance.now()
+    }
+    const done = () => {
+      document.querySelector('.coach')?.remove()
+      sc.step++
+      sc.shownAt = 0
+    }
+    switch (sc.step) {
+      case 0:
+        if (!autoGas) show(t(keys ? 'school_gasKeys' : 'school_gas'), 'action', 1)
+        sc.step = autoGas ? 2 : 1
+        break
+      case 1:
+        if (inp.throttle > 0.5) done()
+        break
+      case 2:
+        show(t(keys ? 'school_steerKeys' : 'school_steer'), 'action', 2)
+        sc.step = 3
+        break
+      case 3:
+        if (Math.abs(inp.steer) > 0.4 || s > r.sim.start + 160) done()
+        break
+      case 4:
+        if (sc.firstCall) {
+          show(t('school_notes', { call: sc.firstCall }), 'button', 3)
+          sc.step = 5
+        }
+        break
+      case 5:
+        if (s > sc.hairpin - 150 || performance.now() - sc.shownAt > 9000) done()
+        break
+      case 6:
+        if (s > sc.hairpin - 130) {
+          show(t(keys ? 'school_brakeKeys' : 'school_brake'), 'action', 4)
+          sc.step = 7
+        }
+        break
+      case 7:
+        if (inp.brake > 0.3 || s > sc.hairpin - 20) done()
+        break
+      case 8:
+        if (s > sc.hairpin - 30) {
+          show(t(keys ? 'school_handKeys' : 'school_hand'), 'action', 5)
+          sc.step = 9
+        }
+        break
+      case 9:
+        if (inp.handbrake || s > sc.hairpin + 25) done()
+        break
+      case 10:
+        if (s > sc.hairpin + 60) {
+          show(t('school_reset'), 'button', 6)
+          sc.step = 11
+        }
+        break
+      case 11:
+        if (performance.now() - sc.shownAt > 7000) done()
+        break
+    }
+  }
+
+  // ------------------------------------------------------------- finish
+
+  private finished(r: RaceCtx): void {
+    r.phase = 'finished'
+    r.finishT = 0
+    document.querySelector('.coach')?.remove()
+    r.hud.bigText(t('finish'))
+    haptic(60, this.store.save.settings.haptics)
+    setTimeout(() => r.hud.bigText(null), 1600)
+  }
+
+  private results(r: RaceCtx): void {
+    r.phase = 'results'
+    const s = this.store.save
+    const sim = r.sim
+    const time = sim.total
+    s.stats.stages++
+    s.stats.metres += sim.length
+    s.stats.resets += sim.resets
+    s.stats.seconds += time
+    const o = this.ui.overlay
+    o.classList.remove('hidden')
+    if (r.mode === 'school') {
+      s.tutorialDone = true
+      this.store.write()
+      html(o, `<div class="dialog"><p class="kicker">${t('school')}</p><h2 class="display">${t('stageComplete')}</h2><p>${t('school_done')}</p>
+        <div class="col"><button class="btn" data-first>${t('school_go')}</button><button class="btn ghost" data-menu>${t('menu')}</button></div></div>`)
+      $('[data-first]', o).addEventListener('click', () => {
+        const save = this.store.save
+        save.event = { rally: RALLIES[0].id, times: [], difficulty: save.settings.difficulty }
+        this.store.write()
+        this.load(RALLIES[0], 0, 'career')
+      })
+      $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+      return
+    }
+    const d = sim.setup.difficulty
+    const medal: Medal = medalFor(time, r.rally, r.stageIdx, d)
+    const key = `${r.rally.id}:${r.stageIdx}:${d}`
+    const prev = s.best[key]
+    const isBest = !prev || time < prev.time
+    if (isBest) s.best[key] = { time, medal }
+    const before = level(s.xp).level
+    const reward = stageReward(medal, sim.resets === 0)
+    let extra = ''
+    let standingsHtml = ''
+    let last = false
+    if (r.mode === 'career' && s.event && s.event.rally === r.rally.id) {
+      s.event.times.push(time)
+      const rows = standings(r.rally, s.event.times, s.name, s.event.difficulty)
+      const pos = rows.findIndex((x) => x.you) + 1
+      last = s.event.times.length >= r.rally.stages.length
+      standingsHtml = `<p class="kicker">${t('standings')}</p><table class="table">${rows.slice(0, 6).concat(rows.findIndex((x) => x.you) >= 6 ? [rows.find((x) => x.you)!] : []).map((x) => {
+        const p = rows.indexOf(x) + 1
+        return `<tr class="${x.you ? 'you' : ''}"><td>${p}</td><td>${esc(x.name)}</td><td>${fmtTime(x.total)}</td></tr>`
+      }).join('')}</table><p class="muted">${t('position', { pos, n: rows.length })}</p>`
+      if (last) {
+        const rr = rallyReward(pos)
+        reward.credits += rr.credits
+        reward.xp += rr.xp
+        if (!s.finished.includes(r.rally.id)) s.finished.push(r.rally.id)
+        if (!s.postcards.includes(r.rally.id)) {
+          s.postcards.push(r.rally.id)
+          extra = `<div class="postcard" style="background-image:url('img/c-${r.rally.id}.jpg')"></div><p>${t('postcard', { rally: esc(r.rally.name) })}</p>`
+        }
+        s.event = null
+      }
+    }
+    s.credits += reward.credits
+    s.xp += reward.xp
+    const after = level(s.xp).level
+    this.store.write()
+    if (medal && (medal === 'gold' || isBest)) this.audio.say(s.settings.voiceLang, ['wellDone'])
+    const m = stageMedals(r.rally, r.stageIdx, d)
+    const medalName = medal ? t(medal) : t('noMedal')
+    html(o, `<div class="results">
+      <div class="card">
+        <p class="kicker">${esc(r.rally.name)} · ${esc(r.rally.stages[r.stageIdx].name)}</p>
+        <h2 class="display" style="font-size:30px;margin:4px 0">${last ? t('rallyComplete') : t('stageComplete')}</h2>
+        <p class="muted">${t('yourTime')}</p>
+        <div class="bigtime">${fmtTime(time)}</div>
+        ${sim.penalty ? `<p class="muted">${t('penalty', { s: sim.penalty })}</p>` : ''}
+        <div class="medal-big"><i class="medal ${medal ?? ''}"></i>${medalName}${isBest && prev ? ` · ${t('newBest')}` : ''}</div>
+        <p class="muted" style="font-size:0.85em">${t('gold')} ${fmtTime(m.gold)} · ${t('silver')} ${fmtTime(m.silver)} · ${t('bronze')} ${fmtTime(m.bronze)}</p>
+        <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}${after > before ? ` · <b style="color:var(--amber)">${t('levelUp', { n: after })}</b>` : ''}</p>
+        ${extra}
+      </div>
+      <div class="card">${standingsHtml}
+        <div class="col">
+          ${r.mode === 'career' && !last ? `<button class="btn" data-next>${t('nextStage')}</button>` : ''}
+          ${r.mode === 'free' ? `<button class="btn" data-retry>${t('retry')}</button>` : ''}
+          <button class="btn ${r.mode === 'career' && !last ? 'ghost' : r.mode === 'free' ? 'ghost' : ''}" data-menu>${t('menu')}</button>
+        </div>
+      </div></div>`)
+    o.querySelector('[data-next]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'career'))
+    o.querySelector('[data-retry]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx, 'free'))
+    $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+  }
+
+  private toMenu(): void {
+    this.ui.overlay.classList.add('hidden')
+    this.disposeRace()
+    this.audio.playMusic('menu')
+    this.home()
+  }
+
+  // ------------------------------------------------------------- pause & input
+
+  private action(a: 'pause' | 'reset' | 'camera'): void {
+    const r = this.race
+    if (!r || this.screen !== 'race') return
+    if (a === 'pause') return r.paused ? this.unpause() : this.pause()
+    if (r.paused || r.phase !== 'running') return
+    if (a === 'reset') {
+      r.sim.reset()
+      r.codriver.seek(r.sim.car.s)
+      r.view.snapCamera()
+      this.audio.clearCalls()
+    }
+    if (a === 'camera') {
+      const order = ['chase', 'near', 'bonnet'] as const
+      r.view.camMode = order[(order.indexOf(r.view.camMode) + 1) % order.length]
+      this.store.save.settings.camera = r.view.camMode
+      this.store.write()
+    }
+  }
+
+  private pause(): void {
+    const r = this.race
+    if (!r || r.paused || r.phase === 'results') return
+    r.paused = true
+    this.controls.release()
+    this.audio.suspend()
+    const o = this.ui.overlay
+    o.classList.remove('hidden')
+    const st = this.store.save.settings
+    html(o, `<div class="dialog" role="dialog" aria-label="${t('paused')}">
+      <p class="kicker">${esc(r.mode === 'school' ? t('school') : r.rally.stages[r.stageIdx].name)}</p><h2 class="display">${t('paused')}</h2>
+      <div class="opt"><label>${t('notes')}</label><div class="seg">${(['full', 'corners', 'off'] as const).map((v) => `<button class="${st.notes === v ? 'on' : ''}" data-notes="${v}">${t(`notes_${v}` as TKey)}</button>`).join('')}</div></div>
+      <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)
+    o.querySelectorAll<HTMLElement>('[data-notes]').forEach((b) => b.addEventListener('click', () => {
+      st.notes = b.dataset.notes as typeof st.notes
+      this.store.write()
+      r.codriver.setMode(st.notes)
+      o.querySelectorAll('[data-notes]').forEach((x) => x.classList.toggle('on', x === b))
+    }))
+    $('[data-resume]', o).addEventListener('click', () => this.unpause())
+    $('[data-restart]', o).addEventListener('click', () => this.load(r.rally, r.stageIdx, r.mode))
+    $('[data-quit]', o).addEventListener('click', () => this.confirm(t('quitConfirm'), () => this.toMenu(), () => {
+      r.paused = false
+      this.pause()
+    }))
+  }
+
+  private unpause(): void {
+    const r = this.race
+    if (!r) return
+    r.paused = false
+    this.audio.resume()
+    this.ui.overlay.classList.add('hidden')
+    this.last = performance.now()
+  }
+
+  /** App went to the background, lost audio focus, or the tab was hidden. Never auto-resume. */
+  private background(): void {
+    if (this.race && this.race.phase !== 'results') this.pause()
+    else this.audio.suspend()
+  }
+
+  /** Android back: close a dialog, pause, step back a menu. Returns false to let the app close. */
+  private back(): boolean {
+    const o = this.ui.overlay
+    if (this.screen === 'race' && this.race) {
+      if (this.race.paused) this.unpause()
+      else if (this.race.phase === 'results') this.toMenu()
+      else this.pause()
+      return true
+    }
+    if (!o.classList.contains('hidden')) {
+      o.classList.add('hidden')
+      return true
+    }
+    if (this.screen === 'menu' && this.menuStack.length > 1) {
+      this.menuStack.pop()
+      this.menuStack[this.menuStack.length - 1]()
+      return true
+    }
+    if (this.screen === 'menu') {
+      native()?.exitApp?.()
+      return false
+    }
+    return false
+  }
+
+  private contextLost(): void {
+    const r = this.race
+    if (!r) return
+    toast(t('graphicsLost'), 5000)
+    const { rally, stageIdx, mode } = r
+    this.canvas.addEventListener('webglcontextrestored', () => this.load(rally, stageIdx, mode), { once: true })
+  }
+
+  private resize(view?: StageView): void {
+    this.renderer.resize()
+    const v = view ?? this.race?.view
+    v?.resize(innerWidth, innerHeight)
+  }
+
+  private fatal(e: unknown): void {
+    console.error(e)
+    const el = document.createElement('div')
+    el.id = 'fatal'
+    el.innerHTML = `<div><h2 class="display">Apex Drift</h2><p>${esc(String(e instanceof Error ? e.message : e))}</p><button class="btn" onclick="location.reload()">${t('retry')}</button></div>`
+    document.body.appendChild(el)
+  }
+}
