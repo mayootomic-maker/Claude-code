@@ -250,3 +250,9 @@ body:not(.touch) .h-say { bottom: calc(48px + var(--sb)); }
 }
 @media (max-width: 700px) { .coach { width: calc(100% - 32px); } .home, .detail, .garage, .results { grid-template-columns: 1fr; } .garage > div[aria-hidden] { height: 40vh; } .tile.big { grid-row: auto; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; transition-duration: 0.001s !important; } }
+
+.h-sector { top: 30%; left: 50%; transform: translateX(-50%); background: rgba(14, 16, 20, 0.75); border-radius: 10px; padding: 6px 16px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+.h-sector.ahead { color: var(--good); border: 1px solid var(--good); }
+.h-sector.behind { color: var(--bad); border: 1px solid var(--bad); }
+.h-tools button[disabled] { opacity: 0.35; }
+.h-tools .rw-n { margin-left: 4px; font-size: 11px; }

@@ -1,6 +1,6 @@
 import { clamp } from '../core/math'
 import { carPhys, type RallyDef, type StageDef } from '../data'
-import { ASSISTS, Car, cornerSpeed, DT, MU, type Assists, type Input } from './car'
+import { ASSISTS, Car, cornerSpeed, DT, MU, wheelForce, type Assists, type Input } from './car'
 import { buildRoute, type Route } from './route'
 import { makeGround, type Ground } from './terrain'
 
@@ -123,13 +123,21 @@ export function autopilot(sim: StageSim, skill = 1): Input {
   // Lateral term: at speed the look-ahead point is nearly straight ahead, so
   // drift toward the verge would otherwise go uncorrected for too long.
   const gain = 1 / (1 + car.speed / 30)
-  const steer = clamp((-err * 3.2 + car.r * 0.35 + car.d * 0.12) * gain, -1, 1)
+  // Aiming the travel direction steers into a slide; past a few degrees of
+  // slip, countersteer like a driver would to catch the rear first.
+  const beta = Math.atan2(car.vy, Math.max(2, Math.abs(car.vx)))
+  const catchSlide = -Math.sign(beta) * Math.max(0, Math.abs(beta) - 0.05) * 3
+  const steer = clamp((-err * 3.2 + car.r * 0.35 + car.d * 0.12) * gain + catchSlide, -1, 1)
   const mu = MU[car.surface] ?? 0.8
   const safe = cornerSpeed(route, car.s, car.speed, mu) * skill
   const over = car.speed - safe
+  // Pedals do nothing in the air, and landing on them unsettles the car.
+  if (car.airborne) return { steer, throttle: 0.3, brake: 0, handbrake: false }
   return {
     steer,
-    throttle: over < -1.5 ? 1 : over < 0 ? 0.35 : 0,
+    // Proportional rather than on/off: every throttle step moves load
+    // between the axles, and a train of them sets up a weave at speed.
+    throttle: over < 0 ? clamp(-over / 2.5, 0.25, 1) : 0,
     brake: over > 0.5 ? clamp(over / 3, 0, 1) : 0,
     handbrake: false,
   }
@@ -147,16 +155,18 @@ export function idealTime(sim: StageSim): number {
   const step = 4
   const n = Math.ceil(sim.length / step) + 1
   const vmax = new Float32Array(n)
-  const vtop = Math.cbrt(p.power / (p.dragCd * 2.2))
   for (let i = 0; i < n; i++) {
     const k = Math.abs(route.at(sim.start + i * step).curv)
-    vmax[i] = Math.min(vtop, Math.sqrt((mu * 9.81 * 0.95) / Math.max(k, 1e-4)))
+    vmax[i] = Math.sqrt((mu * 9.81 * 0.95) / Math.max(k, 1e-4))
   }
+  // Tractive force by speed through the real gearbox, limited by the grip of four driven wheels.
+  const force = new Float32Array(81)
+  for (let j = 0; j <= 80; j++) force[j] = Math.min(wheelForce(p, j), mu * p.mass * 9.81)
   const v = new Float32Array(n)
   v[0] = 0
   for (let i = 1; i < n; i++) {
     const vp = Math.max(v[i - 1], 1)
-    const a = Math.min(p.maxDriveForce, mu * p.mass * 9.81, p.power / vp) / p.mass - (p.dragCd * 2.2 * vp * vp) / p.mass
+    const a = (force[Math.min(80, Math.round(vp))] - p.dragCd * 2.2 * vp * vp) / p.mass - 0.02 * 9.81
     v[i] = Math.min(vmax[i], Math.sqrt(vp * vp + 2 * Math.max(0, a) * step))
   }
   for (let i = n - 2; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[i + 1] ** 2 + 2 * mu * 9.81 * 0.85 * step))

@@ -30,6 +30,11 @@ if (q.get('mode') === 'car') {
   sc.angle = Number(q.get('a') ?? 0.6)
   sc.spin = Number(q.get('spin') ?? 0)
   sc.resize(innerWidth, innerHeight)
+  if (q.has('el')) {
+    const el = (Number(q.get('el')) * Math.PI) / 180, d = Number(q.get('dist') ?? 8.5)
+    sc.camera.position.set(0, 0.6 + Math.sin(el) * d, Math.cos(el) * d)
+    sc.camera.lookAt(0, 0.6, 0)
+  }
   let last = performance.now()
   const loop = (n: number) => {
     sc.render((n - last) / 1000)
@@ -42,7 +47,7 @@ if (q.get('mode') === 'car') {
   // Menu art: the car parked on a good corner, framed from a low three-quarter angle.
   const rally = RALLIES.find((x) => x.id === q.get('rally')) ?? RALLIES[0]
   const stage = rally.stages[Number(q.get('s') ?? 0)]
-  const r = new Renderer(canvas, 'high')
+  const r = new Renderer(canvas, (q.get('t') as Tier) ?? 'high')
   const sim = new StageSim({ rally, stage, car: q.get('car') ?? 'kestrel', difficulty: 'driver' })
   const view = new StageView(sim, r, LIVERIES.find((l) => l.id === q.get('livery')) ?? LIVERIES[0])
   view.resize(innerWidth, innerHeight)

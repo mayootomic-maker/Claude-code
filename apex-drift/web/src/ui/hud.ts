@@ -4,18 +4,6 @@ import { t } from '../game/i18n'
 import type { StageSim } from '../sim/stage'
 import { $, fmtDelta, fmtTime, html } from './dom'
 
-const GEARS = [0, 13, 21, 29, 38, 48, 70]
-
-/** A five-speed box for the rev counter and the engine note; the physics doesn't need gears. */
-export function gearbox(speed: number): { gear: number; rpm: number } {
-  const v = Math.abs(speed)
-  let g = 1
-  while (g < 5 && v > GEARS[g] * 0.97) g++
-  const lo = g === 1 ? 0 : GEARS[g - 1] * 0.82
-  const hi = GEARS[g]
-  return { gear: g, rpm: 950 + clamp((v - lo) / (hi - lo), 0, 1) * 6300 }
-}
-
 const ARROWS: Record<string, string> = {
   left: '<svg viewBox="0 0 40 40"><path d="M28 34 V18 Q28 10 20 10 H10" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round"/><path d="M14 4 L6 10 L14 16" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   right: '<svg viewBox="0 0 40 40"><path d="M12 34 V18 Q12 10 20 10 H30" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round"/><path d="M26 4 L34 10 L26 16" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -37,6 +25,7 @@ export class Hud {
   private readonly warn: HTMLElement
   private readonly map: HTMLCanvasElement
   private sayTimer = 0
+  private sectorTimer = 0
   private lastNote: Note | null = null
   private lastSec = -1
   private mapPath: Path2D | null = null
@@ -49,6 +38,7 @@ export class Hud {
       <div class="h-stage"><div class="name"></div><div class="time" aria-live="off">0:00.00</div><div class="split"></div><div class="h-prog"><i></i></div></div>
       <div class="h-note" style="opacity:0"></div>
       <div class="h-tools">
+        <button data-act="rewind" aria-label="${t('rewind')}"><svg viewBox="0 0 20 20"><path d="M9 4 L3 10 L9 16 Z M17 4 L11 10 L17 16 Z"/></svg><span class="rw-n"></span></button>
         <button data-act="camera" aria-label="${t('camera')}">CAM</button>
         <button data-act="reset" aria-label="${t('reset')}">${t('reset').toUpperCase()}</button>
         <button data-act="pause" aria-label="${t('paused')}"><svg viewBox="0 0 20 20"><rect x="4" y="3" width="4" height="14"/><rect x="12" y="3" width="4" height="14"/></svg></button>
@@ -56,6 +46,7 @@ export class Hud {
       <div class="h-say" style="opacity:0" aria-live="polite"></div>
       <div class="h-big hidden" aria-live="assertive"></div>
       <div class="h-warn hidden"></div>
+      <div class="h-sector hidden" aria-live="polite"></div>
       <canvas id="minimap" width="240" height="240"></canvas>
       <div class="speedo"><svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"/><circle class="fill" cx="60" cy="60" r="52"/></svg><b>0</b><span>${mph ? 'MPH' : 'KM/H'}</span><i>1</i></div>
       <div class="pads l">
@@ -120,12 +111,29 @@ export class Hud {
     } else this.split.textContent = ''
     const v = car.speed * (this.mph ? 2.237 : 3.6)
     this.speed.textContent = String(Math.round(v))
-    const g = gearbox(car.speed)
-    this.gear.textContent = String(g.gear)
-    this.arc.style.strokeDasharray = `${((g.rpm / 7500) * 245).toFixed(0)} 400`
+    // The real gearbox: gear and revs straight from the drivetrain.
+    this.gear.textContent = String(car.gear)
+    this.arc.style.strokeDasharray = `${((Math.min(car.rpm, car.redline) / car.redline) * 245).toFixed(0)} 400`
+    this.arc.style.stroke = car.rpm > car.redline * 0.94 ? 'var(--bad)' : ''
     this.warn.textContent = t('wrongWay')
     this.warn.classList.toggle('hidden', !sim.isWrongWay)
     this.drawMap(sim)
+  }
+
+  rewinds(n: number): void {
+    const el = this.root.querySelector('.rw-n')
+    if (el) el.textContent = String(n)
+    this.root.querySelector('[data-act="rewind"]')?.toggleAttribute('disabled', n <= 0)
+  }
+
+  /** Sector split: green when faster than the reference, red when slower. */
+  sector(n: number, delta: number | null): void {
+    const el = this.root.querySelector('.h-sector') as HTMLElement | null
+    if (!el) return
+    el.textContent = delta === null ? `${t('sector')} ${n}` : `${t('sector')} ${n}  ${fmtDelta(delta)}`
+    el.className = `h-sector ${delta === null ? '' : delta <= 0 ? 'ahead' : 'behind'}`
+    clearTimeout(this.sectorTimer)
+    this.sectorTimer = window.setTimeout(() => el.classList.add('hidden'), 2600)
   }
 
   /** The next corner, shown as an arrow and its grade. */

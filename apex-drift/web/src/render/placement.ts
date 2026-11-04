@@ -3,11 +3,11 @@ import type { RallyDef } from '../data'
 import { paceNotes } from '../game/pacenotes'
 import type { Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
-import { crownRadius, FOOTPRINT } from './props'
+import { crownRadius, FOOTPRINT, LANDMARK, LANDMARK_R } from './props'
 
 export const TILE = 64
 
-export type PlacedKind = 'tree' | 'rock' | 'shrub' | 'house' | 'tuft' | 'flowers' | 'spectator' | 'board'
+export type PlacedKind = 'tree' | 'rock' | 'shrub' | 'house' | 'tuft' | 'flowers' | 'spectator' | 'board' | 'landmark' | 'fence' | 'bale' | 'pole'
 
 /** One thing to put in the world. Solid kinds carry the radius they need clear of the road. */
 export interface Placed {
@@ -20,6 +20,9 @@ export interface Placed {
   yaw: number
   size: number
   seed: number
+  /** Fences: the far end of the rail. */
+  x2?: number
+  z2?: number
 }
 
 export interface PlanCtx {
@@ -144,7 +147,71 @@ export function planSegment(ctx: PlanCtx, s0: number, s1: number, segIdx: number
       }
     }
   }
+  setPieces(ctx, s0, s1, start, finish, r, out)
   return out
+}
+
+/** Countryside along the road: a landmark per stage, a village, fences, bales, telegraph poles. */
+function setPieces(ctx: PlanCtx, s0: number, s1: number, start: number, finish: number, r: () => number, out: Placed[]): void {
+  const { route, ground, rally } = ctx
+  const len = finish - start
+  const side = (s: number, sign: number, off: number) => {
+    const a = route.at(s)
+    return { x: a.x + Math.cos(a.heading) * sign * off, z: a.z - Math.sin(a.heading) * sign * off, a }
+  }
+  const lm = LANDMARK[rally.id]
+  if (lm) {
+    const R = LANDMARK_R[lm] ?? 8
+    // Two sightings per stage: one early, one late, on the outside of the bend so it stays in view.
+    for (const f of [0.22, 0.68]) {
+      const s = start + len * f
+      if (s < s0 || s >= s1) continue
+      for (let tryOff = 0; tryOff < 4; tryOff++) {
+        const sign = route.at(s).curv > 0 ? -1 : 1
+        const off = ground.limitAt(s) + BODY + R + 6 + tryOff * 8
+        const p = side(s, sign, off)
+        if (!clearOfRoad(ctx, p.x, p.z, R).ok) continue
+        out.push({ kind: 'landmark', sub: lm, x: p.x, z: p.z, r: R, yaw: Math.atan2(p.a.x - p.x, p.a.z - p.z), size: 1, seed: (r() * 1e9) | 0 })
+        break
+      }
+    }
+  }
+  // A village around the middle of the stage: houses either side, facing the road.
+  const vs = start + len * 0.45
+  if (rally.houses && vs + 200 > s0 && vs < s1) {
+    for (let s = Math.max(s0, vs); s < Math.min(s1, vs + 200); s += 24) {
+      for (const sign of [1, -1]) {
+        if (r() < 0.25) continue
+        const off = ground.limitAt(s) + BODY + FOOTPRINT.house + 3 + r() * 4
+        const p = side(s, sign, off)
+        if (!clearOfRoad(ctx, p.x, p.z, FOOTPRINT.house).ok) continue
+        out.push({ kind: 'house', sub: rally.houses, x: p.x, z: p.z, r: FOOTPRINT.house, yaw: Math.atan2(p.a.x - p.x, p.a.z - p.z) + Math.PI / 2, size: 1, seed: (r() * 1e9) | 0 })
+      }
+    }
+  }
+  // Farmland: fences and bales where the land is open, a telegraph line along the road.
+  const farm = rally.grass >= 0.6 && rally.trees.density < 0.95
+  if (farm && r() < 0.45) {
+    const sign = r() < 0.5 ? 1 : -1
+    let prev: { x: number; z: number } | null = null
+    for (let s = s0; s <= s1; s += 6) {
+      const p = side(s, sign, ground.limitAt(s) + BODY + 3)
+      if (prev && clearOfRoad(ctx, p.x, p.z, 0.3).ok && clearOfRoad(ctx, prev.x, prev.z, 0.3).ok)
+        out.push({ kind: 'fence', sub: '', x: prev.x, z: prev.z, x2: p.x, z2: p.z, r: 0.3, yaw: 0, size: 1, seed: 0 })
+      prev = p
+    }
+    for (let k = 0; k < 4; k++) {
+      const s = s0 + r() * (s1 - s0)
+      const p = side(s, sign, ground.limitAt(s) + BODY + 10 + r() * 25)
+      if (clearOfRoad(ctx, p.x, p.z, 1.2).ok) out.push({ kind: 'bale', sub: '', x: p.x, z: p.z, r: 1.2, yaw: r() * 6, size: 1, seed: 0 })
+    }
+  }
+  if (rally.houses && rally.biome !== 'savannah') {
+    for (let s = Math.ceil(s0 / 45) * 45; s < s1; s += 45) {
+      const p = side(s, -1, ground.limitAt(s) + BODY + 4)
+      if (clearOfRoad(ctx, p.x, p.z, 0.4).ok) out.push({ kind: 'pole', sub: '', x: p.x, z: p.z, r: 0.4, yaw: p.a.heading, size: 1, seed: 0 })
+    }
+  }
 }
 
 /**
@@ -159,4 +226,39 @@ export function edgePoint(ctx: PlanCtx, s: number, side: 1 | -1): { x: number; z
   const c = ctx.route.closest(x, z, 400)
   if (c && c.dist < ctx.ground.limitAt(c.s) + BODY - 0.05) return null
   return { x, z, off }
+}
+
+export interface Soft {
+  kind: 'bale' | 'cone' | 'tyres'
+  x: number
+  z: number
+  yaw: number
+}
+
+/**
+ * Knock-over props on the drivable verge at tight corners: hay bales on
+ * gravel, cones and tyre stacks on tarmac. Soft by design, so they stand
+ * where the car can actually reach them.
+ */
+export function planSoft(ctx: PlanCtx, start: number, finish: number): Soft[] {
+  const out: Soft[] = []
+  const { route, ground, rally } = ctx
+  const r = rng(ctx.seed * 13 + 5)
+  const tarmac = rally.surface === 'asphalt'
+  for (const n of paceNotes(route, start, finish)) {
+    if (n.kind !== 'corner' || n.grade > 3 || r() > 0.7) continue
+    const outside = n.dir === 'left' ? -1 : 1
+    const count = 3 + Math.floor(r() * 3)
+    for (let k = 0; k < count; k++) {
+      const s = n.s + 6 + k * 4.5
+      const a = route.at(s)
+      const off = Math.min(ground.edge + 1.2, ground.limitAt(s) - 0.2)
+      const x = a.x + Math.cos(a.heading) * outside * off, z = a.z - Math.sin(a.heading) * outside * off
+      // Only where this really is the verge of this leg of road.
+      const c = route.closest(x, z, 100)
+      if (!c || Math.abs(c.s - s) > 8) continue
+      out.push({ kind: tarmac ? (r() < 0.5 ? 'cone' : 'tyres') : 'bale', x, z, yaw: r() * 6 })
+    }
+  }
+  return out
 }

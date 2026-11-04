@@ -26,9 +26,9 @@ const TREES: Record<string, TreeSpec> = {
   cypress: { shape: 'columnar', h: [9, 14], crown: 0.16, leaf: 0x2c4a2c, trunk: 0x5a3e2c },
   oak: { shape: 'round', h: [8, 13], crown: 0.5, leaf: 0x4f6e33, trunk: 0x5d4632 },
   maple: { shape: 'round', h: [7, 11], crown: 0.48, leaf: 0xb4542c, trunk: 0x5d4632 },
-  birch: { shape: 'round', h: [9, 14], crown: 0.3, leaf: 0x7f9a45, trunk: 0xe6e1d4 },
+  birch: { shape: 'round', h: [9, 14], crown: 0.4, leaf: 0x7f9a45, trunk: 0xe6e1d4 },
   birch_bare: { shape: 'bare', h: [8, 12], crown: 0.3, leaf: 0x9a8f86, trunk: 0xd9d4cb },
-  eucalyptus: { shape: 'round', h: [14, 22], crown: 0.28, leaf: 0x7a8f6a, trunk: 0xc8b9a2 },
+  eucalyptus: { shape: 'round', h: [12, 18], crown: 0.46, leaf: 0x7a8f6a, trunk: 0xc8b9a2 },
   cork: { shape: 'round', h: [6, 10], crown: 0.6, leaf: 0x55673a, trunk: 0x7a4c30 },
   olive: { shape: 'round', h: [4, 7], crown: 0.65, leaf: 0x8a9a6a, trunk: 0x6e5a48 },
   molle: { shape: 'round', h: [5, 8], crown: 0.6, leaf: 0x6c7f3c, trunk: 0x5d4632 },
@@ -85,13 +85,17 @@ export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: nu
       b.add(PRIM.ico1, t.leaf, x, y + h * 0.55, z, h * t.crown, h * 0.5, h * t.crown, yaw, 0, 0, 0.2, 0.8, 1, r)
       break
     case 'round': {
-      b.add(PRIM.cylTaper, t.trunk, x, y, z, h * 0.04, h * 0.55, h * 0.04, yaw)
+      b.add(PRIM.cylTaper, t.trunk, x, y, z, h * 0.035, h * 0.6, h * 0.035, yaw)
+      // A crown of overlapping clumps spread through the top half, not one ball on a stick.
       const cr = h * t.crown * 0.5
-      const n = 2 + Math.floor(r() * 3)
+      const n = 4 + Math.floor(r() * 3)
+      const c = new THREE.Color()
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + r()
-        const off = cr * 0.45
-        b.add(PRIM.ico, t.leaf, x + Math.cos(a) * off, y + h * (0.62 + r() * 0.12), z + Math.sin(a) * off, cr * (0.75 + r() * 0.35), cr * (0.65 + r() * 0.3), cr * (0.75 + r() * 0.35), r() * 6, 0, 0, 0.5, 1, 1.2, r)
+        const up = 0.5 + r() * 0.42
+        const off = cr * (0.35 + r() * 0.35) * (1 - (up - 0.5))
+        c.setHex(t.leaf).offsetHSL(0, 0, (up - 0.7) * 0.12)
+        b.add(PRIM.ico, c.getHex(), x + Math.cos(a) * off, y + h * up, z + Math.sin(a) * off, cr * (0.6 + r() * 0.3), cr * (0.5 + r() * 0.25), cr * (0.6 + r() * 0.3), r() * 6, 0, 0, 0.5, 1, 1.2, r)
       }
       break
     }
@@ -219,4 +223,165 @@ export function addSpectator(b: GeoBuilder, x: number, y: number, z: number, fac
     b.add(PRIM.cyl, 0x9a8a6a, x + 0.25, y + h * 0.6, z, 0.015, 1.2, 0.015, facing)
     b.add(PRIM.boxC, JACKETS[Math.floor(r() * JACKETS.length)], x + 0.25, y + h * 0.6 + 1.05, z + 0.25, 0.02, 0.35, 0.5, facing, 0, 0, 0.8, 1)
   }
+}
+
+/** Footprints for the larger set pieces, used by the planner's clearance check. */
+export const LANDMARK_R: Record<string, number> = {
+  lighthouse: 5, chapel: 7, church: 8, windmill: 6, barn: 9, ruin: 8, baobab: 8, gate: 4, nuraghe: 7, hut: 6, sauna: 5, estancia: 9,
+}
+
+/** Which set piece each rally gets: one memorable shape per country. */
+export const LANDMARK: Record<string, string> = {
+  finland: 'sauna', kenya: 'baobab', portugal: 'lighthouse', estonia: 'windmill', sardinia: 'nuraghe', argentina: 'estancia',
+  wales: 'ruin', croatia: 'church', greece: 'chapel', japan: 'gate', sweden: 'barn', monte: 'hut', school: 'sauna',
+}
+
+/**
+ * Original set pieces, one per rally, built from primitives like the rest of
+ * the scenery. Each sits on the ground at (x, y, z), facing `yaw`.
+ */
+export function addLandmark(b: GeoBuilder, kind: string, x: number, y: number, z: number, yaw: number, r: R): void {
+  const cos = Math.cos(yaw), sin = Math.sin(yaw)
+  const at = (lx: number, lz: number): [number, number] => [x + lx * cos + lz * sin, z - lx * sin + lz * cos]
+  /** A primitive placed in the landmark's own frame (lx across, lz forward), rotated with it. */
+  const put = (geo: THREE.BufferGeometry, col: number, lx: number, ly: number, lz: number, sx: number, sy: number, sz: number) => {
+    const [px, pz] = at(lx, lz)
+    b.add(geo, col, px, ly, pz, sx, sy, sz, yaw)
+  }
+  switch (kind) {
+    case 'lighthouse': {
+      b.add(PRIM.cylTaper, 0x8a8478, x, y - 2, z, 4, 3, 4, 0)
+      for (let i = 0; i < 5; i++) b.add(PRIM.cylTaper, i % 2 ? 0xc8402f : 0xf3efe6, x, y + 1 + i * 3.4, z, 1.9 - i * 0.18, 3.4, 1.9 - i * 0.18)
+      b.add(PRIM.cyl, 0x2a3138, x, y + 18, z, 1.2, 0.4, 1.2)
+      b.add(PRIM.cyl, 0xfff4c8, x, y + 18.4, z, 0.9, 1.6, 0.9)
+      b.add(PRIM.cone, 0xc8402f, x, y + 20, z, 1.3, 1.6, 1.3)
+      const [hx, hz] = at(5, 0)
+      b.add(PRIM.box, 0xf3efe6, hx, y - 0.5, hz, 5, 3.4, 4, yaw)
+      b.add(PRIM.prism, 0xb4583b, hx, y + 2.9, hz, 5.4, 1.6, 4.4, yaw)
+      break
+    }
+    case 'chapel': {
+      b.add(PRIM.box, 0xf6f4ee, x, y - 1, z, 6, 5, 8, yaw)
+      b.add(PRIM.cyl, 0xf6f4ee, x, y + 4, z, 2.3, 1.2, 2.3)
+      b.add(PRIM.ico1, 0x2f6fb8, x, y + 5.2, z, 2.3, 1.8, 2.3)
+      const [bx, bz] = at(0, -4.5)
+      b.add(PRIM.box, 0xf6f4ee, bx, y - 1, bz, 2.2, 8, 2.2, yaw)
+      b.add(PRIM.ico1, 0x2f6fb8, bx, y + 7.3, bz, 1.2, 1, 1.2)
+      put(PRIM.boxC, 0x2f6fb8, 0, y + 0.4, 4.02, 1.4, 2.4, 0.1)
+      break
+    }
+    case 'church': {
+      b.add(PRIM.box, 0xe9e1cf, x, y - 1, z, 8, 7, 14, yaw)
+      b.add(PRIM.prism, 0x8a4a36, x, y + 6, z, 8.6, 3.5, 14.6, yaw + Math.PI / 2)
+      const [tx, tz] = at(0, 7.5)
+      b.add(PRIM.box, 0xe9e1cf, tx, y - 1, tz, 3.6, 16, 3.6, yaw)
+      b.add(PRIM.cone, 0x4a5a3a, tx, y + 15, tz, 2.4, 7, 2.4, yaw + Math.PI / 4)
+      b.add(PRIM.cyl, 0xd8b04a, tx, y + 22, tz, 0.08, 1.4, 0.08)
+      break
+    }
+    case 'windmill': {
+      b.add(PRIM.cylTaper, 0x6a4a32, x, y - 1, z, 3.2, 10, 3.2)
+      b.add(PRIM.cone, 0x3a3f44, x, y + 9, z, 3.6, 3, 3.6)
+      const [hx, hz] = at(0, 3.4)
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + r()
+        b.add(PRIM.boxC, 0xe9e1cf, hx, y + 9 + Math.cos(a) * 3.6, hz, 1.4, 7.2, 0.15, yaw, 0, a, 0.2, 0.2)
+      }
+      break
+    }
+    case 'barn': {
+      b.add(PRIM.box, 0x9a2e22, x, y - 1, z, 12, 6, 8, yaw)
+      b.add(PRIM.prism, 0x34383d, x, y + 5, z, 12.6, 3.5, 8.6, yaw)
+      for (const lz of [-4.02, 4.02]) put(PRIM.boxC, 0xf3efe6, 0, y + 1, lz, 2.6, 3, 0.1)
+      for (let i = 0; i < 3; i++) {
+        const [px, pz] = at(-8 + i * 2.2, 3)
+        b.add(PRIM.cyl, 0xc9b98a, px, y - 0.2, pz, 0.9, 1.4, 0.9, 0, 0, Math.PI / 2)
+      }
+      break
+    }
+    case 'ruin': {
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2
+        const [wx, wz] = at(Math.cos(a) * 5, Math.sin(a) * 5)
+        b.add(PRIM.box, 0x7d7a72, wx, y - 1, wz, 3.2, 3 + r() * 6, 1.2, yaw + a + Math.PI / 2, 0, 0, 0, 0, 0.8, r)
+      }
+      const [tx, tz] = at(-6, -2)
+      b.add(PRIM.cylTaper, 0x8a8780, tx, y - 1, tz, 2.2, 13, 2.2)
+      break
+    }
+    case 'baobab': {
+      b.add(PRIM.cylTaper, 0x8a7460, x, y - 0.5, z, 2.2, 9, 2.2, 0, 0, 0, 0, 0.1)
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + r()
+        b.add(PRIM.cylTaper, 0x8a7460, x + Math.cos(a) * 1.5, y + 8, z + Math.sin(a) * 1.5, 0.35, 4, 0.35, a, 0.9, 0, 0.2, 0.5)
+        b.add(PRIM.ico, 0x6a7a3a, x + Math.cos(a) * 4, y + 11, z + Math.sin(a) * 4, 1.6, 0.8, 1.6, a, 0, 0, 0.6, 1, 1.2, r)
+      }
+      break
+    }
+    case 'gate': {
+      for (const lx of [-3, 3]) {
+        const [px, pz] = at(lx, 0)
+        b.add(PRIM.cyl, 0xc8402f, px, y - 0.5, pz, 0.32, 6.5, 0.32)
+      }
+      b.add(PRIM.box, 0x1d1f22, x, y + 6, z, 9, 0.6, 0.8, yaw)
+      b.add(PRIM.box, 0xc8402f, x, y + 4.8, z, 7.6, 0.45, 0.5, yaw)
+      for (let i = 0; i < 12; i++) {
+        const [lx, lz] = at(-2 + (i % 2) * 4, 4 + Math.floor(i / 2) * 3)
+        b.add(PRIM.box, 0x9a9890, lx, y - 0.3, lz, 0.5, 1.6, 0.5, yaw)
+      }
+      break
+    }
+    case 'nuraghe': {
+      b.add(PRIM.cylTaper, 0x8f8676, x, y - 1, z, 5, 9, 5, 0, 0, 0, 0, 0, 0.6, r)
+      put(PRIM.box, 0x2a2622, 0, y - 0.5, 4.6, 1.2, 2.2, 0.6)
+      for (let i = 0; i < 4; i++) {
+        const [tx, tz] = at(Math.cos(i * 1.57) * 8, Math.sin(i * 1.57) * 8)
+        b.add(PRIM.cylTaper, 0x8f8676, tx, y - 1, tz, 2.4, 5, 2.4)
+      }
+      break
+    }
+    case 'hut': {
+      b.add(PRIM.box, 0x8a8478, x, y - 1, z, 7, 2.5, 6, yaw)
+      b.add(PRIM.box, 0x6a4a32, x, y + 1.5, z, 7, 2.4, 6, yaw)
+      b.add(PRIM.prism, 0x3a3f44, x, y + 3.9, z, 8.4, 3, 7.4, yaw)
+      put(PRIM.box, 0x8a8478, 2.4, y + 3, 0, 0.8, 3, 0.8)
+      put(PRIM.boxC, 0xd8452f, 0, y + 1.6, 3.02, 1.2, 0.8, 0.05)
+      break
+    }
+    case 'sauna': {
+      b.add(PRIM.box, 0x7a5a3a, x, y - 0.5, z, 4.5, 3, 3.5, yaw)
+      b.add(PRIM.prism, 0x3a3f44, x, y + 2.5, z, 5, 1.6, 4, yaw)
+      put(PRIM.box, 0x8a8478, 1.6, y + 2.5, 0, 0.5, 2, 0.5)
+      const [jx, jz] = at(0, 4)
+      b.add(PRIM.box, 0x8a6a4a, jx, y - 0.6, jz, 1.6, 0.8, 6, yaw)
+      break
+    }
+    case 'estancia': {
+      b.add(PRIM.box, 0xf3efe6, x, y - 1, z, 16, 4.5, 7, yaw)
+      b.add(PRIM.prism, 0xa9512f, x, y + 3.5, z, 16.6, 2, 7.6, yaw)
+      for (let i = -3; i <= 3; i++) {
+        const [px, pz] = at(i * 2.4, 4.4)
+        b.add(PRIM.cyl, 0x6a4a32, px, y - 0.5, pz, 0.15, 3.6, 0.15)
+      }
+      put(PRIM.box, 0x6a4a32, 0, y + 3.1, 4.4, 17, 0.15, 2.2)
+      break
+    }
+  }
+}
+
+/** Rural detail along open sections: post-and-rail fence, round bales, a telegraph pole. */
+export function addFence(b: GeoBuilder, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): void {
+  const len = Math.hypot(x1 - x0, z1 - z0)
+  const yaw = Math.atan2(x1 - x0, z1 - z0)
+  b.add(PRIM.box, color, x0, y0 - 0.4, z0, 0.12, 1.6, 0.12, yaw)
+  for (const h of [0.55, 0.95]) b.add(PRIM.boxC, color, (x0 + x1) / 2, (y0 + y1) / 2 + h, (z0 + z1) / 2, 0.06, 0.1, len, yaw)
+}
+
+export function addBale(b: GeoBuilder, x: number, y: number, z: number, yaw: number): void {
+  b.add(PRIM.cyl, 0xd2b766, x, y + 0.75, z, 0.75, 1.3, 0.75, yaw, 0, Math.PI / 2)
+}
+
+export function addPole(b: GeoBuilder, x: number, y: number, z: number, yaw: number): void {
+  b.add(PRIM.cylTaper, 0x5a4a3a, x, y - 0.5, z, 0.14, 8.5, 0.14)
+  b.add(PRIM.boxC, 0x5a4a3a, x, y + 7.6, z, 1.8, 0.12, 0.12, yaw + Math.PI / 2)
 }

@@ -113,9 +113,21 @@ export function sunDirection(a: Atmos): THREE.Vector3 {
   return new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).normalize()
 }
 
-/** A gradient sky with a soft sun disc and a few painted clouds; one draw call, no textures. */
-export function skyDome(a: Atmos): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(1800, 32, 16)
+/** How much of the sky the clouds cover, by look; weather adds more. */
+const COVER: Record<Look, number> = { morning: 0.45, noon: 0.38, golden: 0.5, sunset: 0.58, dusk: 0.45, night: 0.3, overcast: 0.92, mist: 0.75 }
+
+export function cloudCover(look: Look, weather: Weather): number {
+  return Math.min(0.97, COVER[look] + (weather === 'rain' ? 0.5 : weather === 'snow' ? 0.45 : weather === 'fog' ? 0.2 : 0))
+}
+
+/**
+ * Sky dome with lit, drifting clouds. Each pixel marches a few steps through
+ * a 2D cloud layer and once more toward the sun, so cloud bodies darken where
+ * they're thick and their edges glow where the sun shines through: a
+ * volumetric look for a handful of texture-free noise lookups.
+ */
+export function skyDome(a: Atmos, cover = 0.5): THREE.Mesh {
+  const geo = new THREE.SphereGeometry(1800, 48, 24)
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -127,6 +139,9 @@ export function skyDome(a: Atmos): THREE.Mesh {
       sunDir: { value: sunDirection(a) },
       sunVis: { value: a.sunEl > -2 ? Math.min(1, a.sunI / 2) : 0 },
       stars: { value: a.stars ? 1 : 0 },
+      cover: { value: cover },
+      night: { value: a.stars ? 1 : 0 },
+      time: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -137,32 +152,58 @@ export function skyDome(a: Atmos): THREE.Mesh {
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 top; uniform vec3 horizon; uniform vec3 sunCol; uniform vec3 sunDir;
-      uniform float sunVis; uniform float stars;
+      uniform float sunVis; uniform float stars; uniform float cover; uniform float night; uniform float time;
       varying vec3 vDir;
-      float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float hash3(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
       float noise(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        float a = hash(vec3(i, 1.0)), b = hash(vec3(i + vec2(1, 0), 1.0));
-        float c = hash(vec3(i + vec2(0, 1), 1.0)), d = hash(vec3(i + vec2(1, 1), 1.0));
-        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+        return v;
+      }
+      float density(vec2 uv) {
+        float d = fbm(uv + vec2(time * 0.004, time * 0.0015));
+        d += 0.35 * fbm(uv * 3.1 - vec2(time * 0.01, 0.0)) - 0.17;
+        return clamp((d - (1.0 - cover) * 0.75) * 2.6, 0.0, 1.0);
       }
       void main() {
         vec3 d = normalize(vDir);
         float h = clamp(d.y, -0.2, 1.0);
-        vec3 col = mix(horizon, top, pow(max(h, 0.0), 0.55));
-        col = mix(col, horizon * 0.8, smoothstep(0.0, -0.2, h));
-        float sd = max(dot(d, normalize(sunDir)), 0.0);
-        col += sunCol * (pow(sd, 900.0) * 6.0 + pow(sd, 18.0) * 0.35 + pow(sd, 4.0) * 0.12) * sunVis;
-        // Soft painted clouds in a band above the horizon.
-        vec2 uv = d.xz / max(d.y + 0.25, 0.08) * 1.6;
-        float cl = noise(uv) * 0.6 + noise(uv * 2.3) * 0.3 + noise(uv * 5.1) * 0.1;
-        float band = smoothstep(0.02, 0.18, d.y) * (1.0 - smoothstep(0.45, 0.9, d.y));
-        float cover = smoothstep(0.55, 0.85, cl) * band;
-        vec3 cloudCol = mix(horizon * 1.08, sunCol, 0.25 + 0.5 * pow(sd, 3.0)) ;
-        col = mix(col, cloudCol, cover * 0.75);
+        vec3 col = mix(horizon, top, pow(max(h, 0.0), 0.5));
+        col = mix(col, horizon * 0.82, smoothstep(0.0, -0.2, h));
+        vec3 sd3 = normalize(sunDir);
+        float sd = max(dot(d, sd3), 0.0);
+        // Atmosphere around the sun: wide warm glow plus a tight bright halo.
+        col += sunCol * (pow(sd, 6.0) * 0.28 + pow(sd, 48.0) * 0.6) * sunVis;
+        // Clouds: project onto a flat layer, march a few steps toward the sun for shading.
+        if (d.y > 0.0) {
+          vec2 uv = d.xz / (d.y + 0.12) * 0.9;
+          float dens = density(uv);
+          if (dens > 0.001) {
+            vec2 toSun = normalize(sd3.xz + 1e-4) * 0.06;
+            float shade = 0.0;
+            for (int i = 1; i <= 4; i++) shade += density(uv + toSun * float(i));
+            shade /= 4.0;
+            float lit = exp(-shade * 2.2);
+            vec3 dark = mix(horizon, top, 0.35) * mix(0.55, 0.3, night);
+            vec3 bright = mix(vec3(1.0), sunCol, 0.55) * (0.9 + 0.6 * sunVis);
+            vec3 cloud = mix(dark, bright, lit);
+            // Silver lining where thin cloud sits in front of the sun.
+            cloud += sunCol * pow(sd, 10.0) * (1.0 - dens) * 1.8 * sunVis;
+            float fade = smoothstep(0.0, 0.12, d.y);
+            col = mix(col, cloud, dens * fade * 0.95);
+          }
+        }
+        // Sun disc, hidden behind thick cloud.
+        float disc = smoothstep(0.9993, 0.9997, sd) * sunVis;
+        col += sunCol * disc * 8.0;
         if (stars > 0.5 && d.y > 0.05) {
-          float s = step(0.9975, hash(floor(d * 420.0)));
-          col += vec3(s) * 0.8 * smoothstep(0.05, 0.4, d.y);
+          float s = step(0.9972, hash3(floor(d * 420.0)));
+          col += vec3(s) * 0.9 * smoothstep(0.05, 0.4, d.y) * (1.0 - cover);
         }
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>

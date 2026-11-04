@@ -3,10 +3,13 @@ import { clamp, damp, lerp, rng, wrapAngle } from '../core/math'
 import { LIVERIES, type LiveryDef } from '../data'
 import type { Pose } from '../sim/car'
 import type { StageSim } from '../sim/stage'
-import { atmosphere, skyDome, sunDirection, type Atmos } from './atmosphere'
+import { atmosphere, cloudCover, skyDome, sunDirection, type Atmos } from './atmosphere'
 import { buildCar, type CarRig } from './car-model'
 import { GradePass } from './post'
 import { World, type Quality } from './world'
+import { planSoft, type Soft } from './placement'
+import { ghostPose, type Ghost } from '../game/ghost'
+import { noise2 } from '../core/math'
 
 export type Tier = 'low' | 'medium' | 'high'
 export type CamMode = 'chase' | 'near' | 'bonnet'
@@ -84,6 +87,20 @@ export class Renderer {
     if (this.scale !== before) this.resize()
   }
 
+  /** Where the sun is on screen, for the shafts in the grade pass. */
+  /** 0..1 speed streak strength. */
+  speedBlur(v: number): void {
+    this.grade?.setSpeed(this.tier === 'low' ? 0 : v)
+  }
+
+  sun(cam: THREE.PerspectiveCamera, dir: THREE.Vector3, a: Atmos): void {
+    if (!this.grade) return
+    const p = cam.position.clone().addScaledVector(dir, 1000).project(cam)
+    const facing = cam.getWorldDirection(new THREE.Vector3()).dot(dir)
+    const on = a.sunEl > -1 && facing > 0 && Math.abs(p.x) < 1.6 && Math.abs(p.y) < 1.6 ? Math.min(1, a.sunI / 2.5) * Math.min(1, facing * 3) : 0
+    this.grade.setSun(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, on, new THREE.Color(a.sun), this.tier === 'high' || this.tier === 'medium')
+  }
+
   render(scene: THREE.Scene, cam: THREE.Camera, a: Atmos, time: number): void {
     this.gl.info.reset()
     if (this.grade) {
@@ -123,6 +140,45 @@ export class StageView {
   private readonly weather: THREE.Points | null
   private readonly headlights: THREE.SpotLight | null
   camMode: CamMode = 'chase'
+  /** Knock-over props: one instanced mesh per kind, and each prop's flight state. */
+  private readonly soft: { item: Soft; mesh: THREE.InstancedMesh; i: number; y: number; vx: number; vy: number; vz: number; spin: number; rx: number; rz: number; hit: boolean }[] = []
+  private readonly softMeshes: THREE.InstancedMesh[] = []
+  /** Set when the car knocks something over this frame, for sound and haptics. */
+  softHits = 0
+  /** Landing dust: decays from 1 to 0 after a big landing. */
+  private burst = 0
+  private ghost: { rig: CarRig; data: Ghost } | null = null
+
+  /** A translucent copy of the car that replays your best run. */
+  setGhost(g: Ghost, livery: LiveryDef): void {
+    const rig = buildCar(g.car, livery)
+    rig.root.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return
+      o.castShadow = false
+      const mats = Array.isArray(o.material) ? o.material : [o.material]
+      for (const m of mats) {
+        m.transparent = true
+        m.opacity = 0.32
+        m.depthWrite = false
+      }
+    })
+    rig.root.visible = false
+    this.scene.add(rig.root)
+    this.ghost = { rig, data: g }
+  }
+
+  updateGhost(t: number): void {
+    const g = this.ghost
+    if (!g) return
+    const p = ghostPose(g.data, t)
+    g.rig.root.visible = !!p
+    if (!p) return
+    g.rig.root.position.set(p.x, p.y, p.z)
+    g.rig.root.rotation.set(0, p.heading, 0)
+    // Fade it out when it's right on top of you, so it never blocks the view.
+    const d = Math.hypot(p.x - this.sim.car.x, p.z - this.sim.car.z)
+    g.rig.root.visible = d > 3
+  }
   private camPos = new THREE.Vector3()
   private camLook = new THREE.Vector3()
   private camVel = new THREE.Vector3()
@@ -138,7 +194,7 @@ export class StageView {
     const spec = r.spec
     this.scene.fog = new THREE.FogExp2(a.fog, a.fogDensity)
     // The sky travels with the camera; stages run for kilometres and the dome is 1.8 km across.
-    this.sky = skyDome(a)
+    this.sky = skyDome(a, cloudCover(stage.look, stage.weather))
     this.scene.add(this.sky)
     // Sky fill is generous: shaded forest should read as deep green, never as black.
     this.scene.add(new THREE.HemisphereLight(a.skyTop, a.ground, a.hemiI * 1.35))
@@ -157,7 +213,7 @@ export class StageView {
     // Environment for the car paint: the sky itself, prefiltered once per stage.
     const pm = new THREE.PMREMGenerator(r.gl)
     const envScene = new THREE.Scene()
-    envScene.add(skyDome(a))
+    envScene.add(skyDome(a, cloudCover(stage.look, stage.weather)))
     const env = pm.fromScene(envScene, 0.04)
     this.scene.environment = env.texture
     this.scene.environmentIntensity = a.lights ? 0.25 : 0.7
@@ -171,11 +227,17 @@ export class StageView {
     this.headlights = a.lights ? this.makeHeadlights() : null
     this.dust = this.makeDust(rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
+    this.makeSoft()
     this.syncCar(1)
     this.snapCamera()
   }
 
   dispose(): void {
+    this.ghost?.rig.dispose()
+    for (const m of this.softMeshes) {
+      m.geometry.dispose()
+      ;(m.material as THREE.Material).dispose()
+    }
     this.world.dispose()
     this.car.dispose()
     this.scene.environment?.dispose()
@@ -225,9 +287,13 @@ export class StageView {
     this.sun.position.set(cp.x + this.sunDir.x * 100, cp.y + this.sunDir.y * 100, cp.z + this.sunDir.z * 100)
     this.sun.target.position.copy(cp)
     this.sky.position.copy(this.camera.position)
+    ;(this.sky.material as THREE.ShaderMaterial).uniforms.time.value = this.time
+    this.updateSoft(dt)
     this.updateDust(dt)
     this.updateWeather(dt)
     if (this.headlights) this.headlights.intensity = 60
+    this.r.sun(this.camera, this.sunDir, this.atmos)
+    this.r.speedBlur(mode === 'drive' && this.camMode !== 'bonnet' ? THREE.MathUtils.clamp((this.sim.car.speed - 22) / 25, 0, 1) * this.shake : 0)
     this.r.render(this.scene, this.camera, this.atmos, this.time)
   }
 
@@ -264,6 +330,10 @@ export class StageView {
     // Gentle shake on rough surfaces and landings only.
     const rough = (car.offRoad ? 0.5 : car.surface === 'rough' ? 0.25 : car.surface === 'gravel' ? 0.06 : 0.02) * clamp(speed / 30, 0, 1)
     const land = car.events.landed > 2 ? 0.25 : 0
+    if (car.events.landed > 3) {
+      this.camera.fov += Math.min(8, car.events.landed)
+      this.burst = 1
+    }
     const amt = (rough + land) * this.shake
     this.camera.position.copy(this.camPos)
     if (amt > 0) {
@@ -314,6 +384,87 @@ export class StageView {
     this.camVel.set(0, 0, 0)
     this.camera.position.copy(this.camPos)
     this.camera.lookAt(p.x + Math.sin(p.heading) * 4, p.y + 1, p.z + Math.cos(p.heading) * 4)
+  }
+
+  private makeSoft(): void {
+    const sim = this.sim
+    const items = planSoft({ route: sim.route, ground: sim.ground, rally: sim.setup.rally, seed: sim.setup.stage.seed, noise: noise2(9), snowAll: false }, sim.start, sim.finish)
+    const geo: Record<Soft['kind'], THREE.BufferGeometry> = {
+      bale: new THREE.CylinderGeometry(0.6, 0.6, 1.2, 14).rotateZ(Math.PI / 2).translate(0, 0.6, 0),
+      cone: new THREE.ConeGeometry(0.22, 0.7, 12).translate(0, 0.35, 0),
+      tyres: new THREE.CylinderGeometry(0.34, 0.34, 0.75, 14).translate(0, 0.375, 0),
+    }
+    const mat: Record<Soft['kind'], THREE.Material> = {
+      bale: new THREE.MeshLambertMaterial({ color: 0xd2b766 }),
+      cone: new THREE.MeshLambertMaterial({ color: 0xff6a1f }),
+      tyres: new THREE.MeshLambertMaterial({ color: 0x1b1b1d }),
+    }
+    for (const kind of ['bale', 'cone', 'tyres'] as const) {
+      const list = items.filter((x) => x.kind === kind)
+      if (!list.length) continue
+      const mesh = new THREE.InstancedMesh(geo[kind], mat[kind], list.length)
+      mesh.castShadow = true
+      list.forEach((item, i) => {
+        const y = sim.ground.height(item.x, item.z)
+        this.soft.push({ item, mesh, i, y, vx: 0, vy: 0, vz: 0, spin: 0, rx: 0, rz: 0, hit: false })
+      })
+      this.softMeshes.push(mesh)
+      this.scene.add(mesh)
+    }
+    for (const sp of this.soft) this.placeSoft(sp)
+  }
+
+  private readonly m4 = new THREE.Matrix4()
+  private readonly q4 = new THREE.Quaternion()
+  private readonly e4 = new THREE.Euler()
+
+  private placeSoft(sp: (typeof this.soft)[number]): void {
+    this.e4.set(sp.rx, sp.item.yaw, sp.rz)
+    this.q4.setFromEuler(this.e4)
+    this.m4.compose(new THREE.Vector3(sp.item.x, sp.y, sp.item.z), this.q4, new THREE.Vector3(1, 1, 1))
+    sp.mesh.setMatrixAt(sp.i, this.m4)
+    sp.mesh.instanceMatrix.needsUpdate = true
+  }
+
+  /** Hit a prop and it flies off in the car's direction, tumbling, and comes to rest on the ground. */
+  private updateSoft(dt: number): void {
+    this.softHits = 0
+    const car = this.sim.car
+    const fx = Math.sin(car.heading), fz = Math.cos(car.heading), lx = Math.cos(car.heading), lz = -Math.sin(car.heading)
+    const wx = fx * car.vx + lx * car.vy, wz = fz * car.vx + lz * car.vy
+    for (const sp of this.soft) {
+      const dx = sp.item.x - car.x, dz = sp.item.z - car.z
+      if (!sp.hit) {
+        if (dx * dx + dz * dz > 2.6 || car.speed < 2) continue
+        sp.hit = true
+        sp.vx = wx * 0.9 + dx * 2
+        sp.vz = wz * 0.9 + dz * 2
+        sp.vy = 2.5 + car.speed * 0.15
+        sp.spin = (Math.random() - 0.5) * 12
+        this.softHits++
+        // A bale takes a little speed out of the car; cones barely notice.
+        const k = sp.item.kind === 'bale' ? 0.96 : 0.995
+        car.vx *= k
+        car.vy *= k
+      }
+      if (sp.vx === 0 && sp.vy === 0 && sp.vz === 0) continue
+      sp.vy -= 9.81 * dt
+      sp.item.x += sp.vx * dt
+      sp.item.z += sp.vz * dt
+      sp.y += sp.vy * dt
+      sp.rx += sp.spin * dt
+      sp.rz += sp.spin * 0.6 * dt
+      const g = this.sim.ground.height(sp.item.x, sp.item.z)
+      if (sp.y <= g) {
+        sp.y = g
+        sp.vy = Math.abs(sp.vy) > 2 ? -sp.vy * 0.3 : 0
+        sp.vx *= 0.6
+        sp.vz *= 0.6
+        sp.spin *= 0.5
+        if (Math.hypot(sp.vx, sp.vz) < 0.3 && sp.vy === 0) sp.vx = sp.vz = sp.spin = 0
+      }
+      this.placeSoft(sp)
+    }
   }
 
   private makeHeadlights(): THREE.SpotLight {
@@ -371,7 +522,8 @@ export class StageView {
     const car = this.sim.car
     const N = d.life.length
     const loose = car.surface !== 'asphalt' && car.surface !== 'wet'
-    const rate = car.airborne ? 0 : (loose ? clamp(car.speed / 25, 0, 1.2) * 1.4 : 0) + clamp((car.slipR - 0.12) * 4, 0, 1) * 1.5
+    const rate = car.airborne ? 0 : (loose ? clamp(car.speed / 25, 0, 1.2) * 1.4 : 0) + clamp((car.slipR - 0.12) * 4, 0, 1) * 1.5 + this.burst * 8
+    this.burst = Math.max(0, this.burst - dt * 2.5)
     const emit = Math.floor(rate * 60 * dt + Math.random())
     const p = this.pose
     const fx = Math.sin(p.heading), fz = Math.cos(p.heading)

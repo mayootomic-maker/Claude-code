@@ -15,7 +15,7 @@ export class Controls {
   private tilt = 0
   private steer = 0
   /** Edge-triggered actions for the HUD buttons and keyboard shortcuts. */
-  onAction: ((a: 'pause' | 'reset' | 'camera') => void) | null = null
+  onAction: ((a: 'pause' | 'reset' | 'camera' | 'rewind') => void) | null = null
   private readonly cleanup: (() => void)[] = []
 
   constructor(private settings: () => Settings) {
@@ -24,6 +24,7 @@ export class Controls {
       this.keys.add(e.code)
       if (e.code === 'Escape' || e.code === 'KeyP') this.onAction?.('pause')
       if (e.code === 'KeyR') this.onAction?.('reset')
+      if (e.code === 'KeyQ' || e.code === 'Backspace') this.onAction?.('rewind')
       if (e.code === 'KeyC') this.onAction?.('camera')
     }
     const ku = (e: KeyboardEvent) => this.keys.delete(e.code)

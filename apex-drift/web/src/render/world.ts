@@ -1,11 +1,11 @@
 import * as THREE from 'three'
-import { clamp, fbm2, noise2, rng, smoothstep } from '../core/math'
+import { fbm2, noise2, rng, smoothstep } from '../core/math'
 import type { RallyDef, StageDef } from '../data'
 import { STEP, type Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
 import { GeoBuilder, PRIM } from './builder'
 import { edgePoint, planSegment, planTile, TILE, type PlanCtx } from './placement'
-import { addFlowers, addHouse, addRock, addSpectator, addTree, addTuft } from './props'
+import { addBale, addFence, addFlowers, addHouse, addLandmark, addPole, addRock, addSpectator, addTree, addTuft } from './props'
 import { detailTexture, roadTexture, type RoadKind } from './textures'
 
 const RES = 2
@@ -398,12 +398,27 @@ export class World {
           b.quad2(q0, q1, q2, q3, rail)
           b.add(PRIM.box, post.getHex(), p0.x, a.y - 0.6, p0.z, 0.12, 1.5, 0.12, a.heading)
         } else if (kind === 'rockwall' || kind === 'mosswall') {
-          const hgt = kind === 'mosswall' ? 1.6 : 3.2 + this.noise(s / 9, side) * 1.6
-          const lean = 0.6
-          const t0 = v(p0.x + lx * lean, a.y + hgt, p0.z + lz * lean), t1 = v(p1.x + lx2 * lean, c.y + hgt, p1.z + lz2 * lean)
-          const b0 = v(p0.x, a.y - 0.3, p0.z), b1 = v(p1.x, c.y - 0.3, p1.z)
-          const col = kind === 'mosswall' ? moss : rock.clone().multiplyScalar(0.85 + this.noise(s / 5, 3) * 0.2)
-          b.quad2(b0, b1, t1, t0, col)
+          // A cut rock face: five rows stepping back and up, each vertex pushed
+          // by noise in world space so neighbouring segments join seamlessly.
+          const moss2 = kind === 'mosswall'
+          const H = moss2 ? 2.2 : 4.5 + this.noise(s / 23, side * 3) * 2.5
+          const face = (p: THREE.Vector3, a2: { heading: number; y: number }, ox: number, oz: number) => {
+            const rows: THREE.Vector3[] = []
+            for (let k = 0; k <= 4; k++) {
+              const f = k / 4
+              const jag = this.noise(p.x * 0.35 + k * 1.7, p.z * 0.35) * 0.9
+              const out = 0.15 + f * f * 2.2 + jag * 0.6 + (k % 2) * 0.25
+              rows.push(v(p.x + ox * out, a2.y - 0.4 + f * (H + 0.4) + jag * 0.4 * f, p.z + oz * out))
+            }
+            return rows
+          }
+          const r0 = face(p0, a, lx, lz), r1 = face(p1, c, lx2, lz2)
+          for (let k = 0; k < 4; k++) {
+            const shade = 0.72 + this.noise(p0.x * 0.2 + k, p0.z * 0.2) * 0.25 + k * 0.05
+            const col = (moss2 ? moss : k === 3 && this.rally.palette.forest ? rock.clone().lerp(new THREE.Color(this.rally.palette.forest), 0.35) : rock).clone().multiplyScalar(shade)
+            b.quad2(r0[k], r1[k], r1[k + 1], r0[k + 1], col)
+          }
+          if (!moss2 && this.noise(s / 3, side * 9) > 0.35) b.add(PRIM.dodeca, rock.getHex(), p0.x + lx * 0.6, a.y - 0.2, p0.z + lz * 0.6, 0.7, 0.5, 0.7, s, 0.3, 0.2, 0, 0, 1.2, Math.random)
         } else if (kind === 'snowbank') {
           const hgt = 0.9 + this.noise(s / 7, side * 5) * 0.3
           const mid0 = v(p0.x + lx * 0.6, a.y + hgt, p0.z + lz * 0.6), mid1 = v(p1.x + lx2 * 0.6, c.y + hgt, p1.z + lz2 * 0.6)
@@ -430,6 +445,11 @@ export class World {
         b.add(PRIM.box, 0x3a3a3a, p.x, Math.min(y, ry) - 0.3, p.z, 0.08, Math.abs(ry - y) + 1.6, 0.08, p.yaw)
         b.add(PRIM.boxC, p.sub === 'y' ? 0xf2c037 : 0x1c1d20, p.x, ry + 1.2, p.z, 0.9, 0.55, 0.05, p.yaw)
       } else if (p.kind === 'spectator') addSpectator(b, p.x, y, p.z, p.yaw, rng(p.seed))
+      else if (p.kind === 'landmark') addLandmark(b, p.sub, p.x, y, p.z, p.yaw, rng(p.seed))
+      else if (p.kind === 'house') addHouse(b, p.sub, p.x, y, p.z, p.yaw, rng(p.seed))
+      else if (p.kind === 'fence' && p.x2 !== undefined && p.z2 !== undefined) addFence(b, p.x, y, p.z, p.x2, this.ground.natural(p.x2, p.z2), p.z2, this.rally.biome === 'wales' ? 0x7d7a72 : 0x8a6a4a)
+      else if (p.kind === 'bale') addBale(b, p.x, y, p.z, p.yaw)
+      else if (p.kind === 'pole') addPole(b, p.x, y, p.z, p.yaw)
     }
     for (const [s, color] of [[this.start, 0x2e8c55], [this.finish, 0xd8452f]] as const) {
       if (s < sg.s0 || s >= sg.s1) continue
@@ -514,27 +534,57 @@ export class World {
     return g
   }
 
-  /** Distant layered ridges: the horizon is never empty, and fog does the rest. */
+  /**
+   * Distant mountain ranges in three layers, jagged and shaded from dark
+   * forested foothills up to bare rock and, where the region has them,
+   * snow caps. Fog and the grade turn them into soft blue silhouettes.
+   */
   private horizon(): THREE.Mesh {
     const pts: number[] = [], cols: number[] = [], idx: number[] = []
-    const seg = 96
+    const seg = 160
     const base = this.route.y.reduce((a, b) => a + b, 0) / this.route.n
     const n2 = noise2(this.stage.seed + 3)
-    const amp = clamp(this.rally.relief.amp, 40, 260)
-    const c = new THREE.Color()
-    for (let layer = 0; layer < 2; layer++) {
-      const R = 1100 + layer * 300
-      const tone = new THREE.Color(this.rally.palette.forest).lerp(new THREE.Color(this.rally.palette.rock), 0.3 + layer * 0.3)
+    const rel = this.rally.relief
+    const snowy = ['alpine', 'andes', 'nordic_snow', 'japan'].includes(this.rally.biome)
+    const flat = this.rally.biome === 'savannah' || this.rally.biome === 'nordic'
+    const amp = flat ? 60 : THREE.MathUtils.clamp(rel.amp * 1.6, 120, 520)
+    const pal = this.rally.palette
+    const cForest = new THREE.Color(pal.forest).multiplyScalar(0.8)
+    const cRock = new THREE.Color(pal.rock)
+    const cSnow = new THREE.Color(0xf2f4f7)
+    const ridged = (x: number, y: number) => {
+      let v = 0, a = 1, f = 1
+      for (let o = 0; o < 5; o++) {
+        v += a * (1 - Math.abs(n2(x * f, y * f)))
+        a *= 0.5
+        f *= 2.1
+      }
+      return v / 1.9
+    }
+    let off = 0
+    for (let layer = 0; layer < 3; layer++) {
+      const R = 900 + layer * 350
+      const h0 = amp * (0.35 + layer * 0.45)
       for (let i = 0; i <= seg; i++) {
         const a = (i / seg) * Math.PI * 2
-        const h = base + amp * (0.4 + layer * 0.5) * (0.5 + fbm2(n2, Math.cos(a) * 3 + layer * 9, Math.sin(a) * 3, 3))
+        const peak = Math.pow(ridged(Math.cos(a) * 2.2 + layer * 7, Math.sin(a) * 2.2), 2.2)
+        const h = base + h0 * (0.25 + peak)
         const x = Math.cos(a) * R, z = Math.sin(a) * R
-        pts.push(x, base - 120, z, x, h, z)
-        c.copy(tone)
-        cols.push(c.r, c.g, c.b, c.r * 1.05, c.g * 1.05, c.b * 1.05)
-        const o = layer * (seg + 1) * 2
-        if (i) idx.push(o + (i - 1) * 2, o + i * 2, o + (i - 1) * 2 + 1, o + (i - 1) * 2 + 1, o + i * 2, o + i * 2 + 1)
+        const rows: [number, THREE.Color][] = [
+          [base - 150, cForest],
+          [base + (h - base) * 0.45, cForest.clone().lerp(cRock, 0.6)],
+          [h, snowy && peak > 0.5 ? cSnow : cRock.clone().lerp(cSnow, snowy ? 0.2 : 0)],
+        ]
+        for (const [y, c] of rows) {
+          pts.push(x, y, z)
+          cols.push(c.r, c.g, c.b)
+        }
+        if (i) for (let k = 0; k < 2; k++) {
+          const p0 = off + (i - 1) * 3 + k, p1 = off + i * 3 + k
+          idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1)
+        }
       }
+      off += (seg + 1) * 3
     }
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))

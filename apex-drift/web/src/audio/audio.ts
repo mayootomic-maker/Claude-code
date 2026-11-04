@@ -1,5 +1,8 @@
 import { clamp } from '../core/math'
 import type { Lang } from '../game/save'
+import { CarSound, engineProfileFor, loadEngineWorklet, playImpact, playLanding, type CarSoundState, type EngineProfile } from './engine'
+
+export { engineProfileFor, type CarSoundState, type EngineProfile }
 
 export interface Mix {
   master: number
@@ -22,10 +25,11 @@ interface VoiceBank {
 export class Audio {
   private ctx: AudioContext | null = null
   private bus: Record<keyof Mix | 'duck', GainNode> | null = null
-  private engine: { o1: OscillatorNode; o2: OscillatorNode; f: BiquadFilterNode; g: GainNode } | null = null
-  private surface: { g: GainNode; f: BiquadFilterNode } | null = null
-  private squeal: { g: GainNode } | null = null
-  private wind: { g: GainNode; f: BiquadFilterNode } | null = null
+  private car: CarSound | null = null
+  private carProfile: EngineProfile = engineProfileFor('piccola')
+  private lastHit = 0
+  private lastLand = 0
+  private legacy = { rpm: 0, gear: 1, boost: 0 }
   private rain: GainNode | null = null
   private noise: AudioBuffer | null = null
   private voices = new Map<Lang, VoiceBank>()
@@ -52,7 +56,15 @@ export class Audio {
     this.ctx = ctx
     const g = () => ctx.createGain()
     const bus = { master: g(), music: g(), sfx: g(), engine: g(), voice: g(), duck: g() }
-    bus.master.connect(ctx.destination)
+    // A gentle limiter on the master: a full-throttle engine, a bang and the
+    // co-driver together must never clip the phone's output.
+    const lim = ctx.createDynamicsCompressor()
+    lim.threshold.value = -4
+    lim.knee.value = 4
+    lim.ratio.value = 12
+    lim.attack.value = 0.002
+    lim.release.value = 0.12
+    bus.master.connect(lim).connect(ctx.destination)
     bus.duck.connect(bus.master)
     bus.music.connect(bus.duck)
     bus.engine.connect(bus.duck)
@@ -64,6 +76,8 @@ export class Audio {
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate)
     const d = this.noise.getChannelData(0)
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+    // Fetch and compile the engine now, so it is ready long before a stage starts.
+    void loadEngineWorklet(ctx)
   }
 
   setMix(m: Mix): void {
@@ -74,7 +88,7 @@ export class Audio {
     b.master.gain.setTargetAtTime(m.master, t, 0.05)
     b.music.gain.setTargetAtTime(m.music * 0.6, t, 0.05)
     b.sfx.gain.setTargetAtTime(m.sfx, t, 0.05)
-    b.engine.gain.setTargetAtTime(m.engine * 0.55, t, 0.05)
+    b.engine.gain.setTargetAtTime(m.engine * 0.7, t, 0.05)
     b.voice.gain.setTargetAtTime(m.voice * 1.3, t, 0.05)
   }
 
@@ -146,92 +160,59 @@ export class Audio {
 
   // ------------------------------------------------------------------ car
 
-  startCar(): void {
+  /** Start the car's sound. Without a profile, a generic naturally aspirated four. */
+  startCar(profile: EngineProfile = engineProfileFor('piccola')): void {
     const ctx = this.ctx, bus = this.bus
-    if (!ctx || !bus || !this.noise || this.engine) return
-    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator()
-    o1.type = 'sawtooth'
-    o2.type = 'square'
-    const f = ctx.createBiquadFilter()
-    f.type = 'lowpass'
-    f.Q.value = 3
-    const g = ctx.createGain()
-    g.gain.value = 0
-    const g2 = ctx.createGain()
-    g2.gain.value = 0.35
-    o1.connect(f)
-    o2.connect(g2).connect(f)
-    f.connect(g).connect(bus.engine)
-    o1.start()
-    o2.start()
-    this.engine = { o1, o2, f, g }
-    const loop = (type: BiquadFilterType, freq: number, q: number, out: AudioNode) => {
-      const src = ctx.createBufferSource()
-      src.buffer = this.noise
-      src.loop = true
-      const flt = ctx.createBiquadFilter()
-      flt.type = type
-      flt.frequency.value = freq
-      flt.Q.value = q
-      const gg = ctx.createGain()
-      gg.gain.value = 0
-      src.connect(flt).connect(gg).connect(out)
-      src.start(0, Math.random() * 1.5)
-      return { g: gg, f: flt }
-    }
-    this.surface = loop('bandpass', 700, 0.8, bus.sfx)
-    this.squeal = loop('bandpass', 1800, 12, bus.sfx)
-    this.wind = loop('lowpass', 400, 0.5, bus.sfx)
+    if (!ctx || !bus || !this.noise || this.car) return
+    this.carProfile = profile
+    this.legacy = { rpm: profile.idle, gear: 1, boost: 0 }
+    this.car = new CarSound(ctx, profile, this.noise, bus.engine, bus.sfx)
   }
 
   stopCar(): void {
-    const ctx = this.ctx
-    if (!ctx) return
-    const t = ctx.currentTime
-    for (const n of [this.engine?.g, this.surface?.g, this.squeal?.g, this.wind?.g]) n?.gain.setTargetAtTime(0, t, 0.08)
-    const e = this.engine
-    if (e) setTimeout(() => {
-      e.o1.stop()
-      e.o2.stop()
-    }, 400)
-    this.engine = this.surface = this.squeal = this.wind = null
+    this.car?.stop()
+    this.car = null
   }
 
-  /** rpm 800..7500, throttle 0..1, loose = gravel/snow underneath, slip 0..1 sideways scrub. */
-  updateCar(rpm: number, throttle: number, speed: number, loose: boolean, slip: number, onGround: boolean): void {
-    const ctx = this.ctx
-    if (!ctx || !this.engine) return
+  /** Feed the car's state every frame. Impacts and landings in it play their own one-shots. */
+  updateCar(s: CarSoundState): void
+  /** @deprecated The pre-3.0 call; estimates gear, load and boost from rpm and throttle. */
+  updateCar(rpm: number, throttle: number, speed: number, loose: boolean, slip: number, onGround: boolean): void
+  updateCar(a: CarSoundState | number, throttle = 0, speed = 0, loose = false, slip = 0, onGround = true): void {
+    const ctx = this.ctx, bus = this.bus
+    if (!ctx || !bus || !this.noise || !this.car) return
+    const s = typeof a === 'number' ? this.fromLegacy(a, throttle, speed, loose, slip, onGround) : a
+    this.car.update(s)
+    // Rate-limit the one-shots: a scrape along a barrier reports an impact every frame.
     const t = ctx.currentTime
-    const e = this.engine
-    // Four cylinders: two firing pulses per revolution.
-    const f0 = (rpm / 60) * 2
-    e.o1.frequency.setTargetAtTime(f0, t, 0.03)
-    e.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.03)
-    e.f.frequency.setTargetAtTime(300 + throttle * 1800 + rpm * 0.15, t, 0.05)
-    e.g.gain.setTargetAtTime(0.18 + throttle * 0.22, t, 0.05)
-    const v = clamp(speed / 40, 0, 1)
-    this.surface?.g.gain.setTargetAtTime(onGround ? (loose ? 0.35 : 0.08) * v : 0, t, 0.08)
-    if (this.surface) this.surface.f.frequency.setTargetAtTime(loose ? 500 + v * 900 : 300 + v * 300, t, 0.1)
-    this.squeal?.g.gain.setTargetAtTime(onGround && !loose ? clamp((slip - 0.1) * 2, 0, 0.25) : 0, t, 0.06)
-    this.wind?.g.gain.setTargetAtTime(v * v * 0.3, t, 0.1)
-    if (this.wind) this.wind.f.frequency.setTargetAtTime(250 + v * 900, t, 0.1)
+    if (s.impact > 2 && t - this.lastHit > 0.12) {
+      this.lastHit = t
+      playImpact(ctx, bus.sfx, this.noise, Math.min(1, s.impact / 15))
+    }
+    if (s.landed > 2.5 && t - this.lastLand > 0.2) {
+      this.lastLand = t
+      playLanding(ctx, bus.sfx, this.noise, Math.min(1, s.landed / 10))
+    }
+  }
+
+  private fromLegacy(rpm: number, throttle: number, speed: number, loose: boolean, slip: number, onGround: boolean): CarSoundState {
+    const L = this.legacy, p = this.carProfile
+    // The old gearbox only reports rpm; a sudden drop is an upshift, a jump a downshift.
+    if (rpm < L.rpm - 900) L.gear++
+    else if (rpm > L.rpm + 900 && L.gear > 1) L.gear--
+    L.rpm = rpm
+    L.boost += ((p.turbo ? throttle * clamp((rpm - p.idle) / (p.redline * 0.5), 0, 1) : 0) - L.boost) * 0.08
+    return {
+      rpm, throttle, load: throttle > 0.1 ? throttle : rpm > p.idle * 1.4 ? -0.6 : 0, gear: L.gear, shifting: false,
+      boost: L.boost, speed, surface: loose ? 'gravel' : 'asphalt', slip, wheelSpin: 0, onGround, impact: 0, landed: 0, camera: 'chase',
+    }
   }
 
   /** A thump for barrier hits and landings; strength 0..1. */
   thump(strength: number): void {
     const ctx = this.ctx, bus = this.bus
     if (!ctx || !bus || !this.noise) return
-    const src = ctx.createBufferSource()
-    src.buffer = this.noise
-    const f = ctx.createBiquadFilter()
-    f.type = 'lowpass'
-    f.frequency.value = 220 + strength * 400
-    const g = ctx.createGain()
-    const t = ctx.currentTime
-    g.gain.setValueAtTime(clamp(strength, 0, 1) * 0.9, t)
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35)
-    src.connect(f).connect(g).connect(bus.sfx)
-    src.start(t, Math.random(), 0.4)
+    playImpact(ctx, bus.sfx, this.noise, strength)
   }
 
   /** A swell of crowd noise as you pass spectators. */

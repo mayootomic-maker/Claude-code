@@ -1,4 +1,4 @@
-import { Audio, haptic } from './audio/audio'
+import { Audio, engineProfileFor, haptic } from './audio/audio'
 import { clamp } from './core/math'
 import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
 import { CoDriver } from './game/codriver'
@@ -6,13 +6,14 @@ import { level, medalFor, rallyReward, stageMedals, stageReward, standings, unlo
 import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
+import { GhostRecorder, loadGhost, saveGhost } from './game/ghost'
 import { openStore, type Settings, type Store } from './game/save'
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT } from './sim/car'
 import { StageSim, type Difficulty } from './sim/stage'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
-import { gearbox, Hud } from './ui/hud'
+import { Hud } from './ui/hud'
 
 const VERSION = '3.0.0'
 type Screen = 'sting' | 'title' | 'menu' | 'loading' | 'race'
@@ -34,7 +35,45 @@ interface RaceCtx {
   school: School | null
   cheered: Set<number>
   benchmark: number[] | null
+  /** Rolling snapshots for rewind, newest last, ~6 per second for the last 6 s. */
+  history: { car: Snap; sim: Snap }[]
+  rewinds: number
+  sectors: number
+  recorder: GhostRecorder
 }
+
+type Snap = Record<string, unknown>
+
+/**
+ * Copies the plain state of an object (numbers, flags, small plain objects
+ * and number arrays), skipping references like the route or ground. Generic
+ * on purpose: the car's physics state can grow without rewind knowing.
+ */
+function snap(o: object): Snap {
+  const out: Snap = {}
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') out[k] = v
+    else if (Array.isArray(v) && v.every((x) => typeof x === 'number')) out[k] = v.slice()
+    else if (ArrayBuffer.isView(v) && v instanceof Float64Array) out[k] = v.slice()
+    else if (ArrayBuffer.isView(v) && v instanceof Float32Array) out[k] = v.slice()
+    else if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) out[k] = { ...v }
+  }
+  return out
+}
+
+function restore(o: object, s: Snap): void {
+  const t = o as Record<string, unknown>
+  for (const [k, v] of Object.entries(s)) {
+    const cur = t[k]
+    if (cur instanceof Float64Array || cur instanceof Float32Array) cur.set(v as ArrayLike<number>)
+    else if (Array.isArray(v)) t[k] = v.slice()
+    else if (cur && typeof cur === 'object' && v && typeof v === 'object') Object.assign(cur, v)
+    else t[k] = v
+  }
+}
+
+const REWINDS: Record<string, number> = { rookie: 5, driver: 3, pro: 1 }
+const REWIND_PENALTY = 2
 
 interface School {
   step: number
@@ -56,6 +95,7 @@ export class App {
   private last = performance.now()
   private menuStack: (() => void)[] = []
   private perf = false
+  private storage: Storage | null = null
   private showcase: Showcase | null = null
   private frameMs: number[] = []
   private readonly ui: Record<'sting' | 'title' | 'menu' | 'loading' | 'hud' | 'overlay', HTMLElement>
@@ -68,6 +108,7 @@ export class App {
       storage = null
     }
     this.store = openStore(storage)
+    this.storage = storage
     const s = this.store.save
     setLang(s.settings.lang)
     document.documentElement.style.setProperty('--text', String(s.settings.textSize))
@@ -581,14 +622,23 @@ export class App {
       codriver: new CoDriver(notes, s.settings.notes),
       school: mode === 'school' ? { step: 0, shownAt: 0, hairpin, firstCall: null } : null,
       cheered: new Set(),
+      history: [],
+      rewinds: mode === 'school' ? 9 : REWINDS[sim.setup.difficulty] ?? 3,
+      sectors: 0,
+      recorder: new GhostRecorder(),
       benchmark: s.settings.quality === 'auto' && !s.tier ? [] : null,
+    }
+    this.race.hud.rewinds(this.race.rewinds)
+    if (mode !== 'school') {
+      const g = loadGhost(this.storage, `${rally.id}:${stageIdx}`)
+      if (g) view.setGhost(g, LIVERIES.find((l) => l.id === g.livery) ?? LIVERIES[0])
     }
     this.show('race')
     this.ui.overlay.classList.add('hidden')
     $('#bars').classList.add('on')
     hud.bigText(null)
     this.audio.playMusic('drive')
-    this.audio.startCar()
+    this.audio.startCar(engineProfileFor(sim.setup.car))
     this.audio.setRain(rally.stages[stageIdx].weather === 'rain')
     this.audio.say(s.settings.voiceLang, ['goodluck'])
     this.acc = 0
@@ -615,6 +665,12 @@ export class App {
     const r = this.race
     if (!r || this.screen !== 'race') return
     if (!r.paused) this.tick(r, dt)
+    r.view.updateGhost(r.sim.time)
+    if (r.view.softHits) {
+      this.audio.thump(0.25)
+      haptic(25, this.store.save.settings.haptics)
+      if (Math.random() < 0.5) this.audio.cheer()
+    }
     const mode = r.phase === 'intro' ? 'intro' : r.phase === 'finished' || r.phase === 'results' ? 'orbit' : 'drive'
     r.view.frame(r.paused ? 1 : this.acc / DT, r.paused ? 0 : dt, mode, r.introT / 6)
     this.renderer.sample(dt * 1000)
@@ -677,12 +733,15 @@ export class App {
     while (this.acc >= DT) {
       sim.step(r.phase === 'running' ? input : { steer: 0, throttle: 0, brake: 0, handbrake: false })
       this.acc -= DT
+      if (r.phase === 'running') r.recorder.record(sim.time, sim.car.x, sim.car.y, sim.car.z, sim.car.heading)
+      if (r.phase === 'running' && Math.round(sim.time * 60) % 10 === 0) {
+        r.history.push({ car: snap(sim.car), sim: snap(sim) })
+        if (r.history.length > 36) r.history.shift()
+      }
       if (sim.car.events.impact > 2) {
-        this.audio.thump(Math.min(1, sim.car.events.impact / 15))
         haptic(Math.min(80, 20 + sim.car.events.impact * 4), s.settings.haptics)
       }
       if (sim.car.events.landed > 2.5) {
-        this.audio.thump(Math.min(0.8, sim.car.events.landed / 10))
         haptic(30, s.settings.haptics)
       }
     }
@@ -711,14 +770,25 @@ export class App {
         }
       }
       if (school) this.coach(r, input)
+      // Sector splits at a third and two thirds, against gold pace.
+      const sec = Math.floor((sim.progress / sim.length) * 3)
+      if (sec > r.sectors && sec < 3) {
+        r.sectors = sec
+        r.hud.sector(sec, r.gold === null ? null : sim.total - (r.gold * sec) / 3)
+      }
       if (sim.phase === 'finished') this.finished(r)
     }
     if (r.phase === 'finished') {
       r.finishT += dt
       if (r.finishT > 2.2) this.results(r)
     }
-    const g = gearbox(sim.car.speed)
-    this.audio.updateCar(g.rpm, r.phase === 'running' ? input.throttle : 0.1, sim.car.speed, sim.car.surface !== 'asphalt' && sim.car.surface !== 'wet', sim.car.slipR, !sim.car.airborne)
+    const car = sim.car
+    const live = r.phase === 'running' || r.phase === 'countdown'
+    this.audio.updateCar({
+      rpm: car.rpm, throttle: live ? car.throttleOut : 0, load: live ? car.engineLoad : 0, gear: car.gear, shifting: car.shifting,
+      boost: car.boost, speed: car.speed, surface: car.surface, slip: Math.min(1, car.slipR * 3), wheelSpin: car.wheelSpin,
+      onGround: !car.airborne, impact: car.events.impact, landed: car.events.landed, camera: r.view.camMode,
+    })
     r.hud.update(sim, r.gold)
   }
 
@@ -840,6 +910,7 @@ export class App {
       $('[data-menu]', o).addEventListener('click', () => this.toMenu())
       return
     }
+    saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: s.livery, time, frames: r.recorder.frames() })
     const d = sim.setup.difficulty
     const medal: Medal = medalFor(time, r.rally, r.stageIdx, d)
     const key = `${r.rally.id}:${r.stageIdx}:${d}`
@@ -913,7 +984,7 @@ export class App {
 
   // ------------------------------------------------------------- pause & input
 
-  private action(a: 'pause' | 'reset' | 'camera'): void {
+  private action(a: 'pause' | 'reset' | 'camera' | 'rewind'): void {
     const r = this.race
     if (!r || this.screen !== 'race') return
     if (a === 'pause') return r.paused ? this.unpause() : this.pause()
@@ -921,6 +992,23 @@ export class App {
     if (a === 'reset') {
       r.sim.reset()
       r.codriver.seek(r.sim.car.s)
+      r.view.snapCamera()
+      this.audio.clearCalls()
+    }
+    if (a === 'rewind') {
+      // Three seconds back, with a small penalty; the clock keeps the time already spent.
+      if (r.rewinds <= 0 || r.history.length < 2) return
+      const target = r.history[Math.max(0, r.history.length - 19)]
+      const spent = r.sim.time
+      restore(r.sim.car, target.car)
+      restore(r.sim, target.sim)
+      r.sim.time = Math.max(r.sim.time, spent)
+      r.sim.penalty += REWIND_PENALTY
+      r.history.length = Math.max(1, r.history.length - 18)
+      r.rewinds--
+      r.hud.rewinds(r.rewinds)
+      r.codriver.seek(r.sim.car.s)
+      r.view.syncCar(1)
       r.view.snapCamera()
       this.audio.clearCalls()
     }
