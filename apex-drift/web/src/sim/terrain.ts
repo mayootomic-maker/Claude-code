@@ -1,6 +1,13 @@
 import { fbm2, noise2, smoothstep } from '../core/math'
 import type { RallyDef } from '../data'
-import type { Route } from './route'
+import { STEP, type Route } from './route'
+
+/**
+ * Half the width of a car body plus a hair. The physics holds the car's
+ * centre at `limitAt(s)`; anything solid must stand at least this much
+ * further out, or the body visibly passes through it.
+ */
+export const BODY = 1.05
 
 export interface Ground {
   /** Height of the surface the car drives on (road or terrain). */
@@ -63,7 +70,19 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Ground 
     return h
   }
 
-  const limitAt = (s: number): number => (route.featureAt(s, 'bridge') ? route.half + 0.35 : limit)
+  // Where another leg of road runs close (hairpins, switchbacks), the verge
+  // between them is split down the middle: the car can't cut across, and
+  // posts and rails for one leg never stand in the other's drivable strip.
+  const near = new Float32Array(route.n)
+  for (let i = 0; i < route.n; i++) near[i] = route.otherLeg(i, 30, 2 * (limit + BODY) + 4)
+  const legLimit = (s: number): number => {
+    const i = Math.min(route.n - 1, Math.max(0, Math.round(s / STEP)))
+    let m = Infinity
+    for (let k = Math.max(0, i - 3); k <= Math.min(route.n - 1, i + 3); k++) m = Math.min(m, near[k])
+    return Math.max(route.half + 0.3, Math.min(limit, m / 2 - BODY - 0.4))
+  }
+  // On a bridge the parapets stand just outside the road edge.
+  const limitAt = (s: number): number => (route.featureAt(s, 'bridge') ? route.half + 0.3 - BODY : legLimit(s))
 
   return { height, natural, edge, limitAt, route }
 }

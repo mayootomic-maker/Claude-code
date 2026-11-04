@@ -31,6 +31,8 @@ export class Renderer {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false })
     this.gl.outputColorSpace = THREE.SRGBColorSpace
     this.gl.shadowMap.type = THREE.PCFShadowMap
+    // Counted per frame (scene + shadow + grade passes), not per render call.
+    this.gl.info.autoReset = false
     this.apply()
   }
 
@@ -83,6 +85,7 @@ export class Renderer {
   }
 
   render(scene: THREE.Scene, cam: THREE.Camera, a: Atmos, time: number): void {
+    this.gl.info.reset()
     if (this.grade) {
       this.grade.setGrade(a.grade, a.exposure)
       this.gl.setRenderTarget(this.grade.target)
@@ -113,6 +116,7 @@ export class StageView {
   readonly world: World
   readonly car: CarRig
   private readonly sun: THREE.DirectionalLight
+  private readonly sky: THREE.Mesh
   private readonly sunDir: THREE.Vector3
   private readonly pose: Pose = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steer: 0, spin: 0 }
   private readonly dust: Dust
@@ -127,13 +131,15 @@ export class StageView {
   private time = 0
   shake = 1
 
-  constructor(readonly sim: StageSim, readonly r: Renderer, livery: LiveryDef = LIVERIES[0]) {
+  constructor(readonly sim: StageSim, readonly r: Renderer, livery: LiveryDef = LIVERIES[0], labels?: { start: string; finish: string }) {
     const { rally, stage } = sim.setup
     this.atmos = atmosphere(stage.look, stage.weather)
     const a = this.atmos
     const spec = r.spec
     this.scene.fog = new THREE.FogExp2(a.fog, a.fogDensity)
-    this.scene.add(skyDome(a))
+    // The sky travels with the camera; stages run for kilometres and the dome is 1.8 km across.
+    this.sky = skyDome(a)
+    this.scene.add(this.sky)
     // Sky fill is generous: shaded forest should read as deep green, never as black.
     this.scene.add(new THREE.HemisphereLight(a.skyTop, a.ground, a.hemiI * 1.35))
     this.sunDir = sunDirection(a)
@@ -157,7 +163,7 @@ export class StageView {
     this.scene.environmentIntensity = a.lights ? 0.25 : 0.7
     pm.dispose()
 
-    this.world = new World(sim.ground, rally, stage, { ...spec, shadows: spec.propShadows }, sim.start, sim.finish)
+    this.world = new World(sim.ground, rally, stage, { ...spec, shadows: spec.propShadows }, sim.start, sim.finish, labels)
     this.scene.add(this.world.group)
     this.car = buildCar(sim.setup.car, livery)
     this.scene.add(this.car.root)
@@ -182,8 +188,8 @@ export class StageView {
   }
 
   /** Builds the scenery around the start before the countdown, behind the loading screen. */
-  prewarm(): void {
-    this.world.prewarm(this.camPos)
+  prewarm(at?: THREE.Vector3): void {
+    this.world.prewarm(at ?? this.camPos)
     this.r.gl.compile(this.scene, this.camera)
   }
 
@@ -208,16 +214,17 @@ export class StageView {
   }
 
   /** Per frame: interpolate the car, move the camera, stream the world, draw. */
-  frame(alpha: number, dt: number, mode: 'drive' | 'intro' | 'orbit', introT = 0): void {
+  frame(alpha: number, dt: number, mode: 'drive' | 'intro' | 'orbit' | 'fixed', introT = 0): void {
     this.time += dt
     this.syncCar(alpha)
     if (mode === 'intro') this.introCamera(introT)
     else if (mode === 'orbit') this.orbitCamera(dt)
-    else this.chaseCamera(dt)
-    this.world.update(this.camPos, dt, 2)
+    else if (mode === 'drive') this.chaseCamera(dt)
+    this.world.update(mode === 'fixed' ? this.camera.position : this.camPos, dt, 2)
     const cp = this.car.root.position
     this.sun.position.set(cp.x + this.sunDir.x * 100, cp.y + this.sunDir.y * 100, cp.z + this.sunDir.z * 100)
     this.sun.target.position.copy(cp)
+    this.sky.position.copy(this.camera.position)
     this.updateDust(dt)
     this.updateWeather(dt)
     if (this.headlights) this.headlights.intensity = 60

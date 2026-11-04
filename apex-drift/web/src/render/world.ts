@@ -2,13 +2,12 @@ import * as THREE from 'three'
 import { clamp, fbm2, noise2, rng, smoothstep } from '../core/math'
 import type { RallyDef, StageDef } from '../data'
 import { STEP, type Route } from '../sim/route'
-import type { Ground } from '../sim/terrain'
+import { BODY, type Ground } from '../sim/terrain'
 import { GeoBuilder, PRIM } from './builder'
-import { paceNotes } from '../game/pacenotes'
-import { addFlowers, addHouse, addRock, addSpectator, addTree, addTuft, FOOTPRINT, treeFootprint } from './props'
+import { edgePoint, planSegment, planTile, TILE, type PlanCtx } from './placement'
+import { addFlowers, addHouse, addRock, addSpectator, addTree, addTuft } from './props'
 import { detailTexture, roadTexture, type RoadKind } from './textures'
 
-const TILE = 64
 const RES = 2
 const ROAD_SEG = 120
 
@@ -56,6 +55,8 @@ export class World {
   private readonly route: Route
   private readonly noise = noise2(9)
   private readonly snowAll: boolean
+  private readonly plan: PlanCtx
+  private readonly ridges: THREE.Mesh
 
   constructor(
     private readonly ground: Ground,
@@ -64,9 +65,11 @@ export class World {
     private readonly q: Quality,
     private readonly start: number,
     private readonly finish: number,
+    private readonly labels: { start: string; finish: string } = { start: 'START', finish: 'FINISH' },
   ) {
     this.route = ground.route
     this.snowAll = rally.surface === 'snow' || stage.weather === 'snow'
+    this.plan = { route: this.route, ground, rally, seed: stage.seed, noise: this.noise, snowAll: this.snowAll }
     const detail = detailTexture(q.aniso)
     this.terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: detail })
     this.terrainMat.onBeforeCompile = (sh) => {
@@ -93,12 +96,15 @@ export class World {
     this.waterMat = new THREE.MeshLambertMaterial({ color: 0x4f6b70, transparent: true, opacity: 0.78, depthWrite: false })
     this.planTiles()
     this.planSegments()
-    this.group.add(this.horizon())
+    this.ridges = this.horizon()
+    this.group.add(this.ridges)
   }
 
   /** Called every frame; builds at most `budget` pieces so a frame never stalls. */
   update(cam: THREE.Vector3, dt: number, budget = 2): void {
     this.time.value += dt
+    // Distant ridges ring the camera, wherever on a long stage it is.
+    this.ridges.position.set(cam.x, 0, cam.z)
     const r2 = this.q.radius * this.q.radius
     const drop2 = (this.q.radius + 120) ** 2
     const want: { d: number; build: () => void }[] = []
@@ -253,73 +259,16 @@ export class World {
     this.group.add(g)
   }
 
-  /** True when a solid object of radius `r` at (x,z) can never be touched or seen intersecting the road. */
-  private clear(x: number, z: number, r: number): { ok: boolean; s: number; d: number } {
-    const c = this.route.closest(x, z, 600)
-    if (!c) return { ok: true, s: 0, d: 999 }
-    const limit = this.ground.limitAt(c.s)
-    return { ok: c.dist - r > limit + 1.5, s: c.s, d: c.dist }
-  }
-
   private scatter(t: Tile): THREE.Mesh | null {
     const b = new GeoBuilder()
-    const r = rng(t.key ^ this.stage.seed)
-    const area = TILE * TILE
-    const dens = this.q.density
-    const kinds = Object.entries(this.rally.trees.mix).filter(([, w]) => w > 0)
-    const wsum = kinds.reduce((a, [, w]) => a + w, 0)
-    const pick = (): string => {
-      let x = r() * wsum
-      for (const [k, w] of kinds) if ((x -= w) <= 0) return k
-      return kinds[0][0]
-    }
     const pal = this.rally.palette
-    const trees = Math.round((area / 90) * this.rally.trees.density * dens)
-    for (let i = 0; i < trees; i++) {
-      const x = t.cx + (r() - 0.5) * TILE, z = t.cz + (r() - 0.5) * TILE
-      const kind = pick()
-      const cl = this.clear(x, z, treeFootprint(kind))
-      if (!cl.ok) continue
-      // Thinner right next to the road, so the view opens up.
-      if (r() > this.rally.trees.near + smoothstep(10, 40, cl.d) * (1 - this.rally.trees.near)) continue
-      // Clumps: skip where the low-frequency noise says "meadow".
-      if (fbm2(this.noise, x / 70, z / 70, 2) < -0.15 && r() < 0.7) continue
-      addTree(b, kind, x, this.ground.natural(x, z), z, r, 0.85 + r() * 0.35)
-    }
-    const rocks = Math.round((area / 900) * this.rally.rocks * dens)
-    for (let i = 0; i < rocks; i++) {
-      const x = t.cx + (r() - 0.5) * TILE, z = t.cz + (r() - 0.5) * TILE
-      const size = 0.5 + r() * 1.4
-      if (!this.clear(x, z, size).ok) continue
-      addRock(b, x, this.ground.natural(x, z), z, size, r() < 0.5 ? pal.rock : pal.rock2, r)
-    }
-    const bushes = Math.round((area / 500) * this.rally.bushes * dens)
-    for (let i = 0; i < bushes; i++) {
-      const x = t.cx + (r() - 0.5) * TILE, z = t.cz + (r() - 0.5) * TILE
-      if (!this.clear(x, z, FOOTPRINT.shrub).ok) continue
-      addTree(b, this.rally.biome === 'savannah' ? 'thornbush' : this.rally.biome === 'andes' ? 'pampas' : 'macchia', x, this.ground.natural(x, z), z, r, 0.7)
-    }
-    // Grass tufts may sit on the drivable verge: they are soft, the car can pass through them.
-    if (this.rally.grass > 0 && !this.snowAll) {
-      const tufts = Math.round((area / 60) * this.rally.grass * dens)
-      for (let i = 0; i < tufts; i++) {
-        const x = t.cx + (r() - 0.5) * TILE, z = t.cz + (r() - 0.5) * TILE
-        const c = this.route.closest(x, z, 300)
-        if (c && c.dist < this.ground.edge + 0.8) continue
-        const y = this.ground.height(x, z)
-        // Wildflowers gather in the lusher patches of meadow.
-        if (r() < 0.12 && fbm2(this.noise, x / 25, z / 25, 2) > 0.1) addFlowers(b, x, y, z, r)
-        else addTuft(b, x, y, z, r() < 0.5 ? pal.grassA : pal.dry, r)
-      }
-    }
-    // A farmhouse or two, set back from the road and facing it.
-    if (r() < 0.12 * dens) {
-      const x = t.cx + (r() - 0.5) * TILE * 0.6, z = t.cz + (r() - 0.5) * TILE * 0.6
-      const cl = this.clear(x, z, FOOTPRINT.house)
-      if (cl.ok && cl.d < 60) {
-        const a = this.route.at(cl.s)
-        addHouse(b, this.rally.houses, x, this.ground.natural(x, z), z, a.heading + (r() < 0.5 ? 0 : Math.PI), r)
-      }
+    for (const p of planTile(this.plan, t.cx, t.cz, t.key, this.q.density)) {
+      const r = rng(p.seed)
+      if (p.kind === 'tree' || p.kind === 'shrub') addTree(b, p.sub, p.x, this.ground.natural(p.x, p.z), p.z, r, p.size)
+      else if (p.kind === 'rock') addRock(b, p.x, this.ground.natural(p.x, p.z), p.z, p.size, p.sub === 'a' ? pal.rock : pal.rock2, r)
+      else if (p.kind === 'house') addHouse(b, p.sub, p.x, this.ground.natural(p.x, p.z), p.z, p.yaw, r)
+      else if (p.kind === 'flowers') addFlowers(b, p.x, this.ground.height(p.x, p.z), p.z, r)
+      else if (p.kind === 'tuft') addTuft(b, p.x, this.ground.height(p.x, p.z), p.z, p.sub === 'a' ? pal.grassA : pal.dry, r)
     }
     if (b.empty) return null
     const m = new THREE.Mesh(b.build(), this.propMat)
@@ -406,6 +355,10 @@ export class World {
       m.receiveShadow = this.q.shadows
       g.add(m)
     }
+    for (const [gs, text, color] of [[this.start, this.labels.start, '#2e8c55'], [this.finish, this.labels.finish, '#d8452f']] as const) {
+      if (gs < sg.s0 || gs >= sg.s1) continue
+      g.add(this.bannerText(gs, text, color))
+    }
     for (const f of route.features) {
       if (f.s1 < sg.s0 || f.s0 > sg.s1) continue
       if (f.kind === 'splash') g.add(this.water(f.s0, f.s1, half + 2, -0.12))
@@ -433,9 +386,11 @@ export class World {
         const out = this.ground.natural(a.x + lx * 14, a.z + lz * 14) - a.y
         const up = out > 0.8
         const kind = up ? e.up : e.down
-        const lim = this.ground.limitAt(s) + 0.25
+        // One body-width beyond where the car's centre is held, so the car never sinks into it.
+        const e0 = edgePoint(this.plan, s, side as 1 | -1), e1 = edgePoint(this.plan, s2, side as 1 | -1)
+        if (!e0 || !e1) continue
         const lx2 = Math.cos(c.heading) * side, lz2 = -Math.sin(c.heading) * side
-        const p0 = v(a.x + lx * lim, a.y, a.z + lz * lim), p1 = v(c.x + lx2 * lim, c.y, c.z + lz2 * lim)
+        const p0 = v(e0.x, a.y, e0.z), p1 = v(e1.x, c.y, e1.z)
         if (kind === 'rail') {
           const y0 = a.y + 0.55, y1 = c.y + 0.55
           const q0 = v(p0.x, y0, p0.z), q1 = v(p1.x, y1, p1.z)
@@ -468,46 +423,55 @@ export class World {
   /** Chevrons before tight corners, crowds at the good spots, start and finish gantries. */
   private furniture(b: GeoBuilder, sg: Seg): void {
     const route = this.route
-    const r = rng(sg.i * 7919 + this.stage.seed)
-    for (const note of paceNotes(route, this.start, this.finish)) {
-      if (note.s < sg.s0 || note.s >= sg.s1) continue
-      if (note.kind === 'corner' && note.grade <= 2) {
-        // Boards on the outside of the corner, facing oncoming traffic.
-        const outside = note.dir === 'left' ? -1 : 1
-        for (let k = 0; k < 4; k++) {
-          const s = note.s + k * 7
-          const a = route.at(s)
-          const lim = this.ground.limitAt(s) + 0.6
-          const lx = Math.cos(a.heading) * outside, lz = -Math.sin(a.heading) * outside
-          const x = a.x + lx * lim, z = a.z + lz * lim
-          b.add(PRIM.box, 0x3a3a3a, x, a.y - 0.3, z, 0.08, 1.4, 0.08, a.heading)
-          b.add(PRIM.boxC, k % 2 ? 0xf2c037 : 0x1c1d20, x, a.y + 1.2, z, 0.9, 0.55, 0.05, a.heading + Math.PI)
-        }
-      }
-      if ((note.kind === 'corner' && note.grade <= 2 && r() < this.rally.spectators * 0.55) || (note.kind === 'jump' && r() < 0.9)) {
-        // Fans stand on the inside of the corner, set back and slightly uphill.
-        const inside = note.kind === 'corner' ? (note.dir === 'left' ? 1 : -1) : r() < 0.5 ? 1 : -1
-        const count = 6 + Math.floor(r() * 12 * this.q.density)
-        for (let k = 0; k < count; k++) {
-          const s = note.s + (r() - 0.3) * 30
-          const a = route.at(s)
-          const off = this.ground.limitAt(s) + 3 + r() * 6
-          const lx = Math.cos(a.heading) * inside, lz = -Math.sin(a.heading) * inside
-          const x = a.x + lx * off, z = a.z + lz * off
-          if (!this.clear(x, z, FOOTPRINT.spectator).ok) continue
-          addSpectator(b, x, this.ground.natural(x, z), z, Math.atan2(a.x - x, a.z - z), r)
-        }
-      }
+    for (const p of planSegment(this.plan, sg.s0, sg.s1, sg.i, this.start, this.finish, this.q.density)) {
+      const y = this.ground.natural(p.x, p.z)
+      if (p.kind === 'board') {
+        const ry = route.at(route.closest(p.x, p.z)?.s ?? 0).y
+        b.add(PRIM.box, 0x3a3a3a, p.x, Math.min(y, ry) - 0.3, p.z, 0.08, Math.abs(ry - y) + 1.6, 0.08, p.yaw)
+        b.add(PRIM.boxC, p.sub === 'y' ? 0xf2c037 : 0x1c1d20, p.x, ry + 1.2, p.z, 0.9, 0.55, 0.05, p.yaw)
+      } else if (p.kind === 'spectator') addSpectator(b, p.x, y, p.z, p.yaw, rng(p.seed))
     }
     for (const [s, color] of [[this.start, 0x2e8c55], [this.finish, 0xd8452f]] as const) {
       if (s < sg.s0 || s >= sg.s1) continue
       const a = route.at(s)
-      const lim = this.ground.limitAt(s) + 0.6
+      const lim = this.ground.limitAt(s) + BODY + 0.6
       const lx = Math.cos(a.heading), lz = -Math.sin(a.heading)
       for (const side of [1, -1]) b.add(PRIM.box, 0x30343a, a.x + lx * lim * side, a.y - 0.5, a.z + lz * lim * side, 0.35, 5.6, 0.35, a.heading)
-      b.add(PRIM.boxC, color, a.x, a.y + 4.9, a.z, lim * 2 + 0.6, 0.9, 0.3, a.heading + Math.PI / 2)
-      b.add(PRIM.boxC, 0xf3f1ea, a.x, a.y + 4.9, a.z, lim * 2 * 0.7, 0.45, 0.34, a.heading + Math.PI / 2)
+      // Yaw = heading: the box's X axis then runs across the road, so the banner spans it.
+      b.add(PRIM.boxC, color, a.x, a.y + 4.9, a.z, lim * 2 + 0.6, 0.9, 0.3, a.heading)
+      b.add(PRIM.boxC, 0xf3f1ea, a.x, a.y + 4.9, a.z, lim * 2 * 0.7, 0.45, 0.34, a.heading)
     }
+  }
+
+  /** Lettering on both faces of a gantry banner. */
+  private bannerText(s: number, text: string, color: string): THREE.Group {
+    const c = document.createElement('canvas')
+    c.width = 1024
+    c.height = 96
+    const g2 = c.getContext('2d')
+    const grp = new THREE.Group()
+    if (!g2) return grp
+    g2.fillStyle = '#f3f1ea'
+    g2.fillRect(0, 0, 1024, 96)
+    g2.fillStyle = color
+    g2.font = '800 72px "Barlow Condensed", sans-serif'
+    g2.textAlign = 'center'
+    g2.textBaseline = 'middle'
+    g2.fillText(text.toUpperCase(), 512, 52)
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const a = this.route.at(s)
+    const w = (this.ground.limitAt(s) + BODY + 0.6) * 2 * 0.7
+    const mat = new THREE.MeshLambertMaterial({ map: tex })
+    for (const side of [-1, 1]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 0.45), mat)
+      // Face oncoming cars on one side and the departing view on the other.
+      m.position.set(a.x + Math.sin(a.heading) * 0.18 * side, a.y + 4.9, a.z + Math.cos(a.heading) * 0.18 * side)
+      m.rotation.y = a.heading + (side < 0 ? Math.PI : 0)
+      if (side > 0) m.userData.ownsMaterial = true
+      grp.add(m)
+    }
+    return grp
   }
 
   private water(s0: number, s1: number, w: number, dy: number): THREE.Mesh {
@@ -555,8 +519,6 @@ export class World {
     const pts: number[] = [], cols: number[] = [], idx: number[] = []
     const seg = 96
     const base = this.route.y.reduce((a, b) => a + b, 0) / this.route.n
-    const cx = this.route.x.reduce((a, b) => a + b, 0) / this.route.n
-    const cz = this.route.z.reduce((a, b) => a + b, 0) / this.route.n
     const n2 = noise2(this.stage.seed + 3)
     const amp = clamp(this.rally.relief.amp, 40, 260)
     const c = new THREE.Color()
@@ -566,7 +528,7 @@ export class World {
       for (let i = 0; i <= seg; i++) {
         const a = (i / seg) * Math.PI * 2
         const h = base + amp * (0.4 + layer * 0.5) * (0.5 + fbm2(n2, Math.cos(a) * 3 + layer * 9, Math.sin(a) * 3, 3))
-        const x = cx + Math.cos(a) * R, z = cz + Math.sin(a) * R
+        const x = Math.cos(a) * R, z = Math.sin(a) * R
         pts.push(x, base - 120, z, x, h, z)
         c.copy(tone)
         cols.push(c.r, c.g, c.b, c.r * 1.05, c.g * 1.05, c.b * 1.05)
@@ -600,6 +562,13 @@ function roadBase(r: RallyDef): number {
 
 function dispose(g: THREE.Object3D): void {
   g.traverse((o) => {
-    if (o instanceof THREE.Mesh) o.geometry.dispose()
+    if (!(o instanceof THREE.Mesh)) return
+    o.geometry.dispose()
+    // Most materials are shared and disposed with the world; a few meshes own theirs.
+    if (o.userData.ownsMaterial) {
+      const m = o.material as THREE.MeshLambertMaterial
+      m.map?.dispose()
+      m.dispose()
+    }
   })
 }

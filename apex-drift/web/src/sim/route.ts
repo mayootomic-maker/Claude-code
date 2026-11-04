@@ -155,6 +155,32 @@ export class Route {
     }
   }
 
+  /**
+   * Distance from sample i to the nearest point of road that is *not* this
+   * stretch (more than `skip` samples away along the route), up to maxDist.
+   * Hairpin legs and crossings come close; this is how close.
+   */
+  otherLeg(i: number, skip: number, maxDist: number): number {
+    const px = this.x[i], pz = this.z[i]
+    let best = maxDist * maxDist
+    const cx = Math.floor(px / GRID), cz = Math.floor(pz / GRID)
+    const rings = Math.ceil(maxDist / GRID)
+    for (let gx = cx - rings; gx <= cx + rings; gx++)
+      for (let gz = cz - rings; gz <= cz + rings; gz++) {
+        const list = this.grid.get(key(gx, gz))
+        if (!list) continue
+        for (const j of list) {
+          if (Math.abs(j - i) < skip) continue
+          const ax = this.x[j], az = this.z[j]
+          const dx = this.x[j + 1] - ax, dz = this.z[j + 1] - az
+          const t = clamp(((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1), 0, 1)
+          const d2 = (ax + dx * t - px) ** 2 + (az + dz * t - pz) ** 2
+          if (d2 < best) best = d2
+        }
+      }
+    return Math.sqrt(best)
+  }
+
   featureAt(s: number, kind: FeatureKind): Feature | undefined {
     return this.features.find((f) => f.kind === kind && s >= f.s0 && s <= f.s1)
   }

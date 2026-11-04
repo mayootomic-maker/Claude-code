@@ -4,7 +4,7 @@ import { GeoBuilder, PRIM } from './builder'
 type R = () => number
 
 /** Footprint radius in metres: what the placer keeps clear of the road. */
-export const FOOTPRINT = { tree: 2.2, shrub: 1.2, rock: 1.6, house: 6, spectator: 0.5, tuft: 0 }
+export const FOOTPRINT = { house: 7.2, spectator: 0.5 }
 
 interface TreeSpec {
   shape: 'conifer' | 'round' | 'umbrella' | 'shrub' | 'succulent' | 'bamboo' | 'columnar' | 'bare'
@@ -42,9 +42,16 @@ const TREES: Record<string, TreeSpec> = {
   bamboo: { shape: 'bamboo', h: [8, 12], crown: 0.2, leaf: 0x7a9a4a, trunk: 0x8aa35a },
 }
 
-export function treeFootprint(kind: string): number {
-  const t = TREES[kind]
-  return !t ? FOOTPRINT.tree : t.shape === 'shrub' ? FOOTPRINT.shrub : FOOTPRINT.tree
+/** Widest reach of a tree's crown at the given scale, at its tallest: what must stay clear of the road. */
+export function crownRadius(kind: string, scale: number): number {
+  const t = TREES[kind] ?? TREES.pine
+  const h = t.h[1] * scale
+  const k = t.shape === 'conifer' ? t.crown * 1.12
+    : t.shape === 'round' ? t.crown * 0.85
+    : t.shape === 'umbrella' ? t.crown * 0.6
+    : t.shape === 'shrub' ? 0.4 + t.crown * 0.7
+    : t.shape === 'bamboo' ? 0.2 : 0.25
+  return Math.max(1.2, h * k)
 }
 
 const SNOW = 0xf2f5f7

@@ -1,5 +1,10 @@
 # Apex Drift 3.0: the release build
 
+> **Status (4 Nov 2026):** built in `apex-drift/` on this branch. See
+> `apex-drift/README.md` for what is done and verified, and
+> `apex-drift/RELEASE.md` for the remaining publishing steps, most of which
+> need the Play Console account owner. The brief below is kept as the spec.
+
 Paste everything below the line into a new Claude Code session that has the
 **Apex Drift source repository** attached. The 2.0.0 APK only contains the
 minified bundle (`assets/www/js/app.js`, 883 KB), so v3 can't be built from

@@ -7,6 +7,7 @@ import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
 import { openStore, type Settings, type Store } from './game/save'
+import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT } from './sim/car'
 import { StageSim, type Difficulty } from './sim/stage'
@@ -54,6 +55,9 @@ export class App {
   private acc = 0
   private last = performance.now()
   private menuStack: (() => void)[] = []
+  private perf = false
+  private showcase: Showcase | null = null
+  private frameMs: number[] = []
   private readonly ui: Record<'sting' | 'title' | 'menu' | 'loading' | 'hud' | 'overlay', HTMLElement>
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -147,7 +151,10 @@ export class App {
     if (push) this.menuStack.push(() => this.menu(render, bind, art, false))
     const s = this.store.save
     const lv = level(s.xp)
-    this.ui.menu.style.setProperty('--menu-art', art ? `url('${art}')` : null)
+    // Absolute URL: a relative url() inside a custom property resolves against the stylesheet's folder.
+    this.ui.menu.style.setProperty('--menu-art', art && art !== 'showcase' ? `url('${new URL(art, location.href).href}')` : 'none')
+    this.ui.menu.classList.toggle('see-through', art === 'showcase')
+    if (art !== 'showcase') this.closeShowcase()
     html(this.ui.menu, `
       <header class="topbar"><span class="brand">${CHEVRON}APEX DRIFT</span><span class="spacer"></span>
         <span class="pill">${esc(s.name)} · ${t('level', { n: lv.level })}</span><span class="pill"><b>${s.credits.toLocaleString()}</b> cr</span></header>
@@ -169,7 +176,7 @@ export class App {
     this.menu(() => `
       <div class="home">
         <button class="tile big" data-go="career" style="background-image:url('img/c-${nextRally?.id ?? 'finland'}.jpg')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
-        <button class="tile" data-go="free" style="background-image:url('img/poly-park.jpg')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="free" style="background-image:url('img/free.jpg')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
         <button class="tile" data-go="school" style="background-image:url('img/c-finland.jpg')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
         <button class="tile" data-go="garage" style="background-image:url('img/garage.jpg')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
         <button class="tile" data-go="options"><span class="t display">${t('options')}</span></button>
@@ -297,6 +304,7 @@ export class App {
             : `<button class="btn" data-buy ${s.credits < price(car.level) ? 'disabled' : ''}>${t('buy', { price: price(car.level).toLocaleString() })}</button>`}</div>
           <div class="cars" style="margin-top:14px">${CARS.map((c) => `<button class="carbtn ${c.id === sel ? 'sel' : ''} ${s.owned.cars.includes(c.id) ? '' : 'lock'}" data-car="${c.id}">${esc(c.name)}<small>${esc(c.era)} · ${t('level', { n: c.level })}</small></button>`).join('')}</div>
         </div>
+        <div aria-hidden="true"></div>
         <div class="card">
           <p class="kicker">Livery</p>
           <div class="swatches">${visible.map((l) => {
@@ -341,7 +349,17 @@ export class App {
         this.menuStack.pop()
         this.garage(sel)
       }))
-    }, 'img/garage.jpg')
+    }, 'showcase')
+    if (!this.showcase) {
+      this.showcase = new Showcase(this.renderer.gl)
+      this.showcase.resize(innerWidth, innerHeight)
+    }
+    this.showcase.setCar(car.id, LIVERIES.find((l) => l.id === s.livery) ?? LIVERIES[0])
+  }
+
+  private closeShowcase(): void {
+    this.showcase?.dispose()
+    this.showcase = null
   }
 
   private options(tab: 'controls' | 'audio' | 'display' | 'gameplay' | 'data'): void {
@@ -382,7 +400,7 @@ export class App {
       data: () => [
         opt(t('privacy'), `<button class="btn ghost" data-privacy>${t('privacy')}</button>`),
         opt(t('erase'), `<button class="btn ghost" data-erase style="color:var(--bad)">${t('erase')}</button>`),
-        opt(t('version', { v: VERSION }), ''),
+        `<div class="opt" data-ver><label>${t('version', { v: VERSION })}</label></div>`,
       ].join(''),
     }
     this.menu(() => `
@@ -425,6 +443,14 @@ export class App {
         this.store.write()
       })
       root.querySelector('[data-school]')?.addEventListener('click', () => this.startSchool())
+      // Five taps on the version line toggles the performance overlay, for testing on real phones.
+      let taps = 0
+      root.querySelector('[data-ver]')?.addEventListener('click', () => {
+        if (++taps < 5) return
+        taps = 0
+        this.perf = !this.perf
+        toast(this.perf ? 'Performance overlay on' : 'Performance overlay off')
+      })
       root.querySelector('[data-privacy]')?.addEventListener('click', () => {
         // Shown inside the app: it works offline, and back returns to the game.
         const o = this.ui.overlay
@@ -496,6 +522,7 @@ export class App {
 
   private load(rally: RallyDef, stageIdx: number, mode: RaceCtx['mode']): void {
     this.disposeRace()
+    this.closeShowcase()
     const st = rally.stages[stageIdx]
     const s = this.store.save
     this.show('loading')
@@ -518,7 +545,7 @@ export class App {
     steps.push(() => {
       if (!sim) return
       const lv = LIVERIES.find((l) => l.id === s.livery) ?? LIVERIES[0]
-      view = new StageView(sim, this.renderer, lv)
+      view = new StageView(sim, this.renderer, lv, { start: t('start'), finish: t('finish') })
       view.camMode = s.settings.camera
       view.shake = s.settings.shake ? 1 : 0
       this.resize(view)
@@ -584,6 +611,7 @@ export class App {
     requestAnimationFrame((n) => this.loop(n))
     const dt = Math.min(0.1, (now - this.last) / 1000)
     this.last = now
+    if (this.showcase && this.screen === 'menu') this.showcase.render(dt)
     const r = this.race
     if (!r || this.screen !== 'race') return
     if (!r.paused) this.tick(r, dt)
@@ -591,6 +619,24 @@ export class App {
     r.view.frame(r.paused ? 1 : this.acc / DT, r.paused ? 0 : dt, mode, r.introT / 6)
     this.renderer.sample(dt * 1000)
     if (r.benchmark) this.benchmark(r, dt * 1000)
+    if (this.perf) this.perfOverlay(dt * 1000)
+  }
+
+  private perfOverlay(ms: number): void {
+    this.frameMs.push(ms)
+    if (this.frameMs.length > 240) this.frameMs.shift()
+    let el = document.getElementById('perf')
+    if (!el) {
+      el = document.createElement('div')
+      el.id = 'perf'
+      el.style.cssText = 'position:fixed;left:50%;bottom:4px;transform:translateX(-50%);z-index:30;background:rgba(0,0,0,.7);color:#9f9;font:11px/1.3 monospace;padding:4px 8px;border-radius:6px;pointer-events:none;white-space:pre'
+      document.body.appendChild(el)
+    }
+    if (this.frameMs.length % 15) return
+    const s = [...this.frameMs].sort((a, b) => a - b)
+    const q = (p: number) => s[Math.min(s.length - 1, Math.floor(s.length * p))].toFixed(1)
+    const info = this.renderer.gl.info.render
+    el.textContent = `p50 ${q(0.5)} ms  p95 ${q(0.95)} ms  max ${s[s.length - 1].toFixed(0)} ms  |  ${info.calls} draws  ${(info.triangles / 1000).toFixed(0)}k tris  |  ${this.renderer.tier} x${this.renderer.scale.toFixed(2)}`
   }
 
   /**
@@ -833,8 +879,7 @@ export class App {
     if (medal && (medal === 'gold' || isBest)) this.audio.say(s.settings.voiceLang, ['wellDone'])
     const m = stageMedals(r.rally, r.stageIdx, d)
     const medalName = medal ? t(medal) : t('noMedal')
-    html(o, `<div class="results">
-      <div class="card">
+    const left = `
         <p class="kicker">${esc(r.rally.name)} · ${esc(r.rally.stages[r.stageIdx].name)}</p>
         <h2 class="display" style="font-size:30px;margin:4px 0">${last ? t('rallyComplete') : t('stageComplete')}</h2>
         <p class="muted">${t('yourTime')}</p>
@@ -843,17 +888,19 @@ export class App {
         <div class="medal-big"><i class="medal ${medal ?? ''}"></i>${medalName}${isBest && prev ? ` · ${t('newBest')}` : ''}</div>
         <p class="muted" style="font-size:0.85em">${t('gold')} ${fmtTime(m.gold)} · ${t('silver')} ${fmtTime(m.silver)} · ${t('bronze')} ${fmtTime(m.bronze)}</p>
         <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}${after > before ? ` · <b style="color:var(--amber)">${t('levelUp', { n: after })}</b>` : ''}</p>
-        ${extra}
-      </div>
-      <div class="card">${standingsHtml}
-        <div class="col">
+        ${extra}`
+    const buttons = `<div class="col">
           ${r.mode === 'career' && !last ? `<button class="btn" data-next>${t('nextStage')}</button>` : ''}
-          ${r.mode === 'free' ? `<button class="btn" data-retry>${t('retry')}</button>` : ''}
-          <button class="btn ${r.mode === 'career' && !last ? 'ghost' : r.mode === 'free' ? 'ghost' : ''}" data-menu>${t('menu')}</button>
-        </div>
-      </div></div>`)
+          ${r.mode === 'free' && r.stageIdx + 1 < r.rally.stages.length ? `<button class="btn" data-freenext>${t('nextStage')}</button>` : ''}
+          ${r.mode === 'free' ? `<button class="btn ghost" data-retry>${t('retry')}</button>` : ''}
+          <button class="btn ${r.mode === 'career' && last ? '' : 'ghost'}" data-menu>${t('menu')}</button>
+        </div>`
+    html(o, standingsHtml
+      ? `<div class="results"><div class="card">${left}</div><div class="card">${standingsHtml}${buttons}</div></div>`
+      : `<div class="results single"><div class="card">${left}${buttons}</div></div>`)
     o.querySelector('[data-next]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'career'))
     o.querySelector('[data-retry]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx, 'free'))
+    o.querySelector('[data-freenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'free'))
     $('[data-menu]', o).addEventListener('click', () => this.toMenu())
   }
 
@@ -962,6 +1009,7 @@ export class App {
 
   private resize(view?: StageView): void {
     this.renderer.resize()
+    this.showcase?.resize(innerWidth, innerHeight)
     const v = view ?? this.race?.view
     v?.resize(innerWidth, innerHeight)
   }
