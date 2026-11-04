@@ -46,5 +46,5 @@ cd ../android
 ## Not verified yet
 
 - **GPU frame times on real phones.** The container renders WebGL in software. Follow `PERF.md`.
-- **The Android build.** The container can't download the Android SDK. The GitHub Actions workflow builds it; the first CI run is the first real compile of the Kotlin shell.
+- **Signed release builds.** CI builds the debug APK, release APK and AAB on every push (artifact `apex-drift-3.0.0`), but the release files stay unsigned until the four `APEX_*` signing secrets are added to the repository.
 - On-device behaviour: audio focus, the back button, cut-outs, saves surviving the update from 2.0.
