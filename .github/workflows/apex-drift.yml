@@ -1,0 +1,76 @@
+name: Apex Drift
+
+on:
+  push:
+    paths:
+      - 'apex-drift/**'
+      - '.github/workflows/apex-drift.yml'
+  pull_request:
+    paths:
+      - 'apex-drift/**'
+      - '.github/workflows/apex-drift.yml'
+
+jobs:
+  android:
+    name: Web verify + Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apex-drift/web/package-lock.json
+
+      # verify includes the production build, which writes web/dist — the
+      # input Gradle copies into assets/www.
+      - name: Web — install and verify
+        working-directory: apex-drift/web
+        run: |
+          npm ci
+          npm run verify
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Fork PRs and repos without the secret get an unsigned release build
+      # instead of a failure. The key is written outside the checkout so no
+      # later step can upload or cache it by accident.
+      - name: Decode upload keystore
+        env:
+          APEX_KEYSTORE_B64: ${{ secrets.APEX_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$APEX_KEYSTORE_B64" ]; then
+            echo "$APEX_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/apex-upload.jks"
+            echo "APEX_KEYSTORE=$RUNNER_TEMP/apex-upload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::notice::APEX_KEYSTORE_B64 not set; release artifacts will be unsigned."
+          fi
+
+      - name: Android — assemble and bundle
+        working-directory: apex-drift/android
+        env:
+          APEX_KEYSTORE_PASSWORD: ${{ secrets.APEX_KEYSTORE_PASSWORD }}
+          APEX_KEY_ALIAS: ${{ secrets.APEX_KEY_ALIAS }}
+          APEX_KEY_PASSWORD: ${{ secrets.APEX_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease bundleRelease assembleDebug
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/apex-upload.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apex-drift-3.0.0
+          if-no-files-found: error
+          path: |
+            apex-drift/android/app/build/outputs/apk/debug/*.apk
+            apex-drift/android/app/build/outputs/apk/release/*.apk
+            apex-drift/android/app/build/outputs/bundle/release/*.aab

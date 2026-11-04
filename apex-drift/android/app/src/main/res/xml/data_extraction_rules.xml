@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+. Saves are the WebView's localStorage for the appassets origin.
+     Recent WebView versions keep it under the "Default" profile directory,
+     older ones directly under app_webview, so both are listed. Only these
+     are included, which keeps WebView caches and GPU shader caches out of
+     the player's backup quota. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="root" path="app_webview/Default/Local Storage/" />
+        <include domain="root" path="app_webview/Local Storage/" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="root" path="app_webview/Default/Local Storage/" />
+        <include domain="root" path="app_webview/Local Storage/" />
+    </device-transfer>
+</data-extraction-rules>

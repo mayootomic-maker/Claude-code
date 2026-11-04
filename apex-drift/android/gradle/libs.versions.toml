@@ -1,0 +1,18 @@
+[versions]
+# AGP 8.13 is the newest line that still runs on Gradle 8.x and knows API 36.
+agp = "8.13.0"
+kotlin = "2.2.21"
+coreKtx = "1.17.0"
+activity = "1.11.0"
+webkit = "1.14.0"
+splashscreen = "1.0.1"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

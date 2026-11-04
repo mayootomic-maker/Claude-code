@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source art is a 120x120 viewBox. Scaled by 0.62 and centred on the
+     chevrons' visual centre (61,60) so the furthest round cap sits ~30dp
+     from the middle, inside the 33dp-radius safe zone every mask keeps. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.62"
+        android:scaleY="0.62"
+        android:translateX="16.18"
+        android:translateY="16.8">
+        <path
+            android:pathData="M26,34 L48,60 L26,86 M50,34 L72,60 L50,86 M74,34 L96,60 L74,86"
+            android:strokeColor="@color/apex_amber"
+            android:strokeWidth="10"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

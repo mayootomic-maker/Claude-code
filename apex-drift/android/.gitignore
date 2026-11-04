@@ -1,0 +1,12 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+
+# The upload key must never enter the repository. See README.md.
+*.jks
+*.keystore
+keystore.properties

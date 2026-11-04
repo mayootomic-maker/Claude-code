@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Apex Drift</string>
+    <string name="renderer_restarted">The graphics process restarted</string>
+    <string name="no_browser">No browser is installed to open this link</string>
+</resources>

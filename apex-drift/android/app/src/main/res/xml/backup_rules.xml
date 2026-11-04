@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 30 and below. Same paths as data_extraction_rules.xml; see there. -->
+<full-backup-content>
+    <include domain="root" path="app_webview/Default/Local Storage/" />
+    <include domain="root" path="app_webview/Local Storage/" />
+</full-backup-content>
