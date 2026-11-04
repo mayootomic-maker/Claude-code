@@ -66,6 +66,7 @@ Don't add features. Fix, polish and prepare it for release.
 7. "There are still things on the road that should not be there."
 8. "The maps, textures etc. could be better, and it should have that
    cinematic, cozy feel."
+9. "The 3D models look kind of buggy."
 
 ## Work, in this order
 
@@ -200,7 +201,40 @@ action once. It can be skipped, replayed from Options, and works for both
 touch and keyboard. It ends by offering the first rally on Rookie. Track
 completion in local save data only.
 
-### 7. Car models
+### 7. 3D models: cars and scenery
+
+**First, fix what makes the models look buggy (all models, not just cars).**
+The 2.0 bundle builds its meshes in code: `computeVertexNormals()` 20 times,
+`polygonOffset` hacks on 4 materials (factor/units −2 to −6), 17 materials
+with `depthWrite: false`, back-face-only (`side: BackSide`) materials, and
+camera near planes as close as 0.5 m. Likely visible results
+(*hypotheses*; confirm with screenshots at every quality tier):
+- **Flicker and z-fighting** where road decals, verges, puddles and
+  shadows sit on the ground, made worse by the near plane and mobile 16/24-bit
+  depth. Fix: push the near plane to ≥ 1 m in the chase camera and use a
+  sensible far plane. Lift decals by a real offset in the geometry, or draw
+  them in the road shader, instead of relying on polygonOffset.
+- **Blobby shading and dark seams** from `computeVertexNormals()` on merged
+  geometry. Hard edges get averaged, so boxy shapes look melted, and seams
+  between merged parts show light bleeding. Fix: split vertices on hard
+  edges (angle threshold ≈ 30°) or author the normals. Use flat shading
+  only where intended.
+- **Transparent sorting errors**: glass, foliage cards, dust and particles
+  with depthWrite off pop in front of or behind each other. Fix: alpha-test
+  (cutout) foliage with `alphaToCoverage` where MSAA is on, and sort the
+  remaining transparents back to front per object.
+- **Holes, inside-out faces and floating parts**: missing faces visible from
+  some angles, wheels detached from or sunk into the body, trees and houses
+  floating above or sunk into slopes. Fix: conform every prop to the terrain
+  height at its footprint corners, check winding order, close the meshes.
+- **Popping**: scenery and LODs appearing suddenly. Use dithered fades over
+  ~10 m and hide the edge in fog.
+- Add an automated **model check** that loads each car and each prop type,
+  renders it from 8 angles, and fails on NaN normals, degenerate triangles,
+  open edges, or wheels not touching the ground at rest. Commit a
+  contact sheet image of every model to `store/compare/models/`.
+
+**Then remodel the cars.**
 
 - Remodel the starter cars (Kestrel, Piccola) and every car shown in the
   garage. They should have proper proportions, a chamfered body instead of
@@ -212,6 +246,11 @@ completion in local save data only.
 - Wheels steer and spin, the body rolls and pitches with suspension, and dust
   or snow spray comes from the wheels, not the car centre.
 - Interpolated render pose (see Performance). This is half of "the cars lag".
+- Scenery models (trees, houses, rocks, spectators, barriers, signs) get the
+  same pass: consistent style, consistent scale, sitting properly on the
+  ground, with LODs. Build them in Blender or a modelling tool and export to
+  glTF/GLB (Draco or meshopt compressed) instead of generating them as boxes
+  in code, if that's what 2.0 does.
 
 ### 8. Look and feel: cinematic and cozy
 
@@ -476,6 +515,14 @@ Accessibility and quality polish:
   to give.
 - There are no admin, debug or override paths in the release bundle. Prove it
   with a grep of the built `app.js` in CI.
+
+- **Hand-off to Google Drive.** When everything above passes, upload to the
+  owner's Google Drive in a folder named `Apex Drift 3.0.0`: the signed
+  `.aab`, a signed `.apk` for side-loading tests, the `store/` folder (icon,
+  feature graphic, screenshots, descriptions), `RELEASE.md`, `PERF.md`,
+  `CREDITS.md` and the privacy policy. Use the Google Drive connector, which
+  must be connected and enabled for that session. Never upload the upload
+  keystore or its passwords; those stay offline with a backup.
 
 Work in small commits with clear messages. After each section, drive the
 built app in Chromium at phone landscape size, take screenshots, and look at
