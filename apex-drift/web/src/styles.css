@@ -142,6 +142,9 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--amber)
 .options { max-width: 760px; }
 .opt { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .opt label { flex: 1; min-width: 160px; }
+.cheatbox input { flex: 1 1 160px; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0,0,0,.25); color: inherit; font: inherit; letter-spacing: .08em; text-transform: uppercase; }
+.pill.owner { margin-left: 10px; color: var(--amber); border-color: var(--amber); }
+.cheatlist kbd { display: inline-block; margin: 0 6px 6px 0; }
 input[type='range'] { width: min(260px, 100%); accent-color: var(--amber); height: 28px; }
 input[type='text'] { background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); border-radius: 10px; color: var(--paper); padding: 10px 12px; font: inherit; width: 200px; user-select: text; -webkit-user-select: text; }
 .toggle { width: 52px; height: 30px; border-radius: 15px; background: rgba(255, 255, 255, 0.15); position: relative; transition: background 0.15s; flex: none; }

@@ -51,6 +51,15 @@ in any current browser, offline, with no server. Every push publishes it as
 `apex-drift.html` on the release. Saves live in the browser's storage for that file,
 so keep opening the same copy. `node e2e/soak.mjs --single` plays it end to end.
 
+**The owner's copy.** `npm run single:owner` builds
+`web/dist-single/apex-drift-owner.html`: everything unlocked from the first launch
+(all rallies, cars and liveries, top level, a million credits) and a **Cheats** tab
+in Options with a code box. It keeps its own save, separate from a normal copy, and
+is never published: CI only builds the normal file, and the release check fails if
+cheat code ever reaches it. The codes are listed in that tab (MONEYBAGS, LEVELUP,
+TURBO for double power, QUACK, TRUSTNO1, TOMIC, 1986, DONUTS and IZUM for the
+secret liveries, UNLOCKALL).
+
 **Or as an app:**
 
 Every push builds `apex-drift-windows.zip`, `apex-drift-mac.zip` and `apex-drift-linux.zip`

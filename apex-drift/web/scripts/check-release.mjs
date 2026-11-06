@@ -21,6 +21,7 @@ const forbidden = [
   [/[?&]brokers=/, 'the broker override parameter'],
   [/wss?:\/\//, 'a WebSocket endpoint (3.0 has no network features)'],
   [/\bdev\.ts\b|__ready/, 'dev-only harness code'],
+  [/MONEYBAGS|apexdrift\.owner/, "the owner build's cheats (build with npm run single:owner only)"],
 ]
 const problems = []
 let js = 0, css = 0, total = 0

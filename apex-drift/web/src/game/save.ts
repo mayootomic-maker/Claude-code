@@ -1,8 +1,13 @@
 import type { Difficulty } from '../sim/stage'
+import { OWNER } from './owner'
 
-export const SAVE_KEY = 'apexdrift.save.v4'
+/**
+ * The owner's build keeps its own save: every file:// page shares one
+ * storage, and its unlocks must not leak into a normal copy of the game.
+ */
+export const SAVE_KEY = OWNER ? 'apexdrift.owner.v4' : 'apexdrift.save.v4'
 /** The 2.0 release stored its save here; we read it once to carry progress over. */
-const LEGACY_KEYS = ['apexdrift.save.v3', 'apexdrift.save.v2']
+const LEGACY_KEYS = OWNER ? [] : ['apexdrift.save.v3', 'apexdrift.save.v2']
 
 export type Steering = 'buttons' | 'tilt' | 'wheel'
 export type Lang = 'en' | 'de'

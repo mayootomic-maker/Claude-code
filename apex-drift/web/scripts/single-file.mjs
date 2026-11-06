@@ -1,12 +1,15 @@
 // Packs the production build (dist/) into one self-contained HTML file that
 // runs straight from disk: double-click it, no server, no install, offline.
-//   npm run single   ->  dist-single/apex-drift.html
+//   npm run single         ->  dist-single/apex-drift.html
+//   npm run single:owner   ->  dist-single/apex-drift-owner.html (cheats, all unlocked; not published)
+// Arguments: [build folder, default dist] [output file name, default apex-drift.html]
 // Every image, sound, font and the engine-sound worklet goes in as a data: URL
 // (see src/core/assets.ts for how the game finds them again).
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 
-const DIST = new URL('../dist/', import.meta.url).pathname
+const DIST = new URL(`../${process.argv[2] ?? 'dist'}/`, import.meta.url).pathname
+const NAME = process.argv[3] ?? 'apex-drift.html'
 const OUT_DIR = new URL('../dist-single/', import.meta.url).pathname
 const MIME = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml',
@@ -55,5 +58,5 @@ for (const bad of [/\bsrc="\.\//, /\bhref="\.\//, /url\(\.\.\//]) {
   if (bad.test(out)) throw new Error(`single file still points at an outside file: ${bad}`)
 }
 mkdirSync(OUT_DIR, { recursive: true })
-writeFileSync(join(OUT_DIR, 'apex-drift.html'), out)
-console.log(`dist-single/apex-drift.html  ${(out.length / 1024 / 1024).toFixed(2)} MB, ${Object.keys(assets).length} files inside`)
+writeFileSync(join(OUT_DIR, NAME), out)
+console.log(`dist-single/${NAME}  ${(out.length / 1024 / 1024).toFixed(2)} MB, ${Object.keys(assets).length} files inside`)

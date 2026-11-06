@@ -21,6 +21,8 @@ export interface StageSetup {
   stage: StageDef
   car: string
   difficulty: Difficulty
+  /** Engine power multiplier; only the owner build's TURBO cheat sets it. */
+  power?: number
 }
 
 export class StageSim {
@@ -46,7 +48,9 @@ export class StageSim {
     this.route = buildRoute({ ...rally, seed: stage.seed, km: stage.km + (RUN_IN + RUN_OUT) / 1000 })
     this.ground = makeGround(this.route, rally, stage.seed)
     const wet = stage.weather === 'rain'
-    this.car = new Car(carPhys(setup.car), this.ground, rally.surface, wet)
+    const phys = carPhys(setup.car)
+    const k = setup.power ?? 1
+    this.car = new Car(k === 1 ? phys : { ...phys, power: phys.power * k, maxDriveForce: phys.maxDriveForce * k }, this.ground, rally.surface, wet)
     this.assists = ASSISTS[setup.difficulty]
     this.start = RUN_IN
     this.finish = this.route.length - RUN_OUT

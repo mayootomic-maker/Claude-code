@@ -10,7 +10,8 @@
     "test": "vitest run",
     "e2e": "node e2e/soak.mjs",
     "verify": "npm run typecheck && npm test && vite build && node scripts/check-release.mjs",
-    "single": "vite build && node scripts/single-file.mjs"
+    "single": "vite build && node scripts/single-file.mjs",
+    "single:owner": "VITE_OWNER=1 vite build --outDir dist-owner && node scripts/single-file.mjs dist-owner apex-drift-owner.html"
   },
   "dependencies": {
     "three": "^0.170.0"

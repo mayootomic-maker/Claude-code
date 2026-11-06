@@ -11,6 +11,7 @@ import { GhostRecorder, loadGhost, saveGhost } from './game/ghost'
 import { Director, emptyFrame, ReplayRecorder, type Replay, type ReplayFrame } from './game/replay'
 import { dailyChallenge, streak } from './game/daily'
 import { openStore, type Settings, type Store } from './game/save'
+import { CHEATS, findCheat, OWNER, unlockAll, type CheatState } from './game/owner'
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT, type Pose } from './sim/car'
@@ -111,6 +112,7 @@ export class App {
   private showcase: Showcase | null = null
   private attract: { sim: StageSim; view: StageView; acc: number } | null = null
   private frameMs: number[] = []
+  private readonly cheat: CheatState = { turbo: false }
   private readonly ui: Record<'sting' | 'title' | 'menu' | 'loading' | 'hud' | 'overlay', HTMLElement>
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -122,6 +124,10 @@ export class App {
     }
     this.store = openStore(storage)
     this.storage = storage
+    if (OWNER) {
+      unlockAll(this.store.save)
+      this.store.write()
+    }
     const s = this.store.save
     setLang(s.settings.lang)
     document.documentElement.style.setProperty('--text', String(s.settings.textSize))
@@ -244,7 +250,7 @@ export class App {
     this.ui.menu.classList.toggle('see-through', art === 'showcase')
     if (art !== 'showcase') this.closeShowcase()
     html(this.ui.menu, `
-      <header class="topbar"><span class="brand">${CHEVRON}APEX DRIFT</span><span class="spacer"></span>
+      <header class="topbar"><span class="brand">${CHEVRON}APEX DRIFT</span>${OWNER ? '<span class="pill owner">OWNER</span>' : ''}<span class="spacer"></span>
         <span class="pill">${esc(s.name)} · ${t('level', { n: lv.level })}</span><span class="pill"><b>${s.credits.toLocaleString()}</b> cr</span></header>
       <main class="view">${render()}</main>`)
     const root = $('.view', this.ui.menu)
@@ -526,8 +532,13 @@ export class App {
         opt(t('erase'), `<button class="btn ghost" data-erase style="color:var(--bad)">${t('erase')}</button>`),
         `<div class="opt" data-ver><label>${t('version', { v: VERSION })}</label></div>`,
       ].join(''),
+      cheats: () => !OWNER ? '' : [
+        `<form class="opt cheatbox" data-cheat><label for="cheat">${t('cheatCode')}</label><input id="cheat" type="text" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" type="submit">${t('cheatEnter')}</button></form>`,
+        `<h3 class="keys-title">${t('cheatList')}</h3><p class="keys-pad cheatlist">${CHEATS.map((c) => `<kbd>${c.code}</kbd>`).join(' ')}</p>`,
+        `<p class="muted">${this.cheat.turbo ? 'TURBO: on' : 'TURBO: off'}</p>`,
+      ].join(''),
     }
-    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'data']
+    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'data', ...(OWNER ? ['cheats' as const] : [])]
     const htmlOut = `
       <div class="options">
         <div class="seg tabs">${tabs.map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
@@ -562,6 +573,19 @@ export class App {
         this.store.write()
       })
       root.querySelector('[data-school]')?.addEventListener('click', () => this.startSchool())
+      if (OWNER) root.querySelector<HTMLFormElement>('[data-cheat]')?.addEventListener('submit', (e) => {
+        e.preventDefault()
+        const input = root.querySelector<HTMLInputElement>('#cheat')
+        const c = findCheat(input?.value ?? '')
+        if (!c) {
+          toast(t('cheatBad'))
+          input?.select()
+          return
+        }
+        toast(c.run(this.store.save, this.cheat))
+        this.store.write()
+        redraw()
+      })
       // Five taps on the version line toggles the performance overlay, for testing on real phones.
       let taps = 0
       root.querySelector('[data-ver]')?.addEventListener('click', () => {
@@ -579,6 +603,10 @@ export class App {
       })
       root.querySelector('[data-erase]')?.addEventListener('click', () => this.confirm(t('eraseConfirm'), () => {
         this.store.reset()
+        if (OWNER) {
+          unlockAll(this.store.save)
+          this.store.write()
+        }
         toast(t('erased'))
         this.home()
       }))
@@ -667,7 +695,7 @@ export class App {
     let sim: StageSim | null = null
     let view: StageView | null = null
     steps.push(() => {
-      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty })
+      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty, power: OWNER && this.cheat.turbo ? 2 : 1 })
     })
     steps.push(() => {
       if (!sim) return
@@ -1473,7 +1501,7 @@ export class App {
   }
 }
 
-type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'data'
+type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'data' | 'cheats'
 
 const isTouch = (): boolean => document.body.classList.contains('touch')
 
