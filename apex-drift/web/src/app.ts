@@ -7,11 +7,12 @@ import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
 import { GhostRecorder, loadGhost, saveGhost } from './game/ghost'
+import { dailyChallenge, streak } from './game/daily'
 import { openStore, type Settings, type Store } from './game/save'
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT } from './sim/car'
-import { StageSim, type Difficulty } from './sim/stage'
+import { autopilot, StageSim, type Difficulty } from './sim/stage'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
 import { Hud } from './ui/hud'
 
@@ -22,7 +23,7 @@ type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results'
 interface RaceCtx {
   rally: RallyDef
   stageIdx: number
-  mode: 'career' | 'free' | 'school'
+  mode: 'career' | 'free' | 'school' | 'daily'
   sim: StageSim
   view: StageView
   hud: Hud
@@ -97,6 +98,7 @@ export class App {
   private perf = false
   private storage: Storage | null = null
   private showcase: Showcase | null = null
+  private attract: { sim: StageSim; view: StageView; acc: number } | null = null
   private frameMs: number[] = []
   private readonly ui: Record<'sting' | 'title' | 'menu' | 'loading' | 'hud' | 'overlay', HTMLElement>
 
@@ -172,9 +174,12 @@ export class App {
       <p class="tag">${t('tagline')}</p>
       <p class="tap">${document.body.classList.contains('touch') ? t('tapToStart') : t('pressKey')}</p>
       <p class="ver">${t('version', { v: VERSION })}</p>`)
+    // A live stage behind the logo once it's built; the still picture covers the wait.
+    setTimeout(() => this.startAttract(), 50)
     const go = () => {
       removeEventListener('keydown', go)
       this.ui.title.removeEventListener('pointerdown', go)
+      this.stopAttract()
       this.audio.unlock()
       this.applyMix()
       this.audio.playMusic('menu')
@@ -185,6 +190,36 @@ export class App {
     }
     this.ui.title.addEventListener('pointerdown', go)
     addEventListener('keydown', go)
+  }
+
+  /** Title-screen attract mode: a car driving a golden-hour stage by itself. */
+  private startAttract(): void {
+    if (this.attract || this.screen !== 'title') return
+    try {
+      const rally = RALLIES[0]
+      const sim = new StageSim({ rally, stage: rally.stages[1], car: 'kestrel', difficulty: 'driver' })
+      for (let i = 0; i < 60 * 8; i++) sim.step(autopilot(sim, 0.8))
+      const view = new StageView(sim, this.renderer, LIVERIES[0])
+      view.camMode = 'near'
+      view.resize(innerWidth, innerHeight)
+      view.syncCar(1)
+      view.snapCamera()
+      view.prewarm()
+      if (this.screen !== 'title') {
+        view.dispose()
+        return
+      }
+      this.attract = { sim, view, acc: 0 }
+      this.ui.title.classList.add('live')
+    } catch {
+      // The still picture stays; the title works without the live stage.
+    }
+  }
+
+  private stopAttract(): void {
+    this.attract?.view.dispose()
+    this.attract = null
+    this.ui.title.classList.remove('live')
   }
 
   private menu(render: () => string, bind: (root: HTMLElement) => void, art?: string, push = true): void {
@@ -214,10 +249,13 @@ export class App {
     const ev = s.event
     const nextRally = ev ? RALLIES.find((r) => r.id === ev.rally) : RALLIES.find((r, i) => unlocked(s, i) && !s.finished.includes(r.id)) ?? RALLIES[0]
     const careerSub = ev && nextRally ? t('continueRally', { rally: nextRally.name }) : t('careerSub')
+    const daily = dailyChallenge(new Date())
+    const streakN = streak(s.daily.days, new Date())
     this.menu(() => `
       <div class="home">
         <button class="tile big" data-go="career" style="background-image:url('img/c-${nextRally?.id ?? 'finland'}.jpg')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
         <button class="tile" data-go="free" style="background-image:url('img/free.jpg')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="daily" style="background-image:url('img/c-${daily.base}.jpg')"><span class="kicker">${s.daily.best[daily.key] ? t('dailyBest', { time: fmtTime(s.daily.best[daily.key]) }) : streakN ? t('streak', { n: streakN }) : ''}</span><span class="t display">${t('daily')}</span><span class="s">${t('dailySub', { rally: esc(daily.rally.name), car: esc(CARS.find((c) => c.id === daily.car)?.name ?? '') })}</span></button>
         <button class="tile" data-go="school" style="background-image:url('img/c-finland.jpg')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
         <button class="tile" data-go="garage" style="background-image:url('img/garage.jpg')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
         <button class="tile" data-go="options"><span class="t display">${t('options')}</span></button>
@@ -228,6 +266,7 @@ export class App {
         if (go === 'career') this.careerList('career')
         else if (go === 'free') this.careerList('free')
         else if (go === 'school') this.startSchool()
+        else if (go === 'daily') this.load(daily.rally, 0, 'daily', daily.car)
         else if (go === 'garage') this.garage()
         else if (go === 'options') this.options('controls')
         else this.creditsScreen()
@@ -561,7 +600,7 @@ export class App {
     this.load(SCHOOL, 0, 'school')
   }
 
-  private load(rally: RallyDef, stageIdx: number, mode: RaceCtx['mode']): void {
+  private load(rally: RallyDef, stageIdx: number, mode: RaceCtx['mode'], car?: string): void {
     this.disposeRace()
     this.closeShowcase()
     const st = rally.stages[stageIdx]
@@ -581,7 +620,7 @@ export class App {
     let sim: StageSim | null = null
     let view: StageView | null = null
     steps.push(() => {
-      sim = new StageSim({ rally, stage: st, car: s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty })
+      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty })
     })
     steps.push(() => {
       if (!sim) return
@@ -662,6 +701,17 @@ export class App {
     const dt = Math.min(0.1, (now - this.last) / 1000)
     this.last = now
     if (this.showcase && this.screen === 'menu') this.showcase.render(dt)
+    const at = this.attract
+    if (at && this.screen === 'title') {
+      at.acc += dt
+      while (at.acc >= DT) {
+        at.sim.step(autopilot(at.sim, 0.8))
+        at.acc -= DT
+        // Loop the stage: back to the start before the finish line.
+        if (at.sim.phase === 'finished') at.sim.car.place(at.sim.start + 200)
+      }
+      at.view.frame(at.acc / DT, dt, 'drive')
+    }
     const r = this.race
     if (!r || this.screen !== 'race') return
     if (!r.paused) this.tick(r, dt)
@@ -911,6 +961,31 @@ export class App {
       return
     }
     saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: s.livery, time, frames: r.recorder.frames() })
+    if (r.mode === 'daily') {
+      // The daily stage keeps its own record: today's best and the streak, no career or garage effects.
+      const day = r.rally.id.slice('daily-'.length)
+      const prevBest = s.daily.best[day]
+      if (!prevBest || time < prevBest) s.daily.best[day] = time
+      if (!s.daily.days.includes(day)) s.daily.days = [...s.daily.days, day].slice(-60)
+      for (const k of Object.keys(s.daily.best)) if (!s.daily.days.includes(k)) delete s.daily.best[k]
+      const reward = stageReward(medalFor(time, r.rally, 0, sim.setup.difficulty), sim.resets === 0)
+      s.credits += reward.credits
+      s.xp += reward.xp
+      this.store.write()
+      const n = streak(s.daily.days, new Date())
+      html(o, `<div class="results single"><div class="card">
+        <p class="kicker">${t('daily')} · ${esc(day)}</p>
+        <h2 class="display" style="font-size:30px;margin:4px 0">${t('stageComplete')}</h2>
+        <div class="bigtime">${fmtTime(time)}</div>
+        <p>${t('dailyBest', { time: fmtTime(s.daily.best[day]) })}${!prevBest || time < prevBest ? ` · ${t('newBest')}` : ''}</p>
+        <p class="kicker">${t('streak', { n })}</p>
+        <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}</p>
+        <div class="col"><button class="btn" data-retry>${t('retry')}</button><button class="btn ghost" data-menu>${t('menu')}</button></div>
+      </div></div>`)
+      $('[data-retry]', o).addEventListener('click', () => this.load(r.rally, 0, 'daily', sim.setup.car))
+      $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+      return
+    }
     const d = sim.setup.difficulty
     const medal: Medal = medalFor(time, r.rally, r.stageIdx, d)
     const key = `${r.rally.id}:${r.stageIdx}:${d}`
@@ -1040,7 +1115,7 @@ export class App {
       o.querySelectorAll('[data-notes]').forEach((x) => x.classList.toggle('on', x === b))
     }))
     $('[data-resume]', o).addEventListener('click', () => this.unpause())
-    $('[data-restart]', o).addEventListener('click', () => this.load(r.rally, r.stageIdx, r.mode))
+    $('[data-restart]', o).addEventListener('click', () => this.load(r.rally, r.stageIdx, r.mode, r.sim.setup.car))
     $('[data-quit]', o).addEventListener('click', () => this.confirm(t('quitConfirm'), () => this.toMenu(), () => {
       r.paused = false
       this.pause()

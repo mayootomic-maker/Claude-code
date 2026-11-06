@@ -385,3 +385,96 @@ export function addPole(b: GeoBuilder, x: number, y: number, z: number, yaw: num
   b.add(PRIM.cylTaper, 0x5a4a3a, x, y - 0.5, z, 0.14, 8.5, 0.14)
   b.add(PRIM.boxC, 0x5a4a3a, x, y + 7.6, z, 1.8, 0.12, 0.12, yaw + Math.PI / 2)
 }
+
+interface AnimalSpec {
+  len: number
+  h: number
+  leg: number
+  neck: number
+  body: number
+  tone2?: number
+  stripes?: boolean
+  horns?: boolean
+}
+
+const ANIMALS: Record<string, AnimalSpec> = {
+  zebra: { len: 2.2, h: 1.3, leg: 0.75, neck: 0.6, body: 0xf3efe6, tone2: 0x1b1b1d, stripes: true },
+  giraffe: { len: 2.4, h: 2.4, leg: 1.6, neck: 2.2, body: 0xd8a85a, tone2: 0x7a4a22 },
+  moose: { len: 2.6, h: 1.9, leg: 1.1, neck: 0.6, body: 0x4a3426, horns: true },
+  reindeer: { len: 1.8, h: 1.2, leg: 0.7, neck: 0.55, body: 0x8a7a68, tone2: 0xe8e2d6, horns: true },
+  sheep: { len: 1.2, h: 0.85, leg: 0.4, neck: 0.25, body: 0xeeeae0, tone2: 0x2a2624 },
+  cow: { len: 2.2, h: 1.4, leg: 0.7, neck: 0.4, body: 0x8a5a3a, tone2: 0xf3efe6 },
+  goat: { len: 1.1, h: 0.8, leg: 0.45, neck: 0.35, body: 0xc8b8a0, horns: true },
+  deer: { len: 1.5, h: 1.1, leg: 0.7, neck: 0.5, body: 0xa06a3e, horns: true },
+  horse: { len: 2.2, h: 1.6, leg: 0.9, neck: 0.75, body: 0x6a4228, tone2: 0x2a1c14 },
+}
+
+/** Which animals graze in each region. */
+export const FAUNA: Record<string, string[]> = {
+  savannah: ['zebra', 'zebra', 'giraffe'], nordic: ['moose'], nordic_snow: ['reindeer'], wales: ['sheep', 'sheep'],
+  iberia: ['cow', 'goat'], alpine: ['cow'], med: ['goat', 'sheep'], japan: ['deer'], andes: ['horse', 'cow'],
+}
+
+export function animalRadius(kind: string): number {
+  const a = ANIMALS[kind]
+  return a ? Math.max(1, a.len * 0.6 + (kind === 'giraffe' ? 0.8 : 0)) : 1.5
+}
+
+/** A grazing four-legged animal, head down or up, facing `yaw`. Simple shapes, readable from the road. */
+export function addAnimal(b: GeoBuilder, kind: string, x: number, y: number, z: number, yaw: number, r: R): void {
+  const a = ANIMALS[kind] ?? ANIMALS.cow
+  const cos = Math.cos(yaw), sin = Math.sin(yaw)
+  const at = (lx: number, lz: number): [number, number] => [x + lx * cos + lz * sin, z - lx * sin + lz * cos]
+  const bodyH = a.h - a.leg
+  const bodyY = y + a.leg
+  const cy = bodyY + bodyH * 0.5
+  const leg = a.stripes ? 0x1b1b1d : kind === 'sheep' ? 0x2a2624 : a.body
+  // Body as chest, belly and hindquarters: three overlapping rounded masses give an animal's line, not a disc.
+  const masses: [number, number, number, number][] = [[a.len * 0.27, 0.28, 0.55, 0.3], [0, 0.26, 0.5, 0.34], [-a.len * 0.28, 0.27, 0.55, 0.3]]
+  masses.forEach(([lz, w, hh, l], i) => {
+    const [px, pz] = at(0, lz)
+    const col = a.stripes && a.tone2 !== undefined ? (i % 2 ? a.tone2 : a.body) : kind === 'sheep' ? a.body : a.body
+    b.add(PRIM.ico1, col, px, cy, pz, a.len * w * 0.5 * (kind === 'sheep' ? 1.4 : 1), bodyH * hh * (kind === 'sheep' ? 1.2 : 1), a.len * l, yaw, 0, 0, 0, 0, 0.5, r)
+  })
+  if (a.stripes && a.tone2 !== undefined) {
+    // Stripes: thin dark hoops around the body.
+    for (let i = 0; i < 6; i++) {
+      const [px, pz] = at(0, -a.len * 0.4 + i * a.len * 0.16)
+      b.add(PRIM.cyl, a.tone2, px, cy, pz, a.len * 0.15, 0.06, bodyH * 0.53, yaw, Math.PI / 2, 0)
+    }
+  } else if (a.tone2 !== undefined && kind !== 'sheep' && kind !== 'horse') {
+    const [qx, qz] = at(a.len * 0.06, -a.len * 0.12)
+    b.add(PRIM.ico, a.tone2, qx, cy + bodyH * 0.3, qz, a.len * 0.12, bodyH * 0.18, a.len * 0.16, yaw)
+  }
+  for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    const [px, pz] = at(lx * a.len * 0.11, lz * a.len * 0.33)
+    b.add(PRIM.cylTaper, leg, px, y - 0.05, pz, a.len * 0.045, a.leg + bodyH * 0.35, a.len * 0.045)
+  }
+  // Tail.
+  const [tx, tz] = at(0, -a.len * 0.56)
+  b.add(PRIM.cyl, a.tone2 ?? a.body, tx, cy - bodyH * 0.4, tz, 0.03, bodyH * 0.8, 0.03, yaw, -0.25, 0)
+  // Neck and head: grazing (head down) or looking about.
+  const grazing = r() < 0.55 && kind !== 'giraffe'
+  const tilt = grazing ? 2.0 : kind === 'giraffe' ? 0.22 : 0.6
+  const [nx, nz] = at(0, a.len * 0.36)
+  const neckW = kind === 'giraffe' ? 0.07 : 0.1
+  b.add(PRIM.cylTaper, a.body, nx, cy + bodyH * 0.1, nz, a.len * neckW * 0.7, a.neck, a.len * neckW, yaw, tilt, 0)
+  const reach = Math.sin(tilt) * a.neck, rise = Math.cos(tilt) * a.neck
+  const [hx, hz] = at(0, a.len * 0.36 + reach)
+  const hy = cy + bodyH * 0.1 + rise
+  const headCol = kind === 'sheep' && a.tone2 !== undefined ? a.tone2 : a.body
+  const hl = a.len * 0.17
+  b.add(PRIM.ico1, headCol, hx, hy, hz, a.len * 0.075, a.len * 0.08, hl * 0.6, yaw, grazing ? 0.9 : 0.15, 0)
+  const [mx, mz] = at(0, a.len * 0.36 + reach + hl * 0.55)
+  b.add(PRIM.ico1, headCol, mx, hy - (grazing ? 0.12 : 0.05), mz, a.len * 0.05, a.len * 0.055, hl * 0.4, yaw, grazing ? 0.9 : 0.15, 0)
+  for (const side of [-1, 1]) {
+    const [ex, ez] = at(side * a.len * 0.06, a.len * 0.36 + reach - hl * 0.25)
+    b.add(PRIM.cone5, headCol, ex, hy + a.len * 0.05, ez, 0.04, 0.12, 0.03, yaw, 0, side * 0.7)
+    if (a.horns) {
+      const [cx, cz] = at(side * a.len * 0.04, a.len * 0.36 + reach - hl * 0.15)
+      const antler = kind === 'moose' || kind === 'reindeer' || kind === 'deer'
+      b.add(PRIM.cyl, kind === 'moose' ? 0xc8b48a : 0x5a4434, cx, hy + a.len * 0.05, cz, 0.025, antler ? 0.45 : 0.22, 0.025, yaw, -0.3, side * 0.5)
+      if (antler) b.add(PRIM.boxC, kind === 'moose' ? 0xc8b48a : 0x5a4434, cx + side * 0.2 * Math.cos(yaw), hy + a.len * 0.05 + 0.42, cz - side * 0.2 * Math.sin(yaw), 0.3, 0.04, 0.16, yaw)
+    }
+  }
+}

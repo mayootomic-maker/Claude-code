@@ -53,6 +53,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--amber)
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 
 /* ------------------------------------------------------------- title */
+#title.live { background: linear-gradient(90deg, rgba(8, 9, 11, 0.8), rgba(8, 9, 11, 0.05) 60%); }
 #title { background: linear-gradient(90deg, rgba(8, 9, 11, 0.85), rgba(8, 9, 11, 0.15) 60%), url('/img/title.jpg') center / cover; display: flex; flex-direction: column; justify-content: center; padding: 0 calc(var(--pad) + var(--sr)) 0 calc(48px + var(--sl)); }
 #title .wordmark { font-size: clamp(56px, 13vw, 128px); margin: 6px 0 10px; }
 #title .wordmark span:last-child { color: var(--amber); }

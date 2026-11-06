@@ -56,6 +56,8 @@ export interface CarRig {
   body: THREE.Group
   wheels: { pivot: THREE.Group; spin: THREE.Group; front: boolean }[]
   lights: THREE.Mesh[]
+  /** 0 = showroom clean … 1 = caked; colour is the surface's dirt. */
+  setDirt(amount: number, color: number): void
   dispose(): void
 }
 
@@ -419,6 +421,33 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
   const tex = liveryTexture(lv, s)
   const paint = new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.28, metalness: 0.1, clearcoat: 0.7, clearcoatRoughness: 0.12 })
   const bodyColor = new THREE.MeshPhysicalMaterial({ color: lv.base, roughness: 0.28, metalness: 0.1, clearcoat: 0.7 })
+  // Dirt builds up from the sills and wheel arches upward, blotchy rather
+  // than uniform, and dulls the clearcoat where it sits.
+  const dirt = { value: 0 }
+  const dirtCol = { value: new THREE.Color(0x8a7458) }
+  for (const m of [paint, bodyColor]) {
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uDirt = dirt
+      sh.uniforms.uDirtCol = dirtCol
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vLocal;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLocal = position;')
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vLocal; uniform float uDirt; uniform vec3 uDirtCol;
+          float dh(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }
+          float dn(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(mix(dh(i), dh(i + vec3(1,0,0)), f.x), mix(dh(i + vec3(0,1,0)), dh(i + vec3(1,1,0)), f.x), f.y),
+                       mix(mix(dh(i + vec3(0,0,1)), dh(i + vec3(1,0,1)), f.x), mix(dh(i + vec3(0,1,1)), dh(i + vec3(1,1,1)), f.x), f.y), f.z); }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          float blot = dn(vLocal * 6.0) * 0.6 + dn(vLocal * 17.0) * 0.4;
+          float low = 1.0 - smoothstep(0.15, 0.95, vLocal.y);
+          float dirtAmt = clamp(uDirt * (low * 1.3 + 0.15) - (1.0 - blot) * 0.55, 0.0, 0.92);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uDirtCol, dirtAmt);`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = mix(roughnessFactor, 0.95, dirtAmt);`)
+    }
+  }
   // Tinted rally glass: you glimpse the cage and crew, the windows still read as solid.
   const glass = new THREE.MeshPhysicalMaterial({ color: 0x070b0f, roughness: 0.03, metalness: 0.3, transparent: true, opacity: 0.93, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false })
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.75 })
@@ -632,6 +661,10 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
 
   return {
     root, body, wheels, lights,
+    setDirt(amount, color) {
+      dirt.value = amount
+      dirtCol.value.setHex(color)
+    },
     dispose() {
       root.traverse((o) => {
         if (o instanceof THREE.Mesh) {

@@ -3,11 +3,11 @@ import type { RallyDef } from '../data'
 import { paceNotes } from '../game/pacenotes'
 import type { Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
-import { crownRadius, FOOTPRINT, LANDMARK, LANDMARK_R } from './props'
+import { animalRadius, crownRadius, FAUNA, FOOTPRINT, LANDMARK, LANDMARK_R } from './props'
 
 export const TILE = 64
 
-export type PlacedKind = 'tree' | 'rock' | 'shrub' | 'house' | 'tuft' | 'flowers' | 'spectator' | 'board' | 'landmark' | 'fence' | 'bale' | 'pole'
+export type PlacedKind = 'animal' | 'tree' | 'rock' | 'shrub' | 'house' | 'tuft' | 'flowers' | 'spectator' | 'board' | 'landmark' | 'fence' | 'bale' | 'pole'
 
 /** One thing to put in the world. Solid kinds carry the radius they need clear of the road. */
 export interface Placed {
@@ -98,6 +98,23 @@ export function planTile(ctx: PlanCtx, cx: number, cz: number, key: number, dens
       if (c && c.dist < ground.edge + 0.8) continue
       const flowers = r() < 0.12 && fbm2(ctx.noise, x / 25, z / 25, 2) > 0.1
       out.push({ kind: flowers ? 'flowers' : 'tuft', sub: r() < 0.5 ? 'a' : 'b', x, z, r: 0, yaw: 0, size: 1, seed: (r() * 1e9) | 0 })
+    }
+  }
+  // A small herd now and then, grazing in the open, well back from the road.
+  const fauna = FAUNA[rally.biome]
+  if (fauna && r() < 0.18 * density) {
+    const kind = fauna[Math.floor(r() * fauna.length)]
+    const hx = rand(), hz = randZ()
+    if (fbm2(ctx.noise, hx / 70, hz / 70, 2) < 0.1) {
+      const head = 2 + Math.floor(r() * 5)
+      const yaw = r() * Math.PI * 2
+      for (let k = 0; k < head; k++) {
+        const x = hx + (r() - 0.5) * 18, z = hz + (r() - 0.5) * 18
+        const rad = animalRadius(kind)
+        const cl = clearOfRoad(ctx, x, z, rad)
+        if (!cl.ok || cl.d < 22) continue
+        out.push({ kind: 'animal', sub: kind, x, z, r: rad, yaw: yaw + (r() - 0.5) * 1.5, size: 1, seed: (r() * 1e9) | 0 })
+      }
     }
   }
   // A farmhouse now and then, set back from the road and facing it.

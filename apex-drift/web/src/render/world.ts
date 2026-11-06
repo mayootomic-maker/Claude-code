@@ -5,7 +5,7 @@ import { STEP, type Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
 import { GeoBuilder, PRIM } from './builder'
 import { edgePoint, planSegment, planTile, TILE, type PlanCtx } from './placement'
-import { addBale, addFence, addFlowers, addHouse, addLandmark, addPole, addRock, addSpectator, addTree, addTuft } from './props'
+import { addAnimal, addBale, addFence, addFlowers, addHouse, addLandmark, addPole, addRock, addSpectator, addTree, addTuft } from './props'
 import { detailTexture, roadTexture, type RoadKind } from './textures'
 
 const RES = 2
@@ -288,6 +288,7 @@ export class World {
       if (p.kind === 'tree' || p.kind === 'shrub') addTree(b, p.sub, p.x, this.ground.natural(p.x, p.z), p.z, r, p.size)
       else if (p.kind === 'rock') addRock(b, p.x, this.ground.natural(p.x, p.z), p.z, p.size, p.sub === 'a' ? pal.rock : pal.rock2, r)
       else if (p.kind === 'house') addHouse(b, p.sub, p.x, this.ground.natural(p.x, p.z), p.z, p.yaw, r)
+      else if (p.kind === 'animal') addAnimal(b, p.sub, p.x, this.ground.natural(p.x, p.z), p.z, p.yaw, r)
       else if (p.kind === 'flowers') addFlowers(b, p.x, this.ground.height(p.x, p.z), p.z, r)
       else if (p.kind === 'tuft') addTuft(b, p.x, this.ground.height(p.x, p.z), p.z, p.sub === 'a' ? pal.grassA : pal.dry, r)
     }

@@ -148,6 +148,9 @@ export class StageView {
   /** Landing dust: decays from 1 to 0 after a big landing. */
   private burst = 0
   private ghost: { rig: CarRig; data: Ghost } | null = null
+  private dirt = 0
+  /** Tyre marks: one ribbon buffer, two quads (rear wheels) written per step of travel. */
+  private marks: { mesh: THREE.Mesh; pos: Float32Array; col: Float32Array; next: number; last: (THREE.Vector3 | null)[] } | null = null
 
   /** A translucent copy of the car that replays your best run. */
   setGhost(g: Ghost, livery: LiveryDef): void {
@@ -228,11 +231,16 @@ export class StageView {
     this.dust = this.makeDust(rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
     this.makeSoft()
+    this.makeMarks()
     this.syncCar(1)
     this.snapCamera()
   }
 
   dispose(): void {
+    if (this.marks) {
+      this.marks.mesh.geometry.dispose()
+      ;(this.marks.mesh.material as THREE.Material).dispose()
+    }
     this.ghost?.rig.dispose()
     for (const m of this.softMeshes) {
       m.geometry.dispose()
@@ -289,6 +297,8 @@ export class StageView {
     this.sky.position.copy(this.camera.position)
     ;(this.sky.material as THREE.ShaderMaterial).uniforms.time.value = this.time
     this.updateSoft(dt)
+    this.updateMarks()
+    this.updateDirt(dt)
     this.updateDust(dt)
     this.updateWeather(dt)
     if (this.headlights) this.headlights.intensity = 60
@@ -384,6 +394,81 @@ export class StageView {
     this.camVel.set(0, 0, 0)
     this.camera.position.copy(this.camPos)
     this.camera.lookAt(p.x + Math.sin(p.heading) * 4, p.y + 1, p.z + Math.cos(p.heading) * 4)
+  }
+
+  private static readonly MARKS = 1600
+
+  private makeMarks(): void {
+    const N = StageView.MARKS
+    const pos = new Float32Array(N * 6 * 3)
+    const col = new Float32Array(N * 6 * 4)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4))
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    const mesh = new THREE.Mesh(g, m)
+    mesh.frustumCulled = false
+    mesh.renderOrder = 1
+    this.scene.add(mesh)
+    this.marks = { mesh, pos, col, next: 0, last: [null, null] }
+  }
+
+  /**
+   * Rear tyres leave marks: black streaks on tarmac only when sliding,
+   * spinning or locked; darker ruts on loose surfaces all the time. Old marks
+   * are overwritten in a ring, so memory stays flat on a long stage.
+   */
+  private updateMarks(): void {
+    const mk = this.marks
+    if (!mk) return
+    const car = this.sim.car
+    const loose = !['asphalt', 'wet', 'ice'].includes(car.surface)
+    const sliding = car.slipR > 0.14 || car.wheelSpin > 0.3
+    const on = !car.airborne && car.speed > 1 && (loose || sliding)
+    const strength = loose ? 0.22 + (sliding ? 0.2 : 0) : Math.min(0.55, 0.25 + car.slipR)
+    const tone = loose ? (car.surface === 'snow' ? [0.55, 0.58, 0.62] : [0.18, 0.14, 0.1]) : [0.04, 0.04, 0.045]
+    for (let w = 0; w < 2; w++) {
+      const wheel = this.car.wheels.filter((x) => !x.front)[w]
+      if (!wheel) continue
+      const p = wheel.pivot.getWorldPosition(new THREE.Vector3())
+      p.y = this.sim.ground.height(p.x, p.z) + 0.07
+      const prev = mk.last[w]
+      if (!on) {
+        mk.last[w] = null
+        continue
+      }
+      if (!prev) {
+        mk.last[w] = p
+        continue
+      }
+      if (p.distanceTo(prev) < 0.5) continue
+      const dx = p.x - prev.x, dz = p.z - prev.z
+      const len = Math.hypot(dx, dz) || 1
+      const nx = (-dz / len) * 0.11, nz = (dx / len) * 0.11
+      const q = [prev.x - nx, prev.y, prev.z - nz, prev.x + nx, prev.y, prev.z + nz, p.x + nx, p.y, p.z + nz, p.x - nx, p.y, p.z - nz]
+      const i = mk.next
+      mk.next = (mk.next + 1) % StageView.MARKS
+      const tri = [0, 1, 2, 0, 2, 3]
+      for (let k = 0; k < 6; k++) {
+        const v = tri[k]
+        mk.pos.set([q[v * 3], q[v * 3 + 1], q[v * 3 + 2]], (i * 6 + k) * 3)
+        mk.col.set([tone[0], tone[1], tone[2], strength], (i * 6 + k) * 4)
+      }
+      mk.last[w] = p
+      const g = mk.mesh.geometry
+      ;(g.attributes.position as THREE.BufferAttribute).needsUpdate = true
+      ;(g.attributes.color as THREE.BufferAttribute).needsUpdate = true
+    }
+  }
+
+  /** The car picks up the colour of the stage: faster in mud and water, not at all on clean tarmac. */
+  private updateDirt(dt: number): void {
+    const car = this.sim.car
+    const rate = car.surface === 'mud' || car.surface === 'water' ? 1 / 300 : ['gravel', 'wetgravel', 'rough', 'sand', 'verge', 'grass'].includes(car.surface) ? 1 / 1400 : car.surface === 'snow' ? 1 / 3500 : 0
+    if (rate) this.dirt = Math.min(1, this.dirt + car.speed * dt * rate)
+    const rally = this.sim.setup.rally
+    const col = rally.surface === 'snow' ? 0xc9ced4 : rally.biome === 'savannah' ? 0xa0583a : rally.surface === 'asphalt' ? 0x5a554e : (rally.gravel?.[1] ?? rally.palette.soil)
+    this.car.setDirt(this.dirt, col)
   }
 
   private makeSoft(): void {

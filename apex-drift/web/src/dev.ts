@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { LIVERIES, RALLIES } from './data'
 import { Showcase } from './render/showcase'
+import { GeoBuilder } from './render/builder'
+import { addAnimal } from './render/props'
+import { rng } from './core/math'
 import { Hud } from './ui/hud'
 import { CoDriver } from './game/codriver'
 import { paceNotes } from './game/pacenotes'
@@ -19,7 +22,29 @@ import { autopilot, StageSim } from './sim/stage'
 const q = new URLSearchParams(location.search)
 const canvas = document.getElementById('gl') as HTMLCanvasElement
 const w = window as unknown as { __ready: boolean }
-if (q.get('mode') === 'car') {
+if (q.get('mode') === 'zoo') {
+  // Every animal in a row, for checking their shapes.
+  const gl = new THREE.WebGLRenderer({ canvas, antialias: true })
+  gl.setSize(innerWidth, innerHeight, false)
+  gl.outputColorSpace = THREE.SRGBColorSpace
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x9ec4e8)
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x556644, 1.2))
+  const sun = new THREE.DirectionalLight(0xffffff, 2)
+  sun.position.set(5, 10, 6)
+  scene.add(sun)
+  const b = new GeoBuilder()
+  const kinds = ['zebra', 'giraffe', 'moose', 'reindeer', 'sheep', 'cow', 'goat', 'deer', 'horse']
+  kinds.forEach((k, i) => addAnimal(b, k, (i - 4) * 3.2, 0, 0, 1.2, rng(i + 3)))
+  scene.add(new THREE.Mesh(b.build(), new THREE.MeshLambertMaterial({ vertexColors: true })))
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 20).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x7a9a5a }))
+  scene.add(floor)
+  const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200)
+  cam.position.set(0, 4, 17)
+  cam.lookAt(0, 1, 0)
+  gl.render(scene, cam)
+  w.__ready = true
+} else if (q.get('mode') === 'car') {
   const gl = new THREE.WebGLRenderer({ canvas, antialias: true })
   gl.setPixelRatio(Math.min(2, devicePixelRatio))
   gl.setSize(innerWidth, innerHeight, false)

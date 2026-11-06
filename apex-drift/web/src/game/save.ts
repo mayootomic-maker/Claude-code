@@ -52,6 +52,8 @@ export interface Save {
   /** The rally in progress: stage times so far. */
   event: { rally: string; times: number[]; difficulty: Difficulty } | null
   postcards: string[]
+  /** Daily stages: days finished (YYYY-MM-DD) and the best time on each, last 60 kept. */
+  daily: { days: string[]; best: Record<string, number> }
   settings: Settings
   stats: { stages: number; metres: number; resets: number; seconds: number }
   /** Detected quality tier, so the benchmark runs only once. */
@@ -72,6 +74,7 @@ export function defaults(): Save {
     best: {},
     event: null,
     postcards: [],
+    daily: { days: [], best: {} },
     settings: {
       difficulty: 'rookie', steering: 'buttons', autoGas: true, sensitivity: 1, tiltInvert: false,
       camera: 'chase', quality: 'auto', master: 0.9, music: 0.5, sfx: 0.9, engine: 0.8, voice: 1,
@@ -122,6 +125,12 @@ export function sanitize(raw: unknown): Save {
     best,
     event: ev,
     postcards: strs(raw.postcards, []),
+    daily: (() => {
+      const dv = isObj(raw.daily) ? raw.daily : {}
+      const best: Record<string, number> = {}
+      if (isObj(dv.best)) for (const [k, v] of Object.entries(dv.best)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && typeof v === 'number' && v > 0) best[k] = v
+      return { days: strs(dv.days, []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(-60), best }
+    })(),
     settings: {
       difficulty: pick(s.difficulty, ['rookie', 'driver', 'pro'] as const, ds.difficulty),
       steering: pick(s.steering, ['buttons', 'tilt', 'wheel'] as const, ds.steering),

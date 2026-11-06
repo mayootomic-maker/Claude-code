@@ -77,6 +77,8 @@ await step('sting and title', async () => {
   await shot('01-sting')
   await page.mouse.click(400, 200)
   await page.waitForSelector('#title:not(.hidden)')
+  // The live stage behind the logo builds in the background; give it a moment.
+  await page.waitForSelector('#title.live', { timeout: 120000 })
   await shot('02-title')
 })
 await step('first run goes to the driving school', async () => {
@@ -132,6 +134,17 @@ await step('options: every tab, toggle and slider', async () => {
   await shot('09-privacy')
   await tap('[data-close]')
   await page.evaluate(() => window.__apexBack())
+})
+await step('daily stage loads and drives', async () => {
+  await tap('[data-go="daily"]')
+  await inRace()
+  await waitPhase('running', 90000)
+  await drive(5000)
+  await shot('09b-daily')
+  await page.keyboard.press('Escape')
+  await tap('[data-quit]')
+  await tap('[data-y]')
+  await page.waitForSelector('#menu:not(.hidden)')
 })
 await step('a whole stage, driven to the results screen', async () => {
   await tap('[data-go="free"]')
