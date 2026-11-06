@@ -1,0 +1,20 @@
+{
+  "name": "apex-drift-desktop",
+  "productName": "Apex Drift",
+  "version": "3.0.0",
+  "description": "Apex Drift for Windows, macOS and Linux",
+  "author": "Tomić Studios",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "copy-web": "node scripts/copy-web.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.9.0",
+    "playwright": "^1.63.0"
+  }
+}

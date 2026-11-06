@@ -2,12 +2,14 @@
 // console error, page error or stuck state. Run after `vite build`:
 //   node e2e/soak.mjs            quick: school, one finished stage, every rally loads
 //   node e2e/soak.mjs --full     also loads every one of the 48 stages
+//   node e2e/soak.mjs --desktop  a 1280x720 window with mouse and keyboard, no touch
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 
 const FULL = process.argv.includes('--full')
-const OUT = new URL('./out/', import.meta.url).pathname
+const DESKTOP = process.argv.includes('--desktop')
+const OUT = new URL(process.argv.includes('--desktop') ? './out/desktop/' : './out/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
 const PORT = 4179
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' })
@@ -15,7 +17,7 @@ await new Promise((r) => setTimeout(r, 2500))
 
 const errors = []
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] })
-const ctx = await browser.newContext({ viewport: { width: 915, height: 412 }, hasTouch: true, isMobile: true })
+const ctx = await browser.newContext(DESKTOP ? { viewport: { width: 1280, height: 720 } } : { viewport: { width: 915, height: 412 }, hasTouch: true, isMobile: true })
 const page = await ctx.newPage()
 page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`))
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
@@ -71,6 +73,11 @@ async function drive(ms) {
   await page.keyboard.up('KeyW')
 }
 
+// SwiftShader draws a desktop-sized window several times slower than a phone
+// screen; start on Low so the run measures the game, not the software renderer.
+if (DESKTOP) await page.addInitScript(() => {
+  if (!localStorage.getItem('apexdrift.save.v4')) localStorage.setItem('apexdrift.save.v4', JSON.stringify({ settings: { quality: 'low' } }))
+})
 await page.goto(`http://localhost:${PORT}/`)
 await step('sting and title', async () => {
   await page.waitForSelector('#sting:not(.hidden)')
@@ -93,6 +100,13 @@ await step('pause, resume and Android back', async () => {
   await page.keyboard.press('Escape')
   await page.waitForSelector('#overlay:not(.hidden) [data-resume]')
   await shot('05-pause')
+  await tap('[data-settings]')
+  await tap('[data-tab="display"]')
+  await page.waitForSelector('[data-pause-settings] [data-set="camera"]')
+  await shot('05b-pause-settings')
+  // Back from the settings lands on the pause menu, not the stage.
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('#overlay:not(.hidden) [data-resume]')
   const handled = await page.evaluate(() => window.__apexBack())
   if (handled !== true) throw new Error('back during pause was not handled')
   await page.waitForSelector('#overlay.hidden', { state: 'attached' })
@@ -116,6 +130,13 @@ await step('garage: browse cars and liveries', async () => {
   await tap('[data-l="fjord"]')
   await shot('07-garage')
   await page.evaluate(() => window.__apexBack())
+})
+if (DESKTOP) await step('desktop: keyboard guide, Esc steps back', async () => {
+  await tap('[data-go="options"]')
+  await page.waitForSelector('.keymap')
+  await shot('07b-keys')
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('[data-go="options"]')
 })
 await step('options: every tab, toggle and slider', async () => {
   await tap('[data-go="options"]')

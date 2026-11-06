@@ -83,7 +83,8 @@ interface School {
   firstCall: string | null
 }
 
-const native = (): { exitApp?: () => void; version?: () => string } | undefined => (window as unknown as { ApexNative?: { exitApp(): void; version(): string } }).ApexNative
+const native = (): { exitApp?: () => void; version?: () => string; desktop?: boolean } | undefined =>
+  (window as unknown as { ApexNative?: { exitApp(): void; version(): string; desktop?: boolean } }).ApexNative
 
 export class App {
   private readonly store: Store
@@ -124,6 +125,7 @@ export class App {
     if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch')
     addEventListener('touchstart', () => document.body.classList.add('touch'), { once: true, passive: true })
     addEventListener('resize', () => this.resize())
+    addEventListener('keydown', (e) => this.desktopKey(e))
     addEventListener('apex:pause', () => this.background())
     document.addEventListener('visibilitychange', () => document.hidden && this.background())
     ;(window as unknown as { __apexBack: () => boolean }).__apexBack = () => this.back()
@@ -260,6 +262,7 @@ export class App {
         <button class="tile" data-go="garage" style="background-image:url('img/garage.jpg')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
         <button class="tile" data-go="options"><span class="t display">${t('options')}</span></button>
         <button class="tile" data-go="credits"><span class="t display">${t('credits')}</span></button>
+        ${native()?.desktop ? `<button class="tile" data-go="exit"><span class="t display">${t('quitGame')}</span></button>` : ''}
       </div>`, (root) => {
       root.querySelectorAll<HTMLElement>('[data-go]').forEach((b) => b.addEventListener('click', () => {
         const go = b.dataset.go
@@ -269,6 +272,7 @@ export class App {
         else if (go === 'daily') this.load(daily.rally, 0, 'daily', daily.car)
         else if (go === 'garage') this.garage()
         else if (go === 'options') this.options('controls')
+        else if (go === 'exit') native()?.exitApp?.()
         else this.creditsScreen()
       }))
     }, 'img/garage.jpg')
@@ -442,21 +446,50 @@ export class App {
     this.showcase = null
   }
 
-  private options(tab: 'controls' | 'audio' | 'display' | 'gameplay' | 'data'): void {
+  private options(tab: OptTab): void {
+    const show = (x: OptTab) => {
+      this.menuStack.pop()
+      this.options(x)
+    }
+    let panel = this.settingsPanel(tab, false, show)
+    this.menu(() => {
+      panel = this.settingsPanel(tab, false, show)
+      return `
+      <button class="back" data-back>${t('back')}</button>
+      <h1 class="display">${t('options')}</h1>
+      ${panel.html}`
+    }, (root) => panel.bind(root))
+  }
+
+  /**
+   * The settings tabs, shared by the Options screen and the pause menu. In a
+   * race only the tabs that apply on the spot are offered: difficulty, name
+   * and save data wait for the menu, where changing them can't half-apply to
+   * a stage already running.
+   */
+  private settingsPanel(tab: OptTab, inRace: boolean, show: (tab: OptTab) => void): { html: string; bind: (root: HTMLElement) => void } {
     const st = this.store.save.settings
     const seg = <K extends keyof Settings>(key: K, opts: readonly Settings[K][], label: (v: Settings[K]) => string) =>
       `<div class="seg">${opts.map((o) => `<button class="${st[key] === o ? 'on' : ''}" data-set="${String(key)}" data-v="${String(o)}">${label(o)}</button>`).join('')}</div>`
     const tog = (key: keyof Settings) => `<button class="toggle ${st[key] ? 'on' : ''}" data-tog="${key}" role="switch" aria-checked="${!!st[key]}"></button>`
     const range = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${st[key]}" data-range="${key}">`
     const opt = (label: string, ctl: string) => `<div class="opt"><label>${label}</label>${ctl}</div>`
-    const body: Record<typeof tab, () => string> = {
-      controls: () => [
+    const body: Record<OptTab, () => string> = {
+      controls: () => (isTouch() ? [
         opt(t('steering'), seg('steering', ['buttons', 'tilt'] as const, (v) => t(`steer_${v}` as TKey))),
         opt(t('autoGas'), tog('autoGas')),
         opt(t('sensitivity'), range('sensitivity', 0.5, 2, 0.1)),
         opt(t('tiltInvert'), tog('tiltInvert')),
         opt(t('haptics'), tog('haptics')),
-      ].join(''),
+      ] : [
+        opt(t('autoGas'), tog('autoGas')),
+        opt(t('sensitivity'), range('sensitivity', 0.5, 2, 0.1)),
+        `<h3 class="keys-title">${t('keyboard')}</h3><dl class="keymap">${([
+          ['W A S D / ← ↑ → ↓', 'k_drive'], ['Space', 'k_hand'], ['Q', 'k_rewind'], ['R', 'k_reset'],
+          ['C', 'k_camera'], ['F', 'k_full'], ['Esc', 'k_pause'],
+        ] as const).map(([k, l]) => `<dt><kbd>${k}</kbd></dt><dd>${t(l)}</dd>`).join('')}</dl>`,
+        `<h3 class="keys-title">${t('gamepad')}</h3><p class="keys-pad">${t('k_padDrive')}<br>${t('k_padHand')}</p>`,
+      ]).join(''),
       audio: () => [
         opt(t('master'), range('master', 0, 1, 0.05)), opt(t('music'), range('music', 0, 1, 0.05)),
         opt(t('engine'), range('engine', 0, 1, 0.05)), opt(t('sfx'), range('sfx', 0, 1, 0.05)), opt(t('voice'), range('voice', 0, 1, 0.05)),
@@ -467,6 +500,7 @@ export class App {
       display: () => [
         opt(t('quality'), seg('quality', ['auto', 'low', 'medium', 'high'] as const, (v) => t(`q_${v}` as TKey))),
         opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet'] as const, (v) => t(`camera_${v}` as TKey))),
+        ...(canFullscreen() ? [opt(t('fullscreen'), `<button class="toggle ${document.fullscreenElement ? 'on' : ''}" data-full role="switch" aria-checked="${!!document.fullscreenElement}"></button>`)] : []),
         opt(t('shake'), tog('shake')),
         opt(t('units'), seg('units', ['kmh', 'mph'] as const, (v) => (v === 'kmh' ? 'km/h' : 'mph'))),
         opt(t('textSize'), seg('textSize', [1, 1.15, 1.3] as const, (v) => `${Math.round(v * 100)}%`)),
@@ -483,21 +517,15 @@ export class App {
         `<div class="opt" data-ver><label>${t('version', { v: VERSION })}</label></div>`,
       ].join(''),
     }
-    this.menu(() => `
-      <button class="back" data-back>${t('back')}</button>
-      <h1 class="display">${t('options')}</h1>
+    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'data']
+    const htmlOut = `
       <div class="options">
-        <div class="seg tabs">${(['controls', 'audio', 'display', 'gameplay', 'data'] as const).map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
+        <div class="seg tabs">${tabs.map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
         ${body[tab]()}
-      </div>`, (root) => {
-      const redraw = () => {
-        this.menuStack.pop()
-        this.options(tab)
-      }
-      root.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => {
-        this.menuStack.pop()
-        this.options(b.dataset.tab as typeof tab)
-      }))
+      </div>`
+    return { html: htmlOut, bind: (root) => {
+      const redraw = () => show(tab)
+      root.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab as OptTab)))
       root.querySelectorAll<HTMLElement>('[data-set]').forEach((b) => b.addEventListener('click', () => {
         const key = b.dataset.set as keyof Settings
         const raw = b.dataset.v ?? ''
@@ -506,6 +534,7 @@ export class App {
         this.settingsChanged(key)
         redraw()
       }))
+      root.querySelector('[data-full]')?.addEventListener('click', () => void toggleFullscreen().then(redraw))
       root.querySelectorAll<HTMLElement>('[data-tog]').forEach((b) => b.addEventListener('click', () => {
         const key = b.dataset.tog as keyof Settings
         ;(st as unknown as Record<string, unknown>)[key] = !st[key]
@@ -543,7 +572,7 @@ export class App {
         toast(t('erased'))
         this.home()
       }))
-    })
+    } }
   }
 
   private settingsChanged(key: keyof Settings): void {
@@ -555,6 +584,12 @@ export class App {
     if (key === 'voiceLang') void this.audio.loadVoice(st.voiceLang)
     if (key === 'quality' && st.quality !== 'auto') this.renderer.setTier(st.quality)
     if (key === 'tiltInvert' || key === 'steering') this.requestTilt()
+    const r = this.race
+    if (r) {
+      if (key === 'camera') r.view.camMode = st.camera
+      if (key === 'shake') r.view.shake = st.shake ? 1 : 0
+      if (key === 'notes') r.codriver.setMode(st.notes)
+    }
   }
 
   /** iOS-style permission prompt for motion sensors, where the browser has one. */
@@ -1062,7 +1097,7 @@ export class App {
   private action(a: 'pause' | 'reset' | 'camera' | 'rewind'): void {
     const r = this.race
     if (!r || this.screen !== 'race') return
-    if (a === 'pause') return r.paused ? this.unpause() : this.pause()
+    if (a === 'pause') return this.inPauseSettings() ? this.pauseMenuAgain() : r.paused ? this.unpause() : this.pause()
     if (r.paused || r.phase !== 'running') return
     if (a === 'reset') {
       r.sim.reset()
@@ -1107,7 +1142,8 @@ export class App {
     html(o, `<div class="dialog" role="dialog" aria-label="${t('paused')}">
       <p class="kicker">${esc(r.mode === 'school' ? t('school') : r.rally.stages[r.stageIdx].name)}</p><h2 class="display">${t('paused')}</h2>
       <div class="opt"><label>${t('notes')}</label><div class="seg">${(['full', 'corners', 'off'] as const).map((v) => `<button class="${st.notes === v ? 'on' : ''}" data-notes="${v}">${t(`notes_${v}` as TKey)}</button>`).join('')}</div></div>
-      <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)
+      <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-settings>${t('options')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)
+    $('[data-settings]', o).addEventListener('click', () => this.pauseSettings('controls'))
     o.querySelectorAll<HTMLElement>('[data-notes]').forEach((b) => b.addEventListener('click', () => {
       st.notes = b.dataset.notes as typeof st.notes
       this.store.write()
@@ -1120,6 +1156,32 @@ export class App {
       r.paused = false
       this.pause()
     }))
+  }
+
+  /** Options from inside a paused race. Back (or Esc) returns to the pause menu, not the stage. */
+  private pauseSettings(tab: OptTab, first = true): void {
+    const r = this.race
+    if (!r || !r.paused) return
+    const o = this.ui.overlay
+    const panel = this.settingsPanel(tab, true, (x) => this.pauseSettings(x, false))
+    // Every tab or toggle redraws the dialog; only its first appearance animates.
+    html(o, `<div class="dialog settings${first ? '' : ' still'}" role="dialog" aria-label="${t('options')}" data-pause-settings>
+      <p class="kicker">${t('paused')}</p><h2 class="display">${t('options')}</h2>
+      ${panel.html}
+      <div class="col"><button class="btn" data-back-pause>${t('back')}</button></div></div>`)
+    panel.bind(o)
+    $('[data-back-pause]', o).addEventListener('click', () => this.pauseMenuAgain())
+  }
+
+  private inPauseSettings(): boolean {
+    return !!this.race?.paused && !!this.ui.overlay.querySelector('[data-pause-settings]')
+  }
+
+  private pauseMenuAgain(): void {
+    const r = this.race
+    if (!r) return
+    r.paused = false
+    this.pause()
   }
 
   private unpause(): void {
@@ -1137,11 +1199,29 @@ export class App {
     else this.audio.suspend()
   }
 
+  /**
+   * Keys that only matter with a keyboard: F toggles fullscreen anywhere, and
+   * Esc steps back through menus the way Android's back button does. In a race
+   * Esc is the pause key, which Controls already handles.
+   */
+  private desktopKey(e: KeyboardEvent): void {
+    if (e.repeat || e.target instanceof HTMLInputElement) return
+    if (e.code === 'KeyF' && canFullscreen()) {
+      void toggleFullscreen()
+      return
+    }
+    if (e.code !== 'Escape' || this.screen === 'race') return
+    // The menu root has nowhere to go back to; on a computer it stays open.
+    if (this.screen === 'menu' && this.menuStack.length <= 1 && this.ui.overlay.classList.contains('hidden')) return
+    this.back()
+  }
+
   /** Android back: close a dialog, pause, step back a menu. Returns false to let the app close. */
   private back(): boolean {
     const o = this.ui.overlay
     if (this.screen === 'race' && this.race) {
-      if (this.race.paused) this.unpause()
+      if (this.inPauseSettings()) this.pauseMenuAgain()
+      else if (this.race.paused) this.unpause()
       else if (this.race.phase === 'results') this.toMenu()
       else this.pause()
       return true
@@ -1183,5 +1263,22 @@ export class App {
     el.id = 'fatal'
     el.innerHTML = `<div><h2 class="display">Apex Drift</h2><p>${esc(String(e instanceof Error ? e.message : e))}</p><button class="btn" onclick="location.reload()">${t('retry')}</button></div>`
     document.body.appendChild(el)
+  }
+}
+
+type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'data'
+
+const isTouch = (): boolean => document.body.classList.contains('touch')
+
+/** The Android WebView has no fullscreen API worth using: the app is already fullscreen there. */
+const canFullscreen = (): boolean => !isTouch() && !!document.documentElement.requestFullscreen && document.fullscreenEnabled
+
+async function toggleFullscreen(): Promise<void> {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen()
+    else await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+  } catch {
+    // Refused (no user gesture, or a browser policy): the windowed game still works.
+    toast(t('fullscreenRefused'))
   }
 }

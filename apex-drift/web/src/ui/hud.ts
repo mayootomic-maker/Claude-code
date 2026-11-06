@@ -58,7 +58,7 @@ export class Hud {
         <button data-ctl="brake">BRAKE</button>
         <button data-ctl="gas" class="gas">GAS</button>
       </div>
-      <p class="keys-hint">W A S D / arrows · Space handbrake · C camera · R reset · Esc pause</p>`)
+      <p class="keys-hint">${t('keysHint')}</p>`)
     this.time = $('.time', root)
     this.split = $('.split', root)
     this.prog = $('.h-prog i', root)

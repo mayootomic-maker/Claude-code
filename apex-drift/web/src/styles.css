@@ -257,3 +257,15 @@ body:not(.touch) .h-say { bottom: calc(48px + var(--sb)); }
 .h-sector.behind { color: var(--bad); border: 1px solid var(--bad); }
 .h-tools button[disabled] { opacity: 0.35; }
 .h-tools .rw-n { margin-left: 4px; font-size: 11px; }
+
+/* ---- keyboard and mouse */
+.keys-title { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin: 20px 0 6px; font-weight: 600; }
+.keymap { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: center; margin: 0; }
+.keymap dd { margin: 0; }
+kbd { display: inline-block; min-width: 2.2em; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--line); border-bottom-width: 2px; background: rgba(243, 239, 230, 0.06); font: 600 12px / 1.4 Inter, system-ui, sans-serif; text-align: center; }
+.keys-pad { margin: 0; color: var(--dim); line-height: 1.8; }
+/* The pointer has no job while driving; it reappears as soon as the game pauses. */
+body.driving:not(.touch) #gl { cursor: none; }
+body:not(.touch) button:focus-visible, body:not(.touch) input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+@media (min-width: 1400px) and (pointer: fine) { :root { --pad: 40px; } }
+.dialog.still { animation: none; }

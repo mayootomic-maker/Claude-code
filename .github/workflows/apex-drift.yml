@@ -14,9 +14,6 @@ jobs:
   android:
     name: Web verify + Android build
     runs-on: ubuntu-latest
-    # Publishing the build to the fixed release below needs write access to releases.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -78,17 +75,107 @@ jobs:
             apex-drift/android/app/build/outputs/apk/release/*.apk
             apex-drift/android/app/build/outputs/bundle/release/*.aab
 
-      # One fixed release whose zip is replaced on every push to a branch:
-      # a download link that never changes and always points at the newest build.
+      # Zipped here, published by the release job once the desktop builds are in too.
       - name: Zip the build
         if: github.event_name == 'push'
         run: |
+          mkdir -p "$RUNNER_TEMP/release"
           cd apex-drift/android/app/build/outputs
-          zip -r "$RUNNER_TEMP/apex-drift-3.0.0.zip" apk/debug/*.apk apk/release/*.apk bundle/release/*.aab
+          zip -r "$RUNNER_TEMP/release/apex-drift-3.0.0.zip" apk/debug/*.apk apk/release/*.apk bundle/release/*.aab
 
-      - name: Publish to the apex-drift-latest release
+      - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        with:
+          name: release-android
+          path: ${{ runner.temp }}/release/*.zip
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Windows + Linux
+            platforms: win32 linux
+          # macOS builds on a Mac so the app can be signed ad hoc; Apple
+          # Silicon refuses to start an app with no signature at all.
+          - os: macos-latest
+            label: macOS
+            platforms: darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            apex-drift/web/package-lock.json
+            apex-drift/desktop/package-lock.json
+
+      - name: Web — build
+        working-directory: apex-drift/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Desktop — package
+        working-directory: apex-drift/desktop
+        run: |
+          npm ci
+          npm run copy-web
+          node scripts/package.mjs ${{ matrix.platforms }}
+
+      # Plays the start of the game in the packaged Linux build, keyboard only.
+      - name: Desktop — smoke test the packaged app
+        if: runner.os == 'Linux'
+        working-directory: apex-drift/desktop
+        env:
+          APEX_EXE: ${{ github.workspace }}/apex-drift/desktop/out/Apex Drift-linux-x64/apex-drift
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" node scripts/smoke.mjs
+
+      - name: Zip (Windows + Linux)
+        if: runner.os == 'Linux'
+        working-directory: apex-drift/desktop/out
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          zip -qry "$RUNNER_TEMP/release/apex-drift-windows.zip" "Apex Drift-win32-x64"
+          zip -qry "$RUNNER_TEMP/release/apex-drift-linux.zip" "Apex Drift-linux-x64"
+
+      - name: Sign ad hoc and zip (macOS)
+        if: runner.os == 'macOS'
+        working-directory: apex-drift/desktop/out
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          codesign --force --deep --sign - "Apex Drift-darwin-universal/Apex Drift.app"
+          ditto -c -k --sequesterRsrc --keepParent "Apex Drift-darwin-universal/Apex Drift.app" "$RUNNER_TEMP/release/apex-drift-mac.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ runner.os }}
+          path: ${{ runner.temp }}/release/*.zip
+          if-no-files-found: error
+
+  # One fixed release whose files are replaced on every push to a branch:
+  # download links that never change and always point at the newest build.
+  release:
+    name: Publish to the apex-drift-latest release
+    if: github.event_name == 'push'
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: apex-drift-latest
           name: Apex Drift 3.0.0 (latest build)
@@ -96,6 +183,10 @@ jobs:
           make_latest: false
           body: |
             Newest build from branch ${{ github.ref_name }}, commit ${{ github.sha }}.
-            Install apk/debug/app-debug.apk from the zip. The release APK and AAB are unsigned until the signing secrets are set.
-          files: ${{ runner.temp }}/apex-drift-3.0.0.zip
+
+            - **Android:** apex-drift-3.0.0.zip — install apk/debug/app-debug.apk. The release APK and AAB are unsigned until the signing secrets are set.
+            - **Windows:** apex-drift-windows.zip — unzip, run "Apex Drift.exe". SmartScreen may warn because the app isn't code-signed: More info → Run anyway.
+            - **macOS:** apex-drift-mac.zip — unzip, move to Applications, right-click → Open the first time (not notarised).
+            - **Linux:** apex-drift-linux.zip — unzip, run ./apex-drift.
+          files: release/*.zip
           overwrite_files: true

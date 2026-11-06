@@ -14,6 +14,8 @@ export class Controls {
   private keys = new Set<string>()
   private tilt = 0
   private steer = 0
+  /** Gamepad buttons held last frame, so a press fires its action once. */
+  private padPrev: boolean[] = []
   /** Edge-triggered actions for the HUD buttons and keyboard shortcuts. */
   onAction: ((a: 'pause' | 'reset' | 'camera' | 'rewind') => void) | null = null
   private readonly cleanup: (() => void)[] = []
@@ -79,6 +81,14 @@ export class Controls {
     const s = this.settings()
     const k = this.keys
     const pad = navigator.getGamepads?.().find((p) => p && p.connected) ?? null
+    if (pad) {
+      const edge = (i: number) => !!pad.buttons[i]?.pressed && !this.padPrev[i]
+      if (edge(9)) this.onAction?.('pause')
+      if (edge(2)) this.onAction?.('rewind')
+      if (edge(3)) this.onAction?.('camera')
+      if (edge(8)) this.onAction?.('reset')
+      this.padPrev = pad.buttons.map((b) => b.pressed)
+    }
     let target = 0
     const left = this.held.has('left') || k.has('ArrowLeft') || k.has('KeyA')
     const right = this.held.has('right') || k.has('ArrowRight') || k.has('KeyD')

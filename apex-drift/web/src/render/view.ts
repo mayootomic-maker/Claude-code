@@ -14,10 +14,10 @@ import { noise2 } from '../core/math'
 export type Tier = 'low' | 'medium' | 'high'
 export type CamMode = 'chase' | 'near' | 'bonnet'
 
-const TIERS: Record<Tier, Quality & { post: boolean; samples: number; pixel: number; shadowMap: number; propShadows: boolean }> = {
-  low: { radius: 260, density: 0.5, shadows: false, aniso: 1, post: false, samples: 0, pixel: 0.8, shadowMap: 0, propShadows: false },
-  medium: { radius: 340, density: 0.8, shadows: true, aniso: 4, post: true, samples: 2, pixel: 1, shadowMap: 1024, propShadows: false },
-  high: { radius: 420, density: 1, shadows: true, aniso: 8, post: true, samples: 4, pixel: 1.5, shadowMap: 2048, propShadows: true },
+const TIERS: Record<Tier, Quality & { post: boolean; samples: number; pixel: number; maxPixels: number; shadowMap: number; propShadows: boolean }> = {
+  low: { radius: 260, density: 0.5, shadows: false, aniso: 1, post: false, samples: 0, pixel: 0.8, maxPixels: 1.0e6, shadowMap: 0, propShadows: false },
+  medium: { radius: 340, density: 0.8, shadows: true, aniso: 4, post: true, samples: 2, pixel: 1, maxPixels: 2.1e6, shadowMap: 1024, propShadows: false },
+  high: { radius: 420, density: 1, shadows: true, aniso: 8, post: true, samples: 4, pixel: 1.5, maxPixels: 3.7e6, shadowMap: 2048, propShadows: true },
 }
 
 /** Owns the WebGL context for the app's lifetime; stages come and go. */
@@ -61,7 +61,10 @@ export class Renderer {
   resize(): void {
     const t = TIERS[this.tier]
     const w = this.canvas.clientWidth || innerWidth, h = this.canvas.clientHeight || innerHeight
-    const pr = Math.min(devicePixelRatio || 1, t.pixel) * this.scale
+    // A cap on rendered pixels, not just on pixel ratio: a 4K monitor or a
+    // large window would otherwise cost several times a phone's fill rate.
+    const budget = Math.sqrt(t.maxPixels / Math.max(1, w * h))
+    const pr = Math.min(devicePixelRatio || 1, t.pixel, budget) * this.scale
     this.gl.setPixelRatio(pr)
     this.gl.setSize(w, h, false)
     if (t.post) {
