@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { carPhys, type LiveryDef } from '../data'
+import { tyreTexture } from './textures'
 
 /**
  * Rally cars built from lofted cross-sections: each body is a series of
@@ -453,7 +454,7 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.75 })
   const satin = new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.45, metalness: 0.3 })
   const chrome = new THREE.MeshStandardMaterial({ color: 0xd8dadd, roughness: 0.15, metalness: 1 })
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.92 })
+  const rubber = new THREE.MeshStandardMaterial({ map: tyreTexture(4), roughness: 0.92 })
   const rimM = new THREE.MeshStandardMaterial({ color: lv.rim, roughness: 0.35, metalness: 0.55 })
   const disc = new THREE.MeshStandardMaterial({ color: 0x8c8e92, roughness: 0.4, metalness: 0.9 })
   const caliper = new THREE.MeshStandardMaterial({ color: (lv as LiveryDef & { caliper?: number }).caliper ?? 0xd0302a, roughness: 0.4, metalness: 0.2 })

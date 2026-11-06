@@ -28,7 +28,7 @@ abstract class SyncWebAssets @Inject constructor(
         if (!dist.resolve("index.html").isFile) {
             throw GradleException(
                 "Web build not found: ${dist.resolve("index.html")} does not exist.\n" +
-                    "Build the game first:  cd apex-drift/web && npm ci && npm run build",
+                    "Build the game first:  cd apex-drift/web && npm ci && npm run build (owner: npm run build:owner)",
             )
         }
         fs.sync {
@@ -39,6 +39,9 @@ abstract class SyncWebAssets @Inject constructor(
 }
 
 val webDistDir: Directory = rootProject.layout.projectDirectory.dir("../web/dist")
+// The owner's private build (npm run single:owner / build:owner): everything
+// unlocked and the cheats tab. Never the store build.
+val ownerDistDir: Directory = rootProject.layout.projectDirectory.dir("../web/dist-owner")
 
 // Read from the environment so no credential ever sits in a tracked file.
 // Blank counts as absent because CI expands a missing secret to "".
@@ -82,6 +85,14 @@ android {
             // local builds still produce an .aab/.apk to inspect.
             signingConfig = signingConfigs.findByName("release")
         }
+        // assembleOwner: the owner's copy. Its own app id, so it installs next
+        // to the normal game with its own save, and the debug key, so it needs
+        // no secrets and is never mistaken for a store upload.
+        create("owner") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".owner"
+            versionNameSuffix = "-owner"
+        }
     }
 
     buildFeatures {
@@ -109,7 +120,7 @@ androidComponents {
         val sync = tasks.register<SyncWebAssets>(
             "sync${variant.name.replaceFirstChar(Char::titlecase)}WebAssets",
         ) {
-            webDist.set(webDistDir)
+            webDist.set(if (variant.buildType == "owner") ownerDistDir else webDistDir)
         }
         // Registering as a generated source directory makes merge*Assets,
         // lint and every other asset consumer depend on the sync task.

@@ -60,6 +60,12 @@ cheat code ever reaches it. The codes are listed in that tab (MONEYBAGS, LEVELUP
 TURBO for double power, QUACK, TRUSTNO1, TOMIC, 1986, DONUTS and IZUM for the
 secret liveries, UNLOCKALL).
 
+The same owner copy for Android: every push builds `apex-drift-owner.apk` as a
+workflow artifact (kept 14 days, never on the release). It installs as **Apex Drift
+Owner** (`com.tomicstudios.apexdrift.owner`), next to the normal app, with its own
+save. Locally: `npm run build:owner` in `web/`, then `./gradlew assembleOwner` in
+`android/`.
+
 **Or as an app:**
 
 Every push builds `apex-drift-windows.zip`, `apex-drift-mac.zip` and `apex-drift-linux.zip`

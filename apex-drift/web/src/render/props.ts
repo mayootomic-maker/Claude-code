@@ -62,6 +62,21 @@ export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: nu
   const yaw = r() * Math.PI * 2
   // Sink the base a little so a slope never shows a floating trunk.
   y -= 0.4
+  // Trunks get bark, everything else leaves; succulents are all skin.
+  const add = b.add.bind(b)
+  b.add = (geo, color, ...rest) => {
+    b.surface = color === t.trunk && t.shape !== 'succulent' ? 2 : color === SNOW ? 0 : 3
+    add(geo, color, ...rest)
+  }
+  try {
+    tree(b, t, h, x, y, z, yaw, r)
+  } finally {
+    b.add = add
+    b.surface = 0
+  }
+}
+
+function tree(b: GeoBuilder, t: TreeSpec, h: number, x: number, y: number, z: number, yaw: number, r: R): void {
   switch (t.shape) {
     case 'conifer': {
       b.add(PRIM.cyl, t.trunk, x, y, z, h * 0.035, h * 0.4, h * 0.035, yaw, 0, 0, 0, 0)
@@ -75,7 +90,7 @@ export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: nu
         const ty = y + h * (0.16 + f * 0.62)
         const th = h * (0.34 - f * 0.12)
         c.setHex(t.leaf).offsetHSL(0, 0, -0.05 + f * 0.09)
-        b.add(PRIM.cone, c.getHex(), x + (r() - 0.5) * 0.3, ty, z + (r() - 0.5) * 0.3, rad, th, rad, yaw + i * 0.9, (r() - 0.5) * 0.08, (r() - 0.5) * 0.08, 0.1 + f * 0.3, 0.4 + f * 0.6, 1, r)
+        b.add(PRIM.coneStar, c.getHex(), x + (r() - 0.5) * 0.3, ty, z + (r() - 0.5) * 0.3, rad, th, rad, yaw + i * 0.9, (r() - 0.5) * 0.08, (r() - 0.5) * 0.08, 0.1 + f * 0.3, 0.4 + f * 0.6, 1, r)
         if (t.snow) b.add(PRIM.cone, SNOW, x, ty + th * 0.5, z, rad * 0.6, th * 0.5, rad * 0.6, yaw + i, 0, 0, 0.3, 1)
       }
       break
@@ -153,7 +168,9 @@ export function addFlowers(b: GeoBuilder, x: number, y: number, z: number, r: R)
 }
 
 export function addRock(b: GeoBuilder, x: number, y: number, z: number, size: number, col: number, r: R): void {
+  b.surface = 1
   b.add(PRIM.dodeca, col, x, y + size * 0.25, z, size * (0.8 + r() * 0.5), size * (0.5 + r() * 0.4), size * (0.8 + r() * 0.5), r() * 6, (r() - 0.5) * 0.4, (r() - 0.5) * 0.4, 0, 0, 1.4, r)
+  b.surface = 0
 }
 
 export function addTuft(b: GeoBuilder, x: number, y: number, z: number, col: number, r: R): void {

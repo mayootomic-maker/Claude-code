@@ -81,6 +81,23 @@ jobs:
             apex-drift/android/app/build/outputs/apk/release/*.apk
             apex-drift/android/app/build/outputs/bundle/release/*.aab
 
+      # The owner's private copy: everything unlocked, the cheats tab, its own
+      # app id. Kept as a short-lived workflow artifact, never on the release.
+      - name: Android — owner build
+        if: github.event_name == 'push'
+        run: |
+          (cd apex-drift/web && npm run build:owner)
+          (cd apex-drift/android && ./gradlew --no-daemon assembleOwner)
+          cp apex-drift/android/app/build/outputs/apk/owner/app-owner.apk "$RUNNER_TEMP/apex-drift-owner.apk"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: apex-drift-owner-apk
+          path: ${{ runner.temp }}/apex-drift-owner.apk
+          if-no-files-found: error
+          retention-days: 14
+
       # Zipped here, published by the release job once the desktop builds are in too.
       - name: Zip the build
         if: github.event_name == 'push'

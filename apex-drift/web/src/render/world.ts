@@ -5,8 +5,9 @@ import { STEP, type Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
 import { GeoBuilder, PRIM } from './builder'
 import { edgePoint, planSegment, planTile, TILE, type PlanCtx } from './placement'
+import { lakeSurface } from './lakes'
 import { addAnimal, addBale, addFence, addFlowers, addHouse, addLandmark, addPole, addRock, addSpectator, addTree, addTuft } from './props'
-import { detailTexture, roadTexture, type RoadKind } from './textures'
+import { barkTexture, detailTexture, groundTexture, leafTexture, rockTexture, roadTexture, waterNormals, type RoadKind } from './textures'
 
 const RES = 2
 const ROAD_SEG = 120
@@ -18,6 +19,8 @@ export interface Quality {
   density: number
   shadows: boolean
   aniso: number
+  /** Rock, bark and leaf textures on scenery, fine detail and rock on terrain. Off on Low: they cost fill rate. */
+  surfaces: boolean
 }
 
 interface Tile {
@@ -50,7 +53,7 @@ export class World {
   private readonly terrainMat: THREE.MeshLambertMaterial
   private readonly propMat: THREE.MeshLambertMaterial
   private readonly roadMat: THREE.MeshLambertMaterial
-  private readonly waterMat: THREE.MeshLambertMaterial
+  private readonly waterMat: THREE.MeshStandardMaterial
   private readonly lakeMat: THREE.MeshStandardMaterial
   private readonly time = { value: 0 }
   private readonly route: Route
@@ -72,31 +75,85 @@ export class World {
     this.snowAll = rally.surface === 'snow' || stage.weather === 'snow'
     this.plan = { route: this.route, ground, rally, seed: stage.seed, noise: this.noise, snowAll: this.snowAll }
     const detail = detailTexture(q.aniso)
-    this.terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: detail })
+    const rockT = { value: rockTexture(q.aniso) }
+    this.terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTexture(q.aniso) })
+    if (q.surfaces) this.terrainMat.defines = { SURFACES: '' }
     this.terrainMat.onBeforeCompile = (sh) => {
-      // Terrain UVs are world XZ; the detail map multiplies around 1.0 so it
-      // adds texture without darkening the palette.
-      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
+      sh.uniforms.tRock = rockT
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nvarying vec3 vWN;\nvarying float vDist;')
+        .replace('#include <project_vertex>', `#include <project_vertex>
+          vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vWN = normalize(mat3(modelMatrix) * objectNormal);
+          vDist = -mvPosition.z;`)
+      // Terrain UVs are world XZ / 5. The ground map averages ~0.78, so ×1.28
+      // adds texture without shifting the palette. Up close a second, finer
+      // scale (2.6 m) joins the 8 m one so neither tiles visibly, far away a 60 m scale breaks up
+      // the flat colour, and steep faces turn to rock projected from the side.
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D tRock;\nvarying vec3 vWP;\nvarying vec3 vWN;\nvarying float vDist;')
+        .replace('#include <map_fragment>', `
         #ifdef USE_MAP
-          diffuseColor.rgb *= texture2D(map, vMapUv).rgb * 1.28;
+          float det = texture2D(map, vMapUv * 0.6).r;
+          #ifdef SURFACES
+            // Only near and steep pixels pay for the extra samples.
+            if (vDist < 50.0) det = mix(mix(det, texture2D(map, vMapUv * 1.9 + 0.37).r, 0.5), det, smoothstep(15.0, 50.0, vDist));
+            float dMacro = texture2D(map, vMapUv * 0.083 + 0.11).r;
+            det *= 0.82 + dMacro * 0.23;
+            float steep = 1.0 - smoothstep(0.6, 0.85, vWN.y);
+            if (steep > 0.0) {
+              vec3 an = abs(vWN);
+              vec2 ruv = an.x > an.z ? vWP.zy : vWP.xy;
+              float rk = mix(texture2D(tRock, ruv * 0.11).r, texture2D(tRock, ruv * 0.37).r, 0.35) * 1.28;
+              diffuseColor.rgb *= mix(1.0, rk, steep);
+            }
+          #endif
+          diffuseColor.rgb *= det * 1.28;
         #endif`)
     }
+    const surfU = { tRock: rockT, tBark: { value: barkTexture(q.aniso) }, tLeaf: { value: leafTexture(q.aniso) }, tGrain: { value: detail } }
     this.propMat = new THREE.MeshLambertMaterial({ vertexColors: true })
+    if (q.surfaces) this.propMat.defines = { SURFACES: '' }
     this.propMat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = this.time
+      Object.assign(sh.uniforms, surfU)
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aSway;\nuniform float uTime;')
+        .replace('#include <common>', '#include <common>\nattribute float aSway;\nattribute float aSurf;\nuniform float uTime;\nvarying vec3 vWP;\nvarying vec3 vWN;\nvarying float vSurf;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
           // Wind: a slow sway, phase-shifted across the world so trees don't move in lockstep.
           float ph = position.x * 0.07 + position.z * 0.05;
           transformed.x += sin(uTime * 1.3 + ph) * aSway * 0.12;
           transformed.z += cos(uTime * 1.1 + ph * 1.3) * aSway * 0.08;`)
+        .replace('#include <project_vertex>', `#include <project_vertex>
+          vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vWN = normalize(mat3(modelMatrix) * objectNormal);
+          vSurf = aSurf;`)
+      // The surface texture is projected along the face's main axis: scenery is
+      // flat-shaded, so a face never straddles two projections.
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D tRock;\nuniform sampler2D tBark;\nuniform sampler2D tLeaf;\nuniform sampler2D tGrain;\nvarying vec3 vWP;\nvarying vec3 vWN;\nvarying float vSurf;')
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          #ifdef SURFACES
+            vec3 an = abs(vWN);
+            vec2 puv = an.y > max(an.x, an.z) ? vWP.xz : (an.x > an.z ? vWP.zy : vWP.xy);
+            float tx;
+            if (vSurf < 0.5) tx = mix(1.0, texture2D(tGrain, puv * 0.7).r * 1.28, 0.45);
+            else if (vSurf < 1.5) tx = mix(texture2D(tRock, puv * 0.2).r, texture2D(tRock, puv * 0.7).r, 0.4) * 1.28;
+            else if (vSurf < 2.5) tx = texture2D(tBark, vec2(puv.x * 1.6, puv.y * 0.45)).r * 1.28;
+            else tx = texture2D(tLeaf, puv * 0.55).r * 1.28;
+            diffuseColor.rgb *= tx;
+          #endif`)
     }
     const kind = roadKind(rally)
     this.roadMat = new THREE.MeshLambertMaterial({ map: roadTexture(kind, roadBase(rally), q.aniso) })
     // Still water mirrors the sky: low roughness picks up the environment map.
-    this.lakeMat = new THREE.MeshStandardMaterial({ color: 0x23404a, roughness: 0.06, metalness: 0.6, transparent: true, opacity: 0.9 })
-    this.waterMat = new THREE.MeshLambertMaterial({ color: 0x4f6b70, transparent: true, opacity: 0.78, depthWrite: false })
+    // Ripples scroll slowly (see update); vertex alpha fades the shore.
+    const ripples = waterNormals(q.aniso)
+    // Winter lakes are frozen: pale, matt ice with only a hint of surface relief.
+    this.lakeMat = this.snowAll
+      ? new THREE.MeshStandardMaterial({ color: 0xc4d4dc, roughness: 0.32, metalness: 0.05, transparent: true, vertexColors: true, normalMap: ripples, normalScale: new THREE.Vector2(0.08, 0.08), depthWrite: false })
+      : new THREE.MeshStandardMaterial({ color: 0x1f3a44, roughness: 0.05, metalness: 0.55, transparent: true, vertexColors: true, normalMap: ripples, normalScale: new THREE.Vector2(0.35, 0.35), depthWrite: false })
+    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x4d6560, roughness: 0.12, metalness: 0.3, transparent: true, vertexColors: true, normalMap: ripples, normalScale: new THREE.Vector2(0.6, 0.6), depthWrite: false })
     this.planTiles()
     this.planSegments()
     this.ridges = this.horizon()
@@ -106,6 +163,8 @@ export class World {
   /** Called every frame; builds at most `budget` pieces so a frame never stalls. */
   update(cam: THREE.Vector3, dt: number, budget = 2): void {
     this.time.value += dt
+    const rip = this.lakeMat.normalMap
+    if (rip && !this.snowAll) rip.offset.set(this.time.value * 0.012, this.time.value * 0.007)
     // Distant ridges ring the camera, wherever on a long stage it is.
     this.ridges.position.set(cam.x, 0, cam.z)
     const r2 = this.q.radius * this.q.radius
@@ -260,19 +319,16 @@ export class World {
     g.add(mesh)
     const props = this.scatter(t)
     if (props) g.add(props)
-    // Lake surface: one flat sheet at the tile's water level, only where the basin is.
-    let lvl = 0, wet = 0
-    for (let j = 0; j < n; j += 4)
-      for (let i = 0; i < n; i += 4) {
-        const w = this.ground.water(x0 + i * RES, z0 + j * RES)
-        if (w !== null) {
-          lvl += w
-          wet++
-        }
-      }
-    if (wet) {
-      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(TILE, TILE).rotateX(-Math.PI / 2), this.lakeMat)
-      sheet.position.set(t.cx, lvl / wet, t.cz)
+    // Lake surface: only the cells that touch a lake, always below the road.
+    const lake = lakeSurface(this.ground, x0, z0, n, RES)
+    if (lake) {
+      const lg = new THREE.BufferGeometry()
+      lg.setAttribute('position', new THREE.BufferAttribute(lake.pos, 3))
+      lg.setAttribute('uv', new THREE.BufferAttribute(lake.uv, 2))
+      lg.setAttribute('color', new THREE.BufferAttribute(lake.col, 4))
+      lg.setIndex(lake.idx)
+      lg.computeVertexNormals()
+      const sheet = new THREE.Mesh(lg, this.lakeMat)
       sheet.renderOrder = 1
       g.add(sheet)
     }
@@ -420,27 +476,33 @@ export class World {
           b.quad2(q0, q1, q2, q3, rail)
           b.add(PRIM.box, post.getHex(), p0.x, a.y - 0.6, p0.z, 0.12, 1.5, 0.12, a.heading)
         } else if (kind === 'rockwall' || kind === 'mosswall') {
+          const ROWS = 7
           // A cut rock face: five rows stepping back and up, each vertex pushed
           // by noise in world space so neighbouring segments join seamlessly.
           const moss2 = kind === 'mosswall'
           const H = moss2 ? 2.2 : 4.5 + this.noise(s / 23, side * 3) * 2.5
           const face = (p: THREE.Vector3, a2: { heading: number; y: number }, ox: number, oz: number) => {
             const rows: THREE.Vector3[] = []
-            for (let k = 0; k <= 4; k++) {
-              const f = k / 4
-              const jag = this.noise(p.x * 0.35 + k * 1.7, p.z * 0.35) * 0.9
-              const out = 0.15 + f * f * 2.2 + jag * 0.6 + (k % 2) * 0.25
-              rows.push(v(p.x + ox * out, a2.y - 0.4 + f * (H + 0.4) + jag * 0.4 * f, p.z + oz * out))
+            // Seven rows: ledges and overhangs at different heights, pushed by two
+            // scales of world-space noise so the face reads as broken rock.
+            for (let k = 0; k <= ROWS; k++) {
+              const f = k / ROWS
+              const jag = this.noise(p.x * 0.35 + k * 1.7, p.z * 0.35) * 0.9 + this.noise(p.x * 1.3 + k * 3.1, p.z * 1.3) * 0.35
+              const out = 0.15 + f * f * 2.2 + jag * 0.7 + (k % 2) * 0.3
+              rows.push(v(p.x + ox * out, a2.y - 0.4 + f * (H + 0.4) + jag * 0.35 * f, p.z + oz * out))
             }
             return rows
           }
           const r0 = face(p0, a, lx, lz), r1 = face(p1, c, lx2, lz2)
-          for (let k = 0; k < 4; k++) {
-            const shade = 0.72 + this.noise(p0.x * 0.2 + k, p0.z * 0.2) * 0.25 + k * 0.05
-            const col = (moss2 ? moss : k === 3 && this.rally.palette.forest ? rock.clone().lerp(new THREE.Color(this.rally.palette.forest), 0.35) : rock).clone().multiplyScalar(shade)
+          b.surface = moss2 ? 3 : 1
+          for (let k = 0; k < ROWS; k++) {
+            const shade = 0.7 + this.noise(p0.x * 0.2 + k, p0.z * 0.2) * 0.28 + (k / ROWS) * 0.2
+            const col = (moss2 ? moss : k === ROWS - 1 && this.rally.palette.forest ? rock.clone().lerp(new THREE.Color(this.rally.palette.forest), 0.35) : rock).clone().multiplyScalar(shade)
             b.quad2(r0[k], r1[k], r1[k + 1], r0[k + 1], col)
           }
+          b.surface = 1
           if (!moss2 && this.noise(s / 3, side * 9) > 0.35) b.add(PRIM.dodeca, rock.getHex(), p0.x + lx * 0.6, a.y - 0.2, p0.z + lz * 0.6, 0.7, 0.5, 0.7, s, 0.3, 0.2, 0, 0, 1.2, Math.random)
+          b.surface = 0
         } else if (kind === 'snowbank') {
           const hgt = 0.9 + this.noise(s / 7, side * 5) * 0.3
           const mid0 = v(p0.x + lx * 0.6, a.y + hgt, p0.z + lz * 0.6), mid1 = v(p1.x + lx2 * 0.6, c.y + hgt, p1.z + lz2 * 0.6)
@@ -516,18 +578,42 @@ export class World {
     return grp
   }
 
+  /**
+   * A ford or the river under a bridge: level across, with soft edges that
+   * stop at the bank instead of hanging over ground that falls away.
+   */
   private water(s0: number, s1: number, w: number, dy: number): THREE.Mesh {
-    const pts: number[] = [], idx: number[] = []
+    const pts: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = []
+    const half = this.route.half
+    const across = [-w, -half, 0, half, w]
     const n = Math.ceil((s1 - s0) / STEP) + 1
     for (let k = 0; k < n; k++) {
-      const a = this.route.at(Math.min(s1, s0 + k * STEP))
+      const s = Math.min(s1, s0 + k * STEP)
+      const a = this.route.at(s)
       const lx = Math.cos(a.heading), lz = -Math.sin(a.heading)
-      const base = this.ground.height(a.x, a.z)
-      pts.push(a.x + lx * w, base + 0.3 + dy, a.z + lz * w, a.x - lx * w, base + 0.3 + dy, a.z - lz * w)
-      if (k) idx.push((k - 1) * 2, k * 2, (k - 1) * 2 + 1, (k - 1) * 2 + 1, k * 2, k * 2 + 1)
+      const level = this.ground.height(a.x, a.z) + 0.3 + dy
+      // Ends of a ford thin out where the road climbs out of the dip.
+      const endFade = Math.min(1, Math.min(s - s0, s1 - s) / 4)
+      for (const o of across) {
+        const x = a.x + lx * o, z = a.z + lz * o
+        const outer = Math.abs(o) === w
+        const y = outer ? Math.min(level, this.ground.height(x, z) - 0.05) : level
+        pts.push(x, y, z)
+        uv.push(x / 6, z / 6)
+        col.push(1, 1, 1, outer ? 0 : 0.88 * endFade)
+      }
+      if (k) {
+        const c = across.length
+        for (let j = 0; j < c - 1; j++) {
+          const p = (k - 1) * c + j, q = k * c + j
+          idx.push(p, q, p + 1, p + 1, q, q + 1)
+        }
+      }
     }
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4))
     g.setIndex(idx)
     g.computeVertexNormals()
     const m = new THREE.Mesh(g, this.waterMat)
@@ -540,6 +626,7 @@ export class World {
     const b = new GeoBuilder()
     const half = this.route.half
     const stone = 0x8e8a82
+    b.surface = 1
     for (let s = s0; s <= s1; s += 2) {
       const a = this.route.at(s)
       const lx = Math.cos(a.heading), lz = -Math.sin(a.heading)
