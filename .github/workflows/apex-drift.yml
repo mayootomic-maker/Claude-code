@@ -170,9 +170,12 @@ jobs:
 
   # One fixed release whose files are replaced on every push to a branch:
   # download links that never change and always point at the newest build.
+  # Hosted Mac runners can sit queued until GitHub cancels the job; that must
+  # not hold back the other downloads. Files a build didn't produce keep their
+  # previous version on the release, and the notes say which ones lag.
   release:
     name: Publish to the apex-drift-latest release
-    if: github.event_name == 'push'
+    if: always() && github.event_name == 'push' && needs.android.result == 'success'
     needs: [android, desktop]
     runs-on: ubuntu-latest
     permissions:
@@ -184,6 +187,17 @@ jobs:
           merge-multiple: true
           path: release
 
+      - name: Note any desktop build that didn't finish
+        run: |
+          missing=""
+          for f in apex-drift-windows.zip apex-drift-linux.zip apex-drift-mac.zip; do
+            [ -f "release/$f" ] || missing="$missing $f"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::Not rebuilt this time, previous version kept:$missing"
+            echo "LAGGING=> **Not rebuilt this time (previous build kept):**$missing" >> "$GITHUB_ENV"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apex-drift-latest
@@ -192,6 +206,8 @@ jobs:
           make_latest: false
           body: |
             Newest build from branch ${{ github.ref_name }}, commit ${{ github.sha }}.
+
+            ${{ env.LAGGING }}
 
             - **Any computer, one file:** apex-drift.html — download and double-click it. Runs in Chrome, Edge, Firefox or Safari, offline, nothing to install.
             - **Android:** apex-drift-3.0.0.zip — install apk/debug/app-debug.apk. The release APK and AAB are unsigned until the signing secrets are set.
