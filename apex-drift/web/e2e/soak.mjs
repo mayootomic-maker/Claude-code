@@ -3,23 +3,30 @@
 //   node e2e/soak.mjs            quick: school, one finished stage, every rally loads
 //   node e2e/soak.mjs --full     also loads every one of the 48 stages
 //   node e2e/soak.mjs --desktop  a 1280x720 window with mouse and keyboard, no touch
+//   node e2e/soak.mjs --single   the one-file build (npm run single), opened from disk
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 
 const FULL = process.argv.includes('--full')
 const DESKTOP = process.argv.includes('--desktop')
-const OUT = new URL(process.argv.includes('--desktop') ? './out/desktop/' : './out/', import.meta.url).pathname
+const SINGLE = process.argv.includes('--single')
+const OUT = new URL(process.argv.includes('--desktop') ? './out/desktop/' : process.argv.includes('--single') ? './out/single/' : './out/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
 const PORT = 4179
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' })
-await new Promise((r) => setTimeout(r, 2500))
+const URL_ = SINGLE ? new URL('../dist-single/apex-drift.html', import.meta.url).href : `http://localhost:${PORT}/`
+const server = SINGLE ? null : spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' })
+if (server) await new Promise((r) => setTimeout(r, 2500))
 
 const errors = []
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] })
 const ctx = await browser.newContext(DESKTOP ? { viewport: { width: 1280, height: 720 } } : { viewport: { width: 915, height: 412 }, hasTouch: true, isMobile: true })
 const page = await ctx.newPage()
-page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`))
+page.on('console', (m) => {
+  if (m.type() === 'error') errors.push(`console: ${m.text()} ${m.location().url ?? ''}`)
+  // The fallback engine is for browsers without worklets; on Chromium it means the real one failed to load.
+  if (m.text().includes('engine worklet unavailable')) errors.push(`engine sound fell back: ${m.text()}`)
+})
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 const step = async (name, fn) => {
   const t0 = Date.now()
@@ -78,7 +85,7 @@ async function drive(ms) {
 if (DESKTOP) await page.addInitScript(() => {
   if (!localStorage.getItem('apexdrift.save.v4')) localStorage.setItem('apexdrift.save.v4', JSON.stringify({ settings: { quality: 'low' } }))
 })
-await page.goto(`http://localhost:${PORT}/`)
+await page.goto(URL_)
 await step('sting and title', async () => {
   await page.waitForSelector('#sting:not(.hidden)')
   await shot('01-sting')
@@ -115,6 +122,26 @@ await step('reset puts the car back on the road', async () => {
   await page.keyboard.press('KeyR')
   const d = await page.evaluate(() => Math.abs(window.__app.race.sim.car.d))
   if (d > 0.5) throw new Error(`car ${d} m off the centre line after reset`)
+})
+await step('photo mode: orbit, zoom, take a photo, back to pause', async () => {
+  await page.keyboard.press('Escape')
+  await tap('[data-photo]')
+  await page.waitForSelector('#photobar')
+  const box = await page.locator('#gl').boundingBox()
+  await page.mouse.move(box.width / 2, box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.width / 2 + 160, box.height / 2 - 40, { steps: 6 })
+  await page.mouse.up()
+  await tap('[data-zoom="1"]')
+  await page.waitForTimeout(400)
+  await shot('05c-photo')
+  const download = page.waitForEvent('download', { timeout: 20000 })
+  await tap('[data-shoot]')
+  const d = await download
+  if (!/\.png$/.test(d.suggestedFilename())) throw new Error(`photo saved as ${d.suggestedFilename()}`)
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('#overlay:not(.hidden) [data-resume]')
+  await tap('[data-resume]')
 })
 await step('quit to menu', async () => {
   await page.keyboard.press('Escape')
@@ -178,6 +205,16 @@ await step('a whole stage, driven to the results screen', async () => {
   await waitPhase('results', 30000)
   await page.waitForSelector('.results')
   await shot('10-results')
+  await tap('[data-replay]')
+  await page.waitForSelector('#replaybar')
+  await page.waitForTimeout(4000)
+  await shot('11-replay')
+  await tap('[data-rspeed]')
+  await page.waitForTimeout(3000)
+  await shot('12-replay-later')
+  if ((await phase()) !== 'replay') throw new Error(`replay ended early (at ${await phase()})`)
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('#overlay:not(.hidden) .results')
   await tap('[data-menu]')
   await page.waitForSelector('#menu:not(.hidden)')
 })
@@ -191,7 +228,7 @@ for (const [r, s] of stages) {
       raw.tutorialDone = true
       localStorage.setItem('apexdrift.save.v4', JSON.stringify(raw))
     })
-    await page.goto(`http://localhost:${PORT}/`)
+    await page.goto(URL_)
     await page.mouse.click(400, 200)
     await page.waitForSelector('#title:not(.hidden)')
     await page.mouse.click(400, 200)
@@ -207,7 +244,7 @@ for (const [r, s] of stages) {
   })
 }
 await browser.close()
-server.kill()
+server?.kill()
 if (errors.length) {
   console.error(`\n${errors.length} problem(s):\n  ` + errors.join('\n  '))
   process.exit(1)

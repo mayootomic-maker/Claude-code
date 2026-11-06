@@ -44,12 +44,24 @@ xvfb-run node scripts/smoke.mjs               # plays the start with keyboard on
 
 ## Playing on a computer
 
+**The simplest way: one HTML file.** `npm run single` packs the whole game — code,
+images, fonts, co-driver recordings and the engine-sound worklet — into
+`web/dist-single/apex-drift.html` (about 3.3 MB). Double-click it: it runs from disk
+in any current browser, offline, with no server. Every push publishes it as
+`apex-drift.html` on the release. Saves live in the browser's storage for that file,
+so keep opening the same copy. `node e2e/soak.mjs --single` plays it end to end.
+
+**Or as an app:**
+
 Every push builds `apex-drift-windows.zip`, `apex-drift-mac.zip` and `apex-drift-linux.zip`
 on the `apex-drift-latest` release. Nothing to install: unzip and run.
 
 - Keyboard: W A S D or arrows, Space handbrake, Q rewind, R back on the road, C camera,
   F fullscreen (F11 too), Esc pause and back. Any Xbox-style gamepad works as well.
-- Esc in a race opens the pause menu, which has the sound, display and controls options.
+- Esc in a race opens the pause menu, which has the sound, display and controls options,
+  and photo mode (drag to orbit, scroll to zoom, Space or the button saves a PNG).
+- After a stage, **Watch replay** plays the run back from TV cameras: long-lens trackside
+  shots the car drives past, a helicopter, a wheel-arch camera and a low front shot.
 - The game is served inside the app over a private `app://` scheme: module scripts and
   the engine-sound AudioWorklet will not load from `file://`.
 - The builds are **not code-signed**. Windows SmartScreen asks "Run anyway"; macOS needs

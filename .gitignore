@@ -37,3 +37,4 @@ project/previews/*
 
 # Fetched by project/scripts/bootstrap.sh
 project/assets/hdri/
+dist-single/

@@ -269,3 +269,27 @@ body.driving:not(.touch) #gl { cursor: none; }
 body:not(.touch) button:focus-visible, body:not(.touch) input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 @media (min-width: 1400px) and (pointer: fine) { :root { --pad: 40px; } }
 .dialog.still { animation: none; }
+
+/* ---- replay and photo mode */
+#replaybar { position: fixed; top: calc(11vh + 10px); left: 0; right: 0; margin: 0 auto; width: max-content; z-index: 6; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(6px); animation: rise 0.3s both; }
+#replaybar .rec { font-weight: 700; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber); display: flex; align-items: center; gap: 7px; }
+#replaybar .rec::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); animation: blink 1.4s ease-in-out infinite; }
+#replaybar .rt { font-variant-numeric: tabular-nums; min-width: 3.4em; color: var(--dim); }
+#replaybar .btn { padding: 6px 14px; min-height: 0; font-size: 13px; }
+@keyframes blink { 50% { opacity: 0.25; } }
+#photobar { position: fixed; left: 0; right: 0; margin: 0 auto; bottom: calc(18px + var(--sb)); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 8px; width: min(640px, calc(100% - 32px)); animation: rise 0.3s both; }
+#photobar .hint { margin: 0; padding: 6px 12px; border-radius: 10px; background: var(--glass); color: var(--dim); font-size: 12px; text-align: center; }
+#photobar .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+#photobar .zoom { width: 46px; padding: 0; font-size: 20px; }
+body.photo #gl { cursor: grab; }
+body.photo #gl:active { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { #replaybar .rec::before { animation: none; } }
+body.photo .coach { display: none; }
+/* Results never run off a short landscape phone: the card scrolls, and the
+   buttons sit two to a row so the whole thing usually fits without scrolling. */
+.results { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+@media (max-height: 520px) {
+  .results .col { flex-direction: row; flex-wrap: wrap; }
+  .results .col .btn { flex: 1 1 40%; min-height: 42px; }
+  .results .bigtime { font-size: 54px; }
+}

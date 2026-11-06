@@ -31,6 +31,12 @@ jobs:
           npm ci
           npm run verify
 
+      # The whole game in one HTML file that runs from disk. Packed from the
+      # dist that verify just built and checked.
+      - name: Web — single-file build
+        working-directory: apex-drift/web
+        run: node scripts/single-file.mjs
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -82,12 +88,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release"
           cd apex-drift/android/app/build/outputs
           zip -r "$RUNNER_TEMP/release/apex-drift-3.0.0.zip" apk/debug/*.apk apk/release/*.apk bundle/release/*.aab
+          cp "$GITHUB_WORKSPACE/apex-drift/web/dist-single/apex-drift.html" "$RUNNER_TEMP/release/"
 
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
         with:
           name: release-android
-          path: ${{ runner.temp }}/release/*.zip
+          path: |
+            ${{ runner.temp }}/release/*.zip
+            ${{ runner.temp }}/release/*.html
           if-no-files-found: error
 
   desktop:
@@ -184,9 +193,12 @@ jobs:
           body: |
             Newest build from branch ${{ github.ref_name }}, commit ${{ github.sha }}.
 
+            - **Any computer, one file:** apex-drift.html — download and double-click it. Runs in Chrome, Edge, Firefox or Safari, offline, nothing to install.
             - **Android:** apex-drift-3.0.0.zip — install apk/debug/app-debug.apk. The release APK and AAB are unsigned until the signing secrets are set.
             - **Windows:** apex-drift-windows.zip — unzip, run "Apex Drift.exe". SmartScreen may warn because the app isn't code-signed: More info → Run anyway.
             - **macOS:** apex-drift-mac.zip — unzip, move to Applications, right-click → Open the first time (not notarised).
             - **Linux:** apex-drift-linux.zip — unzip, run ./apex-drift.
-          files: release/*.zip
+          files: |
+            release/*.zip
+            release/*.html
           overwrite_files: true

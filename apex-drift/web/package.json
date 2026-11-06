@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "node e2e/soak.mjs",
-    "verify": "npm run typecheck && npm test && vite build && node scripts/check-release.mjs"
+    "verify": "npm run typecheck && npm test && vite build && node scripts/check-release.mjs",
+    "single": "vite build && node scripts/single-file.mjs"
   },
   "dependencies": {
     "three": "^0.170.0"

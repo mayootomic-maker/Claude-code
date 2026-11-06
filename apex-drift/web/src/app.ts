@@ -1,4 +1,5 @@
 import { Audio, engineProfileFor, haptic } from './audio/audio'
+import { asset } from './core/assets'
 import { clamp } from './core/math'
 import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
 import { CoDriver } from './game/codriver'
@@ -7,18 +8,20 @@ import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
 import { GhostRecorder, loadGhost, saveGhost } from './game/ghost'
+import { Director, emptyFrame, ReplayRecorder, type Replay, type ReplayFrame } from './game/replay'
 import { dailyChallenge, streak } from './game/daily'
 import { openStore, type Settings, type Store } from './game/save'
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
-import { DT } from './sim/car'
+import { DT, type Pose } from './sim/car'
 import { autopilot, StageSim, type Difficulty } from './sim/stage'
+import { BODY } from './sim/terrain'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
 import { Hud } from './ui/hud'
 
 const VERSION = '3.0.0'
 type Screen = 'sting' | 'title' | 'menu' | 'loading' | 'race'
-type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results'
+type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results' | 'replay'
 
 interface RaceCtx {
   rally: RallyDef
@@ -41,7 +44,14 @@ interface RaceCtx {
   rewinds: number
   sectors: number
   recorder: GhostRecorder
+  /** Full-detail recording for the replay after the finish. */
+  tape: ReplayRecorder
+  replay: { data: Replay; t: number; speed: number; dir: Director; frame: ReplayFrame; bar: HTMLElement } | null
+  /** Photo mode: an orbit camera around the paused car. */
+  photo: { yaw: number; pitch: number; dist: number; capture: boolean; bar: HTMLElement; drag: { x: number; y: number } | null } | null
 }
+
+const tapePose: Pose = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steer: 0, spin: 0 }
 
 type Snap = Record<string, unknown>
 
@@ -255,11 +265,11 @@ export class App {
     const streakN = streak(s.daily.days, new Date())
     this.menu(() => `
       <div class="home">
-        <button class="tile big" data-go="career" style="background-image:url('img/c-${nextRally?.id ?? 'finland'}.jpg')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
-        <button class="tile" data-go="free" style="background-image:url('img/free.jpg')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
-        <button class="tile" data-go="daily" style="background-image:url('img/c-${daily.base}.jpg')"><span class="kicker">${s.daily.best[daily.key] ? t('dailyBest', { time: fmtTime(s.daily.best[daily.key]) }) : streakN ? t('streak', { n: streakN }) : ''}</span><span class="t display">${t('daily')}</span><span class="s">${t('dailySub', { rally: esc(daily.rally.name), car: esc(CARS.find((c) => c.id === daily.car)?.name ?? '') })}</span></button>
-        <button class="tile" data-go="school" style="background-image:url('img/c-finland.jpg')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
-        <button class="tile" data-go="garage" style="background-image:url('img/garage.jpg')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
+        <button class="tile big" data-go="career" style="background-image:url('${asset(`img/c-${nextRally?.id ?? 'finland'}.jpg`)}')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
+        <button class="tile" data-go="free" style="background-image:url('${asset(`img/free.jpg`)}')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="daily" style="background-image:url('${asset(`img/c-${daily.base}.jpg`)}')"><span class="kicker">${s.daily.best[daily.key] ? t('dailyBest', { time: fmtTime(s.daily.best[daily.key]) }) : streakN ? t('streak', { n: streakN }) : ''}</span><span class="t display">${t('daily')}</span><span class="s">${t('dailySub', { rally: esc(daily.rally.name), car: esc(CARS.find((c) => c.id === daily.car)?.name ?? '') })}</span></button>
+        <button class="tile" data-go="school" style="background-image:url('${asset(`img/c-finland.jpg`)}')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
+        <button class="tile" data-go="garage" style="background-image:url('${asset(`img/garage.jpg`)}')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
         <button class="tile" data-go="options"><span class="t display">${t('options')}</span></button>
         <button class="tile" data-go="credits"><span class="t display">${t('credits')}</span></button>
         ${native()?.desktop ? `<button class="tile" data-go="exit"><span class="t display">${t('quitGame')}</span></button>` : ''}
@@ -275,7 +285,7 @@ export class App {
         else if (go === 'exit') native()?.exitApp?.()
         else this.creditsScreen()
       }))
-    }, 'img/garage.jpg')
+    }, asset('img/garage.jpg'))
   }
 
   private careerList(mode: 'career' | 'free'): void {
@@ -286,7 +296,7 @@ export class App {
       <div class="rallies">${RALLIES.map((r, i) => {
         const open = unlocked(s, i)
         const medals = r.stages.map((_, k) => s.best[`${r.id}:${k}:${s.settings.difficulty}`]?.medal ?? null)
-        return `<button class="tile rally ${open ? '' : 'locked'}" data-r="${i}" style="background-image:url('img/c-${r.id}.jpg');animation-delay:${i * 30}ms" ${open ? '' : 'aria-disabled="true"'}>
+        return `<button class="tile rally ${open ? '' : 'locked'}" data-r="${i}" style="background-image:url('${asset(`img/c-${r.id}.jpg`)}');animation-delay:${i * 30}ms" ${open ? '' : 'aria-disabled="true"'}>
           <span class="kicker"><span class="flag">${r.flag.map((c) => `<i style="background:${c}"></i>`).join('')}</span>${esc(r.nation)}</span>
           <span class="t display">${esc(r.name)}</span>
           <span class="s">${open ? t('stages', { n: r.stages.length, km: r.stages.reduce((a, x) => a + x.km, 0).toFixed(1) }) : t('locked', { rally: RALLIES[i - 1]?.name ?? '' })}</span>
@@ -358,7 +368,7 @@ export class App {
         this.rallyDetail(r, mode)
       })
       root.querySelector('[data-drive]')?.addEventListener('click', () => this.load(r, sel, 'free'))
-    }, `img/c-${r.id}.jpg`)
+    }, asset(`img/c-${r.id}.jpg`))
   }
 
   private garage(carSel?: string): void {
@@ -564,7 +574,7 @@ export class App {
         // Shown inside the app: it works offline, and back returns to the game.
         const o = this.ui.overlay
         o.classList.remove('hidden')
-        html(o, `<div class="dialog" style="width:min(760px,100%);height:100%;display:flex;flex-direction:column"><iframe src="privacy.html" title="${t('privacy')}" style="flex:1;border:0;border-radius:10px;background:#1a2027"></iframe><div class="col"><button class="btn" data-close>${t('back')}</button></div></div>`)
+        html(o, `<div class="dialog" style="width:min(760px,100%);height:100%;display:flex;flex-direction:column"><iframe src="${asset('privacy.html')}" title="${t('privacy')}" style="flex:1;border:0;border-radius:10px;background:#1a2027"></iframe><div class="col"><button class="btn" data-close>${t('back')}</button></div></div>`)
         $('[data-close]', o).addEventListener('click', () => o.classList.add('hidden'))
       })
       root.querySelector('[data-erase]')?.addEventListener('click', () => this.confirm(t('eraseConfirm'), () => {
@@ -642,7 +652,9 @@ export class App {
     const s = this.store.save
     this.show('loading')
     const tips = ['loadingTip0', 'loadingTip1', 'loadingTip2', 'loadingTip3', 'loadingTip4'] as const
-    this.ui.loading.style.backgroundImage = `url('img/c-${rally.id === 'school' ? 'finland' : rally.id}.jpg')`
+    // The school and the daily stage borrow a country's road, so they show its picture.
+    const art = rally.id === 'school' ? 'finland' : rally.id.startsWith('daily-') ? (RALLIES.find((x) => x.name === rally.name)?.id ?? 'finland') : rally.id
+    this.ui.loading.style.backgroundImage = `url('${asset(`img/c-${art}.jpg`)}')`
     html(this.ui.loading, `
       <div class="info"><p class="kicker">${mode === 'school' ? t('school') : `${esc(rally.name)} · ${t('stageOf', { n: stageIdx + 1, total: rally.stages.length })}`}</p>
         <h1 class="display">${esc(mode === 'school' ? t('school') : st.name)}</h1>
@@ -700,6 +712,9 @@ export class App {
       rewinds: mode === 'school' ? 9 : REWINDS[sim.setup.difficulty] ?? 3,
       sectors: 0,
       recorder: new GhostRecorder(),
+      tape: new ReplayRecorder(),
+      replay: null,
+      photo: null,
       benchmark: s.settings.quality === 'auto' && !s.tier ? [] : null,
     }
     this.race.hud.rewinds(this.race.rewinds)
@@ -721,6 +736,11 @@ export class App {
   private disposeRace(): void {
     const r = this.race
     if (!r) return
+    r.replay?.bar.remove()
+    r.photo?.bar.remove()
+    this.photoCleanup?.()
+    this.photoCleanup = null
+    document.body.classList.remove('photo')
     r.view.dispose()
     this.race = null
     this.controls.release()
@@ -749,15 +769,19 @@ export class App {
     }
     const r = this.race
     if (!r || this.screen !== 'race') return
-    if (!r.paused) this.tick(r, dt)
-    r.view.updateGhost(r.sim.time)
-    if (r.view.softHits) {
-      this.audio.thump(0.25)
-      haptic(25, this.store.save.settings.haptics)
-      if (Math.random() < 0.5) this.audio.cheer()
+    if (r.replay) this.replayTick(r, r.replay, dt)
+    else if (r.photo) this.photoTick(r, r.photo)
+    else {
+      if (!r.paused) this.tick(r, dt)
+      r.view.updateGhost(r.sim.time)
+      if (r.view.softHits) {
+        this.audio.thump(0.25)
+        haptic(25, this.store.save.settings.haptics)
+        if (Math.random() < 0.5) this.audio.cheer()
+      }
+      const mode = r.phase === 'intro' ? 'intro' : r.phase === 'finished' || r.phase === 'results' ? 'orbit' : 'drive'
+      r.view.frame(r.paused ? 1 : this.acc / DT, r.paused ? 0 : dt, mode, r.introT / 6)
     }
-    const mode = r.phase === 'intro' ? 'intro' : r.phase === 'finished' || r.phase === 'results' ? 'orbit' : 'drive'
-    r.view.frame(r.paused ? 1 : this.acc / DT, r.paused ? 0 : dt, mode, r.introT / 6)
     this.renderer.sample(dt * 1000)
     if (r.benchmark) this.benchmark(r, dt * 1000)
     if (this.perf) this.perfOverlay(dt * 1000)
@@ -818,7 +842,11 @@ export class App {
     while (this.acc >= DT) {
       sim.step(r.phase === 'running' ? input : { steer: 0, throttle: 0, brake: 0, handbrake: false })
       this.acc -= DT
-      if (r.phase === 'running') r.recorder.record(sim.time, sim.car.x, sim.car.y, sim.car.z, sim.car.heading)
+      if (r.phase === 'running') {
+        const c = sim.car
+        r.recorder.record(sim.time, c.x, c.y, c.z, c.heading)
+        r.tape.record(sim.time, c.s, c.pose(1, tapePose), c.speed, c.rpm, c.throttleOut, c.gear, Math.min(1, c.slipR * 3))
+      }
       if (r.phase === 'running' && Math.round(sim.time * 60) % 10 === 0) {
         r.history.push({ car: snap(sim.car), sim: snap(sim) })
         if (r.history.length > 36) r.history.shift()
@@ -1015,8 +1043,9 @@ export class App {
         <p>${t('dailyBest', { time: fmtTime(s.daily.best[day]) })}${!prevBest || time < prevBest ? ` · ${t('newBest')}` : ''}</p>
         <p class="kicker">${t('streak', { n })}</p>
         <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}</p>
-        <div class="col"><button class="btn" data-retry>${t('retry')}</button><button class="btn ghost" data-menu>${t('menu')}</button></div>
+        <div class="col"><button class="btn" data-retry>${t('retry')}</button><button class="btn ghost" data-replay>${t('watchReplay')}</button><button class="btn ghost" data-menu>${t('menu')}</button></div>
       </div></div>`)
+      $('[data-replay]', o).addEventListener('click', () => this.startReplay(r))
       $('[data-retry]', o).addEventListener('click', () => this.load(r.rally, 0, 'daily', sim.setup.car))
       $('[data-menu]', o).addEventListener('click', () => this.toMenu())
       return
@@ -1048,7 +1077,7 @@ export class App {
         if (!s.finished.includes(r.rally.id)) s.finished.push(r.rally.id)
         if (!s.postcards.includes(r.rally.id)) {
           s.postcards.push(r.rally.id)
-          extra = `<div class="postcard" style="background-image:url('img/c-${r.rally.id}.jpg')"></div><p>${t('postcard', { rally: esc(r.rally.name) })}</p>`
+          extra = `<div class="postcard" style="background-image:url('${asset(`img/c-${r.rally.id}.jpg`)}')"></div><p>${t('postcard', { rally: esc(r.rally.name) })}</p>`
         }
         s.event = null
       }
@@ -1074,15 +1103,185 @@ export class App {
           ${r.mode === 'career' && !last ? `<button class="btn" data-next>${t('nextStage')}</button>` : ''}
           ${r.mode === 'free' && r.stageIdx + 1 < r.rally.stages.length ? `<button class="btn" data-freenext>${t('nextStage')}</button>` : ''}
           ${r.mode === 'free' ? `<button class="btn ghost" data-retry>${t('retry')}</button>` : ''}
+          <button class="btn ghost" data-replay>${t('watchReplay')}</button>
           <button class="btn ${r.mode === 'career' && last ? '' : 'ghost'}" data-menu>${t('menu')}</button>
         </div>`
     html(o, standingsHtml
       ? `<div class="results"><div class="card">${left}</div><div class="card">${standingsHtml}${buttons}</div></div>`
       : `<div class="results single"><div class="card">${left}${buttons}</div></div>`)
+    $('[data-replay]', o).addEventListener('click', () => this.startReplay(r))
     o.querySelector('[data-next]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'career'))
     o.querySelector('[data-retry]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx, 'free'))
     o.querySelector('[data-freenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'free'))
     $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+  }
+
+  // ------------------------------------------------------------- replay
+
+  /** Plays the run back from TV cameras, letterboxed, with its own engine sound. */
+  private startReplay(r: RaceCtx): void {
+    if (r.replay || r.phase !== 'results') return
+    const data = r.tape.done()
+    if (data.frames < 2) return
+    const g = r.sim.ground
+    const dir = new Director(r.sim.route, (x, z) => g.height(x, z), (s) => g.limitAt(s) + BODY + 0.8, r.sim.finish)
+    const bar = document.createElement('div')
+    bar.id = 'replaybar'
+    bar.innerHTML = `<span class="rec">${t('replay')}</span><span class="rt" data-rt>0:00</span><button class="btn ghost" data-rspeed>1×</button><button class="btn ghost" data-rexit>${t('exitReplay')}</button>`
+    document.body.appendChild(bar)
+    r.replay = { data, t: 0, speed: 1, dir, frame: emptyFrame(), bar }
+    r.phase = 'replay'
+    this.ui.overlay.classList.add('hidden')
+    this.ui.hud.classList.add('hidden')
+    $('#bars').classList.add('on')
+    $('[data-rexit]', bar).addEventListener('click', () => this.stopReplay(r))
+    const sp = $('[data-rspeed]', bar)
+    sp.addEventListener('click', () => {
+      const rp = r.replay
+      if (!rp) return
+      rp.speed = rp.speed === 1 ? 2 : rp.speed === 2 ? 4 : rp.speed === 4 ? 0.5 : 1
+      sp.textContent = `${rp.speed === 0.5 ? '½' : rp.speed}×`
+    })
+    this.audio.playMusic('menu')
+  }
+
+  private replayTick(r: RaceCtx, rp: NonNullable<RaceCtx['replay']>, dt: number): void {
+    rp.t += dt * rp.speed
+    if (rp.t >= rp.data.duration) return this.stopReplay(r)
+    const f = rp.data.at(rp.t, rp.frame)
+    r.view.override = f
+    const shot = rp.dir.shot(rp.t, f)
+    r.view.setShot(shot.pos, shot.look, shot.fov)
+    r.view.updateGhost(rp.t)
+    r.view.frame(1, dt, 'fixed')
+    // The engine plays from the recording; slowed or sped-up replays stay quiet.
+    const live = rp.speed === 1
+    const car = r.sim.car
+    this.audio.updateCar({
+      rpm: f.rpm, throttle: live ? f.throttle : 0, load: live ? f.throttle : 0, gear: f.gear, shifting: false,
+      boost: 0, speed: live ? f.speed : 0, surface: car.surface, slip: live ? f.slip : 0, wheelSpin: 0,
+      onGround: true, impact: 0, landed: 0, camera: shot.kind === 'wheel' ? 'bonnet' : 'chase',
+    })
+    const rt = rp.bar.querySelector('[data-rt]')
+    if (rt) rt.textContent = fmtTime(rp.t).replace(/\.\d+$/, '')
+  }
+
+  private stopReplay(r: RaceCtx): void {
+    const rp = r.replay
+    if (!rp) return
+    rp.bar.remove()
+    r.replay = null
+    r.view.override = null
+    r.phase = 'results'
+    $('#bars').classList.remove('on')
+    this.ui.hud.classList.remove('hidden')
+    this.ui.overlay.classList.remove('hidden')
+    r.view.snapCamera()
+  }
+
+  // ------------------------------------------------------------- photo mode
+
+  private startPhoto(r: RaceCtx): void {
+    if (!r.paused || r.photo) return
+    const bar = document.createElement('div')
+    bar.id = 'photobar'
+    bar.innerHTML = `<p class="hint">${t(isTouch() ? 'photoHintTouch' : 'photoHint')}</p><div class="row"><button class="btn ghost zoom" data-zoom="-1" aria-label="zoom in">+</button><button class="btn ghost zoom" data-zoom="1" aria-label="zoom out">−</button><button class="btn" data-shoot>${t('takePhoto')}</button><button class="btn ghost" data-pdone>${t('back')}</button></div>`
+    document.body.appendChild(bar)
+    r.photo = { yaw: r.sim.car.heading + Math.PI * 0.8, pitch: 0.22, dist: 7, capture: false, bar, drag: null }
+    this.ui.overlay.classList.add('hidden')
+    this.ui.hud.classList.add('hidden')
+    document.body.classList.add('photo')
+    $('[data-shoot]', bar).addEventListener('click', () => r.photo && (r.photo.capture = true))
+    $('[data-pdone]', bar).addEventListener('click', () => this.stopPhoto(r))
+    bar.querySelectorAll<HTMLElement>('[data-zoom]').forEach((b) => b.addEventListener('click', () => {
+      if (r.photo) r.photo.dist = clamp(r.photo.dist * (1 + Number(b.dataset.zoom) * 0.15), 2.6, 30)
+    }))
+    const c = this.canvas
+    const down = (e: PointerEvent) => {
+      if (!r.photo) return
+      r.photo.drag = { x: e.clientX, y: e.clientY }
+      c.setPointerCapture?.(e.pointerId)
+    }
+    const move = (e: PointerEvent) => {
+      const ph = r.photo
+      if (!ph?.drag) return
+      ph.yaw -= (e.clientX - ph.drag.x) * 0.008
+      ph.pitch = clamp(ph.pitch + (e.clientY - ph.drag.y) * 0.006, 0.02, 1.3)
+      ph.drag = { x: e.clientX, y: e.clientY }
+    }
+    const up = () => r.photo && (r.photo.drag = null)
+    const wheel = (e: WheelEvent) => {
+      if (!r.photo) return
+      e.preventDefault()
+      r.photo.dist = clamp(r.photo.dist * (1 + Math.sign(e.deltaY) * 0.1), 2.6, 30)
+    }
+    const key = (e: KeyboardEvent) => {
+      const ph = r.photo
+      if (!ph) return
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') ph.yaw += 0.08
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') ph.yaw -= 0.08
+      else if (e.code === 'ArrowUp' || e.code === 'KeyW') ph.pitch = clamp(ph.pitch + 0.05, 0.02, 1.3)
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') ph.pitch = clamp(ph.pitch - 0.05, 0.02, 1.3)
+      else if (e.code === 'Equal' || e.code === 'NumpadAdd') ph.dist = clamp(ph.dist * 0.9, 2.6, 30)
+      else if (e.code === 'Minus' || e.code === 'NumpadSubtract') ph.dist = clamp(ph.dist * 1.1, 2.6, 30)
+      else if (e.code === 'Space' || e.code === 'Enter') ph.capture = true
+    }
+    c.addEventListener('pointerdown', down)
+    c.addEventListener('pointermove', move)
+    c.addEventListener('pointerup', up)
+    c.addEventListener('wheel', wheel, { passive: false })
+    addEventListener('keydown', key)
+    this.photoCleanup = () => {
+      c.removeEventListener('pointerdown', down)
+      c.removeEventListener('pointermove', move)
+      c.removeEventListener('pointerup', up)
+      c.removeEventListener('wheel', wheel)
+      removeEventListener('keydown', key)
+    }
+  }
+
+  private photoCleanup: (() => void) | null = null
+
+  private photoTick(r: RaceCtx, ph: NonNullable<RaceCtx['photo']>): void {
+    const c = r.view.car.root.position
+    const h = Math.cos(ph.pitch) * ph.dist
+    const pos = { x: c.x + Math.sin(ph.yaw) * h, y: c.y + 0.8 + Math.sin(ph.pitch) * ph.dist, z: c.z + Math.cos(ph.yaw) * h }
+    pos.y = Math.max(pos.y, r.sim.ground.height(pos.x, pos.z) + 0.4)
+    r.view.setShot(pos, { x: c.x, y: c.y + 0.6, z: c.z }, 50)
+    r.view.frame(1, 0, 'fixed')
+    if (!ph.capture) return
+    // Read the canvas in the same task as the draw: the drawing buffer is
+    // only guaranteed until the browser composites it.
+    ph.capture = false
+    this.savePhoto(this.canvas.toDataURL('image/png'), `apex-drift-${r.rally.id}-${Date.now()}`)
+  }
+
+  private savePhoto(dataUrl: string, name: string): void {
+    const n = (window as unknown as { ApexNative?: { saveImage?: (b: string, n: string) => boolean } }).ApexNative
+    if (n?.saveImage) {
+      toast(n.saveImage(dataUrl, name) ? t('photoSaved') : t('photoFailed'))
+      return
+    }
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `${name}.png`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    toast(t('photoSaved'))
+  }
+
+  private stopPhoto(r: RaceCtx): void {
+    const ph = r.photo
+    if (!ph) return
+    ph.bar.remove()
+    this.photoCleanup?.()
+    this.photoCleanup = null
+    r.photo = null
+    document.body.classList.remove('photo')
+    this.ui.hud.classList.remove('hidden')
+    r.view.snapCamera()
+    this.pauseMenuAgain()
   }
 
   private toMenu(): void {
@@ -1097,7 +1296,11 @@ export class App {
   private action(a: 'pause' | 'reset' | 'camera' | 'rewind'): void {
     const r = this.race
     if (!r || this.screen !== 'race') return
-    if (a === 'pause') return this.inPauseSettings() ? this.pauseMenuAgain() : r.paused ? this.unpause() : this.pause()
+    if (a === 'pause') {
+      if (r.replay) return this.stopReplay(r)
+      if (r.photo) return this.stopPhoto(r)
+      return this.inPauseSettings() ? this.pauseMenuAgain() : r.paused ? this.unpause() : this.pause()
+    }
     if (r.paused || r.phase !== 'running') return
     if (a === 'reset') {
       r.sim.reset()
@@ -1132,6 +1335,7 @@ export class App {
 
   private pause(): void {
     const r = this.race
+    if (r?.replay) return this.stopReplay(r)
     if (!r || r.paused || r.phase === 'results') return
     r.paused = true
     this.controls.release()
@@ -1142,8 +1346,9 @@ export class App {
     html(o, `<div class="dialog" role="dialog" aria-label="${t('paused')}">
       <p class="kicker">${esc(r.mode === 'school' ? t('school') : r.rally.stages[r.stageIdx].name)}</p><h2 class="display">${t('paused')}</h2>
       <div class="opt"><label>${t('notes')}</label><div class="seg">${(['full', 'corners', 'off'] as const).map((v) => `<button class="${st.notes === v ? 'on' : ''}" data-notes="${v}">${t(`notes_${v}` as TKey)}</button>`).join('')}</div></div>
-      <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-settings>${t('options')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)
+      <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-settings>${t('options')}</button><button class="btn ghost" data-photo>${t('photoMode')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)
     $('[data-settings]', o).addEventListener('click', () => this.pauseSettings('controls'))
+    $('[data-photo]', o).addEventListener('click', () => this.startPhoto(r))
     o.querySelectorAll<HTMLElement>('[data-notes]').forEach((b) => b.addEventListener('click', () => {
       st.notes = b.dataset.notes as typeof st.notes
       this.store.write()
@@ -1220,7 +1425,9 @@ export class App {
   private back(): boolean {
     const o = this.ui.overlay
     if (this.screen === 'race' && this.race) {
-      if (this.inPauseSettings()) this.pauseMenuAgain()
+      if (this.race.replay) this.stopReplay(this.race)
+      else if (this.race.photo) this.stopPhoto(this.race)
+      else if (this.inPauseSettings()) this.pauseMenuAgain()
       else if (this.race.paused) this.unpause()
       else if (this.race.phase === 'results') this.toMenu()
       else this.pause()

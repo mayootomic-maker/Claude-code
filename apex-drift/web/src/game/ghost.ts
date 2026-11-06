@@ -19,8 +19,10 @@ export class GhostRecorder {
   private next = 0
 
   record(t: number, x: number, y: number, z: number, heading: number): void {
-    if (t < this.next) return
-    this.next = t + 1 / HZ
+    // Advance the sample clock by whole intervals: restarting it from t lets
+    // rounding skip a physics step now and then, and the playback runs fast.
+    if (t < this.next - 1e-6) return
+    this.next = Math.max(this.next + 1 / HZ, t)
     this.data.push(x, y, z, heading)
   }
 

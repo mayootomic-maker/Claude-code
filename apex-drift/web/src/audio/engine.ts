@@ -1,4 +1,5 @@
 import workletUrl from './engine-worklet.ts?worker&url'
+import { scriptUrls } from '../core/assets'
 import { ENGINE_PARAMS, defaultInputs, type EngineInputs } from './engine-dsp'
 import type { EngineProfile } from './engines'
 
@@ -141,8 +142,16 @@ export function loadEngineWorklet(ctx: BaseAudioContext): Promise<boolean> {
     p = (async () => {
       try {
         if (!ctx.audioWorklet || typeof AudioWorkletNode === 'undefined') return false
-        await ctx.audioWorklet.addModule(workletUrl)
-        return true
+        let last: unknown = null
+        for (const url of await scriptUrls(workletUrl)) {
+          try {
+            await ctx.audioWorklet.addModule(url)
+            return true
+          } catch (e) {
+            last = e
+          }
+        }
+        throw last
       } catch (e) {
         console.warn('engine worklet unavailable, using the simple engine', e)
         return false

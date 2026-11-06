@@ -1,3 +1,4 @@
+import { asset } from '../core/assets'
 import { clamp } from '../core/math'
 import type { Lang } from '../game/save'
 import { CarSound, engineProfileFor, loadEngineWorklet, playImpact, playLanding, type CarSoundState, type EngineProfile } from './engine'
@@ -104,8 +105,8 @@ export class Audio {
     if (this.voices.has(lang) || !this.ctx) return this.voices.has(lang)
     try {
       const [meta, bin] = await Promise.all([
-        fetch(`${base}/voice-${lang}.json`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))),
-        fetch(`${base}/voice-${lang}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status))))),
+        fetch(asset(`${base}/voice-${lang}.json`)).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))),
+        fetch(asset(`${base}/voice-${lang}.mp3`)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status))))),
       ])
       const buf = await this.ctx.decodeAudioData(bin)
       this.voices.set(lang, { buf, clips: (meta as { clips: Record<string, [number, number]> }).clips })

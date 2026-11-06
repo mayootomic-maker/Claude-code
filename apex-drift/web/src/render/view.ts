@@ -182,7 +182,7 @@ export class StageView {
     g.rig.root.position.set(p.x, p.y, p.z)
     g.rig.root.rotation.set(0, p.heading, 0)
     // Fade it out when it's right on top of you, so it never blocks the view.
-    const d = Math.hypot(p.x - this.sim.car.x, p.z - this.sim.car.z)
+    const d = Math.hypot(p.x - this.pose.x, p.z - this.pose.z)
     g.rig.root.visible = d > 3
   }
   private camPos = new THREE.Vector3()
@@ -273,8 +273,15 @@ export class StageView {
     this.camera.updateProjectionMatrix()
   }
 
+  /**
+   * Set during a replay: the car follows this recorded pose instead of the
+   * simulation, and dust is kicked up at the recorded speed.
+   */
+  override: (Pose & { speed: number }) | null = null
+
   syncCar(alpha: number): void {
-    const p = this.sim.car.pose(alpha, this.pose)
+    const o = this.override
+    const p = o ? this.copyPose(o) : this.sim.car.pose(alpha, this.pose)
     const root = this.car.root
     root.position.set(p.x, p.y, p.z)
     root.rotation.set(0, p.heading, 0)
@@ -284,6 +291,21 @@ export class StageView {
       w.pivot.rotation.y = w.front ? p.steer : 0
       w.spin.rotation.x = p.spin
     }
+  }
+
+  private copyPose(o: Pose): Pose {
+    const p = this.pose
+    p.x = o.x; p.y = o.y; p.z = o.z; p.heading = o.heading; p.pitch = o.pitch; p.roll = o.roll; p.steer = o.steer; p.spin = o.spin
+    return p
+  }
+
+  /** Points the camera from outside (replay director, photo mode); draw with frame(..., 'fixed'). */
+  setShot(pos: { x: number; y: number; z: number }, look: { x: number; y: number; z: number }, fov: number): void {
+    this.camPos.set(pos.x, pos.y, pos.z)
+    this.camera.position.copy(this.camPos)
+    this.camera.lookAt(look.x, look.y, look.z)
+    this.camera.fov = fov
+    this.camera.updateProjectionMatrix()
   }
 
   /** Per frame: interpolate the car, move the camera, stream the world, draw. */
@@ -610,7 +632,10 @@ export class StageView {
     const car = this.sim.car
     const N = d.life.length
     const loose = car.surface !== 'asphalt' && car.surface !== 'wet'
-    const rate = car.airborne ? 0 : (loose ? clamp(car.speed / 25, 0, 1.2) * 1.4 : 0) + clamp((car.slipR - 0.12) * 4, 0, 1) * 1.5 + this.burst * 8
+    const speed = this.override ? this.override.speed : car.speed
+    const rate = this.override
+      ? (loose ? clamp(speed / 25, 0, 1.2) * 1.4 : 0)
+      : car.airborne ? 0 : (loose ? clamp(speed / 25, 0, 1.2) * 1.4 : 0) + clamp((car.slipR - 0.12) * 4, 0, 1) * 1.5 + this.burst * 8
     this.burst = Math.max(0, this.burst - dt * 2.5)
     const emit = Math.floor(rate * 60 * dt + Math.random())
     const p = this.pose
@@ -624,9 +649,9 @@ export class StageView {
       d.pos[i * 3] = p.x - fx * 1.4 + lx * side
       d.pos[i * 3 + 1] = p.y + 0.25
       d.pos[i * 3 + 2] = p.z - fz * 1.4 + lz * side
-      d.vel[i * 3] = -fx * car.speed * 0.15 + (r() - 0.5) * 2
+      d.vel[i * 3] = -fx * speed * 0.15 + (r() - 0.5) * 2
       d.vel[i * 3 + 1] = 0.6 + r() * 1.2
-      d.vel[i * 3 + 2] = -fz * car.speed * 0.15 + (r() - 0.5) * 2
+      d.vel[i * 3 + 2] = -fz * speed * 0.15 + (r() - 0.5) * 2
       d.life[i] = 1
       d.size[i] = 0.6 + r() * 0.6
     }
