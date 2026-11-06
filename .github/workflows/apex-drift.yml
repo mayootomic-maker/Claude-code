@@ -14,6 +14,9 @@ jobs:
   android:
     name: Web verify + Android build
     runs-on: ubuntu-latest
+    # Publishing the build to the fixed release below needs write access to releases.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -74,3 +77,25 @@ jobs:
             apex-drift/android/app/build/outputs/apk/debug/*.apk
             apex-drift/android/app/build/outputs/apk/release/*.apk
             apex-drift/android/app/build/outputs/bundle/release/*.aab
+
+      # One fixed release whose zip is replaced on every push to a branch:
+      # a download link that never changes and always points at the newest build.
+      - name: Zip the build
+        if: github.event_name == 'push'
+        run: |
+          cd apex-drift/android/app/build/outputs
+          zip -r "$RUNNER_TEMP/apex-drift-3.0.0.zip" apk/debug/*.apk apk/release/*.apk bundle/release/*.aab
+
+      - name: Publish to the apex-drift-latest release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apex-drift-latest
+          name: Apex Drift 3.0.0 (latest build)
+          prerelease: true
+          make_latest: false
+          body: |
+            Newest build from branch ${{ github.ref_name }}, commit ${{ github.sha }}.
+            Install apk/debug/app-debug.apk from the zip. The release APK and AAB are unsigned until the signing secrets are set.
+          files: ${{ runner.temp }}/apex-drift-3.0.0.zip
+          overwrite_files: true
