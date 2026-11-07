@@ -54,10 +54,13 @@ export interface Rung {
 }
 
 /**
- * Measured with `scripts`-style headless runs of every rung on every stage
- * (see ai.test.ts for the checks that keep it honest): each rung is a few
- * percent quicker than the one below, the old Pro sits in the middle, and the
- * top rung drives at the limit with no mistakes at all.
+ * Tuned by running every rung over whole stages headless (ai.test.ts keeps
+ * the order honest). On Finland SS4 the ladder runs from 179 s (Bad) to 123 s
+ * (No one can beat it) with Pro at 129 s; Bad spins and runs wide several
+ * times a stage, the top rung never makes a mistake. Medal targets above Pro
+ * tighten by about what the rungs gain: the stage's ideal time assumes more
+ * acceleration than the cars have, so no driver, AI or human, gets near it on
+ * the fast stages.
  */
 export const RUNGS: Record<Difficulty, Rung> = {
   bad:        { grip: 0.58, brake: 0.42, edge: 2.2, lineUse: 0.3, pace: 0.74, wobble: 0.16, lag: 0.22, mistakes: 4.5, severity: 1.0, power: 1, target: 1.95, field: 1.06, reward: 0.6, rewinds: 9 },
@@ -69,8 +72,8 @@ export const RUNGS: Record<Difficulty, Rung> = {
   driver:     { grip: 0.88, brake: 0.71, edge: 1.25, lineUse: 0.88, pace: 0.95, wobble: 0.04, lag: 0.075, mistakes: 0.42, severity: 0.42, power: 1, target: 1.19, field: 1.02, reward: 1.25, rewinds: 3 },
   semipro:    { grip: 0.90, brake: 0.74, edge: 1.2, lineUse: 0.93, pace: 0.97, wobble: 0.03, lag: 0.06, mistakes: 0.28, severity: 0.35, power: 1, target: 1.12, field: 1.012, reward: 1.4, rewinds: 2 },
   pro:        { grip: 0.92, brake: 0.76, edge: 1.15, lineUse: 0.97, pace: 0.985, wobble: 0.02, lag: 0.05, mistakes: 0.18, severity: 0.3, power: 1, target: 1.07, field: 1.005, reward: 1.6, rewinds: 1 },
-  elite:      { grip: 0.93, brake: 0.79, edge: 1.08, lineUse: 1, pace: 0.99, wobble: 0.012, lag: 0.035, mistakes: 0.08, severity: 0.25, power: 1.05, target: 1.05, field: 1.0, reward: 1.8, rewinds: 1 },
-  champion:   { grip: 0.94, brake: 0.82, edge: 1.0, lineUse: 1, pace: 0.995, wobble: 0.006, lag: 0.02, mistakes: 0.03, severity: 0.2, power: 1.11, target: 1.03, field: 0.995, reward: 2.0, rewinds: 0 },
-  legend:     { grip: 0.95, brake: 0.84, edge: 0.95, lineUse: 1, pace: 1.0, wobble: 0.002, lag: 0.01, mistakes: 0.01, severity: 0.15, power: 1.2, target: 1.01, field: 0.99, reward: 2.3, rewinds: 0 },
-  unbeatable: { grip: 0.96, brake: 0.86, edge: 0.9, lineUse: 1, pace: 1.0, wobble: 0, lag: 0, mistakes: 0, severity: 0, power: 1.32, target: 0.99, field: 0.985, reward: 2.7, rewinds: 0 },
+  elite:      { grip: 0.93, brake: 0.79, edge: 1.08, lineUse: 1, pace: 0.99, wobble: 0.012, lag: 0.035, mistakes: 0.08, severity: 0.25, power: 1.05, target: 1.06, field: 1.0, reward: 1.8, rewinds: 1 },
+  champion:   { grip: 0.94, brake: 0.82, edge: 1.0, lineUse: 1, pace: 0.995, wobble: 0.006, lag: 0.02, mistakes: 0.03, severity: 0.2, power: 1.11, target: 1.05, field: 0.995, reward: 2.0, rewinds: 0 },
+  legend:     { grip: 0.95, brake: 0.84, edge: 0.95, lineUse: 1, pace: 1.0, wobble: 0.002, lag: 0.01, mistakes: 0.01, severity: 0.15, power: 1.2, target: 1.04, field: 0.99, reward: 2.3, rewinds: 0 },
+  unbeatable: { grip: 0.96, brake: 0.86, edge: 0.9, lineUse: 1, pace: 1.0, wobble: 0, lag: 0, mistakes: 0, severity: 0, power: 1.32, target: 1.03, field: 0.985, reward: 2.7, rewinds: 0 },
 }
