@@ -128,8 +128,8 @@ describe('AI personalities', () => {
   })
 
   it('the drifter goes in sideways far more often than the surgeon, and they finish at different times', () => {
-    const drifter = solo(10, 3, 'pro', 'kestrel', character('r3')!.p)
-    const surgeon = solo(10, 3, 'pro', 'kestrel', character('r5')!.p)
+    const drifter = solo(2, 3, 'pro', 'kestrel', character('r3')!.p)
+    const surgeon = solo(2, 3, 'pro', 'kestrel', character('r5')!.p)
     expect(drifter.o.driver.drifts).toBeGreaterThan(surgeon.o.driver.drifts + 2)
     expect(Math.abs(drifter.t - surgeon.t)).toBeGreaterThan(0.3)
   }, 60000)

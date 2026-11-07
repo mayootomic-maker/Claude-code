@@ -241,9 +241,11 @@ export class AiDriver {
   /** Mistakes it has made, and of which kind. */
   mistakes = 0
   readonly kinds: Record<MistakeKind, number> = { late: 0, wide: 0, twitch: 0, spin: 0 }
-  /** Passes it has committed to, and defensive moves it has made. */
+  /** Cars it has overtaken, attacks it has committed to (picked a side), and defensive moves. */
   passes = 0
+  attacks = 0
   defends = 0
+  private prevGaps: number[] = []
   /** The speed it is aiming for right now, m/s. */
   target = 0
   /** -1 cautious … +1 all in. Rises when trailing, falls when leading comfortably. */
@@ -306,8 +308,12 @@ export class AiDriver {
 
     // --- perception: who is where -------------------------------------------
     let ahead: Traffic | null = null, behind: Traffic | null = null, inFront = 0
-    for (const o of traffic) {
+    for (let k = 0; k < traffic.length; k++) {
+      const o = traffic[k]
       const gap = o.s - s
+      const was = this.prevGaps[k]
+      if (was !== undefined && was > 0 && was < 30 && gap < -1) this.passes++
+      if (was === undefined || gap < -1 || gap > 0) this.prevGaps[k] = gap
       if (gap > 0) inFront++
       if (gap > 3.5 && gap < 70 && (!ahead || gap < ahead.s - s)) ahead = o
       if (gap < -3.5 && gap > -30 && (!behind || gap > behind.s - s)) behind = o
@@ -376,7 +382,7 @@ export class AiDriver {
         const space = pick > 0 ? leftRoom : rightRoom
         const need = 1.9 + (1 - P.aggression) * 0.6
         if (space > need) {
-          if (!this.passSide) this.passes++
+          if (!this.passSide) this.attacks++
           this.passSide = pick
           wantShift = clamp(o.d + pick * 2.3, -room, room) - lineOffset(line, s)
           // Alongside into a corner on the outside is a crash; only the brave stay there.
@@ -469,24 +475,26 @@ export class AiDriver {
         if (over < 0.5) throttle = Math.max(throttle, 0.45)
       } else this.flick = null
     } else if (this.recover <= 0 && v > 7 && !this.mistake) {
-      const c = this.corner(s + 2, 10 + v * 0.6, 1 / 30)
+      const c = this.corner(s + 2, 10 + v * 0.6, 1 / 60)
       const ci = c ? Math.floor(c.apex / STEP) : -1
       if (c && Math.abs(ci - this.decided) > 15) {
         const hairpin = c.k > 1 / 11
-        // Drifters go in sideways from 28 m radius down; everyone uses the lever in a true hairpin.
-        const drifty = c.k > 1 / (12 + 16 * P.drift) && v < 15 + 9 * P.drift
+        // Drifters go in sideways into anything tighter than about 50 m; on gravel everyone uses the lever in a true hairpin.
+        const drifty = c.k > 1 / (12 + 40 * P.drift) && v < 15 + 14 * P.drift
         const toEntry = c.entry - s
         // Only once the braking is done: the lever carries speed into a slide, it doesn't shed it.
         if (((hairpin && v < 21) || drifty) && over < 1 && v < line.vcorner[ci] * commit + 2.5 && toEntry > -3) {
           if (toEntry < 4 + v * (0.18 + 0.12 * P.drift)) {
             this.decided = ci
-            // On tarmac a slide costs more than it gains; even drifters mostly keep it tidy there.
+            // On tarmac a slide costs more than it gains, even in a hairpin: drifters still try now and then.
             const loose = car.surface !== 'asphalt' && car.surface !== 'wet'
-            if (hairpin || this.rnd() < P.drift * (loose ? 1 : 0.35)) {
+            const roll = this.rnd()
+            if (loose ? hairpin || roll < P.drift : roll < P.drift * 0.35) {
               this.drifts++
               // A drifter flicks; a tidy driver just tugs the lever.
               const flick = P.drift > 0.45 && !hairpin ? 0.1 + 0.08 * P.drift : P.drift > 0.45 ? 0.08 : 0
-              this.flick = { t: 0, dir: c.dir, flick, pull: 0.2 + 0.14 * Math.max(P.drift, P.aggression) }
+              // Tarmac gives a tug, not a yank: the rear lets go far more suddenly there.
+              this.flick = { t: 0, dir: c.dir, flick, pull: (loose ? 0.2 + 0.14 * Math.max(P.drift, P.aggression) : 0.08 + 0.05 * P.drift) }
               if (flick > 0) steer = c.dir * 0.55
             }
           }
