@@ -170,7 +170,7 @@ export function makePlan(log: (s: string) => void): Plan {
     const { run, report } = bestRun(specs[key], log)
     runs[key] = run
     reports.push(report)
-    log(`  hero ${report.heroTime.toFixed(2)} s, pro AI ${report.proTime.toFixed(2)} s over ${report.metres} m (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
+    log(`  hero ${report.heroTime.toFixed(2)} s, pro ${report.proTime.toFixed(2)} s, top rung ${report.topTime.toFixed(2)} s over ${report.metres} m (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
   }
   const shots: Shot[] = []
   // One claim list for the race across both acts, so the finish never reuses a stretch from the start.
@@ -285,13 +285,15 @@ export function makePlan(log: (s: string) => void): Plan {
       audio: 'outside', out: { type: 'fade', dur: 0.5 },
       note: 'Sweden, snow: aerial descent onto a long handbrake drift',
     }, m)
-    const k2 = m.best(3.4, slide)
+    // Not where the road runs between snow walls: from the roadside the wall fills the frame.
+    const walled = (x: number) => r.sim.route.narrow.some((nr) => x > nr.s0 - 60 && x < nr.s1 + 60)
+    const k2 = m.best(3.4, (k) => (walled(m.s[k] + 18) ? 0 : slide(k)))
     const mid2 = k2 + Math.round(2.1 / DT)
     // Stand on the outside of the corner the car is sliding through.
     const c2 = m.curv[mid2] || m.curv[k2 + 60]
     add({
       name: 'snow-tele', run: 'snow', t0: k2 * DT, dur: 3.4,
-      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[mid2] + 18, side: c2 > 0 ? -1 : 1, back: 1.5, h: 1.5, frame: 15 }) },
+      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[mid2] + 18, side: c2 > 0 ? -1 : 1, back: 8, h: 3.6, frame: 15 }) },
       audio: 'outside', out: { type: 'hblur', dur: 0.3 },
       note: 'roadside telephoto from the outside of a drift, snow spray',
     }, m)
@@ -414,13 +416,17 @@ export function makePlan(log: (s: string) => void): Plan {
       const k = m.best(3, (q) => m.v[q])
       return [k + 90, k + 100] as [number, number]
     }
-    const [a1] = pick()
+    const [a1, b1] = pick()
+    // A camera that pans to follow the car away ends the shot on whatever stands beside it (a tree,
+    // a marker post): this one holds on the flight, turning only a little toward the car.
+    const flight = routePoint(e, (m.s[a1] + m.s[b1]) / 2, 0, 1.6)
+    const lowCam = routePoint(e, m.s[a1] + 8, e.run.sim.route.half + 1.6, 1.3)
     add({
       name: 'jump-low', run: 'race', t0: a1 * DT - 1.6, dur: 3.0,
-      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[a1] + 6, side: 1, back: 0.5, h: 1.3, fov: [52, 48], lookUp: 0.9 }) },
+      cam: { kind: 'free', fn: crane(e, lowCam, lowCam, (t) => flight.clone().lerp(e.tracks.pos(0, t, 0.14).add(new THREE.Vector3(0, 0.9, 0)), 0.4), [56, 52], 1.1) },
       audio: 'outside', out: { type: 'fade', dur: 0.3 },
       voice: [{ words: ['jump'], at: 0.1 }],
-      note: 'Finland: side-on at the lip of the biggest jump, the car flies across the frame',
+      note: 'Finland: low beyond the biggest crest, the car flies over it toward the lens',
     }, m)
     const [a2] = pick()
     add({

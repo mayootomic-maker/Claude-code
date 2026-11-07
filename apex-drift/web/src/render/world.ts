@@ -3,6 +3,7 @@ import { fbm2, noise2, rng, smoothstep } from '../core/math'
 import type { RallyDef, StageDef } from '../data'
 import { STEP, type Route } from '../sim/route'
 import { asLand, BODY, type Crossing, type Ground, type Land } from '../sim/terrain'
+import { atmosphere } from './atmosphere'
 import { CardBuilder, GeoBuilder, PRIM } from './builder'
 import { baseFor, bridgeSupports, edgePoint, planSegment, planTile, type DrawnGround, type PlanCtx, type Placed } from './placement'
 import { LAKE_BELOW_ROAD, lakeSurface, streamSurface } from './lakes'
@@ -1134,6 +1135,9 @@ export class World {
     const cForest = new THREE.Color(pal.forest).multiplyScalar(0.75)
     const cRock = new THREE.Color(pal.rock).multiplyScalar(0.9)
     const cSnow = new THREE.Color(0xf2f4f7)
+    // Unlit, so the light of the hour is applied here: at night the ranges are
+    // dark silhouettes against the sky, not snow caps glowing at noon brightness.
+    const dim = atmosphere(this.stage.look, this.stage.weather).dim
     const ridged = (x: number, y: number) => {
       let v = 0, a = 1, f = 1, w = 1
       for (let o = 0; o < 6; o++) {
@@ -1168,12 +1172,13 @@ export class World {
         ]
         rows.forEach(([y, c], row) => {
           pts.push(x, y, z)
-          const k = y > h * 0.5 ? lit : 1
+          const k = (y > h * 0.5 ? lit : 1) * dim
           cols.push(c.r * k, c.g * k, c.b * k)
           // Haze by range, not by the camera's height fog: that thins looking
           // up, so the tall far range would come out darker than the near
           // one in front of it and hang from the sky as dark teeth.
-          haze.push(0.5 + layer * 0.14 - row * 0.03)
+          // In the dark the haze is no brighter than the ranges behind it: less of it, so they stay silhouettes.
+          haze.push((0.5 + layer * 0.14 - row * 0.03) * (0.45 + 0.55 * dim))
         })
         if (i) for (let k = 0; k < 3; k++) {
           const p0 = off + (i - 1) * 4 + k, p1 = off + i * 4 + k
