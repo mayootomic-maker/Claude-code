@@ -367,3 +367,122 @@ export function tyreTexture(aniso: number): THREE.Texture {
   cache.set('tyre', t)
   return t
 }
+
+/**
+ * Cut-out foliage for alpha-tested cards, three columns side by side: a
+ * broadleaf spray, a conifer needle spray and a clump of grass blades. Pale
+ * grey, so each tree's vertex colour tints it; the alpha is the silhouette.
+ */
+export function foliageAtlas(aniso: number): THREE.Texture {
+  const hit = cache.get('foliage')
+  if (hit) return hit
+  const W = 768, H = 256, C = W / 3
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const g = c.getContext('2d')
+  if (!g) throw new Error('2D canvas unavailable')
+  const r = rng(4242)
+  const shade = (v: number, a = 1) => `rgba(${v | 0},${(v * 1.02) | 0},${(v * 0.96) | 0},${a})`
+  // Broadleaf: a fan of twigs carrying overlapping leaves, lit on top.
+  for (let k = 0; k < 520; k++) {
+    const t = r()
+    const ang = -Math.PI / 2 + (r() - 0.5) * 2.6
+    const rad = Math.sqrt(t) * C * 0.44
+    const x = C / 2 + Math.cos(ang) * rad, y = H * 0.55 + Math.sin(ang) * rad * 0.95
+    const len = 7 + r() * 9
+    g.fillStyle = shade(150 + r() * 95 - (1 - y / H) * -20)
+    g.beginPath()
+    g.ellipse(x, y, len, len * 0.45, r() * Math.PI, 0, Math.PI * 2)
+    g.fill()
+  }
+  // Needles: a central twig with fine strokes off both sides, drooping at the tips.
+  g.lineCap = 'round'
+  for (let s = 0; s < 7; s++) {
+    const x0 = C + C * 0.5 + (s - 3) * C * 0.11, y0 = H * 0.08 + r() * 20
+    const len = H * (0.7 + r() * 0.2)
+    g.strokeStyle = shade(120)
+    g.lineWidth = 3
+    g.beginPath()
+    g.moveTo(x0, y0)
+    g.quadraticCurveTo(x0 + (s - 3) * 6, y0 + len * 0.5, x0 + (s - 3) * 14, y0 + len)
+    g.stroke()
+    for (let k = 0; k < 70; k++) {
+      const t = k / 70
+      const px = x0 + (s - 3) * 14 * t * t, py = y0 + len * t
+      const l = (1 - t * 0.6) * 22
+      for (const side of [-1, 1]) {
+        g.strokeStyle = shade(140 + r() * 90)
+        g.lineWidth = 1.6
+        g.beginPath()
+        g.moveTo(px, py)
+        g.lineTo(px + side * l * 0.9, py + l * 0.55)
+        g.stroke()
+      }
+    }
+  }
+  // Grass: blades from the bottom edge, bending out, lighter at the tips.
+  for (let k = 0; k < 140; k++) {
+    const x0 = C * 2 + C * 0.08 + r() * C * 0.84
+    const hgt = H * (0.45 + r() * 0.52), bend = (r() - 0.5) * 60
+    const grad = g.createLinearGradient(0, H, 0, H - hgt)
+    grad.addColorStop(0, shade(110))
+    grad.addColorStop(1, shade(225 + r() * 30))
+    g.fillStyle = grad
+    const w = 2.5 + r() * 3
+    g.beginPath()
+    g.moveTo(x0 - w, H)
+    g.quadraticCurveTo(x0 + bend * 0.3, H - hgt * 0.5, x0 + bend, H - hgt)
+    g.quadraticCurveTo(x0 + bend * 0.3 + w * 0.6, H - hgt * 0.5, x0 + w, H)
+    g.fill()
+  }
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = aniso
+  t.generateMipmaps = true
+  t.minFilter = THREE.LinearMipmapLinearFilter
+  // Canvas Y runs down; the cards put v = 0 at the bottom.
+  t.flipY = true
+  cache.set('foliage', t)
+  return t
+}
+
+/**
+ * Smudges and specks for the lens: invisible until the sun or a bright light
+ * is in frame, then lit up by the bloom like a real, slightly dirty lens.
+ */
+export function lensDirtTexture(): THREE.Texture {
+  const hit = cache.get('lensdirt')
+  if (hit) return hit
+  const W = 512, H = 256
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const g = c.getContext('2d')
+  if (!g) throw new Error('2D canvas unavailable')
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, W, H)
+  const r = rng(77)
+  for (let k = 0; k < 60; k++) {
+    const x = r() * W, y = r() * H, rad = 10 + r() * 46
+    const grad = g.createRadialGradient(x, y, 0, x, y, rad)
+    const a = 0.05 + r() * 0.12
+    grad.addColorStop(0, `rgba(255,255,255,${a})`)
+    grad.addColorStop(0.7, `rgba(255,255,255,${a * 0.5})`)
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    g.fillStyle = grad
+    g.beginPath()
+    g.arc(x, y, rad, 0, Math.PI * 2)
+    g.fill()
+  }
+  for (let k = 0; k < 260; k++) {
+    g.fillStyle = `rgba(255,255,255,${0.1 + r() * 0.35})`
+    g.beginPath()
+    g.arc(r() * W, r() * H, 0.6 + r() * 2.2, 0, Math.PI * 2)
+    g.fill()
+  }
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.NoColorSpace
+  cache.set('lensdirt', t)
+  return t
+}

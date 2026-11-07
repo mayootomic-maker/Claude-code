@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { GeoBuilder, PRIM } from './builder'
+import { CardBuilder, GeoBuilder, PRIM } from './builder'
 
 type R = () => number
 
@@ -56,12 +56,25 @@ export function crownRadius(kind: string, scale: number): number {
 
 const SNOW = 0xf2f5f7
 
-export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: number, r: R, scale = 1): void {
+/** How far below its footprint's low point a trunk (and its root flare) is sunk. */
+export const TREE_SINK = 0.25
+
+/** Foliage colour and rough shape, for distant forest drawn as simple masses. */
+export function treeLook(kind: string): { leaf: number; conifer: boolean } {
+  const t = TREES[kind] ?? TREES.pine
+  return { leaf: t.leaf, conifer: t.shape === 'conifer' || t.shape === 'columnar' }
+}
+
+/**
+ * A tree standing at (x, y, z), y being the lowest ground under its trunk.
+ * With `cards`, the crown also gets alpha-tested leaf or needle cards: the
+ * modelled masses give it volume, the cards a ragged, leafy outline.
+ */
+export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: number, r: R, scale = 1, cards: CardBuilder | null = null, rich = cards !== null): void {
   const t = TREES[kind] ?? TREES.pine
   const h = (t.h[0] + (t.h[1] - t.h[0]) * r()) * scale
   const yaw = r() * Math.PI * 2
-  // Sink the base a little so a slope never shows a floating trunk.
-  y -= 0.4
+  y -= TREE_SINK
   // Trunks get bark, everything else leaves; succulents are all skin.
   const add = b.add.bind(b)
   b.add = (geo, color, ...rest) => {
@@ -69,71 +82,135 @@ export function addTree(b: GeoBuilder, kind: string, x: number, y: number, z: nu
     add(geo, color, ...rest)
   }
   try {
-    tree(b, t, h, x, y, z, yaw, r)
+    tree(b, t, h, x, y, z, yaw, r, cards, rich)
   } finally {
     b.add = add
     b.surface = 0
   }
 }
 
-function tree(b: GeoBuilder, t: TreeSpec, h: number, x: number, y: number, z: number, yaw: number, r: R): void {
+function trunk(b: GeoBuilder, t: TreeSpec, x: number, y: number, z: number, rad: number, len: number, yaw: number, rich: boolean, tiltX = 0, tiltZ = 0): void {
+  b.add(rich ? PRIM.taper8 : PRIM.cylTaper, t.trunk, x, y, z, rad, len, rad, yaw, tiltX, tiltZ, 0, 0.05)
+  if (!rich) return
+  // The flare starts below ground and meets the trunk a little way up.
+  b.add(PRIM.flare, t.trunk, x, y - 0.05, z, rad * 1.02, Math.min(0.9, Math.max(0.45, rad * 2.4)), rad * 1.02, yaw + 0.3)
+}
+
+/** `rich`: the fuller model (more tiers and clumps, limbs, root flares); off on Low, which keeps the older, lighter trees. */
+function tree(b: GeoBuilder, t: TreeSpec, h: number, x: number, y: number, z: number, yaw: number, r: R, cards: CardBuilder | null, rich: boolean): void {
+  const c = new THREE.Color()
   switch (t.shape) {
     case 'conifer': {
-      b.add(PRIM.cyl, t.trunk, x, y, z, h * 0.035, h * 0.4, h * 0.035, yaw, 0, 0, 0, 0)
+      // The trunk runs up into the top tier, so no tier ever floats on air.
+      trunk(b, t, x, y, z, h * 0.032, h * 0.72, yaw, rich)
       // Irregular tiers, darker underneath and lighter at the tips, so a
       // forest reads as foliage rather than a stack of identical cones.
-      const tiers = 4 + Math.floor(r() * 2)
-      const c = new THREE.Color()
+      const tiers = rich ? 5 + Math.floor(r() * 3) : 4 + Math.floor(r() * 2)
       for (let i = 0; i < tiers; i++) {
         const f = i / tiers
-        const rad = h * t.crown * (1 - f * 0.72) * (0.88 + r() * 0.24)
-        const ty = y + h * (0.16 + f * 0.62)
-        const th = h * (0.34 - f * 0.12)
+        const rad = h * t.crown * (1 - f * 0.74) * (0.88 + r() * 0.24)
+        const ty = y + h * (0.14 + f * 0.66)
+        const th = h * (0.3 - f * 0.12)
         c.setHex(t.leaf).offsetHSL(0, 0, -0.05 + f * 0.09)
-        b.add(PRIM.coneStar, c.getHex(), x + (r() - 0.5) * 0.3, ty, z + (r() - 0.5) * 0.3, rad, th, rad, yaw + i * 0.9, (r() - 0.5) * 0.08, (r() - 0.5) * 0.08, 0.1 + f * 0.3, 0.4 + f * 0.6, 1, r)
+        const ox = (r() - 0.5) * 0.25, oz = (r() - 0.5) * 0.25
+        b.add(PRIM.coneStar, c.getHex(), x + ox, ty, z + oz, rad, th, rad, yaw + i * 0.9, (r() - 0.5) * 0.08, (r() - 0.5) * 0.08, 0.1 + f * 0.3, 0.4 + f * 0.6, 1, r)
         if (t.snow) b.add(PRIM.cone, SNOW, x, ty + th * 0.5, z, rad * 0.6, th * 0.5, rad * 0.6, yaw + i, 0, 0, 0.3, 1)
+        if (cards) {
+          // Drooping needle sprays around the rim of each tier.
+          const n = 5 + Math.floor(rad * 0.8)
+          for (let k = 0; k < n; k++) {
+            const a = yaw + i * 0.9 + (k / n) * Math.PI * 2 + r() * 0.4
+            const ca = Math.cos(a), sa = Math.sin(a)
+            const d = rad * (0.62 + r() * 0.2)
+            cards.card(x + ox + ca * d, ty + th * 0.18, z + oz + sa * d, rad * 0.95, th * 0.75, -a + Math.PI / 2, 0.55, 1, c.getHex(), ca, 0.8, sa, 0.15 + f * 0.3, 0.5 + f * 0.6, (r() - 0.5) * 0.06)
+          }
+        }
       }
       break
     }
     case 'columnar':
-      b.add(PRIM.cyl, t.trunk, x, y, z, 0.25, h * 0.2, 0.25, yaw)
+      trunk(b, t, x, y, z, 0.22, h * 0.3, yaw, rich)
       b.add(PRIM.ico1, t.leaf, x, y + h * 0.55, z, h * t.crown, h * 0.5, h * t.crown, yaw, 0, 0, 0.2, 0.8, 1, r)
+      if (cards)
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2 + r()
+          cards.card(x + Math.cos(a) * h * t.crown * 0.7, y + h * (0.3 + r() * 0.5), z + Math.sin(a) * h * t.crown * 0.7, h * t.crown * 1.4, h * 0.3, -a + Math.PI / 2, 0.1, 1, t.leaf, Math.cos(a), 0.3, Math.sin(a), 0.2, 0.8)
+        }
       break
     case 'round': {
-      b.add(PRIM.cylTaper, t.trunk, x, y, z, h * 0.035, h * 0.6, h * 0.035, yaw)
+      trunk(b, t, x, y, z, h * 0.034, h * 0.66, yaw, rich)
       // A crown of overlapping clumps spread through the top half, not one ball on a stick.
       const cr = h * t.crown * 0.5
-      const n = 4 + Math.floor(r() * 3)
-      const c = new THREE.Color()
+      const n = rich ? 5 + Math.floor(r() * 4) : 4 + Math.floor(r() * 3)
+      const cy = y + h * 0.7
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + r()
         const up = 0.5 + r() * 0.42
         const off = cr * (0.35 + r() * 0.35) * (1 - (up - 0.5))
+        const px = x + Math.cos(a) * off, py = y + h * up, pz = z + Math.sin(a) * off
         c.setHex(t.leaf).offsetHSL(0, 0, (up - 0.7) * 0.12)
-        b.add(PRIM.ico, c.getHex(), x + Math.cos(a) * off, y + h * up, z + Math.sin(a) * off, cr * (0.6 + r() * 0.3), cr * (0.5 + r() * 0.25), cr * (0.6 + r() * 0.3), r() * 6, 0, 0, 0.5, 1, 1.2, r)
+        const sx = cr * (0.6 + r() * 0.3), sy = cr * (0.5 + r() * 0.25)
+        b.add(PRIM.ico, c.getHex(), px, py, pz, sx, sy, cr * (0.6 + r() * 0.3), r() * 6, 0, 0, 0.5, 1, 1.2, r)
+        // A limb from the trunk out to every clump that sits away from it.
+        if (rich && off > cr * 0.3) {
+          const len = Math.hypot(off, py - (y + h * 0.5))
+          b.add(PRIM.cyl, t.trunk, x, y + h * 0.48, z, h * 0.012, len, h * 0.012, Math.PI / 2 - a, Math.atan2(off, py - (y + h * 0.5)), 0, 0.1, 0.5)
+        }
+        if (cards) {
+          // Leaf sprays standing out from each clump toward the light.
+          const m = 3
+          for (let k = 0; k < m; k++) {
+            const b2 = a + (k - 1) * 0.9 + (r() - 0.5) * 0.4
+            const nx = px - x + Math.cos(b2) * sx, ny = py - cy + sy * 0.5, nz = pz - z + Math.sin(b2) * sx
+            cards.card(px + Math.cos(b2) * sx * 0.55, py + (r() - 0.3) * sy * 0.6, pz + Math.sin(b2) * sx * 0.55, sx * 1.5, sy * 1.6, -b2 + Math.PI / 2 + (r() - 0.5) * 0.6, (r() - 0.5) * 0.7, 0, c.getHex(), nx, ny, nz, 0.5, 1, (r() - 0.5) * 0.08)
+          }
+        }
       }
       break
     }
     case 'umbrella': {
       const lean = (r() - 0.5) * 0.25
-      b.add(PRIM.cylTaper, t.trunk, x, y, z, h * 0.035, h * 0.78, h * 0.035, yaw, lean, 0)
+      trunk(b, t, x, y, z, h * 0.035, h * 0.8, yaw, rich, lean, 0)
       const cr = h * t.crown * 0.5
-      b.add(PRIM.cyl, t.leaf, x + Math.sin(lean) * h * 0.4, y + h * 0.78, z, cr, h * 0.12, cr * (0.85 + r() * 0.3), yaw, 0, 0, 0.6, 1, 1, r)
-      b.add(PRIM.ico, t.leaf, x + Math.sin(lean) * h * 0.4, y + h * 0.86, z, cr * 0.9, h * 0.07, cr * 0.8, yaw, 0, 0, 0.6, 1, 1, r)
+      const tx = x + Math.sin(lean) * h * 0.4
+      // A canopy of flattened clumps around a central one: a parasol with some depth, not a disc.
+      b.add(PRIM.ico, t.leaf, tx, y + h * 0.84, z, cr * 0.75, h * 0.09, cr * 0.7, yaw, 0, 0, 0.6, 1, 1, r)
+      const lumps = 5 + Math.floor(r() * 3)
+      for (let k = 0; k < lumps; k++) {
+        const a = (k / lumps) * Math.PI * 2 + r() * 0.5, d = cr * (0.45 + r() * 0.25)
+        c.setHex(t.leaf).offsetHSL(0, 0, (r() - 0.5) * 0.06)
+        b.add(PRIM.ico, c.getHex(), tx + Math.cos(a) * d, y + h * (0.78 + r() * 0.05), z + Math.sin(a) * d, cr * 0.5, h * 0.08, cr * 0.45, a, 0, 0, 0.6, 1, 1, r)
+        // Branches fan out from the top of the trunk to each clump.
+        if (rich) b.add(PRIM.cyl, t.trunk, tx, y + h * 0.74, z, h * 0.012, Math.hypot(d, h * 0.06), h * 0.012, Math.PI / 2 - a, Math.atan2(d, h * 0.06), 0, 0.3, 0.6)
+      }
+      if (cards)
+        for (let k = 0; k < 9; k++) {
+          const a = (k / 9) * Math.PI * 2 + r() * 0.5, d = cr * (0.55 + r() * 0.4)
+          cards.card(tx + Math.cos(a) * d, y + h * (0.8 + r() * 0.08), z + Math.sin(a) * d, cr * 0.8, h * 0.12, -a + Math.PI / 2, 1.2, 0, t.leaf, Math.cos(a) * 0.4, 1, Math.sin(a) * 0.4, 0.6, 1, (r() - 0.5) * 0.08)
+        }
       break
     }
     case 'shrub': {
       const n = 2 + Math.floor(r() * 2)
-      for (let i = 0; i < n; i++)
-        b.add(PRIM.ico, t.leaf, x + (r() - 0.5) * h * 0.8, y + h * 0.35, z + (r() - 0.5) * h * 0.8, h * t.crown * (0.4 + r() * 0.3), h * 0.45, h * t.crown * (0.4 + r() * 0.3), r() * 6, 0, 0, 0.2, 0.7, 1.3, r)
+      for (let i = 0; i < n; i++) {
+        const px = x + (r() - 0.5) * h * 0.8, pz = z + (r() - 0.5) * h * 0.8
+        const sx = h * t.crown * (0.4 + r() * 0.3)
+        b.add(PRIM.ico, t.leaf, px, y + h * 0.35, pz, sx, h * 0.45, h * t.crown * (0.4 + r() * 0.3), r() * 6, 0, 0, 0.2, 0.7, 1.3, r)
+        if (cards)
+          for (let k = 0; k < 2; k++) {
+            const a = r() * Math.PI
+            cards.card(px, y + h * 0.45, pz, sx * 2.1, h * 0.95, a, 0, 0, t.leaf, Math.cos(a), 0.6, Math.sin(a), 0.1, 0.6, (r() - 0.5) * 0.08)
+          }
+      }
       break
     }
     case 'succulent': {
-      b.add(PRIM.cyl, t.leaf, x, y, z, 0.3, h, 0.3, yaw)
+      b.add(PRIM.cyl8, t.leaf, x, y, z, 0.3, h, 0.3, yaw)
       const arms = 2 + Math.floor(r() * 3)
       for (let i = 0; i < arms; i++) {
         const a = r() * Math.PI * 2, ah = h * (0.4 + r() * 0.3)
-        b.add(PRIM.cyl, t.leaf, x + Math.cos(a) * 0.5, y + ah, z + Math.sin(a) * 0.5, 0.2, h * 0.35, 0.2, a, 0.35 * Math.cos(a), 0.35 * Math.sin(a), 0, 0.1, 1, r)
+        // Arms start inside the stem, so the joint is closed.
+        b.add(PRIM.cyl, t.leaf, x + Math.cos(a) * 0.3, y + ah, z + Math.sin(a) * 0.3, 0.2, h * 0.35, 0.2, a, 0.35 * Math.cos(a), 0.35 * Math.sin(a), 0, 0.1, 1, r)
       }
       break
     }
@@ -142,10 +219,11 @@ function tree(b: GeoBuilder, t: TreeSpec, h: number, x: number, y: number, z: nu
         const ox = (r() - 0.5) * 2.2, oz = (r() - 0.5) * 2.2, hh = h * (0.7 + r() * 0.3)
         b.add(PRIM.cyl, t.trunk, x + ox, y, z + oz, 0.07, hh, 0.07, 0, (r() - 0.5) * 0.12, (r() - 0.5) * 0.12, 0, 0.6)
         b.add(PRIM.cone5, t.leaf, x + ox, y + hh * 0.75, z + oz, 0.9, hh * 0.35, 0.9, r() * 6, 0, 0, 0.5, 1, 1, r)
+        if (cards) cards.card(x + ox, y + hh * 0.85, z + oz, 1.8, hh * 0.35, r() * Math.PI, 0.2, 0, t.leaf, ox, 1, oz, 0.5, 1)
       }
       break
     case 'bare':
-      b.add(PRIM.cylTaper, t.trunk, x, y, z, h * 0.03, h, h * 0.03, yaw)
+      trunk(b, t, x, y, z, h * 0.03, h, yaw, rich)
       for (let i = 0; i < 5; i++) {
         const a = r() * Math.PI * 2
         b.add(PRIM.cyl, t.trunk, x, y + h * (0.45 + r() * 0.4), z, 0.05, h * 0.25, 0.05, a, 0.7, 0, 0, 0.3)
@@ -155,6 +233,15 @@ function tree(b: GeoBuilder, t: TreeSpec, h: number, x: number, y: number, z: nu
   }
 }
 
+/** Grass clump: three crossed blade cards. Soft, so it can stand on the verge. */
+export function addGrassCards(cards: CardBuilder, x: number, y: number, z: number, col: number, r: R): void {
+  const w = 0.5 + r() * 0.5, h = 0.35 + r() * 0.4
+  const a0 = r() * Math.PI
+  for (let k = 0; k < 3; k++) {
+    const a = a0 + (k / 3) * Math.PI
+    cards.card(x, y + h * 0.5 - 0.04, z, w, h, a, (r() - 0.5) * 0.3, 2, col, 0, 1, 0, 0, 1, (r() - 0.5) * 0.1)
+  }
+}
 const FLOWERS = [0xf2f0e6, 0xf2c037, 0xd86a9a, 0x8a7ad8, 0xe8763e]
 
 /** A small clump of meadow flowers: soft, so it can sit on the drivable verge. */
@@ -198,14 +285,17 @@ const HOUSES: Record<string, HouseSpec> = {
   japan: { wall: [0xe9e4d8, 0x8a5a3c], roof: [0x3e4650, 0x2f353d], roofType: 'hip', floors: [1, 2] },
 }
 
-export function addHouse(b: GeoBuilder, style: string, x: number, y: number, z: number, yaw: number, r: R): void {
+/** A house with its floor at y, on a stone plinth that reaches down to `base` (the low side of a slope). */
+export function addHouse(b: GeoBuilder, style: string, x: number, y: number, z: number, yaw: number, r: R, base = y - 1.5): void {
   const s = HOUSES[style] ?? HOUSES.nordic
   const w = 6 + r() * 4, d = 5 + r() * 3
   const floors = s.floors[0] + Math.floor(r() * (s.floors[1] - s.floors[0] + 1))
   const h = floors * 2.8
   const wall = s.wall[Math.floor(r() * s.wall.length)], roof = s.roof[Math.floor(r() * s.roof.length)]
-  // Foundation reaches 1.5 m into the ground so slopes never show a gap.
-  b.add(PRIM.box, 0x6d675e, x, y - 1.5, z, w + 0.2, 1.7, d + 0.2, yaw)
+  // The plinth reaches down below the lowest corner, so a slope never shows a gap under the walls.
+  b.surface = 1
+  b.add(PRIM.box, 0x6d675e, x, base, z, w + 0.2, y + 0.2 - base, d + 0.2, yaw)
+  b.surface = 0
   b.add(PRIM.box, wall, x, y + 0.2, z, w, h, d, yaw, 0, 0, 0, 0, 0.6, r)
   const top = y + 0.2 + h
   if (s.roofType === 'flat') b.add(PRIM.box, roof, x, top, z, w + 0.3, 0.3, d + 0.3, yaw)
@@ -390,8 +480,14 @@ export function addLandmark(b: GeoBuilder, kind: string, x: number, y: number, z
 export function addFence(b: GeoBuilder, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): void {
   const len = Math.hypot(x1 - x0, z1 - z0)
   const yaw = Math.atan2(x1 - x0, z1 - z0)
-  b.add(PRIM.box, color, x0, y0 - 0.4, z0, 0.12, 1.6, 0.12, yaw)
-  for (const h of [0.55, 0.95]) b.add(PRIM.boxC, color, (x0 + x1) / 2, (y0 + y1) / 2 + h, (z0 + z1) / 2, 0.06, 0.1, len, yaw)
+  // Rails follow the slope between posts and run into them at both ends: no
+  // gap at a post, however the ground falls.
+  const pitch = Math.atan2(y1 - y0, len)
+  b.surface = 2
+  b.add(PRIM.box, color, x0, y0 - 0.4, z0, 0.13, 1.6, 0.13, yaw)
+  b.add(PRIM.box, color, x1, y1 - 0.4, z1, 0.13, 1.6, 0.13, yaw)
+  for (const h of [0.55, 0.95]) b.add(PRIM.boxC, color, (x0 + x1) / 2, (y0 + y1) / 2 + h, (z0 + z1) / 2, 0.06, 0.1, Math.hypot(len, y1 - y0) + 0.12, yaw, -pitch, 0)
+  b.surface = 0
 }
 
 export function addBale(b: GeoBuilder, x: number, y: number, z: number, yaw: number): void {

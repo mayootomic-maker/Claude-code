@@ -13,7 +13,8 @@ const DESKTOP = process.argv.includes('--desktop')
 const SINGLE = process.argv.includes('--single')
 const OUT = new URL(process.argv.includes('--desktop') ? './out/desktop/' : process.argv.includes('--single') ? './out/single/' : './out/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
-const PORT = 4179
+// PORT lets several checkouts run the soak side by side.
+const PORT = Number(process.env.PORT ?? 4179)
 const URL_ = SINGLE ? new URL('../dist-single/apex-drift.html', import.meta.url).href : `http://localhost:${PORT}/`
 const server = SINGLE ? null : spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' })
 if (server) await new Promise((r) => setTimeout(r, 2500))

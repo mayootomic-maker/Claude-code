@@ -3,9 +3,10 @@ import type { RallyDef } from '../data'
 import { paceNotes } from '../game/pacenotes'
 import type { Route } from '../sim/route'
 import { BODY, type Ground } from '../sim/terrain'
-import { animalRadius, crownRadius, FAUNA, FOOTPRINT, LANDMARK, LANDMARK_R } from './props'
+import { animalRadius, crownRadius, FAUNA, FOOTPRINT, LANDMARK, LANDMARK_R, TREE_SINK } from './props'
+import { TILE } from './surface'
 
-export const TILE = 64
+export { TILE }
 
 export type PlacedKind = 'animal' | 'tree' | 'rock' | 'shrub' | 'house' | 'tuft' | 'flowers' | 'spectator' | 'board' | 'landmark' | 'fence' | 'bale' | 'pole'
 
@@ -89,13 +90,15 @@ export function planTile(ctx: PlanCtx, cx: number, cz: number, key: number, dens
     if (!clearOfRoad(ctx, x, z, rad).ok) continue
     out.push({ kind: 'shrub', sub: bush, x, z, r: rad, yaw: 0, size: 0.7, seed: (r() * 1e9) | 0 })
   }
-  // Grass and flowers may sit on the drivable verge: they are soft.
+  // Grass and flowers may sit on the drivable verge: they are soft. Thicker
+  // along the road, where you see them up close, thinner at the back.
   if (rally.grass > 0 && !ctx.snowAll) {
-    const tufts = Math.round((area / 60) * rally.grass * density)
+    const tufts = Math.round((area / 45) * rally.grass * density)
     for (let i = 0; i < tufts; i++) {
       const x = rand(), z = randZ()
       const c = route.closest(x, z, 300)
       if (c && c.dist < ground.edge + 0.8) continue
+      if (c && c.dist > ground.edge + 18 && r() < 0.45) continue
       const flowers = r() < 0.12 && fbm2(ctx.noise, x / 25, z / 25, 2) > 0.1
       out.push({ kind: flowers ? 'flowers' : 'tuft', sub: r() < 0.5 ? 'a' : 'b', x, z, r: 0, yaw: 0, size: 1, seed: (r() * 1e9) | 0 })
     }
@@ -279,4 +282,68 @@ export function planSoft(ctx: PlanCtx, start: number, finish: number): Soft[] {
     }
   }
   return out
+}
+
+/** What a prop's height is read from: the drawn terrain (see Surface). */
+export interface DrawnGround {
+  height(x: number, z: number): number
+  low(x: number, z: number, r: number): number
+  high(x: number, z: number, r: number): number
+}
+
+/**
+ * Where a placed thing stands: `y` is the height its model is built from and
+ * `bottom` the lowest point the model reaches. Footprints are read as the
+ * lowest drawn ground under them, so on a slope a trunk or a wall reaches
+ * down to the low side instead of hovering there; houses stand on a plinth
+ * from the low side up to a floor level with the high side.
+ */
+export function baseFor(p: Placed, g: DrawnGround): { y: number; bottom: number; foot: number } {
+  switch (p.kind) {
+    case 'tree':
+    case 'shrub': {
+      const foot = p.kind === 'shrub' ? 0.7 : 0.45
+      const y = g.low(p.x, p.z, foot)
+      return { y, bottom: y - TREE_SINK, foot }
+    }
+    case 'rock': {
+      const foot = p.size * 0.9
+      const y = g.low(p.x, p.z, foot)
+      return { y, bottom: y - p.size * 0.25, foot }
+    }
+    case 'house': {
+      const foot = 6.2
+      const lo = g.low(p.x, p.z, foot), hi = g.high(p.x, p.z, foot)
+      return { y: Math.max(lo, hi - 0.25), bottom: lo - 0.5, foot }
+    }
+    case 'landmark': {
+      const foot = (LANDMARK_R[p.sub] ?? 8) * 0.7
+      const lo = g.low(p.x, p.z, foot), c = g.height(p.x, p.z)
+      return { y: lo + (c - lo) * 0.3, bottom: lo - 0.5, foot }
+    }
+    case 'animal': {
+      const foot = animalRadius(p.sub) * 0.45
+      const y = g.low(p.x, p.z, foot)
+      return { y, bottom: y - 0.05, foot }
+    }
+    case 'spectator': {
+      const y = g.low(p.x, p.z, 0.2)
+      return { y, bottom: y - 0.1, foot: 0.2 }
+    }
+    case 'bale': {
+      const y = g.low(p.x, p.z, 0.7)
+      return { y, bottom: y - 0.02, foot: 0.7 }
+    }
+    case 'pole':
+    case 'fence':
+    case 'board': {
+      const y = g.low(p.x, p.z, 0.08)
+      return { y, bottom: y - 0.4, foot: 0.08 }
+    }
+    default: {
+      // Grass and flowers: soft and tiny, set straight onto the surface.
+      const y = g.height(p.x, p.z)
+      return { y, bottom: y - 0.05, foot: 0 }
+    }
+  }
 }
