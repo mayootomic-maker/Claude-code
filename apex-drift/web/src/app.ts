@@ -3,7 +3,7 @@ import { asset } from './core/assets'
 import { clamp } from './core/math'
 import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
 import { CoDriver } from './game/codriver'
-import { level, medalFor, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
+import { level, medalFor, raceReward, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
 import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
@@ -15,6 +15,7 @@ import { CHEATS, findCheat, OWNER, unlockAll, type CheatState } from './game/own
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT, type Pose } from './sim/car'
+import { raceGrid } from './sim/race'
 import { autopilot, StageSim, type Difficulty } from './sim/stage'
 import { BODY } from './sim/terrain'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
@@ -27,7 +28,7 @@ type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results' | 'r
 interface RaceCtx {
   rally: RallyDef
   stageIdx: number
-  mode: 'career' | 'free' | 'school' | 'daily'
+  mode: 'career' | 'free' | 'school' | 'daily' | 'race'
   sim: StageSim
   view: StageView
   hud: Hud
@@ -273,6 +274,7 @@ export class App {
       <div class="home">
         <button class="tile big" data-go="career" style="background-image:url('${asset(`img/c-${nextRally?.id ?? 'finland'}.jpg`)}')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
         <button class="tile" data-go="free" style="background-image:url('${asset(`img/free.jpg`)}')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="race" style="background-image:url('${asset(`img/c-kenya.jpg`)}')"><span class="t display">${t('race')}</span><span class="s">${t('raceSub')}</span></button>
         <button class="tile" data-go="daily" style="background-image:url('${asset(`img/c-${daily.base}.jpg`)}')"><span class="kicker">${s.daily.best[daily.key] ? t('dailyBest', { time: fmtTime(s.daily.best[daily.key]) }) : streakN ? t('streak', { n: streakN }) : ''}</span><span class="t display">${t('daily')}</span><span class="s">${t('dailySub', { rally: esc(daily.rally.name), car: esc(CARS.find((c) => c.id === daily.car)?.name ?? '') })}</span></button>
         <button class="tile" data-go="school" style="background-image:url('${asset(`img/c-finland.jpg`)}')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
         <button class="tile" data-go="garage" style="background-image:url('${asset(`img/garage.jpg`)}')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
@@ -284,6 +286,7 @@ export class App {
         const go = b.dataset.go
         if (go === 'career') this.careerList('career')
         else if (go === 'free') this.careerList('free')
+        else if (go === 'race') this.careerList('race')
         else if (go === 'school') this.startSchool()
         else if (go === 'daily') this.load(daily.rally, 0, 'daily', daily.car)
         else if (go === 'garage') this.garage()
@@ -294,11 +297,11 @@ export class App {
     }, asset('img/garage.jpg'))
   }
 
-  private careerList(mode: 'career' | 'free'): void {
+  private careerList(mode: 'career' | 'free' | 'race'): void {
     const s = this.store.save
     this.menu(() => `
       <button class="back" data-back>${t('back')}</button>
-      <h1 class="display">${mode === 'career' ? t('career') : t('quickStage')}</h1>
+      <h1 class="display">${mode === 'career' ? t('career') : mode === 'race' ? t('race') : t('quickStage')}</h1>
       <div class="rallies">${RALLIES.map((r, i) => {
         const open = unlocked(s, i)
         const medals = r.stages.map((_, k) => s.best[`${r.id}:${k}:${s.settings.difficulty}`]?.medal ?? null)
@@ -320,7 +323,7 @@ export class App {
     })
   }
 
-  private rallyDetail(r: RallyDef, mode: 'career' | 'free', sel = 0): void {
+  private rallyDetail(r: RallyDef, mode: 'career' | 'free' | 'race', sel = 0): void {
     const s = this.store.save
     const d = s.settings.difficulty
     const ev = s.event && s.event.rally === r.id ? s.event : null
@@ -341,14 +344,15 @@ export class App {
         <div class="card stagelist">${r.stages.map((st, k) => {
           const best = s.best[`${r.id}:${k}:${d}`]
           const done = ev && k < ev.times.length
-          return `<button class="stagerow ${mode === 'free' && k === sel ? 'sel' : ''}" data-k="${k}">
+          return `<button class="stagerow ${mode !== 'career' && k === sel ? 'sel' : ''}" data-k="${k}">
             <span class="n">${k + 1}</span>
             <span class="meta">${esc(st.name)}${st.power ? ` · <b style="color:var(--amber)">${t('power')}</b>` : ''}
               <small>${st.km.toFixed(1)} km · ${t(`look_${st.look}` as TKey)} · ${t(`weather_${st.weather}` as TKey)}${done ? ` · ${fmtTime(ev.times[k])}` : ''}</small></span>
             <span class="medal ${best?.medal ?? ''}" title="${best ? t('best', { time: fmtTime(best.time) }) : t('noTime')}"></span>
           </button>`
         }).join('')}
-        ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}</div>
+        ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}
+        ${mode !== 'career' ? `<button class="btn wide ${mode === 'race' ? '' : 'ghost'}" data-race style="margin-top:8px">${t('raceStage')}</button>` : ''}</div>
       </div>`, (root) => {
       root.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
         this.store.save.settings.difficulty = b.dataset.d as Difficulty
@@ -357,7 +361,7 @@ export class App {
         this.rallyDetail(r, mode, sel)
       }))
       root.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
-        if (mode !== 'free') return
+        if (mode === 'career') return
         this.menuStack.pop()
         this.rallyDetail(r, mode, Number(b.dataset.k))
       }))
@@ -374,6 +378,7 @@ export class App {
         this.rallyDetail(r, mode)
       })
       root.querySelector('[data-drive]')?.addEventListener('click', () => this.load(r, sel, 'free'))
+      root.querySelector('[data-race]')?.addEventListener('click', () => this.load(r, sel, 'race'))
     }, asset(`img/c-${r.id}.jpg`))
   }
 
@@ -695,7 +700,9 @@ export class App {
     let sim: StageSim | null = null
     let view: StageView | null = null
     steps.push(() => {
-      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty, power: OWNER && this.cheat.turbo ? 2 : 1 })
+      const difficulty = mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty
+      const race = mode === 'race' ? raceGrid(rally, stageIdx, difficulty, car ?? s.car, s.livery) : undefined
+      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty, power: OWNER && this.cheat.turbo ? 2 : 1, race })
     })
     steps.push(() => {
       if (!sim) return
@@ -729,7 +736,8 @@ export class App {
     this.controls.bindTouch(this.ui.hud)
     this.ui.hud.querySelectorAll<HTMLElement>('[data-act]').forEach((b) => b.addEventListener('click', () => this.action(b.dataset.act as 'pause')))
     const notes = paceNotes(sim.route, sim.start, sim.finish)
-    const gold = mode === 'school' ? null : stageMedals(rally, stageIdx, sim.setup.difficulty).gold
+    const gold = mode === 'school' || mode === 'race' ? null : stageMedals(rally, stageIdx, sim.setup.difficulty).gold
+    if (sim.racing) hud.setRivals(sim.field.map((o) => (LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0]).base))
     const hairpin = notes.find((n) => n.kind === 'corner' && n.grade === 0)?.s ?? sim.finish
     this.race = {
       rally, stageIdx, mode, sim, view, hud, phase: 'intro', introT: 0, finishT: 0, paused: false, gold,
@@ -737,7 +745,8 @@ export class App {
       school: mode === 'school' ? { step: 0, shownAt: 0, hairpin, firstCall: null } : null,
       cheered: new Set(),
       history: [],
-      rewinds: mode === 'school' ? 9 : REWINDS[sim.setup.difficulty] ?? 3,
+      // Rewinding a race would have to rewind the rivals too.
+      rewinds: mode === 'school' ? 9 : mode === 'race' ? 0 : REWINDS[sim.setup.difficulty] ?? 3,
       sectors: 0,
       recorder: new GhostRecorder(),
       tape: new ReplayRecorder(),
@@ -746,7 +755,7 @@ export class App {
       benchmark: s.settings.quality === 'auto' && !s.tier ? [] : null,
     }
     this.race.hud.rewinds(this.race.rewinds)
-    if (mode !== 'school') {
+    if (mode !== 'school' && mode !== 'race') {
       const g = loadGhost(this.storage, `${rally.id}:${stageIdx}`)
       if (g) view.setGhost(g, LIVERIES.find((l) => l.id === g.livery) ?? LIVERIES[0])
     }
@@ -866,7 +875,7 @@ export class App {
       return
     }
     this.acc += dt * scale
-    const input = this.controls.read(dt)
+    const input = this.controls.read(dt, sim.car.speed)
     while (this.acc >= DT) {
       sim.step(r.phase === 'running' ? input : { steer: 0, throttle: 0, brake: 0, handbrake: false })
       this.acc -= DT
@@ -1051,6 +1060,7 @@ export class App {
       $('[data-menu]', o).addEventListener('click', () => this.toMenu())
       return
     }
+    if (r.mode === 'race') return this.raceResults(r)
     saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: s.livery, time, frames: r.recorder.frames() })
     if (r.mode === 'daily') {
       // The daily stage keeps its own record: today's best and the streak, no career or garage effects.
@@ -1141,6 +1151,44 @@ export class App {
     o.querySelector('[data-next]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'career'))
     o.querySelector('[data-retry]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx, 'free'))
     o.querySelector('[data-freenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'free'))
+    $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+  }
+
+  /** Finishing order of a race; rivals still on the road are placed by their projected time. */
+  private raceResults(r: RaceCtx): void {
+    const s = this.store.save
+    const sim = r.sim
+    const o = this.ui.overlay
+    const rows = sim.result()
+    const pos = rows.findIndex((x) => x.you) + 1
+    const winner = rows[0].total
+    const reward = raceReward(pos, sim.setup.difficulty)
+    const before = level(s.xp).level
+    s.credits += reward.credits
+    s.xp += reward.xp
+    const after = level(s.xp).level
+    this.store.write()
+    if (pos === 1) this.audio.say(s.settings.voiceLang, ['wellDone'])
+    const carName = (id: string) => esc(CARS.find((c) => c.id === id)?.name ?? '')
+    const table = `<table class="table order">${rows.map((x, i) => `<tr class="${x.you ? 'you' : ''}"><td>P${i + 1}</td><td>${x.you ? esc(s.name) : esc(x.name)}<br><small class="muted">${carName(x.car)}</small></td><td>${i === 0 ? fmtTime(x.total) : `+${fmtTime(x.total - winner)}`}${x.finished ? '' : `<br><small class="muted">${t('raceEst')}</small>`}</td></tr>`).join('')}</table>`
+    const last = r.stageIdx + 1 >= r.rally.stages.length
+    html(o, `<div class="results"><div class="card">
+        <p class="kicker">${esc(r.rally.name)} · ${esc(r.rally.stages[r.stageIdx].name)} · ${t(sim.setup.difficulty)}</p>
+        <h2 class="display" style="font-size:30px;margin:4px 0">${pos === 1 ? t('raceWon') : t('racePlace', { pos, n: rows.length })}</h2>
+        <p class="muted">${t('yourTime')}</p>
+        <div class="bigtime">${fmtTime(sim.total)}</div>
+        ${sim.penalty ? `<p class="muted">${t('penalty', { s: sim.penalty })}</p>` : ''}
+        <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}${after > before ? ` · <b style="color:var(--amber)">${t('levelUp', { n: after })}</b>` : ''}</p>
+      </div><div class="card"><p class="kicker">${t('raceResult')}</p>${table}
+        <div class="col">
+          ${last ? '' : `<button class="btn" data-racenext>${t('nextStage')}</button>`}
+          <button class="btn ${last ? '' : 'ghost'}" data-retry>${t('retry')}</button>
+          <button class="btn ghost" data-replay>${t('watchReplay')}</button>
+          <button class="btn ghost" data-menu>${t('menu')}</button>
+        </div></div></div>`)
+    $('[data-replay]', o).addEventListener('click', () => this.startReplay(r))
+    $('[data-retry]', o).addEventListener('click', () => this.load(r.rally, r.stageIdx, 'race', sim.setup.car))
+    o.querySelector('[data-racenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'race', sim.setup.car))
     $('[data-menu]', o).addEventListener('click', () => this.toMenu())
   }
 

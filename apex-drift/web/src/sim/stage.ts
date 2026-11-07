@@ -1,13 +1,14 @@
 import { clamp } from '../core/math'
 import { carPhys, type RallyDef, type StageDef } from '../data'
 import { ASSISTS, Car, cornerSpeed, DT, MU, wheelForce, type Assists, type Input } from './car'
+import { collide, FIELD, gridSlot, Opponent, type GridSlot } from './race'
 import { buildRoute, type Route } from './route'
 import { makeGround, type Ground } from './terrain'
 
 export type Difficulty = 'rookie' | 'driver' | 'pro'
 
 /** How much slower than the ideal time each difficulty's targets are. */
-export const DIFFICULTY_SCALE: Record<Difficulty, number> = { rookie: 1.42, driver: 1.24, pro: 1.1 }
+export const DIFFICULTY_SCALE: Record<Difficulty, number> = { rookie: 1.42, driver: 1.19, pro: 1.07 }
 
 /** Metres before the start line where the car waits, and after the finish where it stops. */
 export const RUN_IN = 30
@@ -23,6 +24,22 @@ export interface StageSetup {
   difficulty: Difficulty
   /** Engine power multiplier; only the owner build's TURBO cheat sets it. */
   power?: number
+  /** Head-to-head: these rivals start alongside on the road (see `raceGrid`). Absent for a time trial. */
+  race?: GridSlot[]
+}
+
+/** One car's place in a race. */
+export interface RaceEntry {
+  name: string
+  car: string
+  you: boolean
+  /** Distance along the stage, metres past the start line. */
+  progress: number
+  finished: boolean
+  /** Finishing time with penalties; for a car still running, an estimate from its pace. */
+  total: number
+  /** Index into `field`, or -1 for the player. */
+  idx: number
 }
 
 export class StageSim {
@@ -39,9 +56,15 @@ export class StageSim {
   resets = 0
   /** Furthest progress along the stage, metres past the start line. */
   progress = 0
+  /** Rivals on the road in a race; empty in a time trial. */
+  readonly field: Opponent[] = []
+  /** Race clock: runs on after the player finishes, until the rivals are home. */
+  clock = 0
   private stuckFor = 0
   private wrongWay = 0
   private lastGood: number
+  /** Race time each car first reached every 10 m of the stage, for gaps. */
+  private readonly splits: Float32Array[] = []
 
   constructor(readonly setup: StageSetup) {
     const { rally, stage } = setup
@@ -54,8 +77,21 @@ export class StageSim {
     this.assists = ASSISTS[setup.difficulty]
     this.start = RUN_IN
     this.finish = this.route.length - RUN_OUT
-    this.car.place(this.start - 6)
-    this.lastGood = this.start - 6
+    const race = setup.race ?? []
+    if (race.length) {
+      const me = gridSlot(Math.min(FIELD, race.length + 1) - 1, this.start, this.route.half)
+      this.car.place(me.s, me.d)
+      this.lastGood = me.s
+      race.forEach((slot, i) => this.field.push(new Opponent(slot, this.ground, rally.surface, wet, setup.car, gridSlot(i, this.start, this.route.half), this.start, this.finish)))
+      for (let i = 0; i <= this.field.length; i++) this.splits.push(new Float32Array(Math.ceil(this.length / 10) + 2).fill(-1))
+    } else {
+      this.car.place(this.start - 6)
+      this.lastGood = this.start - 6
+    }
+  }
+
+  get racing(): boolean {
+    return this.field.length > 0
   }
 
   get length(): number {
@@ -72,11 +108,13 @@ export class StageSim {
       this.countdown -= DT
       // The car is held on the line; the engine can still be revved.
       this.car.step({ steer: 0, throttle: 0, brake: 1, handbrake: true }, this.assists)
+      for (const o of this.field) o.hold()
       if (this.countdown <= 0) this.phase = 'running'
       return
     }
     const finished = this.phase === 'finished'
     this.car.step(finished ? { steer: input.steer * 0.3, throttle: 0, brake: 0.6, handbrake: false } : input, this.assists)
+    if (this.racing) this.stepField()
     if (finished) return
 
     this.time += DT
@@ -96,6 +134,71 @@ export class StageSim {
     if (this.stuckFor > 3) this.reset()
 
     if (s >= this.finish) this.phase = 'finished'
+  }
+
+  /** Rivals drive, cars that touch bounce off each other, and everyone's gaps are logged. */
+  private stepField(): void {
+    this.clock += DT
+    const all = [this.car, ...this.field.map((o) => o.car)]
+    const traffic = all.map((c) => ({ s: c.s, d: c.d, speed: c.speed }))
+    this.field.forEach((o, i) => {
+      // Each rival sees every car but itself.
+      const others = traffic.filter((_, k) => k !== i + 1)
+      o.step(this.clock, others, this.car.s)
+    })
+    for (let i = 0; i < all.length; i++) {
+      if (i > 0 && this.field[i - 1].gliding) continue
+      for (let k = i + 1; k < all.length; k++) {
+        if (this.field[k - 1].gliding) continue
+        collide(all[i], all[k])
+      }
+    }
+    for (let i = 0; i < all.length; i++) {
+      const sp = this.splits[i]
+      const b = Math.floor((all[i].s - this.start) / 10)
+      if (b >= 0 && b < sp.length && sp[b] < 0) for (let j = b; j >= 0 && sp[j] < 0; j--) sp[j] = this.clock
+    }
+  }
+
+  /** Race order, leader first: finishers by time, then everyone else by how far they've got. */
+  order(): RaceEntry[] {
+    const you: RaceEntry = {
+      name: '', car: this.setup.car, you: true, idx: -1,
+      progress: Math.min(this.length, this.car.s - this.start), finished: this.phase === 'finished',
+      total: this.phase === 'finished' ? this.total : Infinity,
+    }
+    const rows = [you, ...this.field.map((o, idx): RaceEntry => ({
+      name: o.slot.name, car: o.slot.car, you: false, idx,
+      progress: Math.min(this.length, o.car.s - this.start), finished: o.finishTime !== null, total: o.total(this.clock),
+    }))]
+    return rows.sort((a, b) => (a.finished && b.finished ? a.total - b.total : a.finished ? -1 : b.finished ? 1 : b.progress - a.progress))
+  }
+
+  /** Final order once the player is home: rivals still running are placed by their projected time. */
+  result(): RaceEntry[] {
+    return this.order().sort((a, b) => a.total - b.total)
+  }
+
+  /**
+   * Seconds between the player and the cars either side on the road: how
+   * long ago the car ahead passed the point the player is at now, and how
+   * long the car behind will take to reach it.
+   */
+  gaps(): { ahead: number | null; behind: number | null } {
+    const order = this.order()
+    const at = order.findIndex((e) => e.you)
+    const mine = this.splits[0]
+    const gapTo = (e: RaceEntry | undefined, ahead: boolean): number | null => {
+      if (!e) return null
+      const lead = ahead ? this.splits[e.idx + 1] : mine
+      const trail = ahead ? mine : this.splits[e.idx + 1]
+      const b = Math.floor(Math.min(ahead ? this.car.s : this.field[e.idx].car.s, this.finish) - this.start) / 10
+      const i = Math.floor(b)
+      if (i < 0 || i >= lead.length || lead[i] < 0) return null
+      const t = trail[i] >= 0 ? trail[i] : this.clock
+      return Math.max(0, t - lead[i])
+    }
+    return { ahead: gapTo(order[at - 1], true), behind: gapTo(order[at + 1], false) }
   }
 
   get isWrongWay(): boolean {
@@ -132,7 +235,7 @@ export function autopilot(sim: StageSim, skill = 1): Input {
   const beta = Math.atan2(car.vy, Math.max(2, Math.abs(car.vx)))
   const catchSlide = -Math.sign(beta) * Math.max(0, Math.abs(beta) - 0.05) * 3
   const steer = clamp((-err * 3.2 + car.r * 0.35 + car.d * 0.12) * gain + catchSlide, -1, 1)
-  const mu = MU[car.surface] ?? 0.8
+  const mu = Math.min(MU[car.surface] ?? 0.8, muAhead(sim, car.s, car.speed))
   const safe = cornerSpeed(route, car.s, car.speed, mu) * skill
   const over = car.speed - safe
   // Pedals do nothing in the air, and landing on them unsettles the car.
@@ -145,6 +248,20 @@ export function autopilot(sim: StageSim, skill = 1): Input {
     brake: over > 0.5 ? clamp(over / 3, 0, 1) : 0,
     handbrake: false,
   }
+}
+
+/**
+ * The slipperiest road surface within braking distance: an ice or mud patch
+ * ahead has to be braked for before the car is on it, not once it is.
+ */
+export function muAhead(sim: StageSim, s: number, speed: number): number {
+  const base = sim.setup.rally.surface === 'asphalt' && sim.setup.stage.weather === 'rain' ? 'wet' : sim.setup.rally.surface
+  let mu = MU[base] ?? 0.8
+  const look = 30 + (speed * speed) / (2 * 0.6 * 9.81)
+  for (const f of sim.route.features) {
+    if (f.kind === 'patch' && f.surface && f.s1 >= s && f.s0 <= s + look) mu = Math.min(mu, MU[f.surface] ?? mu)
+  }
+  return mu
 }
 
 /**

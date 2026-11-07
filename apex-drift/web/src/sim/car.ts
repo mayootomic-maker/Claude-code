@@ -12,8 +12,26 @@ const REVERSE = 3.4
 const WHEEL_INERTIA = 2.2
 /** Grip lost per unit of extra load on a tyre: the reason weight transfer changes the balance at all. */
 const LOAD_SENS = 0.18
-/** The lever is hydraulic in a rally car and locks the rears on any surface. */
-const HANDBRAKE_LOCK = 3
+/**
+ * Share of the lever's force that actually brakes the rears. A full lock
+ * turns all their grip into braking and scrubs off half the car's speed in a
+ * second; a tug that only unloads them lets the tail swing out while the car
+ * carries its speed into the slide, which is how a handbrake is used on a
+ * stage. `handbrakeMu` is how much rear grip is left while it's held.
+ */
+const HANDBRAKE_DRAG = 0.3
+/** How quickly the rear lets go when the lever is pulled, and comes back after (1/s). */
+const HB_IN = 14, HB_OUT = 3.5
+/**
+ * Share of the sliding tyres' drag along the direction of travel that a drift
+ * doesn't cost. A tyre sliding at 30° turns most of its force into drag and a
+ * held drift would bleed to walking pace in a few seconds; real cars keep
+ * their momentum far better than a friction circle at the rear alone says,
+ * because the driven rears push forward through the slide.
+ */
+const DRIFT_KEEP = 0.72
+/** Rear grip a drift on full throttle gives up. */
+const DRIFT_LOOSE = 0.35
 /**
  * Front tyres reach their peak at a larger slip angle than the rears (rally
  * set-ups run stiff rear tyres): stable in a straight line and mild
@@ -156,6 +174,10 @@ export class Car {
   offRoad = false
   /** Combined slip of each axle, for tyre noise and dust. */
   slipF = 0; slipR = 0
+  /** 0..1: how committed the car is to a slide (handbrake, or power held through it). Widens the angle the assists allow. */
+  drift = 0
+  /** 0..1: how far the rear has let go from the handbrake. */
+  hbLoose = 0
   /** Distance along the route and lateral offset, updated every step. */
   s = 0; d = 0
   readonly prev: Pose = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steer: 0, spin: 0 }
@@ -200,11 +222,13 @@ export class Car {
     this.layout = p.layout
   }
 
-  place(s: number): void {
+  /** On the road at distance `s`, `d` metres left of the centreline, at rest. */
+  place(s: number, d = 0): void {
     const a = this.ground.route.at(s)
-    this.x = a.x; this.z = a.z; this.heading = a.heading
-    this.y = this.ground.height(a.x, a.z)
+    this.x = a.x + Math.cos(a.heading) * d; this.z = a.z - Math.sin(a.heading) * d; this.heading = a.heading
+    this.y = this.ground.height(this.x, this.z)
     this.vx = this.vy = this.r = this.vyUp = 0
+    this.drift = this.hbLoose = 0
     this.wf = this.wr = 0
     this.airborne = false
     this.steerAngle = 0
@@ -216,8 +240,44 @@ export class Car {
     this.rpm = this.p.idle
     this.boost = 0
     this.s = s
-    this.d = 0
+    this.d = d
     this.snapshot()
+  }
+
+  /**
+   * Moves the car along the road without simulating it, rolling straight at
+   * `speed`: for a rival far out of sight, where only its progress matters.
+   * Leaves a state the full simulation can carry on from at any step.
+   */
+  glide(s: number, d: number, heading: number, speed: number): void {
+    this.snapshot()
+    this.events.impact = 0
+    this.events.landed = 0
+    const a = this.ground.route.at(s)
+    this.x = a.x + Math.cos(a.heading) * d
+    this.z = a.z - Math.sin(a.heading) * d
+    this.y = this.ground.height(this.x, this.z)
+    this.heading = heading
+    this.vx = speed
+    this.vy = this.r = this.vyUp = 0
+    this.wf = this.wr = speed
+    this.airborne = false
+    this.steerAngle = 0
+    this.drift = this.hbLoose = 0
+    this.pitch = this.roll = this.pitchV = this.rollV = 0
+    this.loadAx = this.loadAy = 0
+    this.s = s
+    this.d = d
+    this.offRoad = false
+    const p = this.p
+    const toRpm = (g: number) => (speed / p.wheelRadius) * g * p.finalDrive * 60 / TAU
+    let g = 1
+    while (g < p.gears.length && toRpm(p.gears[g]) > p.redline * 0.55) g++
+    this.gear = g
+    this.shiftT = 0
+    this.shifting = false
+    this.rpm = clamp(toRpm(p.gears[g - 1]), p.idle, p.redline)
+    this.spin += (speed * DT) / p.wheelRadius
   }
 
   get speed(): number {
@@ -292,7 +352,12 @@ export class Car {
     // surfaces peak at a bigger slip angle and so get a little more lock.
     const v2 = Math.max(speed * speed, 1)
     const maxAngle = Math.min(p.steerMax, Math.max(p.steerMax / (1 + v2 / 260), (L * mu * G) / v2 + tp.pkA))
-    const target = -steerIn * maxAngle
+    // Drift assist: in a committed slide the front wheels are let follow the
+    // direction of travel, as caster does on a real car, so holding a slide
+    // takes a small correction rather than a perfectly timed full opposite lock.
+    const slideAngle = Math.atan2(this.vy, Math.max(2, Math.abs(this.vx)))
+    const align = this.airborne ? 0 : this.drift * clamp(slideAngle, -0.6, 0.6) * (0.45 + 0.4 * assists.stability)
+    const target = clamp(-steerIn * maxAngle + align, -p.steerMax, p.steerMax)
     const rate = p.steerSpeed * 0.55 * DT
     this.steerAngle += clamp(target - this.steerAngle, -rate, rate)
     const delta = this.steerAngle
@@ -406,7 +471,12 @@ export class Car {
     const Nf = Math.max(0.08 * Nf0, Nf0 - dLong), Nr = Math.max(0.08 * Nr0, Nr0 + dLong)
     const dLat = (m * Math.abs(this.loadAy) * p.h) / (2 * p.halfW * 0.84)
     const capF = mu * axleGrip(Nf, dLat * p.rollFront, Nf0 / 2)
-    const capR = mu * axleGrip(Nr, dLat * (1 - p.rollFront), Nr0 / 2)
+    this.hbLoose = damp(this.hbLoose, inp.handbrake ? 1 : 0, inp.handbrake ? HB_IN : HB_OUT, DT)
+    // Power held through a drift keeps the rear light, so a slide can be
+    // carried from one corner into the next instead of gripping up halfway.
+    // Not at fast-road speeds, where a loose rear is a spin, not a drift.
+    const loose = Math.min(lerp(1, p.handbrakeMu, this.hbLoose), 1 - DRIFT_LOOSE * this.drift * clamp(inp.throttle, 0, 1) * smoothstep(0.1, 0.25, Math.abs(slideAngle)) * (1 - smoothstep(25, 35, speed)))
+    const capR = mu * axleGrip(Nr, dLat * (1 - p.rollFront), Nr0 / 2) * loose
 
     // --- tyre forces ----------------------------------------------------------
     const cs = Math.cos(delta), sn = Math.sin(delta)
@@ -431,7 +501,7 @@ export class Car {
       this.wf = this.axle(capF, vxwF, af / (tp.pkA * FRONT_SLIP), this.wf, fDrive * fShare, fb * p.brakeFront, mWheel + mEng * fShare, absOn, 0.95, tc, tcFloor, tp)
       Fxf = tyre.fx; Fyf = tyre.fy
       kf = (this.wf - vxwF) / Math.max(Math.abs(vxwF), 4)
-      const hb = inp.handbrake ? p.handbrakeForce * HANDBRAKE_LOCK : 0
+      const hb = inp.handbrake ? p.handbrakeForce * HANDBRAKE_DRAG : 0
       this.wr = this.axle(capR, this.vx, ar / (tp.pkA * REAR_SLIP), this.wr, fDrive * (1 - fShare), fb * (1 - p.brakeFront) + hb, mWheel + mEng * (1 - fShare), absOn && !inp.handbrake, REAR_ABS, tc, tcFloor, tp)
       Fxr = tyre.fx; Fyr = tyre.fy
       kr = (this.wr - this.vx) / Math.max(Math.abs(this.vx), 4)
@@ -450,8 +520,29 @@ export class Car {
     const pitchSlope = this.groundPitch()
     const grav = m * G * Math.sin(pitchSlope)
 
-    let ax = (Fxf * cs - Fyf * sn + Fxr - drag - rolling - grav) / m
-    let ay = (Fxf * sn + Fyf * cs + Fyr) / m
+    let tx = Fxf * cs - Fyf * sn + Fxr
+    let ty = Fxf * sn + Fyf * cs + Fyr
+    // A drift is committed by the lever or by holding power through a slide;
+    // a slide on the brakes or off the throttle is just a slide. Rookie's
+    // assists only half-commit to an unplanned power slide.
+    const absSlide = Math.abs(slideAngle)
+    const powered = smoothstep(0.14, 0.3, absSlide) * (pedal > 0.2 && brk < 0.2 ? 1 : 0) * (1 - assists.stability * 0.6) * (1 - smoothstep(22, 34, speed))
+    const want = inp.handbrake ? 1 : absSlide > 0.07 ? Math.max(powered, Math.min(this.drift, smoothstep(0.07, 0.2, absSlide))) : 0
+    this.drift = damp(this.drift, want, want > this.drift ? (inp.handbrake ? 10 : 4) : 2.5, DT)
+    // Take back part of the drag the tyres put along the direction of travel
+    // while the car is properly sideways. The yaw they cause, and the force
+    // across the path that bends it round the corner, stay as they were.
+    if (!this.airborne && speed > 4) {
+      const ux = this.vx / speed, uy = this.vy / speed
+      const along = tx * ux + ty * uy
+      const keep = DRIFT_KEEP * smoothstep(0.08, 0.3, absSlide) * Math.max(this.drift, 0.4) * (1 - clamp(brk * 2, 0, 1))
+      if (along < 0 && keep > 0) {
+        tx -= along * keep * ux
+        ty -= along * keep * uy
+      }
+    }
+    let ax = (tx - drag - rolling - grav) / m
+    let ay = ty / m
     let rdot = (p.a * (Fyf * cs + Fxf * sn) - p.b * Fyr) / p.iz
     if (this.airborne) {
       ax = -drag / m
@@ -539,8 +630,11 @@ export class Car {
     } else {
       const climb = (gh - this.y) / DT
       // Ground falling away faster than suspension plus gravity can follow
-      // (about 2.5 g of drop): we're flying. Ordinary bumps stay planted.
-      if (climb < this.vyUp - G * DT * 2.5 && speed > 12) {
+      // (about 2.5 g of drop): we're flying. Ordinary bumps stay planted,
+      // including the small kinks where the road's height samples join, which
+      // the suspension soaks up: without the margin a car on a bumpy road
+      // skips into the air for a step at a time and loses grip mid-corner.
+      if (climb < this.vyUp - G * DT * 2.5 - 0.6 && speed > 12) {
         this.airborne = true
         this.y += this.vyUp * DT
       } else {
@@ -581,7 +675,9 @@ export class Car {
     if (abs && brake > 0 && vxw > 2) w = Math.max(w, vxw - room * absRoom)
     // In a slide there's no cornering grip left to protect; a strict system would
     // cut all drive and bog the car down, so it always lets some wheelspin through.
-    const tcRoom = Math.max(room * 1.15, tp.pkK * vden * tcFloor)
+    // Sideways, the slip angle already takes most of the friction circle; the
+    // driven wheels need matching wheelspin for drive to push the car through a drift.
+    const tcRoom = Math.max(room * 1.15, tp.pkK * vden * Math.max(tcFloor, (Math.abs(sA) - 1) * 0.8))
     if (tc > 0 && drive > 0 && vxw > -1 && w > vxw + tcRoom) {
       w = vxw + tcRoom
       this.tcHit = true
@@ -602,25 +698,42 @@ export class Car {
     const stab = assists.stability
     const vxa = Math.max(3, Math.abs(this.vx))
     const hb = inp.handbrake
+    const dr = this.drift
     const beta = Math.atan2(this.vy, Math.max(2, Math.abs(this.vx)))
     const ab = Math.abs(beta)
     const sliding = smoothstep(0.12, 0.3, ab)
-    const rMax = ((mu * G) / vxa) * (hb ? 1.8 : 1.05)
-    const follow = (stab * 5 + 0.3) * (1 - sliding * (1 - stab)) * (hb ? 0.3 : 1)
+    const rMax = ((mu * G) / vxa) * (hb ? 1.8 : lerp(1.05, 1.5, dr))
+    // Turn-in help steps back in a committed drift: there the steering is
+    // countersteer, and following it would straighten the car out of the slide.
+    const follow = (stab * 5 + 0.3) * (1 - sliding * (1 - stab)) * (hb ? 0.3 : 1) * (1 - 0.85 * dr)
     this.r = damp(this.r, clamp(rSteer, -rMax, rMax), follow, DT)
+    // The angle a slide may settle at: narrow in grip driving (a slide is an
+    // accident to tidy up), wide in a drift, and smaller the faster you go.
+    const comfyGrip = p.driftMax * clamp(10 / Math.max(1, speed), 0.25, 1) * (1 - stab * 0.7)
+    const comfyDrift = p.driftMax * clamp(24 / Math.max(1, speed), 0.6, 1) * lerp(1.1, 0.72, stab)
+    const comfy = lerp(comfyGrip, comfyDrift, dr)
     if (!hb) {
       const rHold = ay / vxa
-      const comfy = p.driftMax * clamp(10 / Math.max(1, speed), 0.25, 1) * (1 - stab * 0.7)
       const over = Math.max(0, ab - comfy)
-      // dβ/dt = rHold − r, so r = rHold freezes the angle and anything past it unwinds it.
-      if (over > 0 || beta * (rHold - this.r) > 0) this.r = damp(this.r, rHold + Math.sign(beta) * over * 3, stab * 10 * smoothstep(0.05, 0.18, ab), DT)
+      const growing = beta * (rHold - this.r) > 0
+      // dβ/dt = rHold − r, so r = rHold freezes the angle and anything past it
+      // unwinds it. In a drift the same pull acts as yaw damping: the angle
+      // can still grow, but slowly enough to be caught with the keys.
+      const rate = lerp(stab * 10 * smoothstep(0.05, 0.18, ab), (1.2 + stab * 5) * (over > 0 ? 1 : 0.35), dr)
+      if (over > 0 || growing) this.r = damp(this.r, rHold + Math.sign(beta) * over * 3, rate, DT)
     }
     // Hold the slide angle inside what this car can recover from. Big angles
-    // are fun at hairpin speed and a crash at 140 km/h.
-    const lim = (hb ? p.driftMax * 1.35 : p.driftMax * clamp(14 / Math.max(1, speed), 0.3, 1)) * lerp(1, 0.45, stab)
-    if (ab > lim) {
-      this.vy *= 0.92
-      if (Math.sign(this.r) === -Math.sign(beta)) this.r *= 0.9
+    // are fun at hairpin speed and a crash at 140 km/h. Past it the car is
+    // turned back toward its direction of travel without losing speed, rather
+    // than having its sideways speed taken away.
+    const limGrip = (hb ? p.driftMax * 1.35 : p.driftMax * clamp(14 / Math.max(1, speed), 0.3, 1)) * lerp(1, 0.45, stab)
+    const lim = Math.max(limGrip, comfyDrift * 1.25 * dr)
+    if (ab > lim && this.vx > 2) {
+      const v = Math.hypot(this.vx, this.vy)
+      const nb = Math.sign(beta) * (lim + (ab - lim) * 0.85)
+      this.vx = v * Math.cos(nb)
+      this.vy = v * Math.sin(nb)
+      if (Math.sign(this.r) === -Math.sign(beta)) this.r *= lerp(0.9, 0.95, dr)
     }
   }
 

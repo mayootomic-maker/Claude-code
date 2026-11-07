@@ -2,7 +2,7 @@ import { clamp } from '../core/math'
 import type { Note } from '../game/pacenotes'
 import { t } from '../game/i18n'
 import type { StageSim } from '../sim/stage'
-import { $, fmtDelta, fmtTime, html } from './dom'
+import { $, esc, fmtDelta, fmtTime, html } from './dom'
 
 const ARROWS: Record<string, string> = {
   left: '<svg viewBox="0 0 40 40"><path d="M28 34 V18 Q28 10 20 10 H10" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round"/><path d="M14 4 L6 10 L14 16" fill="none" stroke="#ffb81c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -32,10 +32,13 @@ export class Hud {
   private mapScale = 1
   private mapCx = 0
   private mapCz = 0
+  private raceTick = 0
+  /** Minimap colours of the rivals, from their liveries. */
+  private rivalColors: string[] = []
 
   constructor(root: HTMLElement, private readonly mph: boolean) {
     this.root = html(root, `
-      <div class="h-stage"><div class="name"></div><div class="time" aria-live="off">0:00.00</div><div class="split"></div><div class="h-prog"><i></i></div></div>
+      <div class="h-stage"><div class="name"></div><div class="time" aria-live="off">0:00.00</div><div class="split"></div><div class="h-prog"><i></i></div><div class="h-race hidden" aria-live="off"><b class="pos">P1</b><span class="of"></span><div class="gaps"></div></div></div>
       <div class="h-note" style="opacity:0"></div>
       <div class="h-tools">
         <button data-act="rewind" aria-label="${t('rewind')}"><svg viewBox="0 0 20 20"><path d="M9 4 L3 10 L9 16 Z M17 4 L11 10 L17 16 Z"/></svg><span class="rw-n"></span></button>
@@ -115,9 +118,34 @@ export class Hud {
     this.gear.textContent = car.gear < 0 ? "R" : String(car.gear)
     this.arc.style.strokeDasharray = `${((Math.min(car.rpm, car.redline) / car.redline) * 245).toFixed(0)} 400`
     this.arc.style.stroke = car.rpm > car.redline * 0.94 ? 'var(--bad)' : ''
+    if (sim.racing) this.racePanel(sim)
     this.warn.textContent = t('wrongWay')
     this.warn.classList.toggle('hidden', !sim.isWrongWay)
     this.drawMap(sim)
+  }
+
+  /** Rival colours for the minimap, in the order of `sim.field`. */
+  setRivals(colors: number[]): void {
+    this.rivalColors = colors.map((c) => `#${c.toString(16).padStart(6, '0')}`)
+  }
+
+  /** Race position and the gaps to the cars either side, refreshed a few times a second. */
+  private racePanel(sim: StageSim): void {
+    if (this.raceTick++ % 10) return
+    const el = this.root.querySelector('.h-race') as HTMLElement | null
+    if (!el) return
+    const order = sim.order()
+    const pos = order.findIndex((e) => e.you) + 1
+    const g = sim.gaps()
+    el.classList.remove('hidden')
+    el.classList.toggle('lead', pos === 1)
+    $('.pos', el).textContent = `P${pos}`
+    $('.of', el).textContent = `/${order.length}`
+    const fmt = (v: number) => `${v.toFixed(1)}s`
+    $('.gaps', el).innerHTML = [
+      g.ahead !== null && pos > 1 ? `<span class="behind">▲ ${esc(order[pos - 2].name)} ${fmt(g.ahead)}</span>` : '',
+      g.behind !== null && pos < order.length ? `<span class="ahead">▼ ${esc(order[pos].name)} ${fmt(g.behind)}</span>` : '',
+    ].join('')
   }
 
   rewinds(n: number): void {
@@ -199,6 +227,16 @@ export class Hud {
     }
     draw(sim.start, '#57c48a', 5)
     draw(sim.finish, '#ef6a5a', 5)
+    sim.field.forEach((o, i) => {
+      const [x, y] = this.toMap(o.car.x, o.car.z)
+      g.fillStyle = this.rivalColors[i] ?? '#9fb4c8'
+      g.strokeStyle = '#000'
+      g.lineWidth = 1.5
+      g.beginPath()
+      g.arc(x, y, 5, 0, Math.PI * 2)
+      g.fill()
+      g.stroke()
+    })
     const [cx, cy] = this.toMap(sim.car.x, sim.car.z)
     g.fillStyle = '#ffb81c'
     g.strokeStyle = '#000'

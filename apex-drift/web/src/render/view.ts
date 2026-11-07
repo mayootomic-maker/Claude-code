@@ -151,6 +151,9 @@ export class StageView {
   /** Landing dust: decays from 1 to 0 after a big landing. */
   private burst = 0
   private ghost: { rig: CarRig; data: Ghost } | null = null
+  /** Rival cars in a race, one rig per `sim.field` entry. */
+  private readonly rivals: CarRig[] = []
+  private readonly rivalPose: Pose = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steer: 0, spin: 0 }
   private dirt = 0
   /** Tyre marks: one ribbon buffer, two quads (rear wheels) written per step of travel. */
   private marks: { mesh: THREE.Mesh; pos: Float32Array; col: Float32Array; next: number; last: (THREE.Vector3 | null)[] } | null = null
@@ -230,6 +233,12 @@ export class StageView {
     this.car = buildCar(sim.setup.car, livery)
     this.scene.add(this.car.root)
     if (!spec.shadowMap) this.car.root.traverse((o) => (o.castShadow = false))
+    for (const o of sim.field) {
+      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0])
+      if (!spec.shadowMap) rig.root.traverse((m) => (m.castShadow = false))
+      this.scene.add(rig.root)
+      this.rivals.push(rig)
+    }
     this.headlights = a.lights ? this.makeHeadlights() : null
     this.dust = this.makeDust(rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
@@ -245,6 +254,7 @@ export class StageView {
       ;(this.marks.mesh.material as THREE.Material).dispose()
     }
     this.ghost?.rig.dispose()
+    for (const rig of this.rivals) rig.dispose()
     for (const m of this.softMeshes) {
       m.geometry.dispose()
       ;(m.material as THREE.Material).dispose()
@@ -291,6 +301,29 @@ export class StageView {
       w.pivot.rotation.y = w.front ? p.steer : 0
       w.spin.rotation.x = p.spin
     }
+    this.syncRivals(alpha)
+  }
+
+  /** Rivals are posed like the player's car; past the scenery radius, or during a replay of your run, they're hidden. */
+  private syncRivals(alpha: number): void {
+    const far = this.r.spec.radius
+    this.sim.field.forEach((o, i) => {
+      const rig = this.rivals[i]
+      const q = o.car.pose(alpha, this.rivalPose)
+      const d = Math.hypot(q.x - this.camPos.x, q.z - this.camPos.z)
+      rig.root.visible = !this.override && d < far
+      if (!rig.root.visible) return
+      rig.root.position.set(q.x, q.y, q.z)
+      rig.root.rotation.set(0, q.heading, 0)
+      rig.body.rotation.set(q.pitch, 0, q.roll, 'YXZ')
+      rig.body.position.y = 0.02
+      // Wheel detail can't be seen beyond a hundred metres; skip the updates.
+      if (d > 120) return
+      for (const w of rig.wheels) {
+        w.pivot.rotation.y = w.front ? q.steer : 0
+        w.spin.rotation.x = q.spin
+      }
+    })
   }
 
   private copyPose(o: Pose): Pose {
