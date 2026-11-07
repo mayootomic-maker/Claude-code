@@ -46,6 +46,8 @@ const livery = (id: string) => (s: Save): string => {
   if (!l) return 'Unknown livery'
   if (!s.owned.liveries.includes(id)) s.owned.liveries.push(id)
   s.livery = id
+  // A custom paint job chosen for this car would hide the preset.
+  delete s.carLivery[s.car]
   return `${l.name} livery on the car`
 }
 

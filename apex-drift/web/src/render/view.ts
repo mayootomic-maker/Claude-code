@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 import { clamp, damp, lerp, rng, wrapAngle } from '../core/math'
-import { LIVERIES, type LiveryDef } from '../data'
+import { LIVERIES, RIVALS, type LiveryDef } from '../data'
 import type { Pose } from '../sim/car'
 import type { StageSim } from '../sim/stage'
 import type { RaceLine } from '../sim/ai'
 import { STEP } from '../sim/route'
 import { atmosphere, cloudCover, skyDome, sunDirection, type Atmos } from './atmosphere'
-import { buildCar, type CarRig } from './car-model'
+import { buildCar, type CarOpts, type CarRig } from './car-model'
+import { rivalLook } from '../game/paint'
 import { GradePass } from './post'
 import { World, type Quality } from './world'
 import { planSoft, type Soft } from './placement'
@@ -167,8 +168,8 @@ export class StageView {
   private marks: { mesh: THREE.Mesh; pos: Float32Array; col: Float32Array; next: number; last: (THREE.Vector3 | null)[] } | null = null
 
   /** A translucent copy of the car that replays your best run. */
-  setGhost(g: Ghost, livery: LiveryDef): void {
-    const rig = buildCar(g.car, livery)
+  setGhost(g: Ghost, livery: LiveryDef, driver: CarOpts = {}): void {
+    const rig = buildCar(g.car, livery, driver)
     rig.root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return
       o.castShadow = false
@@ -214,7 +215,7 @@ export class StageView {
   private readonly tmpQ = new THREE.Quaternion()
   private readonly tmpV = new THREE.Vector3()
 
-  constructor(readonly sim: StageSim, readonly r: Renderer, livery: LiveryDef = LIVERIES[0], labels?: { start: string; finish: string }) {
+  constructor(readonly sim: StageSim, readonly r: Renderer, livery: LiveryDef = LIVERIES[0], labels?: { start: string; finish: string }, driver: CarOpts = {}) {
     const { rally, stage } = sim.setup
     this.atmos = atmosphere(stage.look, stage.weather)
     const a = this.atmos
@@ -250,11 +251,11 @@ export class StageView {
 
     this.world = new World(sim.ground, rally, stage, { ...spec, shadows: spec.propShadows }, sim.start, sim.finish, labels)
     this.scene.add(this.world.group)
-    this.car = buildCar(sim.setup.car, livery)
+    this.car = buildCar(sim.setup.car, livery, driver)
     this.scene.add(this.car.root)
     if (!spec.shadowMap) this.car.root.traverse((o) => (o.castShadow = false))
     for (const o of sim.field) {
-      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0])
+      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0], { look: rivalLook(o.slot.rival, RIVALS[o.slot.rival]?.helmet), name: o.slot.name.split(' ').pop() })
       if (!spec.shadowMap) rig.root.traverse((m) => (m.castShadow = false))
       this.scene.add(rig.root)
       this.rivals.push(rig)

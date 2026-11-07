@@ -58,7 +58,8 @@ export function raceGrid(rally: RallyDef, stageIdx: number, level: Difficulty, p
   const picked = pickField(all.slice(lo, lo + 7), FIELD - 1, seed * 7 + 13, personaOf)
   const ci = Math.max(0, CARS.findIndex((c) => c.id === playerCar))
   const nearby = [ci, ci - 1, ci + 1, ci - 2, ci + 2].filter((i) => i >= 0 && i < CARS.length)
-  const liveries = LIVERIES.filter((l) => l.id !== playerLivery)
+  // Rivals wear the regular team liveries, never the joke ones you unlock with secrets.
+  const liveries = LIVERIES.filter((l) => l.id !== playerLivery && l.unlock.type !== 'secret' && l.unlock.type !== 'code')
   return picked.map((ri, k) => {
     const rv = RIVALS[ri]
     const likes = rv.likes.includes(rally.surface) ? 1.004 : 1
@@ -67,7 +68,8 @@ export function raceGrid(rally: RallyDef, stageIdx: number, level: Difficulty, p
       name: rv.name,
       nat: rv.nat,
       car: CARS[nearby[(k + 1) % nearby.length]].id,
-      livery: liveries[(ri * 5 + seed) % liveries.length].id,
+      // Their own colours, unless the player turned up in them.
+      livery: rv.livery && rv.livery !== playerLivery ? rv.livery : liveries[(ri * 5 + seed) % liveries.length].id,
       level,
       // RIVALS pace is a time multiple: 0.99 is a percent quicker than the field. Kept small: the rung decides.
       skill: likes * (1 + (1.02 - rv.pace) * 0.25),

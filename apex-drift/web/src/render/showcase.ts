@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { LiveryDef } from '../data'
-import { buildCar, type CarRig } from './car-model'
+import type { DriverLook } from '../game/paint'
+import { buildCar, type CarOpts, type CarRig } from './car-model'
 
 /**
  * A warm, lamp-lit service tent with the car on a slow turntable: the garage
@@ -13,6 +14,16 @@ export class Showcase {
   private readonly turntable = new THREE.Group()
   angle = 0.6
   spin = 0.12
+  /** Set when the caller places the camera itself (the dev views). */
+  manualCamera = false
+  private mode: 'car' | 'driver' = 'car'
+  private helmetOn = true
+  private angleTo: number | null = null
+  private orbitYaw = 0
+  private orbitPitch = 0.117
+  private dist = 8.56
+  private camDist = 8.56
+  private snap = true
 
   constructor(private readonly gl: THREE.WebGLRenderer) {
     const s = this.scene
@@ -86,14 +97,65 @@ export class Showcase {
     this.camera.lookAt(0, 0.6, 0)
   }
 
-  setCar(id: string, livery: LiveryDef): void {
+  setCar(id: string, livery: LiveryDef, opts: CarOpts = {}): void {
     if (this.car) {
       this.turntable.remove(this.car.root)
       this.car.dispose()
     }
-    this.car = buildCar(id, livery)
+    this.car = buildCar(id, livery, opts)
     this.car.root.position.y = 0.06
+    this.car.helmet(this.helmetOn)
+    this.car.clearGlass(this.mode === 'driver' ? 0.25 : 1)
     this.turntable.add(this.car.root)
+  }
+
+  /** Repaints the car on the turntable without rebuilding it: for live editing. */
+  repaint(livery: LiveryDef): void {
+    this.car?.repaint(livery)
+  }
+
+  setDriver(look: DriverLook, name?: string): void {
+    this.car?.setDriver(look, name)
+  }
+
+  helmet(on: boolean): void {
+    this.helmetOn = on
+    this.car?.helmet(on)
+  }
+
+  /**
+   * What the camera frames: the whole car, or the driver through the
+   * windscreen (the glass all but cleared so his face reads).
+   */
+  frame(mode: 'car' | 'driver'): void {
+    this.mode = mode
+    this.snap = true
+    this.car?.clearGlass(mode === 'driver' ? 0.25 : 1)
+    if (mode === 'driver') {
+      this.orbitYaw = -0.06
+      this.orbitPitch = 0.2
+      this.dist = 1.9
+      this.spin = 0
+      this.angleTo = 0
+    } else {
+      this.orbitYaw = 0
+      this.orbitPitch = 0.117
+      this.dist = 8.56
+      this.spin = 0.12
+      this.angleTo = null
+    }
+  }
+
+  /** Drag to orbit: the camera circles the car (or the driver), pitch kept above the floor. */
+  orbit(dx: number, dy: number): void {
+    this.orbitYaw -= dx * 0.008
+    this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch + dy * 0.005, -0.05, 1.2)
+    this.angleTo = null
+  }
+
+  zoom(k: number): void {
+    const [lo, hi] = this.mode === 'driver' ? [0.8, 3.5] : [4.5, 12]
+    this.dist = THREE.MathUtils.clamp(this.dist * k, lo, hi)
   }
 
   resize(w: number, h: number, offsetX = 0): void {
@@ -103,9 +165,41 @@ export class Showcase {
     this.camera.updateProjectionMatrix()
   }
 
+  private readonly target = new THREE.Vector3(0, 0.6, 0)
+  private readonly tmp = new THREE.Vector3()
+
   render(dt: number): void {
-    this.angle += dt * this.spin
+    if (this.angleTo !== null && this.snap) this.angle = this.angleTo
+    else if (this.angleTo !== null) {
+      // Ease the turntable round to the framing's angle by the shortest way.
+      const d = Math.atan2(Math.sin(this.angleTo - this.angle), Math.cos(this.angleTo - this.angle))
+      this.angle += d * Math.min(1, dt * 4)
+    } else this.angle += dt * this.spin
     this.turntable.rotation.y = this.angle
+    // The camera's goal: the car's middle, or the driver's face.
+    const goal = this.tmp.set(0, 0.6, 0)
+    if (this.mode === 'driver' && this.car?.eye) {
+      this.turntable.updateMatrixWorld(true)
+      goal.copy(this.car.eye).add(new THREE.Vector3(0, -0.06, 0))
+      this.car.body.localToWorld(goal)
+    }
+    if (this.manualCamera) return this.draw()
+    // A new framing cuts straight to it; zooming and orbiting ease.
+    const k = this.snap ? 1 : Math.min(1, dt * 5)
+    this.snap = false
+    this.target.lerp(goal, k)
+    this.camDist += (this.dist - this.camDist) * k
+    const yaw = this.orbitYaw, pitch = this.orbitPitch
+    this.camera.position.set(
+      this.target.x + Math.sin(yaw) * Math.cos(pitch) * this.camDist,
+      this.target.y + Math.sin(pitch) * this.camDist,
+      this.target.z + Math.cos(yaw) * Math.cos(pitch) * this.camDist,
+    )
+    this.camera.lookAt(this.target)
+    this.draw()
+  }
+
+  private draw(): void {
     this.gl.toneMapping = THREE.ACESFilmicToneMapping
     this.gl.toneMappingExposure = 1.0
     this.gl.setRenderTarget(null)

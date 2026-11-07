@@ -13,6 +13,10 @@ import { dailyChallenge, streak } from './game/daily'
 import { openStore, type Settings, type Store } from './game/save'
 import { CHEATS, findCheat, OWNER, unlockAll, type CheatState } from './game/owner'
 import { Showcase } from './render/showcase'
+import { openPaintShop } from './ui/paintshop'
+import { openDriverEditor } from './ui/driver-edit'
+import { pt, type GarageCtx } from './ui/paint-ui'
+import { findLivery, playerLivery, playerLiveryId } from './game/paint'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT, type Pose } from './sim/car'
 import { raceGrid } from './sim/race'
@@ -436,11 +440,12 @@ export class App {
         </div>
         <div aria-hidden="true"></div>
         <div class="card">
+          <div class="row" style="margin-bottom:12px"><button class="btn" data-paint>${pt('paintShop')}</button><button class="btn ghost" data-driver>${pt('driverEdit')}</button></div>
           <p class="kicker">Livery</p>
           <div class="swatches">${visible.map((l) => {
             const own = ownsL(l)
-            const sub = own ? (s.livery === l.id ? t('selected') : t('select')) : l.unlock.type === 'shop' ? t('buy', { price: l.unlock.price.toLocaleString() }) : l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret')
-            return `<button class="swatch ${s.livery === l.id ? 'sel' : ''}" data-l="${l.id}"><span class="chip" style="background:linear-gradient(135deg,#${l.base.toString(16).padStart(6, '0')} 55%,#${l.stripe.toString(16).padStart(6, '0')} 55%)"></span><span>${esc(l.name)}<small>${sub}</small></span></button>`
+            const sub = own ? (s.livery === l.id && !s.carLivery[car.id] ? t('selected') : t('select')) : l.unlock.type === 'shop' ? t('buy', { price: l.unlock.price.toLocaleString() }) : l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret')
+            return `<button class="swatch ${s.livery === l.id && !s.carLivery[car.id] ? 'sel' : ''}" data-l="${l.id}"><span class="chip" style="background:linear-gradient(135deg,#${l.base.toString(16).padStart(6, '0')} 55%,#${l.stripe.toString(16).padStart(6, '0')} 55%)"></span><span>${esc(l.name)}<small>${sub}</small></span></button>`
           }).join('')}</div>
         </div>
       </div>`, (root) => {
@@ -475,16 +480,31 @@ export class App {
           save.owned.liveries.push(l.id)
         }
         save.livery = l.id
+        delete save.carLivery[car.id]
         this.store.write()
         this.menuStack.pop()
         this.garage(sel)
       }))
+      root.querySelector('[data-paint]')?.addEventListener('click', () => openPaintShop(this.garageCtx(car.id)))
+      root.querySelector('[data-driver]')?.addEventListener('click', () => openDriverEditor(this.garageCtx(car.id)))
+      // In bind, not after it: coming Back from the paint shop must put the saved look back on the turntable.
+      const sc = this.ensureShowcase()
+      sc.frame('car')
+      sc.helmet(true)
+      sc.setCar(car.id, playerLivery(this.store.save, car.id), { look: this.store.save.driver, name: this.store.save.name })
     }, 'showcase')
+  }
+
+  private ensureShowcase(): Showcase {
     if (!this.showcase) {
       this.showcase = new Showcase(this.renderer.gl)
       this.showcase.resize(innerWidth, innerHeight)
     }
-    this.showcase.setCar(car.id, LIVERIES.find((l) => l.id === s.livery) ?? LIVERIES[0])
+    return this.showcase
+  }
+
+  private garageCtx(car: string): GarageCtx {
+    return { store: this.store, car, showcase: () => this.ensureShowcase(), menu: (r, b) => this.menu(r, b, 'showcase'), back: () => this.back() }
   }
 
   private closeShowcase(): void {
@@ -736,15 +756,15 @@ export class App {
     let view: StageView | null = null
     steps.push(() => {
       const difficulty = mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty
-      const race = mode === 'race' ? raceGrid(rally, stageIdx, difficulty, car ?? s.car, s.livery) : undefined
+      const race = mode === 'race' ? raceGrid(rally, stageIdx, difficulty, car ?? s.car, playerLiveryId(s, car ?? s.car)) : undefined
       // The school teaches with every aid on, whatever the player has chosen for later.
       const aids = mode === 'school' ? assistPreset('full') : s.settings.assists
       sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty, assists: toSim(aids), lineHint: aids.line, power: OWNER && this.cheat.turbo ? 2 : 1, race })
     })
     steps.push(() => {
       if (!sim) return
-      const lv = LIVERIES.find((l) => l.id === s.livery) ?? LIVERIES[0]
-      view = new StageView(sim, this.renderer, lv, { start: t('start'), finish: t('finish') })
+      const lv = playerLivery(s, sim.setup.car)
+      view = new StageView(sim, this.renderer, lv, { start: t('start'), finish: t('finish') }, { look: s.driver, name: s.name })
       view.camMode = s.settings.camera
       view.shake = s.settings.shake ? 1 : 0
       this.resize(view)
@@ -794,7 +814,7 @@ export class App {
     this.race.hud.rewinds(this.race.rewinds)
     if (mode !== 'school' && mode !== 'race') {
       const g = loadGhost(this.storage, `${rally.id}:${stageIdx}`)
-      if (g) view.setGhost(g, LIVERIES.find((l) => l.id === g.livery) ?? LIVERIES[0])
+      if (g) view.setGhost(g, findLivery(s, g.livery), { look: s.driver, name: s.name })
     }
     this.show('race')
     this.ui.overlay.classList.add('hidden')
@@ -1099,7 +1119,7 @@ export class App {
       return
     }
     if (r.mode === 'race') return this.raceResults(r)
-    saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: s.livery, time, frames: r.recorder.frames() })
+    saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: playerLiveryId(s, sim.setup.car), time, frames: r.recorder.frames() })
     if (r.mode === 'daily') {
       // The daily stage keeps its own record: today's best and the streak, no career or garage effects.
       const day = r.rally.id.slice('daily-'.length)

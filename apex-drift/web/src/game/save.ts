@@ -1,6 +1,8 @@
 import { LEVELS, type Difficulty } from '../sim/levels'
 import { assistPreset, sanitizeAssists, type AssistSettings } from './assists'
 import { OWNER } from './owner'
+import { CARS } from '../data'
+import { defaultLook, sanitizeCarLivery, sanitizeCustoms, sanitizeLook, type CustomLivery, type DriverLook } from './paint'
 
 /**
  * The owner's build keeps its own save: every file:// page shares one
@@ -53,6 +55,12 @@ export interface Save {
   xp: number
   credits: number
   owned: { cars: string[]; liveries: string[] }
+  /** The player's own paint jobs from the paint shop, each made for one car. */
+  customLiveries: CustomLivery[]
+  /** Car id → the custom paint job it wears; a car not listed wears the preset in `livery`. */
+  carLivery: Record<string, string>
+  /** The driver's face, hair, shirt and helmet. */
+  driver: DriverLook
   tutorialDone: boolean
   /** Rally ids finished at least once: each unlocks the next. */
   finished: string[]
@@ -78,6 +86,9 @@ export function defaults(): Save {
     xp: 0,
     credits: 2500,
     owned: { cars: ['kestrel', 'piccola'], liveries: [] },
+    customLiveries: [],
+    carLivery: {},
+    driver: defaultLook(),
     tutorialDone: false,
     finished: [],
     best: {},
@@ -121,6 +132,7 @@ export function sanitize(raw: unknown): Save {
   const ev = isObj(raw.event) && typeof raw.event.rally === 'string' && Array.isArray(raw.event.times)
     ? { rally: raw.event.rally, times: raw.event.times.filter((t): t is number => typeof t === 'number' && t > 0).slice(0, 4), difficulty: pick(raw.event.difficulty, LEVELS, 'rookie') }
     : null
+  const customs = sanitizeCustoms(raw.customLiveries, CARS.map((c) => c.id))
   return {
     version: 4,
     name: str(raw.name, d.name).slice(0, 20),
@@ -129,6 +141,9 @@ export function sanitize(raw: unknown): Save {
     xp: num(raw.xp, 0, 0),
     credits: num(raw.credits, d.credits, 0, 1e7),
     owned: { cars: strs(owned.cars, d.owned.cars), liveries: strs(owned.liveries, []) },
+    customLiveries: customs,
+    carLivery: sanitizeCarLivery(raw.carLivery, customs),
+    driver: sanitizeLook(raw.driver),
     tutorialDone: raw.tutorialDone === true,
     finished: strs(raw.finished, []),
     best,
