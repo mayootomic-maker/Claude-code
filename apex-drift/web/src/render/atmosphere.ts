@@ -37,7 +37,7 @@ export interface Atmos {
   grade: Grade
   /**
    * How much light reaches anything drawn unlit (the distant ranges, dust),
-   * 1 in daylight. Those carry their colour baked in, so without this a snow
+   * 1 in daylight, as a linear multiplier (so 0.02 still reads in sRGB). Those carry their colour baked in, so without this a snow
    * cap or a dust cloud would glow at full daylight brightness in the dark.
    */
   dim: number
@@ -68,17 +68,17 @@ const LOOKS: Record<Look, Atmos> = {
   },
   sunset: {
     sunEl: 3, sunAz: 255, sun: 0xff8f4f, sunI: 2.4, skyTop: 0x47578f, skyHorizon: 0xff9c63, ground: 0x4a3328, hemiI: 0.8,
-    fog: 0xe39a6c, fogDensity: 0.0016, exposure: 1.12, dim: 0.72, lights: false, stars: false,
+    fog: 0xe39a6c, fogDensity: 0.0016, exposure: 1.12, dim: 0.6, lights: false, stars: false,
     grade: { lift: [0.04, 0.02, 0.025], gain: [1.1, 0.97, 0.88], saturation: 1.04, contrast: 1.07, vignette: 0.4, shadowTint: [-0.01, -0.004, 0.02], highTint: [0.03, 0.008, -0.014], bloom: 0.38 },
   },
   dusk: {
     sunEl: -3, sunAz: 265, sun: 0xb6a0ff, sunI: 0.55, skyTop: 0x253263, skyHorizon: 0xd88a76, ground: 0x2a2530, hemiI: 0.75,
-    fog: 0x7b6f86, fogDensity: 0.0018, exposure: 1.35, dim: 0.36, lights: true, stars: true,
+    fog: 0x7b6f86, fogDensity: 0.0018, exposure: 1.35, dim: 0.22, lights: true, stars: true,
     grade: { lift: [0.03, 0.025, 0.045], gain: [1.02, 0.97, 1.02], saturation: 0.92, contrast: 1.04, vignette: 0.42, shadowTint: [-0.004, 0.004, 0.02], highTint: [0.02, 0.008, -0.006], bloom: 0.45 },
   },
   night: {
     sunEl: 35, sunAz: 120, sun: 0x9fb4ff, sunI: 0.32, skyTop: 0x0b1226, skyHorizon: 0x26304f, ground: 0x15171f, hemiI: 0.55,
-    fog: 0x1f2639, fogDensity: 0.002, exposure: 1.55, dim: 0.07, lights: true, stars: true,
+    fog: 0x1f2639, fogDensity: 0.002, exposure: 1.55, dim: 0.02, lights: true, stars: true,
     grade: { lift: [0.02, 0.025, 0.045], gain: [0.98, 1.0, 1.06], saturation: 0.84, contrast: 1.03, vignette: 0.45, shadowTint: [-0.004, 0.004, 0.016], highTint: [0.016, 0.01, 0.0], bloom: 0.55 },
   },
   overcast: {

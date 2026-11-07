@@ -72,7 +72,7 @@ function viewFor(key: RunKey): { view: StageView; fx: Fx; run: Run } {
 function sunsetGrade(view: StageView): void {
   const a = view.atmos
   a.exposure *= 1.2
-  a.grade = { ...a.grade, lift: [0.03, 0.018, 0.008], gain: [1.1, 1.0, 0.85], saturation: 1.08, contrast: 1.1, vignette: 0.34, shadowTint: [0.008, 0.0, -0.006], highTint: [0.032, 0.012, -0.018] }
+  a.grade = { ...a.grade, lift: [0.03, 0.02, 0.012], gain: [1.06, 1.0, 0.9], saturation: 1.0, contrast: 1.08, vignette: 0.34, shadowTint: [0.006, 0.0, -0.004], highTint: [0.026, 0.01, -0.014] }
   view.scene.traverse((o) => {
     if (o instanceof THREE.HemisphereLight) {
       o.color.lerp(new THREE.Color(0xd9a27c), 0.6)
@@ -90,7 +90,8 @@ function sunsetGrade(view: StageView): void {
 function nightGrade(view: StageView): void {
   view.atmos.exposure *= 1.15
   view.scene.traverse((o) => {
-    if (o instanceof THREE.HemisphereLight) o.intensity *= 1.7
+    if (o instanceof THREE.HemisphereLight) o.intensity *= 2.2
+    if (o instanceof THREE.DirectionalLight) o.intensity *= 2
   })
 }
 

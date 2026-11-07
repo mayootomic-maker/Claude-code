@@ -428,7 +428,24 @@ function writeWav(path: string, b: Stereo, gain: number): void {
   writeFileSync(path, buf)
 }
 
-/** Brick-wall limiter with 5 ms look-ahead and 4x interpolated peak detection, so true peaks stay under the ceiling. */
+/**
+ * Taps for the three in-between phases of a 4x windowed-sinc upsampler: the
+ * reconstruction a player (or the AAC encoder) actually makes between samples.
+ * Straight-line interpolation misses the overshoot of bright transients by a
+ * dB or more, which is how a mix limited at -2.2 dBFS came out above 0 dBTP.
+ */
+const ISP_TAPS = 8
+const ISP: Float32Array[] = [1, 2, 3].map((q) => {
+  const t = new Float32Array(ISP_TAPS * 2)
+  for (let i = 0; i < ISP_TAPS * 2; i++) {
+    const x = i - ISP_TAPS + 1 - q / 4
+    const w = 0.5 + 0.5 * Math.cos((Math.PI * x) / (ISP_TAPS + 0.5))
+    t[i] = (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)) * w
+  }
+  return t
+})
+
+/** Brick-wall limiter with 5 ms look-ahead and 4x oversampled true-peak detection, so true peaks stay under the ceiling. */
 function limit(b: Stereo, gain: number, ceilDb: number): Stereo {
   const n = b.l.length
   const ceil = dbToGain(ceilDb)
@@ -437,9 +454,16 @@ function limit(b: Stereo, gain: number, ceilDb: number): Stereo {
   for (let k = 0; k < n; k++) {
     let p = 0
     for (const ch of [b.l, b.r]) {
-      const x0 = ch[k] * gain, x1 = (ch[k + 1] ?? ch[k]) * gain
-      for (let q = 0; q < 4; q++) p = Math.max(p, Math.abs(x0 + (x1 - x0) * (q / 4)))
+      p = Math.max(p, Math.abs(ch[k]))
+      // Only near a loud sample can an inter-sample peak reach the ceiling.
+      if (Math.abs(ch[k]) * gain < ceil * 0.5 && Math.abs(ch[k + 1] ?? 0) * gain < ceil * 0.5) continue
+      for (const t of ISP) {
+        let y = 0
+        for (let i = 0; i < ISP_TAPS * 2; i++) y += (ch[k - ISP_TAPS + 1 + i] ?? 0) * t[i]
+        p = Math.max(p, Math.abs(y))
+      }
     }
+    p *= gain
     need[k] = p > ceil ? ceil / p : 1
   }
   // Minimum over the look-ahead window, then smoothed: gain falls before the peak arrives and recovers slowly.
@@ -470,16 +494,18 @@ function loudness(path: string): { I: number; TP: number; LRA: number } {
 }
 
 writeWav(join(work, 'mix.wav'), mix, 1)
+/** Limiter ceiling, dBTP: headroom for the AAC encode, which overshoots by a fraction of a dB. */
+const CEIL = -2.6
 // Master to -14 LUFS integrated with true peaks at most -1.5 dBTP: gain, limit, measure, repeat.
 let gainDb = -14 - loudness(join(work, 'mix.wav')).I
-let master = limit(mix, dbToGain(gainDb), -2.2)
+let master = limit(mix, dbToGain(gainDb), CEIL)
 for (let it = 0; it < 4; it++) {
   writeWav(join(work, 'master.wav'), master, 1)
   const m = loudness(join(work, 'master.wav'))
   log(`master pass ${it + 1}: ${m.I.toFixed(2)} LUFS, ${m.TP.toFixed(2)} dBTP, LRA ${m.LRA.toFixed(1)} LU`)
   if (Math.abs(m.I + 14) < 0.2) break
   gainDb += -14 - m.I
-  master = limit(mix, dbToGain(gainDb), -2.2)
+  master = limit(mix, dbToGain(gainDb), CEIL)
 }
 
 // Clicks: around every edit, the largest sample-to-sample step against the largest in the half second either side.
