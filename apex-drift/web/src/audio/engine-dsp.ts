@@ -519,10 +519,10 @@ export class EngineDSP {
     this.honkF.set(v.honk * (0.8 + 0.6 * rpmN), 3)
 
     // Turbo: whistle rising with boost; on a lift a falling blow-off and a fluttering surge.
-    const twFT = 1700 + 4800 * this.boostS + rpmIn * 0.12
+    const twFT = 1100 + 2300 * this.boostS + rpmIn * 0.05
     this.twF = smooth(this.twF, twFT, this.k(0.05))
-    this.twN.set(this.twF * 1.5, 4)
-    tgt[G_TW] = p.turbo ? 0.06 * v.whistle * Math.pow(this.boostS, 1.3) * (0.3 + 0.7 * thrEff) : 0
+    this.twN.set(this.twF * 1.3, 2.5)
+    tgt[G_TW] = p.turbo ? 0.014 * v.whistle * Math.pow(this.boostS, 1.3) * (0.3 + 0.7 * thrEff) : 0
     this.bovAge += dt
     this.bov *= Math.exp(-dt / 0.26)
     tgt[G_BOV] = this.bov
@@ -535,7 +535,7 @@ export class EngineDSP {
     // Straight-cut whine, pitched by road speed through the gear ratio; loudest on the overrun.
     const ratio = RATIOS[Math.min(RATIOS.length - 1, Math.max(0, Math.abs(gear)))]
     this.gwF = smooth(this.gwF, Math.max(40, Math.abs(Number.isFinite(inp.speed) ? inp.speed : 0) * ratio * 26), this.k(0.03))
-    tgt[G_GW] = ch.whine * 0.03 * sstep(1, 25, Math.abs(ch.speed)) * (0.45 + 0.7 * overrun + 0.3 * thrEff)
+    tgt[G_GW] = ch.whine * 0.012 * sstep(1, 25, Math.abs(ch.speed)) * (0.45 + 0.7 * overrun + 0.3 * thrEff)
     tgt[G_CAB] = ch.cabin
 
     // Chassis filters.
@@ -665,7 +665,7 @@ export class EngineDSP {
           this.flF.tick(nz)
           y += this.flF.bpn * flt * fl * 0.9
         }
-        y += tw * (sn + 0.35 * sn * c + 0.4 * this.twN.bpn) + tw * 0.6 * flt * fl * sn
+        y += tw * (0.45 * sn + 0.1 * sn * c + 1.1 * this.twN.bpn) + tw * 0.6 * flt * fl * sn
         if (bov > 1e-4) {
           this.bovF.tick(nz)
           const bf = bovFlutter ? 0.6 + 0.4 * Math.cos(TAU * 24 * (this.bovAge + i / sr)) : 1
