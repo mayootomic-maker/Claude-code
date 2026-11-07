@@ -137,14 +137,14 @@ describe('AI personalities', () => {
   it('a nervous driver makes more mistakes with someone on its bumper than a steady one does', () => {
     const run = (id: string) => {
       const rally = RALLIES[7]
-      const grid = raceGrid(rally, 3, 'rookie', 'kestrel', 'works')
-      // A quick, aggressive chaser right behind a rookie-level driver of each character.
+      const grid = raceGrid(rally, 3, 'casual', 'kestrel', 'works')
+      // A quick, aggressive chaser right behind a casual-level driver of each character.
       const lead = { ...grid[0], car: 'kestrel', skill: 1, persona: character(id)!.p, seed: 9 }
       const chase = { ...grid[1], car: 'kestrel', skill: 1, level: 'elite' as const, persona: character('r7')!.p, seed: 5 }
-      const sim = new StageSim({ rally, stage: rally.stages[3], car: 'kestrel', difficulty: 'rookie', race: [lead, chase] })
+      const sim = new StageSim({ rally, stage: rally.stages[3], car: 'kestrel', difficulty: 'casual', race: [lead, chase] })
       for (const o of sim.field) o.lod = false
       let pressure = 0
-      for (let i = 0; i < 60 * 90; i++) {
+      for (let i = 0; i < 60 * 400 && sim.field[0].finishTime === null; i++) {
         sim.step(IDLE)
         pressure = Math.max(pressure, sim.field[0].driver.pressure)
       }

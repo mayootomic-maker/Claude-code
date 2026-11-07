@@ -153,7 +153,12 @@ export function raceLine(route: Route, surface: string, wet: boolean, p: CarPhys
     for (let j = Math.max(0, i - 2); j <= i + 2; j++) vcorner[j] = Math.min(vcorner[j], cap)
   }
   const vmax = vcorner.slice()
-  for (let i = n - 2; i >= 0; i--) vmax[i] = Math.min(vmax[i], Math.sqrt(vmax[i + 1] ** 2 + 2 * mu[i] * G * style.brake * STEP))
+  // Braking in a bend gets only the grip the bend leaves over.
+  for (let i = n - 2; i >= 0; i--) {
+    const lat = (vmax[i + 1] ** 2 * Math.abs(curv[i])) / (mu[i] * G)
+    const aLong = mu[i] * G * style.brake * Math.max(0.15, 1 - lat)
+    vmax[i] = Math.min(vmax[i], Math.sqrt(vmax[i + 1] ** 2 + 2 * aLong * STEP))
+  }
   // Forward pass with the car's real gearbox, limited by the grip of its driven wheels.
   const driven = p.frontDrive > 0.01 && p.frontDrive < 0.99 ? 1 : p.frontDrive >= 0.99 ? p.b / (p.a + p.b) : p.a / (p.a + p.b)
   const vrun = new Float32Array(n)
@@ -522,23 +527,33 @@ export class AiDriver {
     const n = line.vcorner.length
     const late = m?.kind === 'late' ? 1 + m.amount : 1
     const muCar = (MU[this.car.surface] ?? 0.8) * this.car.p.grip
-    const decel0 = line.style.brake * G
+    const share = line.style.brake
     // Pedals and tyres take a moment to bite: plan the braking point that far early.
     const react = v * (0.2 + this.rung.lag * 0.5)
-    const look = 8 + (v * v) / (2 * decel0 * 0.5)
+    // A late braker's misjudged corner: it gets on the brakes this much later.
+    const lateBy = late > 1 ? v * (late - 1) * 2 : 0
+    const look = 16 + react + (v * v) / (2 * 0.3 * G)
+    const i0 = Math.max(0, Math.floor(s / STEP))
+    const i1 = Math.min(n - 1, i0 + Math.ceil(look / STEP))
+    // Backward from the end of the window: the speed allowed at each point is
+    // what the corner there takes, or what it can still brake from to the next
+    // point. Braking in a bend only gets the grip the bend leaves over, so a
+    // corner that tightens is braked for earlier than a straight run into it.
+    const at = Math.min(i1, i0 + Math.max(1, Math.round((s - i0 * STEP + react - lateBy) / STEP)))
+    let vNext = line.vmax[i1] * commit
     let best = Infinity
-    const i0 = Math.max(0, Math.floor((s + 2) / STEP))
-    for (let i = i0, k = 0; i < n && k * STEP < look; i++, k++) {
-      const d = i * STEP - s
-      const mu = k < 6 ? Math.min(line.mu[i], muCar) : line.mu[i]
-      // The corner a late braker misjudged comes up faster than it thinks.
+    for (let i = i1 - 1; i >= i0; i--) {
+      const mu = i - i0 < 6 ? Math.min(line.mu[i], muCar) : line.mu[i]
       const vc = line.vcorner[i] * commit * (m?.kind === 'late' && Math.abs(i * STEP - m.at) < 30 ? late : 1)
-      // ...and it gets on the brakes late for it, too.
-      const vi = Math.sqrt(vc * vc + 2 * mu * decel0 * Math.max(0, d - react + (late > 1 ? v * (late - 1) * 2 : 0)))
-      if (vi < best) best = vi
+      const lat = (vNext * vNext * Math.abs(line.curv[i])) / (mu * G)
+      const aLong = mu * G * share * Math.max(0.15, 1 - lat)
+      vNext = Math.min(vc, Math.sqrt(vNext * vNext + 2 * aLong * STEP))
+      // From here to the point a reaction ahead, the slowest it must be.
+      if (i <= at) best = Math.min(best, vNext)
     }
-    return best
+    return Number.isFinite(best) ? best : line.vmax[Math.min(n - 1, i0)] * commit
   }
+
 
   private makeMistake(c: Corner, v: number): void {
     const R = this.rung
