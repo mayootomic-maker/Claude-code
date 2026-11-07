@@ -23,6 +23,7 @@ export class Showcase {
   private orbitPitch = 0.117
   private dist = 8.56
   private camDist = 8.56
+  private snap = true
 
   constructor(private readonly gl: THREE.WebGLRenderer) {
     const s = this.scene
@@ -128,17 +129,19 @@ export class Showcase {
    */
   frame(mode: 'car' | 'driver'): void {
     this.mode = mode
+    this.snap = true
     this.car?.clearGlass(mode === 'driver' ? 0.25 : 1)
     if (mode === 'driver') {
-      this.orbitYaw = 0.5
-      this.orbitPitch = 0.12
-      this.dist = 2.0
+      this.orbitYaw = -0.06
+      this.orbitPitch = 0.2
+      this.dist = 1.9
       this.spin = 0
       this.angleTo = 0
     } else {
       this.orbitYaw = 0
       this.orbitPitch = 0.117
       this.dist = 8.56
+      this.spin = 0.12
       this.angleTo = null
     }
   }
@@ -151,7 +154,7 @@ export class Showcase {
   }
 
   zoom(k: number): void {
-    const [lo, hi] = this.mode === 'driver' ? [0.9, 3.5] : [4.5, 12]
+    const [lo, hi] = this.mode === 'driver' ? [0.8, 3.5] : [4.5, 12]
     this.dist = THREE.MathUtils.clamp(this.dist * k, lo, hi)
   }
 
@@ -166,7 +169,8 @@ export class Showcase {
   private readonly tmp = new THREE.Vector3()
 
   render(dt: number): void {
-    if (this.angleTo !== null) {
+    if (this.angleTo !== null && this.snap) this.angle = this.angleTo
+    else if (this.angleTo !== null) {
       // Ease the turntable round to the framing's angle by the shortest way.
       const d = Math.atan2(Math.sin(this.angleTo - this.angle), Math.cos(this.angleTo - this.angle))
       this.angle += d * Math.min(1, dt * 4)
@@ -180,7 +184,9 @@ export class Showcase {
       this.car.body.localToWorld(goal)
     }
     if (this.manualCamera) return this.draw()
-    const k = Math.min(1, dt * 5)
+    // A new framing cuts straight to it; zooming and orbiting ease.
+    const k = this.snap ? 1 : Math.min(1, dt * 5)
+    this.snap = false
     this.target.lerp(goal, k)
     this.camDist += (this.dist - this.camDist) * k
     const yaw = this.orbitYaw, pitch = this.orbitPitch
