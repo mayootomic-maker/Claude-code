@@ -90,17 +90,34 @@ export interface CarDef {
   phys: Partial<CarPhys> & Record<string, number | undefined>
 }
 
+/** Graphic layouts a livery can be painted in; see render/livery-paint.ts. */
+export const PATTERNS = ['swoosh', 'stripes', 'chevron', 'fade', 'split', 'blocks', 'band', 'shards', 'wave', 'tricolor', 'dots', 'plain'] as const
+export type Pattern = (typeof PATTERNS)[number]
+export const FINISHES = ['gloss', 'metallic', 'pearl', 'satin', 'matte', 'chrome'] as const
+export type Finish = (typeof FINISHES)[number]
+export const NUM_FONTS = ['block', 'italic', 'outline', 'stencil', 'retro'] as const
+export type NumFont = (typeof NUM_FONTS)[number]
+/** Optional layers on top of the base design. */
+export interface Decals { panel: boolean; sponsors: boolean; pinstripe: boolean; roof: boolean; bonnet: boolean }
+export const DECAL_KEYS = ['panel', 'sponsors', 'pinstripe', 'roof', 'bonnet'] as const satisfies readonly (keyof Decals)[]
+
 export interface LiveryDef {
   id: string
   name: string
+  /** Primary, secondary and accent paint, and the wheel colour. */
   base: number
   stripe: number
   accent: number
   rim: number
-  pattern: 'stripes' | 'band' | 'chevron' | 'split' | 'tricolor' | 'dots'
+  pattern: Pattern
   num: string
   sponsor: string
   bonnet?: string
+  finish?: Finish
+  font?: NumFont
+  decals?: Partial<Decals>
+  /** Name on the rear side windows; empty for none. */
+  window?: string
   unlock: { type: 'none' } | { type: 'shop'; price: number } | { type: 'level'; n: number } | { type: 'secret'; key: string } | { type: 'code'; key: string }
 }
 

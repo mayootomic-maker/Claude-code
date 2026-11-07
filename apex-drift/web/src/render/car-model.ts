@@ -2,8 +2,11 @@ import * as THREE from 'three'
 import { carPhys, type LiveryDef } from '../data'
 import { tyreTexture } from './textures'
 import { M, Parts, V3, atlasUV, grid, rod, solid, tube } from './car-geo'
-import { LAMP, TRIM, helmetTexture, lampAtlas, shirtTexture, trimAtlas, type Rect } from './car-tex'
-import { buildDriver, driverFrame, wheelFrame } from './car-driver'
+import { LAMP, TRIM, lampAtlas, trimAtlas, type Rect } from './car-tex'
+import { buildDriver, driverFrame, wheelFrame, type Driver } from './car-driver'
+import { FINISH, makeLiveryCanvases, paintLivery, type BodyFrame } from './livery-paint'
+import { drawHelmet, drawShirt, helmetTexture, shirtTexture } from './driver-tex'
+import { defaultLook, type DriverLook, type Visor } from '../game/paint'
 
 /**
  * Rally cars built from lofted cross-sections. One closed shell runs from
@@ -74,10 +77,22 @@ export interface CarRig {
   bonnet?: THREE.Vector3
   /** Camera inside the car: hides the driver's head (the camera is in it) and clears the tint from the glass. */
   interior?(on: boolean): void
+  /** Repaints the body, wheels and calipers in place: no geometry is rebuilt, so it's cheap enough for a live editor. */
+  repaint(lv: LiveryDef): void
+  /** Rebuilds the driver with a new look (and name on his helmet). */
+  setDriver(look: DriverLook, name?: string): void
+  /** Helmet on (always, in a race) or off, to show off his hair in the garage. */
+  helmet(on: boolean): void
+  /** Glass opacity, 1 = as built; lower to see the driver clearly in the garage. */
+  clearGlass(k: number): void
 }
 
-const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
-const SIDE_V = 0.6 // livery canvas: top 60% is the side panel, bottom 40% the bonnet/roof strip
+export interface CarOpts {
+  look?: DriverLook
+  /** Printed on the helmet. */
+  name?: string
+}
+
 const smooth = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
   return t * t * (3 - 2 * t)
@@ -98,138 +113,11 @@ function knots(pts: [number, number][]): (x: number) => number {
   }
 }
 
-function liveryTexture(lv: LiveryDef, s: Spec): THREE.CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 2048
-  c.height = 1024
-  const g = c.getContext('2d')
-  if (!g) throw new Error('2D canvas unavailable')
-  const W = 2048, H = 1024, SH = H * SIDE_V
-  const base = hex(lv.base), stripe = hex(lv.stripe), accent = hex(lv.accent)
-  g.fillStyle = base
-  g.fillRect(0, 0, W, H)
-  // The side panel is painted once and mirrored for the left side, so it's
-  // drawn here in "right side" orientation: x = rear→front, y = roof→sill.
-  switch (lv.pattern) {
-    case 'stripes':
-      g.fillStyle = stripe
-      g.fillRect(0, SH * 0.5, W, 34)
-      g.fillRect(0, SH * 0.58, W, 14)
-      break
-    case 'band':
-      g.fillStyle = stripe
-      g.fillRect(0, SH * 0.46, W, 90)
-      g.fillStyle = accent
-      g.fillRect(0, SH * 0.46 + 90, W, 18)
-      break
-    case 'chevron':
-      g.fillStyle = stripe
-      g.beginPath()
-      g.moveTo(W * 0.25, SH)
-      g.lineTo(W * 0.52, SH * 0.3)
-      g.lineTo(W * 0.66, SH * 0.3)
-      g.lineTo(W * 0.39, SH)
-      g.fill()
-      g.fillStyle = accent
-      g.fillRect(0, SH * 0.86, W, 26)
-      break
-    case 'split':
-      g.fillStyle = stripe
-      g.fillRect(0, SH * 0.62, W, SH * 0.38)
-      g.fillStyle = accent
-      g.fillRect(0, SH * 0.6, W, 18)
-      break
-    case 'tricolor':
-      for (let i = 0; i < 3; i++) {
-        g.fillStyle = [stripe, base, accent][i]
-        g.fillRect(0, SH * (0.42 + i * 0.13), W, SH * 0.13)
-      }
-      break
-    case 'dots':
-      g.fillStyle = stripe
-      for (let y = 20; y < H; y += 70) for (let x = (y / 70) % 2 ? 35 : 0; x < W; x += 70) {
-        g.beginPath()
-        g.arc(x, y, 14, 0, Math.PI * 2)
-        g.fill()
-      }
-      break
-  }
-  // Panel shut lines and a door handle: tiny details, big difference.
-  g.strokeStyle = 'rgba(0,0,0,0.42)'
-  g.lineWidth = 3
-  const xAt = (fracFromFront: number) => W * (1 - fracFromFront)
-  const doorF = xAt(s.glass[0] + 0.02), doorR = xAt((s.glass[1] + s.glass[2]) / 2 + 0.05)
-  g.beginPath()
-  g.moveTo(doorF, SH * 0.3)
-  g.lineTo(doorF - 10, SH * 0.88)
-  g.moveTo(doorR, SH * 0.3)
-  g.lineTo(doorR + 4, SH * 0.82)
-  g.moveTo(doorF - 10, SH * 0.88)
-  g.lineTo(doorR + 4, SH * 0.86)
-  g.stroke()
-  g.fillStyle = 'rgba(20,20,22,0.75)'
-  g.fillRect(doorR + 40, SH * 0.36, 70, 12)
-  // Rally door panel: event header, big competition number.
-  const cx = (doorF + doorR) / 2, py = SH * 0.47, pw = 250, ph = 210
-  g.fillStyle = '#f3f1ea'
-  g.beginPath()
-  g.roundRect(cx - pw / 2, py, pw, ph, 18)
-  g.fill()
-  g.fillStyle = '#c8231c'
-  g.beginPath()
-  g.roundRect(cx - pw / 2, py, pw, 46, [18, 18, 0, 0])
-  g.fill()
-  g.fillStyle = '#f3f1ea'
-  g.font = '800 28px "Barlow Condensed", sans-serif'
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  g.fillText('APEX DRIFT RALLY', cx, py + 24)
-  g.fillStyle = '#16181b'
-  g.font = '800 150px "Barlow Condensed", sans-serif'
-  g.fillText(lv.num, cx, py + 46 + (ph - 46) / 2 + 6)
-  // Sponsor on the rear quarter, small decals ahead of the door.
-  g.fillStyle = lv.accent === lv.base ? stripe : accent
-  g.font = '800 72px "Barlow Condensed", sans-serif'
-  g.fillText(lv.sponsor, doorR / 2, SH * 0.62)
-  g.font = '700 30px "Barlow Condensed", sans-serif'
-  g.fillStyle = 'rgba(20,20,22,0.75)'
-  g.fillText('TOMIĆ STUDIOS RALLY TEAM', cx, py + ph + 26)
-  g.font = '700 26px "Barlow Condensed", sans-serif'
-  g.fillText('T. TONI', doorF - 60, SH * 0.36)
-  // Bonnet and roof strip (y from SH to H, centre line in the middle).
-  const mid = SH + (H - SH) / 2
-  if (lv.pattern === 'stripes') {
-    g.fillStyle = stripe
-    g.fillRect(0, mid - 70, W, 46)
-    g.fillRect(0, mid + 24, W, 46)
-  } else if (lv.pattern === 'band' || lv.pattern === 'split') {
-    g.fillStyle = stripe
-    g.fillRect(0, mid - 40, W, 80)
-  }
-  g.save()
-  g.translate(W * 0.86, mid)
-  g.rotate(Math.PI / 2)
-  g.fillStyle = '#f3f1ea'
-  g.font = '800 64px "Barlow Condensed", sans-serif'
-  g.fillText(lv.bonnet ?? lv.sponsor, 0, 0)
-  g.restore()
-  // Roof number.
-  g.save()
-  g.translate(W * (1 - (s.glass[1] + s.glass[2]) / 2), mid)
-  g.rotate(Math.PI / 2)
-  g.fillStyle = '#f3f1ea'
-  g.fillRect(-70, -50, 140, 100)
-  g.fillStyle = '#16181b'
-  g.font = '800 90px "Barlow Condensed", sans-serif'
-  g.fillText(lv.num, 0, 4)
-  g.restore()
-  const t = new THREE.CanvasTexture(c)
-  t.colorSpace = THREE.SRGBColorSpace
-  t.anisotropy = 8
-  return t
-}
-
-/** UVs from position and normal: sides sample the side panel (mirrored on the left), tops the bonnet strip. */
+/**
+ * UVs from position and normal into the livery texture's three bands (see
+ * livery-paint.ts): the right flank on top, the left flank below it, both
+ * reading front-to-back the way you see them, and the top view at the bottom.
+ */
 function applyUV(g: THREE.BufferGeometry, L: number, H: number, W: number): void {
   const p = g.getAttribute('position') as THREE.BufferAttribute
   const n = g.getAttribute('normal') as THREE.BufferAttribute
@@ -239,12 +127,15 @@ function applyUV(g: THREE.BufferGeometry, L: number, H: number, W: number): void
     const nx = n.getX(i), ny = n.getY(i)
     let u = (z + L / 2) / L
     let v: number
+    const h = THREE.MathUtils.clamp(y / H, 0, 1) / 3
     if (Math.abs(nx) > ny * 0.9) {
-      // Right side (-x) reads rear→front left to right; the left side mirrors it.
-      if (nx > 0) u = 1 - u
-      v = 1 - (1 - THREE.MathUtils.clamp(y / H, 0, 1)) * SIDE_V
+      // Right flank (-x): rear at the left of the band. The left flank runs the other way, so it isn't mirrored.
+      if (nx > 0) {
+        u = 1 - u
+        v = 1 / 3 + h
+      } else v = 2 / 3 + h
     } else {
-      v = (1 - SIDE_V) * (1 - THREE.MathUtils.clamp((x + W / 2) / W, 0, 1))
+      v = (1 / 3) * (1 - THREE.MathUtils.clamp((x + W / 2) / W, 0, 1))
     }
     uv[i * 2] = u
     uv[i * 2 + 1] = v
@@ -726,7 +617,15 @@ function dirtShader(m: THREE.MeshPhysicalMaterial, dirt: { value: number }, dirt
   }
 }
 
-export function buildCar(carId: string, lv: LiveryDef): CarRig {
+const VISOR: Record<Visor, { color: number; metal: number; irid: number; ior: number; opacity: number }> = {
+  iridium: { color: 0x1a2a40, metal: 0.9, irid: 1, ior: 1.6, opacity: 0.92 },
+  gold: { color: 0xd8a530, metal: 1, irid: 0.25, ior: 1.3, opacity: 0.95 },
+  smoke: { color: 0x15171a, metal: 0.4, irid: 0, ior: 1.3, opacity: 0.85 },
+  rainbow: { color: 0x5a3ab0, metal: 0.95, irid: 1, ior: 2.2, opacity: 0.94 },
+  clear: { color: 0xdfe8f0, metal: 0, irid: 0, ior: 1.3, opacity: 0.22 },
+}
+
+export function buildCar(carId: string, lv: LiveryDef, opts: CarOpts = {}): CarRig {
   const s = SPECS[carId] ?? SPECS.kestrel
   const p = carPhys(carId)
   const root = new THREE.Group()
@@ -745,26 +644,73 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
   const TY = (z: number, x: number) => topY(B, z, x)
 
   // ---- materials
-  const tex = liveryTexture(lv, s)
+  const frame: BodyFrame = { L, roof: s.roof, belt: s.belt, gc: s.gc, halfW: W / 2, axF, axR, archR: B.archR, zF0, zF1, zR1, zR0 }
+  const cv = makeLiveryCanvases()
+  paintLivery(cv, lv, frame)
+  const tex = new THREE.CanvasTexture(cv.color)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  // Roughness in green, metalness in blue: vinyl decals stay satin on any paint.
+  const maskTex = new THREE.CanvasTexture(cv.mask)
+  const glassTex = new THREE.CanvasTexture(cv.glass)
+  glassTex.colorSpace = THREE.SRGBColorSpace
   const dirt = { value: 0 }
   const dirtCol = { value: new THREE.Color(0x8a7458) }
-  const paint = new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.28, metalness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.08, side: THREE.DoubleSide })
-  const bodyColor = new THREE.MeshPhysicalMaterial({ color: lv.base, roughness: 0.28, metalness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.08, side: THREE.DoubleSide })
+  const paint = new THREE.MeshPhysicalMaterial({ map: tex, roughnessMap: maskTex, metalnessMap: maskTex, roughness: 1, metalness: 1, side: THREE.DoubleSide })
+  const bodyColor = new THREE.MeshPhysicalMaterial({ color: lv.base, side: THREE.DoubleSide })
+  const finishPaint = (l: LiveryDef) => {
+    const f = FINISH[l.finish ?? 'gloss']
+    for (const m of [paint, bodyColor]) {
+      m.clearcoat = f.clearcoat
+      m.clearcoatRoughness = f.ccRough
+      m.iridescence = f.irid
+      m.iridescenceIOR = 1.45
+    }
+    bodyColor.roughness = f.rough
+    bodyColor.metalness = f.metal
+    bodyColor.color.setHex(l.base)
+  }
+  finishPaint(lv)
   dirtShader(paint, dirt, dirtCol, true)
   dirtShader(bodyColor, dirt, dirtCol, false)
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x0c1218, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 0.55, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false })
+  // White glass tinted by its map: the tint, the sunstrip and the window name are all painted.
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: glassTex, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 1, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false })
+  let glassK = 1
   const vc = (roughness: number, metalness: number) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness, side: THREE.DoubleSide })
   const matte = vc(0.85, 0), gloss = vc(0.32, 0), satin = vc(0.4, 0.55), metal = vc(0.22, 1)
+  // Rims and calipers carry the livery's colours as a material tint, so a repaint reaches them.
+  const rimMat = vc(0.38, 0.6)
+  rimMat.color.setHex(lv.rim)
+  const calMat = new THREE.MeshStandardMaterial({ roughness: 0.32 })
   const rubber = new THREE.MeshStandardMaterial({ map: tyreTexture(4), roughness: 0.92 })
   const lens = new THREE.MeshPhysicalMaterial({ map: lampAtlas(), emissiveMap: lampAtlas(), emissive: 0xffffff, emissiveIntensity: 0.25, roughness: 0.12, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 })
   const trim = new THREE.MeshStandardMaterial({ map: trimAtlas(), roughness: 0.55, metalness: 0.2 })
   const skin = vc(0.55, 0)
-  const shirt = new THREE.MeshStandardMaterial({ map: shirtTexture(), roughness: 0.8, side: THREE.DoubleSide })
-  const helmTex = helmetTexture(lv)
-  const helmet = new THREE.MeshPhysicalMaterial({ map: helmTex, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide })
-  const visor = new THREE.MeshPhysicalMaterial({ color: 0x1a2a40, roughness: 0.05, metalness: 0.9, iridescence: 1, iridescenceIOR: 1.6, transparent: true, opacity: 0.92, side: THREE.DoubleSide })
-  const mats: THREE.Material[] = [paint, bodyColor, glass, matte, gloss, satin, metal, rubber, lens, trim, skin, shirt, helmet, visor]
+  let look = opts.look ?? defaultLook()
+  let name = opts.name ?? ''
+  const shirtTex = shirtTexture(look)
+  const shirt = new THREE.MeshStandardMaterial({ map: shirtTex, roughness: 0.8, side: THREE.DoubleSide })
+  const helmTex = helmetTexture(look.helmet, name, lv.num)
+  const helmet = new THREE.MeshPhysicalMaterial({ map: helmTex, side: THREE.DoubleSide })
+  const visor = new THREE.MeshPhysicalMaterial({ roughness: 0.05, transparent: true, side: THREE.DoubleSide })
+  const dressHelmet = () => {
+    const f = FINISH[look.helmet.finish]
+    helmet.roughness = Math.max(0.12, f.rough)
+    helmet.metalness = f.metal * 0.8
+    helmet.clearcoat = f.clearcoat
+    helmet.clearcoatRoughness = f.ccRough
+    helmet.iridescence = f.irid
+    const v = VISOR[look.helmet.visor]
+    visor.color.setHex(v.color)
+    visor.metalness = v.metal
+    visor.iridescence = v.irid
+    visor.iridescenceIOR = v.ior
+    visor.opacity = v.opacity
+  }
+  dressHelmet()
+  const mats: THREE.Material[] = [paint, bodyColor, glass, matte, gloss, satin, metal, rimMat, calMat, rubber, lens, trim, skin, shirt, helmet, visor]
   const accent = lv.accent === lv.base ? lv.stripe : lv.accent
+  calMat.color.setHex(accent)
   const BLACK = 0x111214, CHROME = 0xd8dadd
 
   const ext = new Parts()
@@ -1209,9 +1155,12 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
     sw.add(gloss, new THREE.CylinderGeometry(0.009, 0.009, 0.01, 8).rotateX(Math.PI / 2), M(-0.04, 0.03, 0.03), 0x2aa84a)
     sw.build(wheelSpin, false, true)
   }
-  const driver = buildDriver(fr, tl, wf, { skin, shirt, matte, gloss, metal, helmet, visor }, 0xc8231c)
+  const driverMats = { skin, shirt, matte, gloss, metal, helmet, visor }
+  let driver: Driver = buildDriver(fr, tl, wf, driverMats, 0xc8231c, look)
   body.add(driver.group)
   driver.pose(0, 0, 0)
+  let helmetOn = true
+  let lastPose: [number, number, number] = [0, 0, 0]
 
   // ---- wheels: pivot steers, spin rolls; one set of geometry shared by all four
   const wheels: CarRig['wheels'] = []
@@ -1220,8 +1169,8 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
     const w = new Parts()
     w.add(rubber, tyreGeo(wr, tw))
     const rr = wr * 0.68
-    w.add(satin, new THREE.CylinderGeometry(rr * 0.97, rr * 0.97, tw * 0.82, 28, 1, true).rotateZ(Math.PI / 2), undefined, lv.rim)
-    w.add(satin, new THREE.TorusGeometry(rr * 0.985, 0.012, 6, 32).rotateY(Math.PI / 2), M(tw * 0.41, 0, 0), lv.rim)
+    w.add(rimMat, new THREE.CylinderGeometry(rr * 0.97, rr * 0.97, tw * 0.82, 28, 1, true).rotateZ(Math.PI / 2))
+    w.add(rimMat, new THREE.TorusGeometry(rr * 0.985, 0.012, 6, 32).rotateY(Math.PI / 2), M(tw * 0.41, 0, 0))
     const spokes = s.flare > 0.06 ? 7 : 5
     for (let k = 0; k < spokes; k++) {
       const a = (k / spokes) * Math.PI * 2
@@ -1229,10 +1178,10 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
         const aa = a + off
         const hub = V3(tw * 0.2, Math.sin(aa) * 0.058, Math.cos(aa) * 0.058)
         const out = V3(tw * 0.38, Math.sin(aa + off * 0.2) * (rr - 0.012), Math.cos(aa + off * 0.2) * (rr - 0.012))
-        w.add(satin, rod(hub, out, spokes === 7 ? 0.0105 : 0.017, 6, spokes === 7 ? 0.008 : 0.013), undefined, lv.rim)
+        w.add(rimMat, rod(hub, out, spokes === 7 ? 0.0105 : 0.017, 6, spokes === 7 ? 0.008 : 0.013))
       }
     }
-    w.add(satin, new THREE.CylinderGeometry(0.065, 0.07, 0.045, 18).rotateZ(Math.PI / 2), M(tw * 0.2, 0, 0), lv.rim)
+    w.add(rimMat, new THREE.CylinderGeometry(0.065, 0.07, 0.045, 18).rotateZ(Math.PI / 2), M(tw * 0.2, 0, 0))
     w.add(metal, new THREE.CylinderGeometry(0.03, 0.034, 0.03, 12).rotateZ(Math.PI / 2), M(tw * 0.24, 0, 0), 0xc0c4c8)
     for (let k = 0; k < 5; k++) {
       const a = (k / 5) * Math.PI * 2
@@ -1248,10 +1197,6 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
   })()
   const calGeo = new THREE.TorusGeometry(wr * 0.47, 0.03, 6, 10, 0.95).rotateY(Math.PI / 2)
   wheelGeos.push(calGeo)
-  const calColor = new THREE.Color(accent)
-  const calCol = new Float32Array(calGeo.getAttribute('position').count * 3)
-  for (let i = 0; i < calCol.length; i += 3) calCol.set([calColor.r, calColor.g, calColor.b], i)
-  calGeo.setAttribute('color', new THREE.BufferAttribute(calCol, 3))
   for (const [z, isFront] of [[axF, true], [axR, false]] as const) {
     for (const side of [1, -1]) {
       const pivot = new THREE.Group()
@@ -1264,7 +1209,7 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
         spin.add(c)
       }
       pivot.add(spin)
-      const cal = new THREE.Mesh(calGeo, gloss)
+      const cal = new THREE.Mesh(calGeo, calMat)
       cal.position.x = side * 0.02
       // Calipers sit behind the axle, high: the classic gravel-car look through the spokes.
       cal.rotation.x = isFront ? 2.1 : 1.0
@@ -1303,11 +1248,50 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
     steer(angle, lat = 0) {
       const turn = THREE.MathUtils.clamp(angle / steerMax, -1.2, 1.2) * 1.75
       wheelSpin.rotation.z = -turn
-      driver.pose(turn, THREE.MathUtils.clamp(lat, -2, 2) * 0.09, THREE.MathUtils.clamp(angle / steerMax, -1, 1) * 0.35)
+      lastPose = [turn, THREE.MathUtils.clamp(lat, -2, 2) * 0.09, THREE.MathUtils.clamp(angle / steerMax, -1, 1) * 0.35]
+      driver.pose(...lastPose)
     },
     interior(on) {
       driver.head.visible = !on
-      glass.opacity = on ? 0.14 : 0.55
+      // Inside, the tint all but goes: the sunstrip still shows across the top of the screen.
+      glassK = on ? 0.25 : 1
+      glass.opacity = glassK
+    },
+    repaint(l) {
+      paintLivery(cv, l, frame)
+      tex.needsUpdate = true
+      maskTex.needsUpdate = true
+      glassTex.needsUpdate = true
+      finishPaint(l)
+      rimMat.color.setHex(l.rim)
+      calMat.color.setHex(l.accent === l.base ? l.stripe : l.accent)
+      drawHelmet(helmTex.image as HTMLCanvasElement, look.helmet, name, l.num)
+      helmTex.needsUpdate = true
+      lv = l
+    },
+    setDriver(next, nextName) {
+      look = next
+      if (nextName !== undefined) name = nextName
+      body.remove(driver.group)
+      driver.group.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose()
+      })
+      driver = buildDriver(fr, tl, wf, driverMats, 0xc8231c, look)
+      driver.helmet(helmetOn)
+      body.add(driver.group)
+      driver.pose(...lastPose)
+      drawShirt(shirtTex.image as HTMLCanvasElement, look)
+      shirtTex.needsUpdate = true
+      drawHelmet(helmTex.image as HTMLCanvasElement, look.helmet, name, lv.num)
+      helmTex.needsUpdate = true
+      dressHelmet()
+    },
+    helmet(on) {
+      helmetOn = on
+      driver.helmet(on)
+    },
+    clearGlass(k) {
+      glass.opacity = glassK * k
     },
     dispose() {
       const shared = new Set(wheelGeos)
@@ -1316,8 +1300,7 @@ export function buildCar(carId: string, lv: LiveryDef): CarRig {
       })
       for (const g of shared) g.dispose()
       for (const m of mats) m.dispose()
-      tex.dispose()
-      helmTex.dispose()
+      for (const t of [tex, maskTex, glassTex, helmTex, shirtTex]) t.dispose()
     },
   }
 }

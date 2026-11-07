@@ -1,10 +1,9 @@
 import * as THREE from 'three'
-import type { LiveryDef } from '../data'
 
 /**
  * Canvas textures for the car: two shared atlases (lamp lenses, and trim such
- * as grilles, vents, plates and gauges), the driver's shirt, and per-livery
- * helmet paint. The atlases are drawn once and shared by every car, so they
+ * as grilles, vents, plates and gauges).
+ * The atlases are drawn once and shared by every car, so they
  * are never disposed with a car.
  */
 
@@ -12,7 +11,6 @@ import type { LiveryDef } from '../data'
 export interface Rect { u0: number; v0: number; u1: number; v1: number }
 
 const rect = (x: number, y: number, w: number, h: number, W: number, H: number): Rect => ({ u0: x / W, u1: (x + w) / W, v0: 1 - (y + h) / H, v1: 1 - y / H })
-const hex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas')
@@ -385,124 +383,4 @@ export function trimAtlas(): THREE.CanvasTexture {
   for (let y = 132; y < 192; y += 10) for (let x = 644; x < 768; x += 10) g.fillRect(x, y, 5, 2)
   trimTex = finish(c, 8)
   return trimTex
-}
-
-let shirtTex: THREE.CanvasTexture | null = null
-/** A loud flower shirt: teal, with hibiscus and leaves. Tiles seamlessly. */
-export function shirtTexture(): THREE.CanvasTexture {
-  if (shirtTex) return shirtTex
-  const S = 512
-  const [c, g] = canvas(S, S)
-  g.fillStyle = '#12a3a0'
-  g.fillRect(0, 0, S, S)
-  let seed = 7
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-  const wrap = (draw: (x: number, y: number) => void, x: number, y: number) => {
-    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) draw(x + dx, y + dy)
-  }
-  const leaf = (x: number, y: number, a: number, s: number) => {
-    g.save()
-    g.translate(x, y)
-    g.rotate(a)
-    g.fillStyle = '#1f6b2c'
-    g.beginPath()
-    g.ellipse(0, 0, 34 * s, 12 * s, 0, 0, Math.PI * 2)
-    g.fill()
-    g.strokeStyle = '#3d9a4a'
-    g.lineWidth = 2
-    g.beginPath()
-    g.moveTo(-30 * s, 0)
-    g.lineTo(30 * s, 0)
-    g.stroke()
-    g.restore()
-  }
-  const flower = (x: number, y: number, s: number, col: string, a: number) => {
-    g.save()
-    g.translate(x, y)
-    g.rotate(a)
-    g.fillStyle = col
-    for (let k = 0; k < 5; k++) {
-      g.rotate((Math.PI * 2) / 5)
-      g.beginPath()
-      g.ellipse(0, -16 * s, 11 * s, 17 * s, 0, 0, Math.PI * 2)
-      g.fill()
-    }
-    g.fillStyle = '#ffe14a'
-    g.beginPath()
-    g.arc(0, 0, 6 * s, 0, Math.PI * 2)
-    g.fill()
-    g.strokeStyle = '#ffe14a'
-    g.lineWidth = 2.5 * s
-    g.beginPath()
-    g.moveTo(0, 0)
-    g.lineTo(14 * s, -18 * s)
-    g.stroke()
-    g.restore()
-  }
-  for (let i = 0; i < 26; i++) {
-    const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, s = 0.7 + rnd() * 0.6
-    wrap((px, py) => leaf(px, py, a, s), x, y)
-  }
-  const cols = ['#ff4f7a', '#ffffff', '#ff8a2a', '#e8203a']
-  for (let i = 0; i < 22; i++) {
-    const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, s = 0.8 + rnd() * 0.7, col = cols[i % cols.length]
-    wrap((px, py) => flower(px, py, s, col, a), x, y)
-  }
-  shirtTex = finish(c, 4)
-  shirtTex.wrapS = shirtTex.wrapT = THREE.RepeatWrapping
-  shirtTex.repeat.set(2, 2)
-  return shirtTex
-}
-
-/**
- * Helmet paint, mapped by direction from the helmet's centre: u runs from the
- * right ear (0) to the left ear (1), v round the head from the back (0) via
- * the chin (0.25), the face (0.5) and the crown (0.75). Stripes are vertical
- * bands, so they run front to back over the top.
- */
-export function helmetTexture(lv: LiveryDef): THREE.CanvasTexture {
-  const W = 512, H = 256
-  const [c, g] = canvas(W, H)
-  const base = hex(lv.base), stripe = hex(lv.stripe), accent = hex(lv.accent === lv.base ? lv.stripe : lv.accent)
-  g.fillStyle = base
-  g.fillRect(0, 0, W, H)
-  const vy = (v: number) => (1 - v) * H
-  // Centre stripe with pinstripes either side.
-  g.fillStyle = stripe
-  g.fillRect(W * 0.43, 0, W * 0.14, H)
-  g.fillStyle = accent
-  g.fillRect(W * 0.395, 0, W * 0.02, H)
-  g.fillRect(W * 0.585, 0, W * 0.02, H)
-  // Swooshes down the sides, from the brow to the back.
-  for (const side of [0, 1]) {
-    const x0 = side ? W * 0.98 : W * 0.02
-    g.fillStyle = stripe
-    g.beginPath()
-    g.moveTo(x0, vy(0.62))
-    g.quadraticCurveTo(side ? W * 0.75 : W * 0.25, vy(0.55), side ? W * 0.68 : W * 0.32, vy(0.3))
-    g.lineTo(side ? W * 0.62 : W * 0.38, vy(0.3))
-    g.quadraticCurveTo(side ? W * 0.7 : W * 0.3, vy(0.62), x0, vy(0.7))
-    g.fill()
-  }
-  // Carbon-look chin and lower rim.
-  g.fillStyle = '#1b1c1f'
-  g.fillRect(0, vy(0.3), W, vy(0.18) - vy(0.3))
-  g.fillStyle = 'rgba(255,255,255,0.08)'
-  for (let x = 0; x < W; x += 6) g.fillRect(x, vy(0.3), 2, vy(0.18) - vy(0.3))
-  // Name on both sides, number on the back.
-  g.fillStyle = '#f5f3ee'
-  g.font = '800 26px "Barlow Condensed", sans-serif'
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  for (const [x, rot] of [[W * 0.1, -Math.PI / 2], [W * 0.9, Math.PI / 2]] as const) {
-    g.save()
-    g.translate(x, vy(0.42))
-    g.rotate(rot)
-    g.fillText('TURBO TONI', 0, 0)
-    g.restore()
-  }
-  g.font = '800 40px "Barlow Condensed", sans-serif'
-  g.fillStyle = '#16181b'
-  g.fillText(lv.num, W * 0.5, vy(0.94))
-  return finish(c, 4)
 }
