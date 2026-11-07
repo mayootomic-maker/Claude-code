@@ -19,7 +19,7 @@ export interface Settings {
   autoGas: boolean
   sensitivity: number
   tiltInvert: boolean
-  camera: 'chase' | 'near' | 'bonnet'
+  camera: 'chase' | 'near' | 'bonnet' | 'cockpit'
   quality: 'auto' | 'low' | 'medium' | 'high'
   master: number
   music: number
@@ -142,7 +142,7 @@ export function sanitize(raw: unknown): Save {
       autoGas: typeof s.autoGas === 'boolean' ? s.autoGas : ds.autoGas,
       sensitivity: num(s.sensitivity, ds.sensitivity, 0.5, 2),
       tiltInvert: s.tiltInvert === true,
-      camera: pick(s.camera, ['chase', 'near', 'bonnet'] as const, ds.camera),
+      camera: pick(s.camera, ['chase', 'near', 'bonnet', 'cockpit'] as const, ds.camera),
       quality: pick(s.quality, ['auto', 'low', 'medium', 'high'] as const, ds.quality),
       master: num(s.master, ds.master, 0, 1),
       music: num(s.music, ds.music, 0, 1),

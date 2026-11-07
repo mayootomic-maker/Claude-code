@@ -515,7 +515,7 @@ export class App {
       ].join(''),
       display: () => [
         opt(t('quality'), seg('quality', ['auto', 'low', 'medium', 'high'] as const, (v) => t(`q_${v}` as TKey))),
-        opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet'] as const, (v) => t(`camera_${v}` as TKey))),
+        opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet', 'cockpit'] as const, (v) => t(`camera_${v}` as TKey))),
         ...(canFullscreen() ? [opt(t('fullscreen'), `<button class="toggle ${document.fullscreenElement ? 'on' : ''}" data-full role="switch" aria-checked="${!!document.fullscreenElement}"></button>`)] : []),
         opt(t('shake'), tog('shake')),
         opt(t('units'), seg('units', ['kmh', 'mph'] as const, (v) => (v === 'kmh' ? 'km/h' : 'mph'))),
@@ -929,7 +929,7 @@ export class App {
     this.audio.updateCar({
       rpm: car.rpm, throttle: live ? car.throttleOut : 0, load: live ? car.engineLoad : 0, gear: car.gear, shifting: car.shifting,
       boost: car.boost, speed: car.speed, surface: car.surface, slip: Math.min(1, car.slipR * 3), wheelSpin: car.wheelSpin,
-      onGround: !car.airborne, impact: car.events.impact, landed: car.events.landed, camera: r.view.camMode,
+      onGround: !car.airborne, impact: car.events.impact, landed: car.events.landed, camera: r.view.camMode === 'cockpit' ? 'bonnet' : r.view.camMode,
     })
     r.hud.update(sim, r.gold)
   }
@@ -1355,7 +1355,7 @@ export class App {
       this.audio.clearCalls()
     }
     if (a === 'camera') {
-      const order = ['chase', 'near', 'bonnet'] as const
+      const order = ['chase', 'near', 'bonnet', 'cockpit'] as const
       r.view.camMode = order[(order.indexOf(r.view.camMode) + 1) % order.length]
       this.store.save.settings.camera = r.view.camMode
       this.store.write()
