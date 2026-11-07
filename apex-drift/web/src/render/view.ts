@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { clamp, damp, lerp, rng, wrapAngle } from '../core/math'
-import { LIVERIES, type LiveryDef } from '../data'
+import { LIVERIES, RIVALS, type LiveryDef } from '../data'
 import type { Pose } from '../sim/car'
 import type { StageSim } from '../sim/stage'
 import type { RaceLine } from '../sim/ai'
@@ -248,7 +248,7 @@ export class StageView {
     this.scene.add(this.car.root)
     if (!spec.shadowMap) this.car.root.traverse((o) => (o.castShadow = false))
     for (const o of sim.field) {
-      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0], { look: rivalLook(o.slot.rival), name: o.slot.name.split(' ').pop() })
+      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0], { look: rivalLook(o.slot.rival, RIVALS[o.slot.rival]?.helmet), name: o.slot.name.split(' ').pop() })
       if (!spec.shadowMap) rig.root.traverse((m) => (m.castShadow = false))
       this.scene.add(rig.root)
       this.rivals.push(rig)

@@ -127,6 +127,9 @@ export interface RivalDef {
   nat: string
   pace: number
   likes: Surface[]
+  /** Their signature livery (a LiveryDef id) and helmet, chosen to suit how they drive. */
+  livery?: string
+  helmet?: Record<string, string | number>
 }
 
 const data = content as unknown as {

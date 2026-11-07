@@ -221,8 +221,16 @@ export function playerLiveryId(s: Save, car: string): string {
   return playerLivery(s, car).id
 }
 
-/** A rival's driver: deterministic per seed, always a complete, valid look. */
-export function rivalLook(seed: number): DriverLook {
+/**
+ * A rival's driver: deterministic per seed, always a complete, valid look.
+ * A named rival keeps their signature helmet; the face and shirt are theirs by seed.
+ */
+export function rivalLook(seed: number, helmet?: Record<string, unknown>): DriverLook {
+  const l = randomLook(seed)
+  return helmet ? sanitizeLook({ ...l, helmet: { ...l.helmet, ...helmet } }) : l
+}
+
+function randomLook(seed: number): DriverLook {
   const r = rng(seed * 977 + 31)
   const of = <T>(a: readonly T[]): T => a[Math.floor(r() * a.length)]
   const hp = PALETTE.filter((c) => c !== 0x111214)

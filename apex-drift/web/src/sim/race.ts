@@ -68,7 +68,8 @@ export function raceGrid(rally: RallyDef, stageIdx: number, level: Difficulty, p
       name: rv.name,
       nat: rv.nat,
       car: CARS[nearby[(k + 1) % nearby.length]].id,
-      livery: liveries[(ri * 5 + seed) % liveries.length].id,
+      // Their own colours, unless the player turned up in them.
+      livery: rv.livery && rv.livery !== playerLivery ? rv.livery : liveries[(ri * 5 + seed) % liveries.length].id,
       level,
       // RIVALS pace is a time multiple: 0.99 is a percent quicker than the field. Kept small: the rung decides.
       skill: likes * (1 + (1.02 - rv.pace) * 0.25),

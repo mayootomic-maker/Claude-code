@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { LIVERIES } from '../data'
+import { LIVERIES, RALLIES, RIVALS } from '../data'
+import { raceGrid } from '../sim/race'
 import { defaults, sanitize } from './save'
 import { PER_CAR, customFrom, defaultLook, findLivery, playerLivery, rivalLook, sanitizeLook, toLivery } from './paint'
 import { CHEATS } from './owner'
@@ -119,5 +120,27 @@ describe('driver look in the save', () => {
       expect(rivalLook(i)).toEqual(rivalLook(i))
       expect(sanitizeLook(rivalLook(i))).toEqual(rivalLook(i))
     }
+  })
+})
+
+describe('named rivals', () => {
+  it('each has a signature livery of their own and a valid signature helmet', () => {
+    const seen = new Set<string>()
+    for (const r of RIVALS) {
+      expect(LIVERIES.some((l) => l.id === r.livery)).toBe(true)
+      expect(seen.has(r.livery ?? '')).toBe(false)
+      seen.add(r.livery ?? '')
+      const look = rivalLook(3, r.helmet)
+      expect(look.helmet).toEqual({ ...look.helmet, ...r.helmet })
+      expect(sanitizeLook(look)).toEqual(look)
+    }
+  })
+
+  it('race in their own colours, unless the player wears them', () => {
+    const g = raceGrid(RALLIES[0], 0, 'driver', 'kestrel', 'works')
+    for (const slot of g) expect(slot.livery).toBe(RIVALS[slot.rival].livery)
+    const taken = g[0].livery
+    const g2 = raceGrid(RALLIES[0], 0, 'driver', 'kestrel', taken)
+    expect(g2.every((x) => x.livery !== taken)).toBe(true)
   })
 })

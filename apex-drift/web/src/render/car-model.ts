@@ -937,12 +937,20 @@ export function buildCar(carId: string, lv: LiveryDef, opts: CarOpts = {}): CarR
   }
 
   // ---- wings
+  // The top at the very tail can fall outside the section's width (a NaN), so step inboard until it's on the body.
+  const topAt = (z: number, x: number) => {
+    for (let k = 1; k > 0.3; k -= 0.05) {
+      const y = TY(z, x * k)
+      if (Number.isFinite(y)) return y
+    }
+    return TY(z, 0)
+  }
   const lip = (z0: number, sec: [number, number][], xs: number, follow: boolean) => {
     const rowsW: THREE.Vector3[][] = []
     const n = 14
     for (let i = 0; i <= n; i++) {
       const x = -xs + (2 * xs * i) / n
-      rowsW.push(sec.map(([dz, dh]) => V3(x, (follow ? TY(z0 + dz, x) : TY(z0, x)) + dh, z0 + dz)))
+      rowsW.push(sec.map(([dz, dh]) => V3(x, topAt(follow ? z0 + dz : z0, x) + dh, z0 + dz)))
     }
     ext.add(bodyColor, solid(rowsW))
   }
