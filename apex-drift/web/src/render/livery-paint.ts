@@ -472,7 +472,9 @@ function decals(b: Brush, m: Marks, lv: LiveryDef, d: Decals, c: Inks): void {
     if (d.sponsors) {
       // Main sponsor over the rear wheel, small vinyl tags on the front wing and along the sill.
       const zs = (m.axR + m.doorR) / 2 + 4
-      b.text(lv.sponsor, zs, m.yb(0.62), 12, ink(lv.base), { maxW: Math.max(40, m.doorR - m.axR + 30), outline: ink(lv.base) === '#16181b' ? '#f6f4ee' : '#16181b', outlineW: 0.9 })
+      // Ink for what the design paints over the rear quarter.
+      const q = ink(['swoosh', 'fade', 'split', 'blocks', 'shards'].includes(lv.pattern) ? lv.stripe : lv.base)
+      b.text(lv.sponsor, zs, m.yb(0.62), 12, q, { maxW: Math.max(40, m.doorR - m.axR + 30), outline: q === '#16181b' ? '#f6f4ee' : '#16181b', outlineW: 0.9 })
       const tag = (txt: string, z: number, y: number, w: number) => {
         b.round(z - w / 2, y - 3.6, w, 7.2, 1.6, '#f4f2ec')
         b.text(txt, z, y + 0.2, 5.6, '#16181b', { maxW: w - 3 })

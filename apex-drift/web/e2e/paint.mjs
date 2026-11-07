@@ -36,8 +36,11 @@ if (!only || only === 'liveries') {
     ['works', 'strada', '4.4,1.4,4.6'], ['fjord', 'apex', '-4.4,1.5,4.6'], ['sunset', 'kestrel', '4.4,1.5,4.4'],
     ['signal', 'boxer', '4.6,1.6,4.0'], ['midnight', 'corsaire', '4.6,1.5,4.4'], ['petrol', 'vulcan', '-4.6,1.6,4.2'],
     ['glacier', 'falco', '4.6,1.4,4.4'], ['aurora', 'saetta', '4.6,1.4,4.4'], ['rosso', 'ventura', '4.4,1.4,4.6'],
+    // Rivals' signature colours.
+    ['firecracker', 'falco', '-4.6,1.4,4.4'], ['wall', 'bison', '4.6,1.7,4.6'], ['showman', 'saetta', '-4.4,1.4,4.4'], ['flatout', 'apex', '4.6,1.5,4.2'],
   ]
-  for (const [lv, car, cam] of shots) {
+  const pick = process.argv[3]?.split(',')
+  for (const [lv, car, cam] of shots.filter(([lv]) => !pick || pick.includes(lv))) {
     await step(`livery ${lv}`, async () => {
       await page.goto(`${BASE}dev.html?mode=car&car=${car}&livery=${lv}&a=0&spin=0&cam=${cam}&look=0,0.55,0&fov=34`, { timeout: 180000 })
       await page.waitForFunction(() => window.__ready === true, null, { timeout: 180000 })
