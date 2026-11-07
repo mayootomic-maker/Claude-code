@@ -336,6 +336,46 @@ input[type='text']:focus { border-color: var(--amber); outline: none; }
 .toggle:focus-visible { outline-offset: 3px; }
 .tabs { margin-bottom: 8px; }
 
+/* ------------------------------------------------- reusable form controls */
+/* For any settings-like screen (assists, AI level, paint shop, driver editor). Rows use .opt;
+   these are the controls that go inside them. */
+/* Range with a filled part: <input type="range" class="range" style="--v:40%">, keep --v in step with the value. */
+input[type='range'].range::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--amber) 0 var(--v, 0%), rgba(245, 241, 232, 0.14) var(--v, 0%)); }
+/* Slider row with a live readout: <div class="slider"><input type="range" class="range"><output>40</output></div> */
+.slider { display: inline-flex; align-items: center; gap: 12px; width: min(320px, 100%); }
+.slider input[type='range'] { flex: 1; width: auto; }
+.slider output { min-width: 3.2ch; text-align: right; font: 800 18px / 1 var(--display); color: var(--amber); font-variant-numeric: tabular-nums; }
+/* Stepper: <div class="stepper"><button aria-label="Less">−</button><output>3</output><button aria-label="More">+</button></div> */
+.stepper { display: inline-flex; align-items: stretch; gap: 2px; }
+.stepper button { position: relative; isolation: isolate; width: 44px; min-height: 40px; font: 800 22px / 1 var(--display); color: var(--paper); transition: transform 0.12s var(--ease); }
+.stepper button::before { content: ''; position: absolute; inset: 0 3px; z-index: -1; transform: skewX(var(--skew)); background: rgba(245, 241, 232, 0.08); box-shadow: inset 0 0 0 1px var(--line-2); border-radius: 2px; transition: background 0.15s; }
+.stepper button:hover::before { background: var(--grad-soft); box-shadow: inset 0 0 0 1px rgba(255, 184, 28, 0.7); }
+.stepper button:active { transform: scale(0.92); }
+.stepper button[disabled] { opacity: 0.35; }
+.stepper output { min-width: 64px; padding: 0 10px; display: grid; place-items: center; font: 800 20px / 1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+/* Colour chips: <div class="colors"><button class="color sel" style="--c:#d33" aria-label="Red"></button>…</div> */
+.colors { display: flex; flex-wrap: wrap; gap: 6px; }
+.color { position: relative; width: 40px; height: 32px; isolation: isolate; transition: transform 0.12s var(--ease); }
+.color::before { content: ''; position: absolute; inset: 0 3px; z-index: -1; transform: skewX(var(--skew)); background: var(--c, #888); border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 2px 6px rgba(0, 0, 0, 0.4); }
+.color:hover { transform: translateY(-2px); }
+.color:active { transform: scale(0.94); }
+.color.sel::before, .color[aria-checked='true']::before { box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--amber); }
+.color.sel::after, .color[aria-checked='true']::after { content: ''; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; background: #fff; -webkit-mask: var(--i-check) center / contain no-repeat; mask: var(--i-check) center / contain no-repeat; filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000); }
+.opt label .pips, .opt label .tag { margin-left: 8px; vertical-align: -2px; }
+/* Level pips, e.g. AI skill: <span class="pips"><i class="on"></i><i class="on"></i><i></i>…</span> */
+.pips { display: inline-flex; gap: 3px; }
+.pips i { width: 10px; height: 16px; transform: skewX(var(--skew)); background: rgba(245, 241, 232, 0.14); }
+.pips i.on { background: var(--grad); }
+/* Small labelled badge: <span class="tag">Assist</span>, .tag.on for an active one. */
+.tag { display: inline-flex; align-items: center; padding: 3px 10px; font: 700 12px / 1.2 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); position: relative; isolation: isolate; }
+.tag::before { content: ''; position: absolute; inset: 0 2px; z-index: -1; transform: skewX(var(--skew)); box-shadow: inset 0 0 0 1px var(--line-2); }
+.tag.on { color: #170e02; }
+.tag.on::before { background: var(--grad); box-shadow: none; }
+/* A subheading that splits a long settings list: <h3 class="group">Assists</h3> */
+.group { margin: 18px 0 4px; font: 700 13px var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber); }
+/* Keyboard focus on clipped shapes, where an outline would be cut off. */
+.tile:focus-visible, .stagerow:focus-visible, .carbtn:focus-visible, .swatch:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px var(--amber); }
+
 .keys-title { font: 700 13px var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber); margin: 20px 0 8px; }
 .keymap { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: center; margin: 0; }
 .keymap dd { margin: 0; }
@@ -380,7 +420,7 @@ kbd { display: inline-block; min-width: 2.2em; padding: 3px 9px; border-radius: 
 .h-stage { top: calc(10px + var(--st)); left: calc(14px + var(--sl)); padding: 6px 18px 8px 16px; isolation: isolate; min-width: 172px; }
 .h-stage::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: linear-gradient(100deg, rgba(8, 10, 14, 0.78), rgba(8, 10, 14, 0.42)); border-left: 4px solid var(--amber); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
 .h-stage .name { font: 700 11px / 1.2 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); max-width: 26ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.h-stage .time { font: 800 34px / 1 var(--display); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.h-stage .time { font: 800 34px / 1 var(--display); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); }
 .h-stage .split { display: inline-flex; align-items: center; gap: 6px; font: 700 14px / 1 var(--display); letter-spacing: 0.06em; font-variant-numeric: tabular-nums; min-height: 0; margin-top: 3px; }
 .h-stage .split:empty { display: none; }
 .h-stage .split::before { content: ''; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
@@ -390,8 +430,8 @@ kbd { display: inline-block; min-width: 2.2em; padding: 3px 9px; border-radius: 
 .h-stage .split.behind::before { border-top: 7px solid currentColor; }
 /* Stage progress with sector ticks at a third and two thirds. */
 .h-prog { position: relative; width: 100%; height: 4px; margin-top: 6px; background: linear-gradient(90deg, transparent calc(33.3% - 1px), rgba(255, 255, 255, 0.55) calc(33.3% - 1px) calc(33.3% + 1px), transparent calc(33.3% + 1px) calc(66.6% - 1px), rgba(255, 255, 255, 0.55) calc(66.6% - 1px) calc(66.6% + 1px), transparent calc(66.6% + 1px)), rgba(255, 255, 255, 0.16); transform: skewX(var(--skew)); }
-.h-prog i { position: relative; display: block; height: 100%; background: var(--grad); box-shadow: 0 0 8px rgba(255, 160, 30, 0.7); }
-.h-prog i::after { content: ''; position: absolute; right: -3px; top: -3px; width: 6px; height: 10px; background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, 0.8); }
+.h-prog i { position: relative; display: block; height: 100%; background: var(--amber); }
+.h-prog i::after { content: ''; position: absolute; right: -3px; top: -3px; width: 6px; height: 10px; background: #fff; }
 
 /* Pace note card. Severity colours the frame: 1–2 and hairpins red, 3–4 amber, 5–6 calm. */
 .h-note { top: calc(10px + var(--st)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px 18px 4px 10px; isolation: isolate; color: var(--amber); transition: opacity 0.25s; --sev: var(--amber); }
@@ -400,7 +440,7 @@ kbd { display: inline-block; min-width: 2.2em; padding: 3px 9px; border-radius: 
 .h-note[data-sev='easy'] { --sev: rgba(245, 241, 232, 0.7); color: var(--paper); }
 .h-note.pop { animation: note-pop 0.32s var(--ease); }
 @keyframes note-pop { 0% { transform: translateX(-50%) scale(0.85); } 60% { transform: translateX(-50%) scale(1.06); } 100% { transform: translateX(-50%) scale(1); } }
-.h-note svg { width: 44px; height: 44px; filter: drop-shadow(0 0 6px currentColor); }
+.h-note svg { width: 44px; height: 44px; }
 .h-note svg path { stroke: currentColor; }
 .h-note .g { font: 800 italic 40px / 1 var(--display); color: var(--paper); min-width: 0.7em; text-align: center; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
 .h-note .w { font: 700 12px / 1.15 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--paper); opacity: 0.8; max-width: 9ch; margin-left: 4px; }
@@ -442,12 +482,12 @@ kbd { display: inline-block; min-width: 2.2em; padding: 3px 9px; border-radius: 
 .speedo circle.track, .speedo circle.fill, .speedo circle.red { fill: none; stroke-width: 7; }
 .speedo .track { stroke: rgba(255, 255, 255, 0.13); stroke-dasharray: 245 400; }
 .speedo .red { stroke: rgba(255, 90, 78, 0.55); stroke-dasharray: 0 220 25 400; }
-.speedo .fill { stroke: url(#tacho-grad); stroke-dasharray: 0 400; filter: drop-shadow(0 0 3px rgba(255, 160, 30, 0.8)); }
+.speedo .fill { stroke: var(--amber); stroke-dasharray: 0 400; }
 .speedo .ticks line { stroke: rgba(245, 241, 232, 0.45); stroke-width: 1.5; }
 .speedo .ticks line.major { stroke: rgba(245, 241, 232, 0.85); stroke-width: 2; }
-.speedo b { position: relative; margin-top: -8px; font: 800 italic 40px / 1 var(--display); text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); }
+.speedo b { position: relative; margin-top: -8px; font: 800 italic 40px / 1 var(--display); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7); }
 .speedo span { position: absolute; bottom: 30px; font: 700 10px / 1 var(--display); color: var(--dim); letter-spacing: 0.16em; }
-.speedo i { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%) skewX(var(--skew)); min-width: 30px; padding: 3px 7px 2px; font: 800 18px / 1 var(--display); font-style: normal; text-align: center; color: #170e02; background: var(--grad); box-shadow: 0 2px 10px rgba(255, 140, 30, 0.5); transition: opacity 0.1s; }
+.speedo i { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%) skewX(var(--skew)); min-width: 30px; padding: 3px 7px 2px; font: 800 18px / 1 var(--display); font-style: normal; text-align: center; color: #170e02; background: var(--amber); transition: opacity 0.1s; }
 .speedo.shift i { background: var(--bad); color: #fff; animation: blink 0.18s steps(2) infinite; }
 .speedo.shift .fill { stroke: var(--bad); }
 
@@ -462,7 +502,7 @@ kbd { display: inline-block; min-width: 2.2em; padding: 3px 9px; border-radius: 
 .pads button::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 18px; background: radial-gradient(circle at 50% 60%, rgba(255, 184, 28, 0.55), rgba(255, 122, 26, 0.3)); box-shadow: 0 0 0 1.5px var(--amber), 0 0 24px rgba(255, 150, 30, 0.45); opacity: 0; transition: opacity 0.08s; }
 .pads button.on { transform: scale(0.94); color: #fff; }
 .pads button.on::after { opacity: 1; }
-.pads button svg { width: 36px; height: 36px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+.pads button svg { width: 36px; height: 36px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .pads.l button { width: 100px; }
 .pads.l button[data-ctl='left']::before, .pads.l button[data-ctl='left']::after { border-radius: 40px 14px 14px 40px; }
 .pads.l button[data-ctl='right']::before, .pads.l button[data-ctl='right']::after { border-radius: 14px 40px 40px 14px; }

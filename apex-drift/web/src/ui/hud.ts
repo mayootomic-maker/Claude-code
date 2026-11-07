@@ -34,8 +34,7 @@ const TACHO = (() => {
     const y = (r: number) => (60 + Math.sin(a) * r).toFixed(1)
     ticks += `<line class="${k % 2 ? '' : 'major'}" x1="${x(r0)}" y1="${y(r0)}" x2="${x(46)}" y2="${y(46)}"/>`
   }
-  return `<svg viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="tacho-grad" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ffd24d"/><stop offset="1" stop-color="#ff7a1a"/></linearGradient></defs>`
-    + '<circle class="plate" cx="60" cy="60" r="58"/>'
+  return '<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="plate" cx="60" cy="60" r="58"/>'
     + `<g class="dial"><circle class="track" cx="60" cy="60" r="52"/><circle class="red" cx="60" cy="60" r="52"/><circle class="fill" cx="60" cy="60" r="52"/><g class="ticks">${ticks}</g></g></svg>`
 })()
 
