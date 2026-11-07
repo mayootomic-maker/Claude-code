@@ -503,5 +503,6 @@ const SAY: Record<Lang, Record<string, string>> = {
 }
 
 export function subtitle(words: string[]): string {
-  return words.map((w) => SAY[lang][w] ?? w).join(' ')
+  // A BREAK ('/') between linked notes is a breath when spoken; on screen it reads as a comma.
+  return words.map((w) => SAY[lang][w] ?? w).join(' ').replace(/ \/ /g, ', ')
 }
