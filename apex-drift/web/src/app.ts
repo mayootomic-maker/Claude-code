@@ -419,7 +419,7 @@ export class App {
           <p class="kicker">Livery</p>
           <div class="swatches">${visible.map((l) => {
             const own = ownsL(l)
-            const sub = own ? (s.livery === l.id ? t('selected') : t('select')) : l.unlock.type === 'shop' ? t('buy', { price: l.unlock.price.toLocaleString() }) : l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret')
+            const sub = own ? (s.livery === l.id && !s.carLivery[car.id] ? t('selected') : t('select')) : l.unlock.type === 'shop' ? t('buy', { price: l.unlock.price.toLocaleString() }) : l.unlock.type === 'level' ? t('needLevel', { n: l.unlock.n }) : t('secret')
             return `<button class="swatch ${s.livery === l.id && !s.carLivery[car.id] ? 'sel' : ''}" data-l="${l.id}"><span class="chip" style="background:linear-gradient(135deg,#${l.base.toString(16).padStart(6, '0')} 55%,#${l.stripe.toString(16).padStart(6, '0')} 55%)"></span><span>${esc(l.name)}<small>${sub}</small></span></button>`
           }).join('')}</div>
         </div>

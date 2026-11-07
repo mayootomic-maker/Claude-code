@@ -496,7 +496,8 @@ function decals(b: Brush, m: Marks, lv: LiveryDef, d: Decals, c: Inks): void {
   } else {
     if (d.bonnet && lv.bonnet !== '') {
       const zb = (m.zf + m.zF0) / 2 + 4
-      const col = ink(lv.base)
+      // Ink for whatever the design puts in the middle of the bonnet.
+      const col = ink(['swoosh', 'blocks', 'band', 'wave'].includes(lv.pattern) ? lv.stripe : lv.base)
       b.text(lv.bonnet ?? lv.sponsor, zb, 0, 20, col, { maxW: m.hw * 1.3, outline: col === '#16181b' ? '#f6f4ee' : '#16181b', outlineW: 1.2 })
     }
     if (d.roof) {
