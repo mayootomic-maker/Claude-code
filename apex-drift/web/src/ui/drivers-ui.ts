@@ -71,7 +71,7 @@ export function rivalsHtml(rows: readonly RivalRow[], ids: readonly string[], wi
   const L = currentLang()
   return rows.map((r, i) => {
     const c = character(ids[i] ?? '')
-    return `<p style="margin:8px 0"><b>${flag(r.nat)} ${esc(r.name)}</b>${c ? ` · <span class="kicker">${esc(c.style[L])}</span>` : ''}
+    return `<p class="rival"><b>${flag(r.nat)} ${esc(r.name)}</b>${c ? ` · <span class="kicker">${esc(c.style[L])}</span>` : ''}
       ${c ? `<br><small class="muted">${withBio ? `${esc(c.bio[L])} ` : ''}<i>${esc(c.quote[L])}</i></small>` : ''}</p>`
   }).join('')
 }
