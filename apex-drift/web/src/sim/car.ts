@@ -52,20 +52,37 @@ export interface Input {
 }
 
 export interface Assists {
-  /** 0..1: pulls the steering toward the road direction when the player isn't steering hard. */
+  /**
+   * 0..1: pulls the steering toward the road direction when the player isn't
+   * steering hard, and countersteers a slide the player hasn't caught.
+   */
   steer: number
-  /** Traction control and ABS: keeps the driven wheels from spinning and the braked ones from locking. */
+  /** Traction control: keeps the driven wheels from spinning. */
   traction: boolean
+  /** Anti-lock brakes: keeps the braked wheels turning, and so steering. Cars fitted with ABS have it regardless. */
+  abs: boolean
   /** 0..1: helps the car turn in and stops a slide from growing into a spin. */
   stability: number
   /** Brakes for corners the car is arriving at too fast. */
   autoBrake: boolean
+  /** 0..1: verges and grass keep this share of the way to the road's grip, so a wheel off the road isn't a stage lost. */
+  forgive: number
 }
 
-export const ASSISTS: Record<'rookie' | 'driver' | 'pro', Assists> = {
-  rookie: { steer: 0.55, traction: true, stability: 0.85, autoBrake: true },
-  driver: { steer: 0.15, traction: true, stability: 0.45, autoBrake: false },
-  pro: { steer: 0, traction: false, stability: 0.12, autoBrake: false },
+export type AssistLevel = 'full' | 'strong' | 'medium' | 'light' | 'off'
+export const ASSIST_LEVELS: readonly AssistLevel[] = ['full', 'strong', 'medium', 'light', 'off']
+
+/**
+ * The assist presets. Full is the old Rookie's help, Medium the old Driver's
+ * and Off the old Pro's; stability never drops to nothing, the last of it
+ * standing in for the yaw damping a real chassis has.
+ */
+export const ASSISTS: Record<AssistLevel, Assists> = {
+  full: { steer: 0.55, traction: true, abs: true, stability: 0.85, autoBrake: true, forgive: 0.8 },
+  strong: { steer: 0.35, traction: true, abs: true, stability: 0.65, autoBrake: true, forgive: 0.5 },
+  medium: { steer: 0.15, traction: true, abs: true, stability: 0.45, autoBrake: false, forgive: 0 },
+  light: { steer: 0, traction: true, abs: true, stability: 0.28, autoBrake: false, forgive: 0 },
+  off: { steer: 0, traction: false, abs: false, stability: 0.12, autoBrake: false, forgive: 0 },
 }
 
 /** Peak friction coefficients. Off-road is drivable but slow. */
@@ -331,7 +348,10 @@ export class Car {
       : dist <= route.half ? (patch?.surface ?? (this.baseSurface === 'asphalt' && this.wet ? 'wet' : this.baseSurface))
       : dist <= this.ground.edge ? 'verge' : 'grass'
     const tp = TYRE[this.surface] ?? TYRE.gravel
-    const mu = (MU[this.surface] ?? 0.8) * p.grip
+    const roadMu = MU[this.baseSurface === 'asphalt' && this.wet ? 'wet' : this.baseSurface] ?? 0.8
+    const offMu = MU[this.surface] ?? 0.8
+    // Forgiveness: a wheel on the verge or the grass keeps most of the road's grip.
+    const mu = (assists.forgive > 0 && (this.surface === 'verge' || this.surface === 'grass') ? lerp(offMu, Math.max(offMu, roadMu * 0.95), assists.forgive) : offMu) * p.grip
 
     // --- steering -----------------------------------------------------------
     let steerIn = clamp(inp.steer, -1, 1)
@@ -345,6 +365,13 @@ export class Car {
       const auto = clamp(-err * 2.2, -1, 1)
       const free = 1 - Math.min(1, Math.abs(steerIn) * 1.4)
       steerIn = clamp(steerIn + auto * assists.steer * free, -1, 1)
+      // Auto-countersteer: a slide past a comfortable angle gets the opposite
+      // lock the player hasn't given it yet. Not while the lever is held: that
+      // slide is wanted, and the drift assist below looks after it.
+      const slip = Math.atan2(this.vy, Math.max(2, Math.abs(this.vx)))
+      const lock = -Math.sign(slip) * Math.max(0, Math.abs(slip) - 0.12) * 2.5
+      const already = Math.sign(steerIn) === Math.sign(lock) ? Math.abs(steerIn) : 0
+      if (!inp.handbrake && speed > 5) steerIn = clamp(steerIn + lock * Math.min(1, assists.steer * 1.6) * (1 - already) * (1 - 0.5 * this.drift), -1, 1)
     }
     // Full lock shrinks quickly with speed. Touch buttons are on/off, so every
     // press is a full press: at speed it must ask for roughly the most the
@@ -487,7 +514,7 @@ export class Car {
     const af = Math.atan2(vywF, Math.max(Math.abs(vxwF), 4))
     const ar = Math.atan2(vyR, Math.max(Math.abs(this.vx), 4))
     const fb = brk * p.brakeForce
-    const absOn = assists.traction || p.abs
+    const absOn = assists.abs || p.abs
     const tc = assists.traction ? 1 : 0
     // Rookie's traction control is strict; Driver's lets a held drift keep its drive.
     const tcFloor = lerp(0.75, 0.2, assists.stability)
