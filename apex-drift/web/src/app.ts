@@ -1457,7 +1457,7 @@ export class App {
     const o = this.ui.overlay
     o.classList.remove('hidden')
     const st = this.store.save.settings
-    html(o, `<div class="dialog" role="dialog" aria-label="${t('paused')}">
+    html(o, `<div class="dialog pause" role="dialog" aria-label="${t('paused')}">
       <p class="kicker">${esc(r.mode === 'school' ? t('school') : r.rally.stages[r.stageIdx].name)}</p><h2 class="display">${t('paused')}</h2>
       <div class="opt"><label>${t('notes')}</label><div class="seg">${(['full', 'corners', 'off'] as const).map((v) => `<button class="${st.notes === v ? 'on' : ''}" data-notes="${v}">${t(`notes_${v}` as TKey)}</button>`).join('')}</div></div>
       <div class="col"><button class="btn" data-resume>${t('resume')}</button><button class="btn ghost" data-settings>${t('options')}</button><button class="btn ghost" data-photo>${t('photoMode')}</button><button class="btn ghost" data-restart>${t('restart')}</button><button class="btn ghost" data-quit>${t('quit')}</button></div></div>`)

@@ -151,6 +151,8 @@ await step('quit to menu', async () => {
   await tap('[data-quit]')
   await tap('[data-y]')
   await page.waitForSelector('#menu:not(.hidden)')
+  // Let the menu's entrance animation settle so the shot shows the finished screen.
+  await page.waitForTimeout(700)
   await shot('06-home')
 })
 await step('garage: browse cars and liveries', async () => {
@@ -158,6 +160,7 @@ await step('garage: browse cars and liveries', async () => {
   await page.waitForSelector('.garage')
   await tap('[data-car="saetta"]')
   await tap('[data-l="fjord"]')
+  await page.waitForTimeout(500)
   await shot('07-garage')
   await page.evaluate(() => window.__apexBack())
 })
@@ -177,6 +180,7 @@ await step('options: every tab, toggle and slider', async () => {
   }
   await tap('[data-tab="display"]')
   await tap('[data-set="lang"][data-v="de"]')
+  await page.waitForTimeout(400)
   await shot('08-options-de')
   await tap('[data-set="lang"][data-v="en"]')
   await tap('[data-tab="data"]')
@@ -207,6 +211,7 @@ if (!NO_STAGE) await step('a whole stage, driven to the results screen', async (
   await drive(20 * 60000)
   await waitPhase('results', 30000)
   await page.waitForSelector('.results')
+  await page.waitForTimeout(900)
   await shot('10-results')
   await tap('[data-replay]')
   await page.waitForSelector('#replaybar')
