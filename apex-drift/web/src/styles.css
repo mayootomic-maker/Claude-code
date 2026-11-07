@@ -296,3 +296,12 @@ body.photo .coach { display: none; }
   .results .col .btn { flex: 1 1 40%; min-height: 42px; }
   .results .bigtime { font-size: 54px; }
 }
+
+/* Race: position and gaps under the stage clock */
+.h-race { margin-top: 6px; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #000; }
+.h-race .pos { font-family: 'Barlow Condensed'; font-weight: 800; font-size: 34px; line-height: 1; color: var(--amber); }
+.h-race.lead .pos { color: var(--good); }
+.h-race .of { font-family: 'Barlow Condensed'; font-weight: 700; font-size: 20px; color: var(--dim); margin-left: 2px; }
+.h-race .gaps { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; }
+.h-race .gaps .behind { color: var(--bad); }
+.h-race .gaps .ahead { color: var(--good); }

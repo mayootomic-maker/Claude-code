@@ -280,6 +280,62 @@ describe('car: handling', () => {
     expect(c.speed).toBeGreaterThan(4)
   })
 
+  it('kicks the tail out on a 2 s handbrake pull at 25 m/s and carries the speed into the slide', () => {
+    for (const id of ['kestrel', 'ruska', 'apex'])
+      for (const surface of ['gravel', 'asphalt', 'snow'])
+        for (const d of ['driver', 'pro'] as const) {
+          const c = rolling(id, surface, 25, 3)
+          let slip = 0, worst = 0
+          for (let i = 0; i < 120; i++) {
+            c.step({ steer: -1, throttle: 0.4, brake: 0, handbrake: true }, hands(d))
+            const b = Math.abs(Math.atan2(c.vy, c.vx))
+            slip = Math.max(slip, b)
+            worst = Math.max(worst, b)
+          }
+          const label = `${id} ${surface} ${d}`
+          expect(c.speed, label).toBeGreaterThan(25 * 0.8)
+          expect(slip * 180 / Math.PI, label).toBeGreaterThan(20)
+          expect(worst * 180 / Math.PI, `${label} spun`).toBeLessThan(120)
+        }
+  })
+
+  it('holds a long drift on throttle and countersteer without bleeding speed or spinning', () => {
+    for (const id of ['kestrel', 'ruska', 'apex'])
+      for (const surface of ['gravel', 'asphalt'])
+        for (const d of ['driver', 'pro'] as const) {
+          const c = rolling(id, surface, 20, 3)
+          const target = 0.45
+          let held = 0, minV = Infinity, worst = 0, prev = 0
+          for (let i = 0; i < 60 * 7; i++) {
+            const b = Math.atan2(c.vy, c.vx)
+            const e = b - target, rate = (b - prev) / DT
+            prev = b
+            // Flick it in with a tug of the lever, then hold the angle with the
+            // throttle and a little countersteer, as a player would.
+            const inp = i < 40
+              ? { steer: 1, throttle: 0.6, brake: 0, handbrake: i < 25 }
+              : { steer: clamp(-0.05 - 2 * e - 0.6 * rate, -1, 1), throttle: clamp(0.8 - 2 * e, 0, 1), brake: 0, handbrake: false }
+            c.step(inp, hands(d))
+            if (i > 60) {
+              minV = Math.min(minV, c.speed)
+              worst = Math.max(worst, Math.abs(b))
+              if (Math.abs(b) > (15 * Math.PI) / 180) held += DT
+            }
+          }
+          const label = `${id} ${surface} ${d}`
+          expect(held, label).toBeGreaterThanOrEqual(4)
+          expect(minV, label).toBeGreaterThan(20 * 0.6)
+          expect(worst * 180 / Math.PI, `${label} spun`).toBeLessThan(120)
+        }
+  })
+
+  it('a grip driver stays tidy: no drift without the lever or power through a slide', () => {
+    const c = rolling('kestrel', 'gravel', 22, 3)
+    for (let i = 0; i < 180; i++) c.step({ steer: -0.5, throttle: 0.5, brake: 0, handbrake: false }, hands('driver'))
+    expect(c.drift).toBeLessThan(0.2)
+    expect(Math.abs(Math.atan2(c.vy, c.vx))).toBeLessThan(0.15)
+  })
+
   it('lands from a jump with a nose dip and without a spin', () => {
     for (const d of ['rookie', 'pro'] as const) {
       const c = rolling('apex', 'gravel', 30, 4)
