@@ -133,7 +133,9 @@ class Tel {
 
 // ------------------------------------------------------------------ one shot
 
+let heard = 0
 function renderShot(i: number, s: ShotPlan): Stereo {
+  heard = 0
   const tel = new Tel(JSON.parse(readFileSync(join(work, `shot-${pad(s.idx)}.json`), 'utf8')) as Telemetry)
   const n = Math.ceil(s.dur * SR)
   const out = stereo(n)
@@ -151,6 +153,7 @@ function renderShot(i: number, s: ShotPlan): Stereo {
       closest = Math.min(closest, Math.hypot(tel.num(ci, 'x', t) - c[0], tel.num(ci, 'y', t) - c[1], tel.num(ci, 'z', t) - c[2]))
     }
     if (ci > 0 && closest > 380) return
+    heard++
     const inside = onboard && ci === 0
     const prof = engineProfileFor(car.id)
     const dsp = new EngineDSP(prof, SR)
@@ -276,6 +279,8 @@ const fxBus = stereo(N), voiceBus = stereo(N)
 const cuts: number[] = []
 plan.shots.forEach((s, i) => {
   const a = renderShot(i, s)
+  const bad = Math.max(a.l.findIndex((x) => !Number.isFinite(x)), a.r.findIndex((x) => !Number.isFinite(x)))
+  if (bad >= 0) throw new Error(`shot ${s.name}: non-finite sound at ${(bad / SR).toFixed(2)} s`)
   const i0 = Math.round(s.at * SR)
   const inLen = i > 0 ? plan.shots[i - 1].out.dur : 0
   const outLen = i < plan.shots.length - 1 ? s.out.dur : 0
@@ -292,7 +297,9 @@ plan.shots.forEach((s, i) => {
     fxBus.l[o] += a.l[k] * g
     fxBus.r[o] += a.r[k] * g
   }
-  log(`shot ${pad(i)} ${s.name}`)
+  let e = 0
+  for (let k = 0; k < a.l.length; k++) e += a.l[k] ** 2 + a.r[k] ** 2
+  log(`shot ${pad(s.idx)} ${s.name}: ${heard} car(s) heard, ${(10 * Math.log10(e / (2 * a.l.length) + 1e-12)).toFixed(1)} dBFS RMS`)
 })
 
 // Whooshes under the whip transitions.
@@ -307,11 +314,11 @@ plan.shots.forEach((s, i) => {
     if (k < 0 || k >= N) continue
     const u = (k / SR - (mid - half)) / (2 * half)
     if (k % 32 === 0) {
-      const f = 350 * Math.pow(9, Math.sin(u * Math.PI))
+      const f = 350 * Math.pow(9, Math.max(0, Math.sin(u * Math.PI)))
       bp.set('bp', f, 1.1)
       bp2.set('bp', f * 1.3, 1.1)
     }
-    const e = Math.pow(Math.sin(u * Math.PI), 2.2) * 0.32
+    const e = Math.pow(Math.max(0, Math.sin(u * Math.PI)), 2.2) * 0.32
     const [gl, gr] = panGains(dirn * (u * 2 - 1) * 0.8)
     fxBus.l[k] += bp.tick(rnd()) * e * gl * 1.4
     fxBus.r[k] += bp2.tick(rnd()) * e * gr * 1.4
@@ -357,6 +364,7 @@ plan.shots.forEach((s, i) => {
 })
 const score = renderMusic(LEN, BPM, cues)
 log('music done')
+
 
 // Sidechain: the music gives way to the co-driver and to big moments in the car sound.
 const level = (b: Stereo, k: number) => Math.abs(b.l[k]) + Math.abs(b.r[k])
@@ -464,28 +472,31 @@ function loudness(path: string): { I: number; TP: number; LRA: number } {
 writeWav(join(work, 'mix.wav'), mix, 1)
 // Master to -14 LUFS integrated with true peaks at most -1.5 dBTP: gain, limit, measure, repeat.
 let gainDb = -14 - loudness(join(work, 'mix.wav')).I
-let master = limit(mix, dbToGain(gainDb), -1.6)
+let master = limit(mix, dbToGain(gainDb), -2.2)
 for (let it = 0; it < 4; it++) {
   writeWav(join(work, 'master.wav'), master, 1)
   const m = loudness(join(work, 'master.wav'))
   log(`master pass ${it + 1}: ${m.I.toFixed(2)} LUFS, ${m.TP.toFixed(2)} dBTP, LRA ${m.LRA.toFixed(1)} LU`)
   if (Math.abs(m.I + 14) < 0.2) break
   gainDb += -14 - m.I
-  master = limit(mix, dbToGain(gainDb), -1.6)
+  master = limit(mix, dbToGain(gainDb), -2.2)
 }
 
-// Clicks: the largest sample-to-sample step around every edit, against the loudest step anywhere.
+// Clicks: around every edit, the largest sample-to-sample step against the largest in the half second either side.
+// Programme material gives a ratio near or below 1; a click at the edit stands out well above it.
 {
-  let global = 0
-  for (let k = 1; k < N; k++) global = Math.max(global, Math.abs(master.l[k] - master.l[k - 1]), Math.abs(master.r[k] - master.r[k - 1]))
+  const step = (k: number) => Math.max(Math.abs(master.l[k] - master.l[k - 1]), Math.abs(master.r[k] - master.r[k - 1]))
   let worst = 0, at = 0
   for (const c of cuts) {
-    for (let k = Math.max(1, Math.round((c - 0.02) * SR)); k < Math.min(N, Math.round((c + 0.02) * SR)); k++) {
-      const j = Math.max(Math.abs(master.l[k] - master.l[k - 1]), Math.abs(master.r[k] - master.r[k - 1]))
-      if (j > worst) {
-        worst = j
-        at = c
-      }
+    const c0 = Math.round(c * SR)
+    let near = 0, around = 1e-9
+    for (let k = Math.max(1, c0 - SR / 2); k < Math.min(N, c0 + SR / 2); k++) {
+      if (Math.abs(k - c0) < SR * 0.02) near = Math.max(near, step(k))
+      else around = Math.max(around, step(k))
+    }
+    if (near / around > worst) {
+      worst = near / around
+      at = c
     }
   }
   let peak = 0, nan = 0
@@ -493,7 +504,8 @@ for (let it = 0; it < 4; it++) {
     if (!Number.isFinite(master.l[k]) || !Number.isFinite(master.r[k])) nan++
     peak = Math.max(peak, Math.abs(master.l[k]), Math.abs(master.r[k]))
   }
-  log(`edit points: largest step ${worst.toFixed(4)} (at ${at.toFixed(2)} s) vs largest anywhere ${global.toFixed(4)}; sample peak ${(20 * Math.log10(peak)).toFixed(2)} dBFS; non-finite samples ${nan}`)
-  writeFileSync(join(work, 'audio-report.json'), JSON.stringify({ edits: worst, global, peakDb: 20 * Math.log10(peak), nan }))
+  log(`edit points: worst step ratio ${worst.toFixed(2)} (at ${at.toFixed(2)} s, >2 would be a click); sample peak ${(20 * Math.log10(peak)).toFixed(2)} dBFS; non-finite samples ${nan}`)
+  writeFileSync(join(work, 'audio-report.json'), JSON.stringify({ editStepRatio: worst, at, peakDb: 20 * Math.log10(peak), nan }))
+  if (nan) throw new Error('non-finite samples in the master')
 }
 log('wrote master.wav')
