@@ -57,6 +57,9 @@ if (q.get('mode') === 'zoo') {
   sc.angle = Number(q.get('a') ?? 0.6)
   sc.spin = Number(q.get('spin') ?? 0)
   sc.resize(innerWidth, innerHeight)
+  sc.manualCamera = q.has('el') || q.has('cam')
+  if (q.get('frame') === 'driver') sc.frame('driver')
+  if (q.has('helmet')) sc.helmet(q.get('helmet') !== '0')
   if (q.has('el')) {
     const el = (Number(q.get('el')) * Math.PI) / 180, d = Number(q.get('dist') ?? 8.5)
     sc.camera.position.set(0, 0.6 + Math.sin(el) * d, Math.cos(el) * d)

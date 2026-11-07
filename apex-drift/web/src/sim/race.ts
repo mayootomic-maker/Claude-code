@@ -55,7 +55,8 @@ export function raceGrid(rally: RallyDef, stageIdx: number, difficulty: Difficul
   while (picked.length < FIELD - 1 && pool.length) picked.push(pool.splice(Math.floor(r() * pool.length), 1)[0])
   const ci = Math.max(0, CARS.findIndex((c) => c.id === playerCar))
   const nearby = [ci, ci - 1, ci + 1, ci - 2, ci + 2].filter((i) => i >= 0 && i < CARS.length)
-  const liveries = LIVERIES.filter((l) => l.id !== playerLivery)
+  // Rivals wear the regular team liveries, never the joke ones you unlock with secrets.
+  const liveries = LIVERIES.filter((l) => l.id !== playerLivery && l.unlock.type !== 'secret' && l.unlock.type !== 'code')
   return picked.map((ri, k) => {
     const rv = RIVALS[ri]
     const likes = rv.likes.includes(rally.surface) ? 1.006 : 1
