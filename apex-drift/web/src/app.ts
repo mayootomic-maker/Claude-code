@@ -1,7 +1,7 @@
 import { Audio, engineProfileFor, haptic } from './audio/audio'
 import { asset } from './core/assets'
 import { clamp } from './core/math'
-import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
+import { CARS, LIVERIES, RALLIES, RIVALS, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
 import { CoDriver } from './game/codriver'
 import { level, medalFor, raceReward, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
 import { setLang, subtitle, t, type TKey } from './game/i18n'
@@ -17,6 +17,9 @@ import { Renderer, StageView, type Tier } from './render/view'
 import { DT, type Pose } from './sim/car'
 import { raceGrid } from './sim/race'
 import { autopilot, StageSim, type Difficulty } from './sim/stage'
+import { RUNGS } from './sim/levels'
+import { assistPreset, toSim } from './game/assists'
+import { aiPickerHtml, assistsHtml, bindAiPicker, bindAssists, rivalsHtml, rivalTag } from './ui/drivers-ui'
 import { BODY } from './sim/terrain'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
 import { Hud } from './ui/hud'
@@ -85,7 +88,6 @@ function restore(o: object, s: Snap): void {
   }
 }
 
-const REWINDS: Record<string, number> = { rookie: 5, driver: 3, pro: 1 }
 const REWIND_PENALTY = 2
 
 interface School {
@@ -334,9 +336,7 @@ export class App {
           <p class="kicker">${esc(r.nation)} · ${t(`surface_${r.surface}` as TKey)}</p>
           <h1 class="display">${esc(r.name)}</h1>
           <p class="muted">${esc(r.blurb)}</p>
-          <p class="kicker" style="margin-top:16px">${t('difficulty')}</p>
-          <div class="seg" role="radiogroup">${(['rookie', 'driver', 'pro'] as Difficulty[]).map((x) => `<button class="${x === d ? 'on' : ''}" data-d="${x}" role="radio" aria-checked="${x === d}">${t(x)}</button>`).join('')}</div>
-          <p class="muted" style="font-size:0.88em">${t(`${d}Sub` as TKey)}</p>
+          ${this.setupHtml(r, mode, sel)}
           ${mode === 'career' ? `<div class="row" style="margin-top:14px">
             <button class="btn" data-start>${ev ? t('resumeRally', { n: ev.times.length + 1 }) : t('startRally')}</button>
             ${ev ? `<button class="btn ghost" data-abandon>${t('abandon')}</button>` : ''}</div>` : ''}
@@ -354,12 +354,10 @@ export class App {
         ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}
         ${mode !== 'career' ? `<button class="btn wide ${mode === 'race' ? '' : 'ghost'}" data-race style="margin-top:8px">${t('raceStage')}</button>` : ''}</div>
       </div>`, (root) => {
-      root.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
-        this.store.save.settings.difficulty = b.dataset.d as Difficulty
-        this.store.write()
+      this.bindSetup(root, () => {
         this.menuStack.pop()
         this.rallyDetail(r, mode, sel)
-      }))
+      })
       root.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
         if (mode === 'career') return
         this.menuStack.pop()
@@ -380,6 +378,33 @@ export class App {
       root.querySelector('[data-drive]')?.addEventListener('click', () => this.load(r, sel, 'free'))
       root.querySelector('[data-race]')?.addEventListener('click', () => this.load(r, sel, 'race'))
     }, asset(`img/c-${r.id}.jpg`))
+  }
+
+  /**
+   * Race setup on the rally screen: the AI rung, the assist preset, and in a
+   * race the three rivals the chosen stage will bring, with who they are.
+   */
+  private setupHtml(r: RallyDef, mode: 'career' | 'free' | 'race', sel: number): string {
+    const s = this.store.save
+    const ev = mode === 'career' && s.event && s.event.rally === r.id ? s.event : null
+    // A rally under way keeps the rung it was started on.
+    const picker = ev ? `<p class="muted">${t('aiLevel')} · <b>${t(ev.difficulty)}</b></p>` : aiPickerHtml(s.settings.difficulty)
+    const rivals = mode === 'race' ? raceGrid(r, sel, s.settings.difficulty, s.car, s.livery) : null
+    return `${picker}${assistsHtml(s.settings.assists, false)}
+      ${rivals ? `<p class="kicker" style="margin-top:12px">${t('rivalsTitle')}</p>${rivalsHtml(rivals, rivals.map((x) => RIVALS[x.rival]?.id ?? ''), true)}` : ''}`
+  }
+
+  private bindSetup(root: HTMLElement, redraw: () => void): void {
+    const st = this.store.save.settings
+    bindAiPicker(root, () => st.difficulty, (d: Difficulty) => {
+      st.difficulty = d
+      this.store.write()
+      redraw()
+    })
+    bindAssists(root, st.assists, () => {
+      this.store.write()
+      redraw()
+    })
   }
 
   private garage(carSel?: string): void {
@@ -495,7 +520,7 @@ export class App {
     const tog = (key: keyof Settings) => `<button class="toggle ${st[key] ? 'on' : ''}" data-tog="${key}" role="switch" aria-checked="${!!st[key]}"></button>`
     const range = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${st[key]}" data-range="${key}">`
     const opt = (label: string, ctl: string) => `<div class="opt"><label>${label}</label>${ctl}</div>`
-    const body: Record<OptTab, () => string> = {
+    const body: Record<Exclude<OptTab, 'assists'>, () => string> & Partial<Record<'assists', () => string>> = {
       controls: () => (isTouch() ? [
         opt(t('steering'), seg('steering', ['buttons', 'tilt'] as const, (v) => t(`steer_${v}` as TKey))),
         opt(t('autoGas'), tog('autoGas')),
@@ -528,7 +553,7 @@ export class App {
         opt(t('lang'), seg('lang', ['en', 'de'] as const, (v) => (v === 'en' ? 'English' : 'Deutsch'))),
       ].join(''),
       gameplay: () => [
-        opt(t('difficulty'), seg('difficulty', ['rookie', 'driver', 'pro'] as const, (v) => t(v))),
+        aiPickerHtml(st.difficulty),
         opt(t('name'), `<input type="text" maxlength="20" value="${esc(this.store.save.name)}" data-name>`),
         opt(t('replaySchool'), `<button class="btn ghost" data-school>${t('school')}</button>`),
       ].join(''),
@@ -543,11 +568,12 @@ export class App {
         `<p class="muted">${this.cheat.turbo ? 'TURBO: on' : 'TURBO: off'}</p>`,
       ].join(''),
     }
-    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'data', ...(OWNER ? ['cheats' as const] : [])]
+    body.assists = () => assistsHtml(st.assists, true)
+    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'assists', 'data', ...(OWNER ? ['cheats' as const] : [])]
     const htmlOut = `
       <div class="options">
         <div class="seg tabs">${tabs.map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
-        ${body[tab]()}
+        ${body[tab]?.() ?? ''}
       </div>`
     return { html: htmlOut, bind: (root) => {
       const redraw = () => show(tab)
@@ -561,6 +587,15 @@ export class App {
         redraw()
       }))
       root.querySelector('[data-full]')?.addEventListener('click', () => void toggleFullscreen().then(redraw))
+      bindAiPicker(root, () => st.difficulty, (d) => {
+        st.difficulty = d
+        this.settingsChanged('difficulty')
+        redraw()
+      })
+      bindAssists(root, st.assists, () => {
+        this.settingsChanged('assists')
+        redraw()
+      })
       root.querySelectorAll<HTMLElement>('[data-tog]').forEach((b) => b.addEventListener('click', () => {
         const key = b.dataset.tog as keyof Settings
         ;(st as unknown as Record<string, unknown>)[key] = !st[key]
@@ -702,7 +737,9 @@ export class App {
     steps.push(() => {
       const difficulty = mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty
       const race = mode === 'race' ? raceGrid(rally, stageIdx, difficulty, car ?? s.car, s.livery) : undefined
-      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty, power: OWNER && this.cheat.turbo ? 2 : 1, race })
+      // The school teaches with every aid on, whatever the player has chosen for later.
+      const aids = mode === 'school' ? assistPreset('full') : s.settings.assists
+      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty, assists: toSim(aids), lineHint: aids.line, power: OWNER && this.cheat.turbo ? 2 : 1, race })
     })
     steps.push(() => {
       if (!sim) return
@@ -746,7 +783,7 @@ export class App {
       cheered: new Set(),
       history: [],
       // Rewinding a race would have to rewind the rivals too.
-      rewinds: mode === 'school' ? 9 : mode === 'race' ? 0 : REWINDS[sim.setup.difficulty] ?? 3,
+      rewinds: mode === 'school' ? 9 : mode === 'race' ? 0 : RUNGS[sim.setup.difficulty].rewinds,
       sectors: 0,
       recorder: new GhostRecorder(),
       tape: new ReplayRecorder(),
@@ -1171,7 +1208,7 @@ export class App {
     this.store.write()
     if (pos === 1) this.audio.say(s.settings.voiceLang, ['wellDone'])
     const carName = (id: string) => esc(CARS.find((c) => c.id === id)?.name ?? '')
-    const table = `<table class="table order">${rows.map((x, i) => `<tr class="${x.you ? 'you' : ''}"><td>P${i + 1}</td><td>${x.you ? esc(s.name) : esc(x.name)}<br><small class="muted">${carName(x.car)}</small></td><td>${i === 0 ? fmtTime(x.total) : `+${fmtTime(x.total - winner)}`}${x.finished ? '' : `<br><small class="muted">${t('raceEst')}</small>`}</td></tr>`).join('')}</table>`
+    const table = `<table class="table order">${rows.map((x, i) => `<tr class="${x.you ? 'you' : ''}"><td>P${i + 1}</td><td>${x.you ? esc(s.name) : esc(x.name)}<br><small class="muted">${carName(x.car)}</small>${x.you ? '' : rivalTag(RIVALS[sim.field[x.idx].slot.rival]?.id ?? '')}</td><td>${i === 0 ? fmtTime(x.total) : `+${fmtTime(x.total - winner)}`}${x.finished ? '' : `<br><small class="muted">${t('raceEst')}</small>`}</td></tr>`).join('')}</table>`
     const last = r.stageIdx + 1 >= r.rally.stages.length
     html(o, `<div class="results"><div class="card">
         <p class="kicker">${esc(r.rally.name)} · ${esc(r.rally.stages[r.stageIdx].name)} · ${t(sim.setup.difficulty)}</p>
@@ -1550,7 +1587,7 @@ export class App {
   }
 }
 
-type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'data' | 'cheats'
+type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'assists' | 'data' | 'cheats'
 
 const isTouch = (): boolean => document.body.classList.contains('touch')
 

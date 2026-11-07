@@ -3,6 +3,8 @@ import { clamp, damp, lerp, rng, wrapAngle } from '../core/math'
 import { LIVERIES, type LiveryDef } from '../data'
 import type { Pose } from '../sim/car'
 import type { StageSim } from '../sim/stage'
+import type { RaceLine } from '../sim/ai'
+import { STEP } from '../sim/route'
 import { atmosphere, cloudCover, skyDome, sunDirection, type Atmos } from './atmosphere'
 import { buildCar, type CarRig } from './car-model'
 import { GradePass } from './post'
@@ -255,8 +257,58 @@ export class StageView {
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
     this.makeSoft()
     this.makeMarks()
+    this.hint = sim.hint ? this.makeHint(sim.hint) : null
     this.syncCar(1)
     this.snapCamera()
+  }
+
+  /** The racing-line assist: a ribbon on the road, only drawn for the stretch just ahead. */
+  private hint: THREE.Mesh | null = null
+
+  /**
+   * Green where the line is flat out, amber at the apex of a corner, red
+   * where the speed it can carry is falling: where to brake.
+   */
+  private makeHint(line: RaceLine): THREE.Mesh {
+    const n = line.off.length
+    const route = line.route
+    const pos = new Float32Array(n * 2 * 3), col = new Float32Array(n * 2 * 3)
+    const W = 0.22
+    for (let i = 0; i < n; i++) {
+      const h = route.heading[i]
+      const lx = Math.cos(h), lz = -Math.sin(h)
+      const x = route.x[i] + lx * line.off[i], z = route.z[i] + lz * line.off[i]
+      const y = this.sim.ground.height(x, z) + 0.07
+      const braking = i + 2 < n && line.vmax[i + 2] < line.vmax[i] - 0.25
+      const apex = !braking && line.vmax[i] < line.vcorner[i] + 0.3 && Math.abs(line.curv[i]) > 1 / 80
+      const c = braking ? [0.95, 0.2, 0.15] : apex ? [1, 0.75, 0.15] : [0.25, 0.9, 0.35]
+      for (let k = 0; k < 2; k++) {
+        const sgn = k === 0 ? -1 : 1
+        pos.set([x + lx * W * sgn, y, z + lz * W * sgn], (i * 2 + k) * 3)
+        col.set(c, (i * 2 + k) * 3)
+      }
+    }
+    const idx = new Uint32Array((n - 1) * 6)
+    for (let i = 0; i < n - 1; i++) idx.set([i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2], i * 6)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    g.setIndex(new THREE.BufferAttribute(idx, 1))
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 })
+    const mesh = new THREE.Mesh(g, m)
+    mesh.frustumCulled = false
+    mesh.renderOrder = 2
+    this.scene.add(mesh)
+    return mesh
+  }
+
+  private syncHint(): void {
+    const h = this.hint
+    if (!h) return
+    const s = this.sim.car.s
+    const i0 = Math.max(0, Math.floor((s - 4) / STEP)), i1 = Math.min(Math.floor((s + 170) / STEP), (h.geometry.index?.count ?? 0) / 6)
+    h.geometry.setDrawRange(i0 * 6, Math.max(0, i1 - i0) * 6)
+    h.visible = !this.override
   }
 
   dispose(): void {
@@ -265,6 +317,10 @@ export class StageView {
       ;(this.marks.mesh.material as THREE.Material).dispose()
     }
     this.ghost?.rig.dispose()
+    if (this.hint) {
+      this.hint.geometry.dispose()
+      ;(this.hint.material as THREE.Material).dispose()
+    }
     for (const rig of this.rivals) rig.dispose()
     for (const m of this.softMeshes) {
       m.geometry.dispose()
@@ -361,6 +417,7 @@ export class StageView {
     const ay = this.override ? 0 : this.sim.car.ay / 9.81
     this.latG += (ay - this.latG) * (1 - Math.exp(-dt * 5))
     this.syncCar(alpha)
+    this.syncHint()
     const inside = mode === 'drive' && this.camMode === 'cockpit'
     if (inside !== this.inside) {
       this.inside = inside

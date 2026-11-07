@@ -1,5 +1,6 @@
 import { rng } from '../core/math'
 import { RALLIES, RIVALS, type RallyDef } from '../data'
+import { RUNGS } from '../sim/levels'
 import { DIFFICULTY_SCALE, idealTime, medals, StageSim, type Difficulty } from '../sim/stage'
 import type { Save } from './save'
 
@@ -27,8 +28,6 @@ export function medalFor(time: number, rally: RallyDef, stageIdx: number, d: Dif
   return time <= m.gold ? 'gold' : time <= m.silver ? 'silver' : time <= m.bronze ? 'bronze' : null
 }
 
-/** Where the rivals' times sit relative to the gold time, per difficulty. */
-const FIELD_PACE: Record<Difficulty, number> = { rookie: 1.035, driver: 1.02, pro: 1.005 }
 
 /**
  * A rival's time on a stage. Their pace is relative to the difficulty's gold
@@ -42,7 +41,7 @@ export function rivalTime(rivalIdx: number, rally: RallyDef, stageIdx: number, d
   const likes = r.likes.includes(rally.surface) ? 0.99 : 1.0
   // The field is centred a little slower than gold on Rookie, so a gold-medal
   // run is a podium; on Pro the leaders run at gold pace and gold only just wins.
-  return base * r.pace * likes * (FIELD_PACE[d] + spread * 0.025)
+  return base * r.pace * likes * (RUNGS[d].field + spread * 0.025)
 }
 
 export interface Standing {
@@ -90,10 +89,10 @@ export function rallyReward(position: number): Reward {
   return { credits: c, xp: Math.round(c * 0.8) }
 }
 
-/** Prize for a finishing position in a head-to-head race; a win on a harder difficulty is worth more. */
+/** Prize for a finishing position in a head-to-head race; a win against better rivals is worth more. */
 export function raceReward(position: number, d: Difficulty): Reward {
   const base = [900, 550, 350, 250][position - 1] ?? 250
-  const k = d === 'pro' ? 1.6 : d === 'driver' ? 1.25 : 1
+  const k = RUNGS[d].reward
   return { credits: Math.round(base * k), xp: Math.round(base * k * 0.9) }
 }
 

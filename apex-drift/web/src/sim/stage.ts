@@ -1,14 +1,16 @@
 import { clamp } from '../core/math'
 import { carPhys, type RallyDef, type StageDef } from '../data'
 import { ASSISTS, Car, cornerSpeed, DT, MU, wheelForce, type Assists, type Input } from './car'
+import { raceLine, type RaceLine } from './ai'
+import { LEVELS, RUNGS, type Difficulty } from './levels'
 import { collide, FIELD, gridSlot, Opponent, type GridSlot } from './race'
 import { buildRoute, type Route } from './route'
 import { makeGround, type Ground } from './terrain'
 
-export type Difficulty = 'rookie' | 'driver' | 'pro'
+export type { Difficulty }
 
-/** How much slower than the ideal time each difficulty's targets are. */
-export const DIFFICULTY_SCALE: Record<Difficulty, number> = { rookie: 1.42, driver: 1.19, pro: 1.07 }
+/** How much slower than the ideal time each rung's targets are. */
+export const DIFFICULTY_SCALE = Object.fromEntries(LEVELS.map((l) => [l, RUNGS[l].target])) as Record<Difficulty, number>
 
 /** Metres before the start line where the car waits, and after the finish where it stops. */
 export const RUN_IN = 30
@@ -21,7 +23,12 @@ export interface StageSetup {
   rally: RallyDef
   stage: StageDef
   car: string
+  /** The AI rung: rivals' skill in a race, medal targets in a time trial. */
   difficulty: Difficulty
+  /** The player's driving aids; Medium if not given. */
+  assists?: Assists
+  /** Draw a racing line for the player (an assist): builds `hint`. */
+  lineHint?: boolean
   /** Engine power multiplier; only the owner build's TURBO cheat sets it. */
   power?: number
   /** Head-to-head: these rivals start alongside on the road (see `raceGrid`). Absent for a time trial. */
@@ -56,6 +63,8 @@ export class StageSim {
   resets = 0
   /** Furthest progress along the stage, metres past the start line. */
   progress = 0
+  /** The racing line shown to the player when that assist is on. */
+  readonly hint: RaceLine | null
   /** Rivals on the road in a race; empty in a time trial. */
   readonly field: Opponent[] = []
   /** Race clock: runs on after the player finishes, until the rivals are home. */
@@ -74,7 +83,8 @@ export class StageSim {
     const phys = carPhys(setup.car)
     const k = setup.power ?? 1
     this.car = new Car(k === 1 ? phys : { ...phys, power: phys.power * k, maxDriveForce: phys.maxDriveForce * k }, this.ground, rally.surface, wet)
-    this.assists = ASSISTS[setup.difficulty]
+    this.assists = setup.assists ?? ASSISTS.medium
+    this.hint = setup.lineHint ? raceLine(this.route, rally.surface, wet, this.car.p) : null
     this.start = RUN_IN
     this.finish = this.route.length - RUN_OUT
     const race = setup.race ?? []
