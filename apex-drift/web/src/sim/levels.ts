@@ -55,8 +55,8 @@ export interface Rung {
 
 /**
  * Tuned by running every rung over whole stages headless (ai.test.ts keeps
- * the order honest). On Finland SS4 the ladder runs from 179 s (Bad) to 123 s
- * (No one can beat it) with Pro at 129 s; Bad spins and runs wide several
+ * the order honest). On Finland SS4 the ladder runs from 178 s (Bad) to 128 s
+ * (No one can beat it) with Pro at 134 s; Bad spins and runs wide several
  * times a stage, the top rung never makes a mistake. Medal targets above Pro
  * tighten by about what the rungs gain: the stage's ideal time assumes more
  * acceleration than the cars have, so no driver, AI or human, gets near it on
