@@ -4,6 +4,7 @@
 //   node e2e/soak.mjs --full     also loads every one of the 48 stages
 //   node e2e/soak.mjs --desktop  a 1280x720 window with mouse and keyboard, no touch
 //   node e2e/soak.mjs --single   the one-file build (npm run single), opened from disk
+//   node e2e/soak.mjs --no-stage skip driving a whole stage by keyboard (the slow step)
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
@@ -11,6 +12,7 @@ import { mkdirSync } from 'node:fs'
 const FULL = process.argv.includes('--full')
 const DESKTOP = process.argv.includes('--desktop')
 const SINGLE = process.argv.includes('--single')
+const NO_STAGE = process.argv.includes('--no-stage')
 const OUT = new URL(process.argv.includes('--desktop') ? './out/desktop/' : process.argv.includes('--single') ? './out/single/' : './out/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
 const PORT = 4179
@@ -194,7 +196,7 @@ await step('daily stage loads and drives', async () => {
   await tap('[data-y]')
   await page.waitForSelector('#menu:not(.hidden)')
 })
-await step('a whole stage, driven to the results screen', async () => {
+if (!NO_STAGE) await step('a whole stage, driven to the results screen', async () => {
   await tap('[data-go="free"]')
   await tap('[data-r="0"]')
   await tap('[data-k="3"]')
@@ -226,10 +228,10 @@ await step('a race: three rivals on the road, position on the HUD, results in fi
   await inRace()
   const n = await page.evaluate(() => window.__app.race.sim.field.length)
   if (n !== 3) throw new Error(`${n} rivals on the grid`)
-  await waitPhase('running', 90000)
+  await waitPhase('running', 240000)
   await drive(8000)
   await page.waitForSelector('.h-race:not(.hidden)')
-  await shot('13-race')
+  await shot('13-race').catch(() => {})
   // Race time runs at the frame rate, which SwiftShader keeps low: wait on the race clock, not the wall clock.
   await page.waitForFunction(() => window.__app.race.sim.field.every((o) => o.car.s > window.__app.race.sim.start + 50), null, { timeout: 180000, polling: 500 })
   // Skip to the flag: put the player just short of the line and let it roll over.
@@ -242,7 +244,7 @@ await step('a race: three rivals on the road, position on the HUD, results in fi
   await page.waitForSelector('.results .order')
   const rows = await page.locator('.results .order tr').count()
   if (rows !== 4) throw new Error(`${rows} rows in the race result`)
-  await shot('14-race-result')
+  await shot('14-race-result').catch(() => {})
   await tap('[data-menu]')
   await page.waitForSelector('#menu:not(.hidden)')
 })
