@@ -101,6 +101,7 @@ export class World {
   private readonly cardMat: THREE.MeshLambertMaterial | null
   private readonly roadMat: THREE.MeshLambertMaterial | THREE.MeshStandardMaterial
   private readonly farRoadMat: THREE.MeshLambertMaterial
+  private readonly farMat: THREE.MeshLambertMaterial
   private readonly waterMat: THREE.MeshStandardMaterial
   private readonly lakeMat: THREE.MeshStandardMaterial
   private readonly time = { value: 0 }
@@ -219,6 +220,7 @@ export class World {
     this.roadMat = stage.weather === 'rain' && q.wet ? wetRoad(roadMap, kind === 'tarmac') : new THREE.MeshLambertMaterial({ map: roadMap, color: stage.weather === 'rain' ? 0xb4b4b4 : 0xffffff })
     // A constant depth nudge only: a slope-scaled one would pull it over the real road at grazing angles.
     this.farRoadMat = new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4 })
+    this.farMat = new THREE.MeshLambertMaterial({ vertexColors: true })
     // Still water mirrors the sky: low roughness picks up the environment map.
     // Ripples scroll slowly (see update); vertex alpha fades the shore.
     const ripples = waterNormals(q.aniso)
@@ -328,6 +330,7 @@ export class World {
     this.cardMat?.dispose()
     this.roadMat.dispose()
     this.farRoadMat.dispose()
+    this.farMat.dispose()
     this.waterMat.dispose()
     this.lakeMat.dispose()
   }
@@ -559,7 +562,8 @@ export class World {
       else if (p.kind === 'animal') addAnimal(b, p.sub, p.x, y, p.z, p.yaw, r)
       else if (p.kind === 'flowers') addFlowers(b, p.x, y, p.z, r)
       else if (p.kind === 'tuft') {
-        if (cards) addGrassCards(cards, p.x, y, p.z, p.sub === 'a' ? pal.grassA : pal.dry, r)
+        // Grass cards on High only: cut-out quads filling the verge near the camera are heavy on a phone's fill rate.
+        if (cards && this.q.rich) addGrassCards(cards, p.x, y, p.z, p.sub === 'a' ? pal.grassA : pal.dry, r)
         else addTuft(b, p.x, y, p.z, p.sub === 'a' ? pal.grassA : pal.dry, r)
       }
     }
@@ -680,7 +684,10 @@ export class World {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
     geo.setIndex([])
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(c.cx, hgt[(CN >> 1) * CN + (CN >> 1)], c.cz), CHUNK * 0.75 + 200)
-    c.mesh = new THREE.Mesh(geo, this.terrainMat)
+    // Far terrain: vertex colour only (the detail texture would average out at this range anyway), and
+    // drawn after the detailed world so the depth test throws away whatever it covers before shading.
+    c.mesh = new THREE.Mesh(geo, this.farMat)
+    c.mesh.renderOrder = 1
     c.mesh.receiveShadow = false
     c.grid = hgt
     c.blobs = blobs
@@ -1186,7 +1193,8 @@ export class World {
     g.setIndex(idx)
     const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }))
     m.frustumCulled = false
-    m.renderOrder = -5
+    // After the terrain: only the sky gaps between hills pay for it.
+    m.renderOrder = 2
     return m
   }
 }

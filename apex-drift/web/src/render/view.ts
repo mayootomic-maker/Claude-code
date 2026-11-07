@@ -21,7 +21,7 @@ export type CamMode = 'chase' | 'near' | 'bonnet'
  */
 const TIERS: Record<Tier, Quality & { post: boolean; bloom: number; samples: number; pixel: number; maxPixels: number; shadowMap: number; propShadows: boolean }> = {
   low: { radius: 240, far: 560, terrain: [2, 4, 4], density: 0.5, shadows: false, aniso: 1, surfaces: false, cards: false, rich: false, blobs: false, wet: false, post: false, bloom: 0, samples: 0, pixel: 0.8, maxPixels: 1.0e6, shadowMap: 0, propShadows: false },
-  medium: { radius: 340, far: 720, terrain: [2, 2, 4], density: 0.8, shadows: true, aniso: 4, surfaces: true, cards: true, rich: false, blobs: false, wet: true, post: true, bloom: 1, samples: 2, pixel: 1, maxPixels: 2.1e6, shadowMap: 1024, propShadows: false },
+  medium: { radius: 340, far: 560, terrain: [2, 2, 4], density: 0.8, shadows: true, aniso: 4, surfaces: true, cards: true, rich: false, blobs: false, wet: true, post: true, bloom: 1, samples: 2, pixel: 1, maxPixels: 2.1e6, shadowMap: 1024, propShadows: false },
   high: { radius: 440, far: 1250, terrain: [1, 2, 4], density: 1, shadows: true, aniso: 8, surfaces: true, cards: true, rich: true, blobs: true, wet: true, post: true, bloom: 2, samples: 4, pixel: 1.5, maxPixels: 3.7e6, shadowMap: 2048, propShadows: true },
 }
 
