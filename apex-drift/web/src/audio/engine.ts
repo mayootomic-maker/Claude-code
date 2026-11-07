@@ -187,6 +187,7 @@ class WorkletCar implements CarVoice {
 
   update(s: CarSoundState): void {
     const inp = soundInputs(s, this.inputs)
+    // Raw values are fine here: the DSP smooths every input and ramps every gain inside the block.
     for (let i = 0; i < ENGINE_PARAMS.length; i++) this.params[i].value = inp[ENGINE_PARAMS[i]]
   }
 
@@ -332,16 +333,18 @@ export class CarSound {
 /** A barrier hit: a low thud, a crunch of panel and a short metallic ring. strength 0..1. */
 export function playImpact(ctx: BaseAudioContext, out: AudioNode, noise: AudioBuffer, strength: number): void {
   const s = clamp01(strength)
-  const t = ctx.currentTime
+  if (s <= 0) return
+  // Everything rises over a few milliseconds and fades fully to zero before it
+  // stops: an envelope that starts at full level, or a source cut mid-wave, clicks.
+  const t = ctx.currentTime + 0.005
   const thud = ctx.createOscillator()
   thud.frequency.setValueAtTime(95 + s * 30, t)
   thud.frequency.exponentialRampToValueAtTime(38, t + 0.25)
   const tg = ctx.createGain()
-  tg.gain.setValueAtTime(0.9 * s, t)
-  tg.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
+  envelope(tg.gain, t, 0.9 * s, 0.004, 0.3)
   thud.connect(tg).connect(out)
   thud.start(t)
-  thud.stop(t + 0.32)
+  thud.stop(t + 0.34)
   const src = ctx.createBufferSource()
   src.buffer = noise
   const f = ctx.createBiquadFilter()
@@ -354,8 +357,7 @@ export function playImpact(ctx: BaseAudioContext, out: AudioNode, noise: AudioBu
   ring.Q.value = 18
   ring.gain.value = 14
   const g = ctx.createGain()
-  g.gain.setValueAtTime(0.7 * s, t)
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.18 + s * 0.25)
+  envelope(g.gain, t, 0.7 * s, 0.002, 0.18 + s * 0.25)
   src.connect(f).connect(ring).connect(g).connect(out)
   src.start(t, Math.random(), 0.5)
 }
@@ -363,16 +365,16 @@ export function playImpact(ctx: BaseAudioContext, out: AudioNode, noise: AudioBu
 /** Landing: the springs bottom out, a soft body thump and a suspension knock. strength 0..1. */
 export function playLanding(ctx: BaseAudioContext, out: AudioNode, noise: AudioBuffer, strength: number): void {
   const s = clamp01(strength)
-  const t = ctx.currentTime
+  if (s <= 0) return
+  const t = ctx.currentTime + 0.005
   const o = ctx.createOscillator()
   o.frequency.setValueAtTime(70, t)
   o.frequency.exponentialRampToValueAtTime(32, t + 0.2)
   const og = ctx.createGain()
-  og.gain.setValueAtTime(0.85 * s, t)
-  og.gain.exponentialRampToValueAtTime(0.001, t + 0.28)
+  envelope(og.gain, t, 0.85 * s, 0.006, 0.28)
   o.connect(og).connect(out)
   o.start(t)
-  o.stop(t + 0.3)
+  o.stop(t + 0.32)
   // The knock arrives a beat later, when the damper tops out.
   const src = ctx.createBufferSource()
   src.buffer = noise
@@ -381,10 +383,16 @@ export function playLanding(ctx: BaseAudioContext, out: AudioNode, noise: AudioB
   f.frequency.value = 260 + s * 200
   f.Q.value = 2.5
   const g = ctx.createGain()
-  const t2 = t + 0.06
   g.gain.setValueAtTime(0, t)
-  g.gain.setValueAtTime(0.6 * s, t2)
-  g.gain.exponentialRampToValueAtTime(0.001, t2 + 0.12)
+  envelope(g.gain, t + 0.06, 0.6 * s, 0.003, 0.12)
   src.connect(f).connect(g).connect(out)
   src.start(t, Math.random(), 0.3)
+}
+
+/** A percussive envelope: short linear rise, exponential fall, and a last ramp to true zero. */
+function envelope(p: AudioParam, t: number, peak: number, attack: number, decay: number): void {
+  p.setValueAtTime(0, t)
+  p.linearRampToValueAtTime(peak, t + attack)
+  p.exponentialRampToValueAtTime(Math.max(1e-4, peak * 0.002), t + attack + decay)
+  p.linearRampToValueAtTime(0, t + attack + decay + 0.01)
 }

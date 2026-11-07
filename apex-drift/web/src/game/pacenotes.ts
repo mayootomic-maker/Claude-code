@@ -96,6 +96,9 @@ export function paceNotes(route: Route, start: number, finish: number): Note[] {
 
 const DISTANCES = [30, 40, 50, 60, 70, 80, 100, 120, 150, 200, 250, 300]
 
+/** In a call, a breath between two linked notes. Not a clip: the voice turns it into a pause. */
+export const BREAK = '/'
+
 /** Under 20 m the next call follows straight on ("into"); otherwise the nearest callable distance below. */
 export function callable(d: number): number {
   if (d < 25) return 0

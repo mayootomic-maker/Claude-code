@@ -54,24 +54,39 @@ export interface Voicing {
   lump: number
   /** intake formant base, Hz */
   intake: number
+  /** induction honk: the airbox's own low resonance, Hz */
+  honk: number
+  /** 0..1 how much hard edge the exhaust gets under load */
+  rasp: number
+  /** 0..1 intake roar under load */
+  roar: number
+  /** 0..1 turbo whistle; ignored for naturally aspirated engines */
+  whistle: number
+  /** overrun crackle and anti-lag appetite */
+  crackle: number
 }
 
 export function voicingFor(pr: EngineProfile): Voicing {
   const even = (n: number) => Array.from({ length: n }, (_, i) => (i * 720) / n)
+  // A turbo sits in the exhaust: it soaks up rasp and adds whistle, and with
+  // anti-lag it bangs far more on a lift than any naturally aspirated engine.
+  const t = pr.turbo
   if (pr.layout === 'flat') {
     // Unequal-length headers: pulses arrive in pairs, then a gap. That is the burble.
-    return { fire: [0, 212, 360, 568], amp: [1, 0.74, 1.12, 0.8], width: 175, body: 105, pipe: 380, pipeQ: 3.5, drive: 1.2, lump: 0.32, intake: 650 }
+    return { fire: [0, 212, 360, 568], amp: [1, 0.74, 1.12, 0.8], width: 175, body: 105, pipe: 380, pipeQ: 3.5, drive: 1.2, lump: 0.32, intake: 650, honk: 290, rasp: 0.45, roar: 0.7, whistle: 0.9, crackle: t ? 1.2 : 0.8 }
   }
   if (pr.cylinders === 5) {
-    return { fire: even(5).map((a, i) => a + [0, 7, -5, 10, -3][i]), amp: [1, 0.84, 1.1, 0.88, 1.03], width: 150, body: 135, pipe: 440, pipeQ: 4.5, drive: 1.35, lump: 0.2, intake: 800 }
+    // Firing every 144°: a half-order warble no four or six has.
+    return { fire: even(5).map((a, i) => a + [0, 7, -5, 10, -3][i]), amp: [1, 0.84, 1.1, 0.88, 1.03], width: 150, body: 135, pipe: 440, pipeQ: 4.5, drive: 1.35, lump: 0.2, intake: 800, honk: 350, rasp: t ? 0.7 : 0.85, roar: 0.85, whistle: 1, crackle: t ? 1.4 : 0.9 }
   }
   if (pr.cylinders === 6 && pr.layout === 'v') {
     // Two banks into two pipes: alternate pulses differ, which deepens the note.
-    return { fire: even(6), amp: [1, 0.82, 1, 0.82, 1, 0.82], width: 140, body: 95, pipe: 330, pipeQ: 3, drive: 1.1, lump: 0.12, intake: 700 }
+    return { fire: even(6), amp: [1, 0.82, 1, 0.82, 1, 0.82], width: 140, body: 95, pipe: 330, pipeQ: 3, drive: 1.1, lump: 0.12, intake: 700, honk: 320, rasp: 0.55, roar: 0.9, whistle: 0.8, crackle: 0.8 }
   }
   if (pr.cylinders === 6) {
-    return { fire: even(6), amp: [1, 0.97, 1.02, 0.98, 1.01, 0.96], width: 125, body: 140, pipe: 620, pipeQ: 2.5, drive: 0.85, lump: 0.08, intake: 900 }
+    // Perfect balance: smooth and rising to a howl rather than a bark.
+    return { fire: even(6), amp: [1, 0.97, 1.02, 0.98, 1.01, 0.96], width: 125, body: 140, pipe: 620, pipeQ: 2.5, drive: 0.85, lump: 0.08, intake: 900, honk: 470, rasp: 0.7, roar: 0.8, whistle: 0.8, crackle: 0.6 }
   }
-  // Inline four: tight and buzzy.
-  return { fire: even(4).map((a, i) => a + [0, 3, -2, 2][i]), amp: [1, 0.92, 1.05, 0.95], width: 145, body: 160, pipe: 540, pipeQ: 5.5, drive: 1.6, lump: 0.18, intake: 950 }
+  // Inline four: tight and buzzy; unboosted ones scream through the airbox.
+  return { fire: even(4).map((a, i) => a + [0, 3, -2, 2][i]), amp: [1, 0.92, 1.05, 0.95], width: 145, body: 160, pipe: 540, pipeQ: 5.5, drive: 1.6, lump: 0.18, intake: 950, honk: 410, rasp: t ? 0.6 : 0.95, roar: t ? 0.65 : 1, whistle: 1.1, crackle: t ? 1.5 : 0.75 }
 }

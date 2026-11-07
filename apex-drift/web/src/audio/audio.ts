@@ -1,5 +1,6 @@
 import { asset } from '../core/assets'
 import { clamp } from '../core/math'
+import { BREAK } from '../game/pacenotes'
 import type { Lang } from '../game/save'
 import { CarSound, engineProfileFor, loadEngineWorklet, playImpact, playLanding, type CarSoundState, type EngineProfile } from './engine'
 
@@ -18,6 +19,20 @@ interface VoiceBank {
   clips: Record<string, [number, number]>
 }
 
+interface Pending {
+  lang: Lang
+  words: string[]
+  /** Checked just before the call is spoken: true if it no longer applies. */
+  stale?: () => boolean
+}
+
+/** Silence between words in a call, between linked notes, and between calls. */
+const WORD_GAP = 0.15
+const NOTE_GAP = 0.34
+const CALL_GAP = 0.3
+/** Every word fades in and out: clips cut from one file never start on a zero crossing. */
+const WORD_FADE = 0.008
+
 /**
  * All sound is synthesised or cut from the two co-driver recordings, so
  * there is no third-party audio to license. Everything is created lazily on
@@ -30,12 +45,15 @@ export class Audio {
   private carProfile: EngineProfile = engineProfileFor('piccola')
   private lastHit = 0
   private lastLand = 0
+  private lastClick = 0
+  private lastCheer = -10
   private legacy = { rpm: 0, gear: 1, boost: 0 }
-  private rain: GainNode | null = null
   private noise: AudioBuffer | null = null
   private voices = new Map<Lang, VoiceBank>()
   private speakingUntil = 0
-  private queue: string[][] = []
+  private queue: Pending[] = []
+  private pumpTimer = 0
+  private rain: { src: AudioBufferSourceNode; g: GainNode } | null = null
   private music: Music | null = null
   private mix: Mix = { master: 0.9, music: 0.5, sfx: 0.9, engine: 0.8, voice: 1 }
   /** Shown as subtitles when the co-driver speaks. */
@@ -116,15 +134,21 @@ export class Audio {
     }
   }
 
-  /** Queue a call. Calls never overlap: the next waits for the last to finish. */
-  say(lang: Lang, words: string[]): void {
+  /**
+   * Queue a call. Calls never overlap: each waits for the last to finish, and a
+   * call whose moment has passed by then (`stale`) is dropped rather than read
+   * late. A `BREAK` in `words` is a breath between two linked notes.
+   */
+  say(lang: Lang, words: string[], stale?: () => boolean): void {
     const bank = this.voices.get(lang)
     if (!this.ctx || !this.bus || !bank) {
       this.onSay?.(words)
       return
     }
-    this.queue.push(words)
-    this.pump(lang)
+    this.queue.push({ lang, words, stale })
+    // A backlog means the calls are already late; the oldest go first.
+    if (this.queue.length > 3) this.queue.splice(0, this.queue.length - 3)
+    this.schedulePump()
   }
 
   get speaking(): boolean {
@@ -135,28 +159,64 @@ export class Audio {
     this.queue.length = 0
   }
 
-  private pump(lang: Lang): void {
-    const ctx = this.ctx, bus = this.bus, bank = this.voices.get(lang)
-    if (!ctx || !bus || !bank) return
-    if (this.queue.length > 2) this.queue.splice(0, this.queue.length - 2) // stale calls are worse than none
-    let t = Math.max(ctx.currentTime + 0.02, this.speakingUntil)
-    const words = this.queue.shift()
-    if (!words) return
-    this.onSay?.(words)
-    for (const w of words) {
+  /** Run the queue when the current call ends, so staleness is judged at the moment of speaking. */
+  private schedulePump(): void {
+    const ctx = this.ctx
+    if (!ctx || this.pumpTimer) return
+    const wait = this.speakingUntil + CALL_GAP - ctx.currentTime - 0.05
+    if (wait <= 0) {
+      this.pump()
+      return
+    }
+    this.pumpTimer = window.setTimeout(() => {
+      this.pumpTimer = 0
+      this.pump()
+    }, wait * 1000)
+  }
+
+  private pump(): void {
+    const ctx = this.ctx, bus = this.bus
+    if (!ctx || !bus) return
+    let item = this.queue.shift()
+    while (item?.stale?.()) item = this.queue.shift()
+    if (!item) return
+    const bank = this.voices.get(item.lang)
+    if (!bank) return
+    const start = Math.max(ctx.currentTime + 0.03, this.speakingUntil + CALL_GAP)
+    let t = start
+    let said = false
+    for (const w of item.words) {
+      if (w === BREAK) {
+        if (said) t += NOTE_GAP - WORD_GAP
+        continue
+      }
       const c = bank.clips[w]
       if (!c) continue
+      const [off, dur] = c
       const src = ctx.createBufferSource()
       src.buffer = bank.buf
-      src.connect(bus.voice)
-      src.start(t, c[0], c[1])
-      t += c[1] + 0.03
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(1, t + WORD_FADE)
+      g.gain.setValueAtTime(1, t + dur - WORD_FADE)
+      g.gain.linearRampToValueAtTime(0, t + dur)
+      src.connect(g).connect(bus.voice)
+      src.start(t, off, dur)
+      src.stop(t + dur + 0.02)
+      t += dur + WORD_GAP
+      said = true
     }
+    if (!said) {
+      this.schedulePump()
+      return
+    }
+    t -= WORD_GAP
+    this.onSay?.(item.words)
     // Duck the engine and music under the voice instead of shouting over them.
-    bus.duck.gain.setTargetAtTime(0.45, ctx.currentTime, 0.05)
+    bus.duck.gain.setTargetAtTime(0.45, Math.max(ctx.currentTime, start - 0.1), 0.05)
     bus.duck.gain.setTargetAtTime(1, t, 0.25)
     this.speakingUntil = t
-    if (this.queue.length) setTimeout(() => this.pump(lang), Math.max(0, (t - ctx.currentTime) * 1000))
+    if (this.queue.length) this.schedulePump()
   }
 
   // ------------------------------------------------------------------ car
@@ -186,7 +246,7 @@ export class Audio {
     this.car.update(s)
     // Rate-limit the one-shots: a scrape along a barrier reports an impact every frame.
     const t = ctx.currentTime
-    if (s.impact > 2 && t - this.lastHit > 0.12) {
+    if (s.impact > 2 && t - this.lastHit > 0.15) {
       this.lastHit = t
       playImpact(ctx, bus.sfx, this.noise, Math.min(1, s.impact / 15))
     }
@@ -209,17 +269,21 @@ export class Audio {
     }
   }
 
-  /** A thump for barrier hits and landings; strength 0..1. */
+  /** A thump for barrier hits and landings; strength 0..1. Shares the impact rate limit: callers report contact every frame. */
   thump(strength: number): void {
     const ctx = this.ctx, bus = this.bus
     if (!ctx || !bus || !this.noise) return
+    if (ctx.currentTime - this.lastHit < 0.15) return
+    this.lastHit = ctx.currentTime
     playImpact(ctx, bus.sfx, this.noise, strength)
   }
 
-  /** A swell of crowd noise as you pass spectators. */
+  /** A swell of crowd noise as you pass spectators. One crowd at a time: stacked swells turn to hash. */
   cheer(): void {
     const ctx = this.ctx, bus = this.bus
     if (!ctx || !bus || !this.noise) return
+    if (ctx.currentTime - this.lastCheer < 1.8) return
+    this.lastCheer = ctx.currentTime
     const src = ctx.createBufferSource()
     src.buffer = this.noise
     const f = ctx.createBiquadFilter()
@@ -232,12 +296,13 @@ export class Audio {
     g.gain.linearRampToValueAtTime(0.18, t + 0.4)
     g.gain.linearRampToValueAtTime(0, t + 2.2)
     src.connect(f).connect(g).connect(bus.sfx)
-    src.start(t, Math.random(), 2.4)
+    src.start(t, Math.random() * 0.5, 2.4)
   }
 
   setRain(on: boolean): void {
     const ctx = this.ctx, bus = this.bus
     if (!ctx || !bus || !this.noise) return
+    const t = ctx.currentTime
     if (on && !this.rain) {
       const src = ctx.createBufferSource()
       src.buffer = this.noise
@@ -246,12 +311,16 @@ export class Audio {
       f.type = 'highpass'
       f.frequency.value = 2500
       const g = ctx.createGain()
-      g.gain.value = 0.06
+      g.gain.setValueAtTime(0, t)
+      g.gain.setTargetAtTime(0.06, t, 0.3)
       src.connect(f).connect(g).connect(bus.sfx)
       src.start()
-      this.rain = g
+      this.rain = { src, g }
     } else if (!on && this.rain) {
-      this.rain.gain.setTargetAtTime(0, ctx.currentTime, 0.2)
+      const { src, g } = this.rain
+      g.gain.cancelScheduledValues(t)
+      g.gain.setTargetAtTime(0, t, 0.2)
+      src.stop(t + 1.5)
       this.rain = null
     }
   }
@@ -274,18 +343,30 @@ export class Audio {
     o.stop(t + 0.35)
   }
 
+  /**
+   * The UI tick: a soft, low, rounded tap. The old one was a 1.4 kHz square-edged
+   * blip at full level on every button, the main source of the clicking; this
+   * rises over a few milliseconds and is rate-limited, so a double tap or a
+   * click that bubbles through two handlers makes one sound.
+   */
   click(): void {
     const ctx = this.ctx, bus = this.bus
     if (!ctx || !bus) return
+    const t = ctx.currentTime
+    if (t - this.lastClick < 0.08) return
+    this.lastClick = t
     const o = ctx.createOscillator()
     const g = ctx.createGain()
-    const t = ctx.currentTime
-    o.frequency.value = 1400
-    g.gain.setValueAtTime(0.05, t)
-    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.05)
+    o.type = 'sine'
+    o.frequency.setValueAtTime(880, t)
+    o.frequency.exponentialRampToValueAtTime(560, t + 0.06)
+    g.gain.setValueAtTime(0, t)
+    g.gain.linearRampToValueAtTime(0.028, t + 0.004)
+    g.gain.exponentialRampToValueAtTime(0.0003, t + 0.07)
+    g.gain.linearRampToValueAtTime(0, t + 0.08)
     o.connect(g).connect(bus.sfx)
     o.start(t)
-    o.stop(t + 0.06)
+    o.stop(t + 0.09)
   }
 
   // ------------------------------------------------------------------ music

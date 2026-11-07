@@ -897,10 +897,11 @@ export class App {
       }
     }
     if (r.phase === 'running') {
-      const call = r.codriver.update(sim.car.s, sim.car.speed)
+      const call = r.codriver.update(sim.car.s, sim.car.speed, sim.time)
       if (call) {
-        this.audio.say(s.settings.voiceLang, call)
-        if (school && !school.firstCall) school.firstCall = subtitle(call)
+        // Dropped if it would only be heard once the car is already at the corner.
+        this.audio.say(s.settings.voiceLang, call.words, () => sim.car.s > call.at - 5)
+        if (school && !school.firstCall) school.firstCall = subtitle(call.words)
       }
       r.hud.showNote(r.codriver.upcoming(sim.car.s))
       // A cheer as you pass a crowd at a hairpin or jump.
