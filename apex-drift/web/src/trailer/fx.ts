@@ -96,13 +96,13 @@ export class Fx {
       const lx = Math.cos(car.heading), lz = -Math.sin(car.heading)
       if (car.surface === 'water' && v > 3) {
         // Bow waves off both front wheels, thrown out and up, falling back under gravity.
-        const n = Math.floor(clamp(v / 20, 0.3, 1.6) * 70 * dt * 30 + r())
+        const n = Math.floor(clamp(v / 20, 0.3, 1.6) * 110 * dt * 30 + r())
         for (let e = 0; e < n; e++) {
           const side = e % 2 ? 1 : -1
           const out = 2 + r() * 4 + v * 0.12
           this.emit(r, car.x + fx * 1.1 + lx * side * 0.9, car.y + 0.25, car.z + fz * 1.1 + lz * side * 0.9,
             lx * side * out + fx * v * (0.35 + r() * 0.3), 2.5 + r() * 4 + v * 0.1, lz * side * out + fz * v * (0.35 + r() * 0.3),
-            0.9 + r() * 0.5, 0.55 + v * 0.02, spray)
+            0.6 + r() * 0.4, 0.22 + v * 0.008, spray)
         }
         return
       }

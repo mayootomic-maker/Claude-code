@@ -1,10 +1,13 @@
 // Renders the gameplay trailer: trailer/apex-drift-trailer.mp4.
 //
-//   npm run trailer                       full render, 1920x1080, all shots
+//   npm run trailer                       full render, 1280x720 (software GL is slow), all shots
+//   npm run trailer -- --width=1920       full HD, roughly twice the render time
 //   npm run trailer -- --width=960        quick low-resolution pass
 //   npm run trailer -- --only=4,grid-drone  re-render just these shots (index or name)
 //   npm run trailer -- --resume           keep shots already rendered with the same plan
 //   npm run trailer -- --jobs=2           render shots in two browsers at once
+//   npm run trailer -- --width=640 --only=0,1,5 --cut
+//                                         a short test edit of just those shots (sound included)
 //
 // Pipeline: a Vite dev server serves trailer.html; headless Chromium (software
 // GL) simulates the runs, plans the shots from their telemetry and renders each
@@ -28,7 +31,7 @@ const arg = (name, def) => {
   const a = process.argv.find((x) => x.startsWith(`--${name}=`))
   return a ? a.slice(name.length + 3) : process.argv.includes(`--${name}`) ? true : def
 }
-const W = Number(arg('width', 1920)) & ~1
+const W = Number(arg('width', 1280)) & ~1
 const H_FULL = Math.round((W * 9) / 16) & ~1
 // Rendered at 2.39:1 and letterboxed: the bars cost nothing to draw.
 const H = Math.round(W / 2.39) & ~1
@@ -37,6 +40,7 @@ const JOBS = Math.max(1, Number(arg('jobs', 1)))
 const RESUME = !!arg('resume', false)
 const ONLY = arg('only', '') ? String(arg('only')).split(',') : null
 const NO_AUDIO = !!arg('no-audio', false)
+const CUT = !!arg('cut', false)
 const started = Date.now()
 const secs = () => ((Date.now() - started) / 1000).toFixed(0)
 const say = (s) => console.log(`[${secs().padStart(5)} s] ${s}`)
@@ -103,7 +107,8 @@ const plan = plans[0]
 for (const l of plan.log) console.log('   ', l)
 if (plans.some((p) => JSON.stringify(p.shots) !== JSON.stringify(plan.shots))) throw new Error('plans differ between browsers: the simulation is not deterministic')
 let t = 0
-plan.shots.forEach((s) => {
+plan.shots.forEach((s, i) => {
+  s.idx = i
   s.at = t
   t += s.dur - s.out.dur
 })
@@ -140,7 +145,19 @@ for (const { browser, errors } of pages) {
   if (errors.length) console.log('page errors:\n  ' + errors.slice(0, 10).join('\n  '))
 }
 await server.close()
-const missing = plan.shots.map((s, i) => i).filter((i) => !existsSync(join(work, `shot-${pad(i)}.mp4`)))
+// A test cut joins only the shots asked for; otherwise every shot must be there.
+const edit = CUT && ONLY ? { ...plan, shots: plan.shots.filter((s, i) => want.includes(i)).map((s) => ({ ...s })) } : plan
+if (edit !== plan) {
+  let at = 0
+  edit.shots.forEach((s, i) => {
+    s.at = at
+    if (i === edit.shots.length - 1) s.out = { type: 'fade', dur: 0 }
+    at += s.dur - s.out.dur
+  })
+  edit.length = at
+}
+writeFileSync(join(work, 'edit.json'), JSON.stringify(edit, null, 1))
+const missing = edit.shots.filter((s) => !existsSync(join(work, `shot-${pad(s.idx)}.mp4`))).map((s) => s.idx)
 if (missing.length) {
   say(`shots not rendered yet: ${missing.join(', ')}; run without --only to finish`)
   process.exit(0)
@@ -150,26 +167,26 @@ if (missing.length) {
 const mix = join(work, 'mix.wav')
 if (!NO_AUDIO) {
   say('rendering the sound from telemetry')
-  const r = spawnSync(join(web, 'node_modules/.bin/vite-node'), ['src/trailer/audio-main.ts', work], { cwd: web, stdio: 'inherit' })
+  const r = spawnSync(join(web, 'node_modules/.bin/vite-node'), ['src/trailer/audio-main.ts', work, 'edit.json'], { cwd: web, stdio: 'inherit' })
   if (r.status !== 0) throw new Error('audio render failed')
 }
 
 // ---- edit ------------------------------------------------------------------
 say('joining shots')
-const inputs = plan.shots.flatMap((s, i) => ['-i', join(work, `shot-${pad(i)}.mp4`)])
-const parts = plan.shots.map((s, i) => `[${i}:v]settb=AVTB,fps=${FPS},setpts=PTS-STARTPTS,format=yuv420p[s${i}]`)
+const inputs = edit.shots.flatMap((s) => ['-i', join(work, `shot-${pad(s.idx)}.mp4`)])
+const parts = edit.shots.map((s, i) => `[${i}:v]settb=AVTB,fps=${FPS},setpts=PTS-STARTPTS,format=yuv420p[s${i}]`)
 let last = 's0'
-for (let i = 1; i < plan.shots.length; i++) {
-  const tr = plan.shots[i - 1].out
-  parts.push(`[${last}][s${i}]xfade=transition=${tr.type}:duration=${Math.max(1 / FPS, tr.dur).toFixed(4)}:offset=${plan.shots[i].at.toFixed(4)}[x${i}]`)
+for (let i = 1; i < edit.shots.length; i++) {
+  const tr = edit.shots[i - 1].out
+  parts.push(`[${last}][s${i}]xfade=transition=${tr.type}:duration=${Math.max(1 / FPS, tr.dur).toFixed(4)}:offset=${edit.shots[i].at.toFixed(4)}[x${i}]`)
   last = `x${i}`
 }
-const len = plan.length
+const len = edit.length
 parts.push(`[${last}]pad=${W}:${H_FULL}:0:(oh-ih)/2:black,fade=t=in:st=0:d=0.7,fade=t=out:st=${(len - 1.4).toFixed(3)}:d=1.4,trim=duration=${len.toFixed(3)}[v]`)
-const final = join(outDir, 'apex-drift-trailer.mp4')
+const final = join(outDir, edit === plan ? 'apex-drift-trailer.mp4' : 'apex-drift-trailer-test.mp4')
 const audioIn = NO_AUDIO ? [] : ['-i', join(work, 'master.wav')]
 const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, ...audioIn, '-filter_complex', parts.join(';'), '-map', '[v]',
-  ...(NO_AUDIO ? [] : ['-map', `${plan.shots.length}:a`, '-c:a', 'aac', '-b:a', '256k', '-ar', '48000']),
+  ...(NO_AUDIO ? [] : ['-map', `${edit.shots.length}:a`, '-c:a', 'aac', '-b:a', '256k', '-ar', '48000']),
   '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-tune', 'film', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-movflags', '+faststart', '-shortest', final], { stdio: 'inherit' })
 if (ff.status !== 0) throw new Error('final encode failed')
 
@@ -183,9 +200,26 @@ for (let i = 0; i < 12; i++) {
 }
 const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,width,height,r_frame_rate:format=duration', '-of', 'compact', final], { encoding: 'utf8' })
 console.log(probe.stdout.trim())
+let loud = ''
 if (!NO_AUDIO) {
   const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', final, '-filter_complex', 'ebur128=peak=true', '-f', 'null', '-'], { encoding: 'utf8' })
-  const summary = r.stderr.slice(r.stderr.lastIndexOf('Summary:'))
-  console.log(summary.trim())
+  loud = r.stderr.slice(r.stderr.lastIndexOf('Summary:')).trim()
+  console.log(loud)
 }
+// A plain-text record of what was made: the hero's runs, the shots, timings and loudness.
+const fmt = (x) => (x === null ? '-' : x.toFixed(2))
+const report = [
+  `Apex Drift trailer - ${final}`,
+  `${W}x${H_FULL} (picture ${W}x${H}, 2.39:1), ${FPS} fps, ${len.toFixed(1)} s; render ${(renderSecs / 60).toFixed(1)} min, total ${(Number(secs()) / 60).toFixed(1)} min`,
+  '',
+  'Hero runs (fastest clean run found; Pro AI = the race AI at its own limit, same car, same distance):',
+  ...plan.reports.map((r) => `  ${r.stage.padEnd(34)} ${r.style.padEnd(5)} ${String(r.metres).padStart(5)} m  hero ${fmt(r.heroTime)} s  pro ${fmt(r.proTime)} s  ideal ${fmt(r.idealTime)} s${r.race ? `  place ${r.place}` : ''}  ${r.clean ? 'clean' : 'NOT CLEAN'}`),
+  '',
+  'Shots:',
+  ...edit.shots.map((s) => `  ${s.at.toFixed(2).padStart(6)} s  ${s.name.padEnd(16)} ${s.dur.toFixed(2)} s  -> ${s.out.type} ${s.out.dur.toFixed(2)}  ${s.note}`),
+  '',
+  loud,
+  existsSync(join(work, 'audio-report.json')) ? `audio checks: ${readFileSync(join(work, 'audio-report.json'), 'utf8')}` : '',
+].join('\n')
+writeFileSync(join(outDir, edit === plan ? 'report.txt' : 'report-test.txt'), report + '\n')
 say(`done: ${final} (render ${(renderSecs / 60).toFixed(1)} min of ${secs()} s total)`)

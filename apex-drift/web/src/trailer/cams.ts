@@ -194,6 +194,8 @@ export interface PostOpts {
   side: number
   /** Extra distance beyond the cleared strip, metres (negative stands closer to the road). */
   back?: number
+  /** Stand on the verge just off the tarmac or gravel, for the lowest shots. */
+  edge?: boolean
   h: number
   /** Width of the scene to keep in frame, metres: a long lens far away, opening up as the car arrives. */
   frame?: number
@@ -208,9 +210,11 @@ export interface PostOpts {
 export function post(e: CamEnv, o: PostOpts): CamFn {
   const route = e.run.sim.route
   const a = route.at(o.s)
-  const off = Math.max(route.half + 1.2, clearAt(e, o.s) + (o.back ?? 0)) * o.side
+  // On the verge (`edge`) or back at the edge of the cleared strip.
+  const off = (o.edge ? route.half + 0.7 : Math.max(route.half + 1.2, clearAt(e, o.s) + (o.back ?? 0))) * o.side
   const base = new THREE.Vector3(a.x + Math.cos(a.heading) * off, 0, a.z - Math.sin(a.heading) * off)
-  base.y = ground(e, base.x, base.z) + o.h
+  // Height above the road or the bank, whichever is higher: a low camera on a bank above a sunken road sees only the bank.
+  base.y = Math.max(ground(e, base.x, base.z), a.y) + o.h
   return (t, u) => {
     const look = e.tracks.pos(o.ci, t, 0.14)
     look.addScaledVector(e.tracks.dir(o.ci, t), o.lead ?? 0)

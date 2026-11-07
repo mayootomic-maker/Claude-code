@@ -6,7 +6,7 @@ import { DT } from '../sim/car'
 import { buildRoute } from '../sim/route'
 import { RUN_IN, RUN_OUT } from '../sim/stage'
 import { bestRun, slipAngle, speedAt, type HeroReport, type Run, type RunSpec } from './hero'
-import { clearAt, crane, mounted, orbit, post, routePoint, track, Tracks, type CamEnv, type CamFn } from './cams'
+import { crane, mounted, orbit, post, routePoint, track, Tracks, type CamEnv, type CamFn } from './cams'
 
 /**
  * The trailer's shot list. Nothing is placed by hand on a frame number: each
@@ -15,7 +15,7 @@ import { clearAt, crane, mounted, orbit, post, routePoint, track, Tracks, type C
  * the road geometry there. If the world changes, the moments move with it.
  */
 
-export type RunKey = 'race' | 'snow' | 'savannah' | 'jumps' | 'forest' | 'night'
+export type RunKey = 'race' | 'snow' | 'savannah' | 'forest' | 'night'
 
 /** xfade transition names, as ffmpeg spells them. */
 export type Transition = 'fade' | 'fadeblack' | 'smoothleft' | 'smoothright' | 'hblur' | 'dissolve'
@@ -53,19 +53,17 @@ const rally = (id: string, fallback: number): RallyDef => RALLIES.find((r) => r.
 /** Which stage each part of the trailer is filmed on, chosen for its look: biome, weather and time of day. */
 export function runSpecs(): Record<RunKey, RunSpec> {
   const kenya = rally('kenya', 1)
-  const estonia = rally('estonia', 3)
   return {
     race: { rally: rally('finland', 0), stageIdx: 3, race: true, style: 'fast' },
     snow: { rally: rally('sweden', 10), stageIdx: 0, race: false, style: 'drift', until: 3000 },
     savannah: { rally: kenya, stageIdx: 2, race: false, style: 'fast', until: featureReach(kenya, 2, 'splash', 1, 2600) },
-    jumps: { rally: estonia, stageIdx: 2, race: false, style: 'fast', until: featureReach(estonia, 2, 'jump', 3, 3000) },
     forest: { rally: rally('wales', 6), stageIdx: 0, race: false, style: 'fast', until: 2600 },
     night: { rally: rally('monte', 11), stageIdx: 0, race: false, style: 'fast', until: 3000 },
   }
 }
 
 /** Distance to simulate so that at least `count` features of a kind are included (plus room after the last). */
-function featureReach(r: RallyDef, si: number, kind: 'splash' | 'jump', count: number, min: number): number {
+function featureReach(r: RallyDef, si: number, kind: 'splash', count: number, min: number): number {
   const st = r.stages[si] ?? r.stages[0]
   const route = buildRoute({ ...r, seed: st.seed, km: st.km + (RUN_IN + RUN_OUT) / 1000 })
   const list = route.features.filter((f) => f.kind === kind).map((f) => f.s1 - RUN_IN)
@@ -175,6 +173,8 @@ export function makePlan(log: (s: string) => void): Plan {
     log(`  hero ${report.heroTime.toFixed(2)} s, pro AI ${report.proTime.toFixed(2)} s over ${report.metres} m (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
   }
   const shots: Shot[] = []
+  // One claim list for the race across both acts, so the finish never reuses a stretch from the start.
+  const raceM = new Moments(runs.race)
   const env = (k: RunKey): CamEnv => ({ run: runs[k], tracks: new Tracks(runs[k]) })
   const add = (s: Shot, m: Moments) => {
     s.t0 = fit(m.run, s.t0, s.dur)
@@ -184,7 +184,7 @@ export function makePlan(log: (s: string) => void): Plan {
 
   // ---- Act 1: the race start, Finland at sunset -------------------------
   {
-    const e = env('race'), r = runs.race, m = new Moments(r)
+    const e = env('race'), r = runs.race, m = raceM
     const go = r.go * DT
     const start = r.sim.start
     const front = routePoint(e, start - 6)
@@ -198,7 +198,8 @@ export function makePlan(log: (s: string) => void): Plan {
       note: 'drone over the four-car grid during the countdown',
     }, m)
     // Low by the start gantry as the field launches past.
-    const launchCam = routePoint(e, start + 5, clearAt(e, start + 5) - 0.4, 0.55)
+    // Just off the verge ahead of the grid, the field coming at the lens and past it.
+    const launchCam = routePoint(e, start + 16, r.sim.route.half + 1.1, 0.75)
     const centroid = (t: number) => {
       const p = new THREE.Vector3()
       for (let i = 0; i < r.cars.length; i++) p.add(e.tracks.pos(i, t, 0.15))
@@ -320,7 +321,7 @@ export function makePlan(log: (s: string) => void): Plan {
       const sc = splash.s0 + 9
       add({
         name: 'splash-low', run: 'savannah', t0: kw * DT - 1.7, dur: 3.0,
-        cam: { kind: 'free', fn: post(e, { ci: 0, s: sc, side: m.curv[kw] > 0 ? -1 : 1, back: -0.2, h: 0.5, fov: [52, 44], lookUp: 0.5 }) },
+        cam: { kind: 'free', fn: post(e, { ci: 0, s: sc, side: m.curv[kw] > 0 ? -1 : 1, edge: true, h: 0.6, fov: [50, 42], lookUp: 0.5 }) },
         audio: 'outside', out: { type: 'smoothright', dur: 0.35 },
         voice: [{ words: ['watersplash'], at: 0.15 }],
         note: 'low by the water splash as the car charges through',
@@ -332,9 +333,9 @@ export function makePlan(log: (s: string) => void): Plan {
       cam: {
         kind: 'free', near: 0.05,
         fn: mounted(
-          (g) => g.eye.clone().add(new THREE.Vector3(-g.eye.x * 0.5, 0.02, 1.75)),
-          (g) => g.eye.clone().add(new THREE.Vector3(0, -0.06, 0)),
-          30,
+          (g) => g.eye.clone().add(new THREE.Vector3(-g.eye.x * 0.6, -0.04, 2.45)),
+          (g) => g.eye.clone().add(new THREE.Vector3(0, -0.1, 0)),
+          36,
         ),
       },
       audio: 'outside', clearGlass: true, out: { type: 'fade', dur: 0.4 },
@@ -346,39 +347,6 @@ export function makePlan(log: (s: string) => void): Plan {
       cam: { kind: 'free', fn: orbit(e, { ci: 0, from: [0.5, 7.5, 1.3], to: [2.4, 7.5, 1.9], fov: [46, 46], refT: ko * DT + 1.8, follow: 1, sigma: 0.35 }) },
       audio: 'outside', out: { type: 'fadeblack', dur: 0.9 },
       note: 'tracking orbit round the car at speed',
-    }, m)
-  }
-  {
-    // Estonia: crests and jumps.
-    const e = env('jumps'), r = runs.jumps, m = new Moments(r)
-    const js = m.jumps()
-    log(`  jumps: ${js.length} airborne spells, longest ${js.length ? ((js[0][1] - js[0][0]) * DT).toFixed(2) : 0} s`)
-    const pick = () => {
-      const j = js.find(([a, b]) => m.free(a - 100, b + 80))
-      if (j) return j
-      const k = m.best(3, (q) => m.v[q])
-      return [k + 90, k + 100] as [number, number]
-    }
-    const [a1, b1] = pick()
-    add({
-      name: 'jump-low', run: 'jumps', t0: a1 * DT - 1.6, dur: 3.0,
-      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[a1] * 0.45 + m.s[b1] * 0.55, side: 1, back: -0.6, h: 0.4, fov: [64, 60], lookUp: 1.1 }) },
-      audio: 'outside', out: { type: 'fade', dur: 0.3 },
-      voice: [{ words: ['jump'], at: 0.1 }],
-      note: 'Estonia: low under the jump, the car flies over the lens',
-    }, m)
-    const [a2] = pick()
-    add({
-      name: 'jump-side', run: 'jumps', t0: a2 * DT - 1.3, dur: 3.0,
-      cam: { kind: 'free', fn: track(e, { ci: 0, from: [9, 1.0, -3], to: [9, 1.5, 2.5], lookAhead: 1, fov: [40, 44] }) },
-      audio: 'outside', out: { type: 'hblur', dur: 0.3 },
-      note: 'side tracking over a jump: the landing loads the suspension',
-    }, m)
-    const [a3] = pick()
-    add({
-      name: 'jump-chase', run: 'jumps', t0: a3 * DT - 1.6, dur: 3.0,
-      cam: { kind: 'drive', mode: 'chase' }, audio: 'chase', out: { type: 'fadeblack', dur: 0.9 },
-      note: 'chase camera over a crest, the landing kick',
     }, m)
   }
   {
@@ -434,9 +402,42 @@ export function makePlan(log: (s: string) => void): Plan {
     }, m)
   }
 
-  // ---- Act 3: back to the race for the finish ---------------------------
+  // ---- Act 3: back to the race: the jumps, the lake, the finish -----------
   {
-    const e = env('race'), r = runs.race, m = new Moments(r)
+    // Finland's crests: the hero flat out over the jumps it can take flat.
+    const e = env('race'), m = raceM
+    const js = m.jumps()
+    log(`  jumps: ${js.length} airborne spells, longest ${js.length ? ((js[0][1] - js[0][0]) * DT).toFixed(2) : 0} s`)
+    const pick = () => {
+      const j = js.find(([a, b]) => m.free(a - 100, b + 80))
+      if (j) return j
+      const k = m.best(3, (q) => m.v[q])
+      return [k + 90, k + 100] as [number, number]
+    }
+    const [a1] = pick()
+    add({
+      name: 'jump-low', run: 'race', t0: a1 * DT - 1.6, dur: 3.0,
+      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[a1] + 6, side: 1, back: 0.5, h: 1.3, fov: [52, 48], lookUp: 0.9 }) },
+      audio: 'outside', out: { type: 'fade', dur: 0.3 },
+      voice: [{ words: ['jump'], at: 0.1 }],
+      note: 'Finland: side-on at the lip of the biggest jump, the car flies across the frame',
+    }, m)
+    const [a2] = pick()
+    add({
+      name: 'jump-side', run: 'race', t0: a2 * DT - 1.3, dur: 3.0,
+      cam: { kind: 'free', fn: track(e, { ci: 0, from: [9, 1.0, -3], to: [9, 1.5, 2.5], lookAhead: 1, fov: [40, 44] }) },
+      audio: 'outside', out: { type: 'fade', dur: 0.4 },
+      note: 'side tracking over a jump: the landing loads the suspension',
+    }, m)
+    const [a3] = pick()
+    add({
+      name: 'jump-chase', run: 'race', t0: a3 * DT - 1.6, dur: 3.0,
+      cam: { kind: 'drive', mode: 'chase' }, audio: 'chase', out: { type: 'fade', dur: 0.4 },
+      note: 'chase camera over a crest, the landing kick',
+    }, m)
+  }
+  {
+    const e = env('race'), r = runs.race, m = raceM
     const ground = r.sim.ground
     // Somewhere along the run with a lake in view, before the run-in to the finish.
     const lake = (k: number) => {

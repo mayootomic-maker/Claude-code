@@ -6,6 +6,7 @@ import { engineProfileFor } from '../audio/engines'
 import { soundInputs, type CarSoundState } from '../audio/engine'
 import { Biquad, dbToGain, env, fadeIn, noiseGen, OnePole, panGains, Reverb, SR, stereo, TAU, type Stereo } from './dsp'
 import { renderMusic, type Cue } from './music'
+import { BPM } from './plan'
 
 /**
  * The trailer's sound, rendered offline from the telemetry each shot was
@@ -22,6 +23,8 @@ import { renderMusic, type Cue } from './music'
  */
 
 interface ShotPlan {
+  /** Index in the full plan: names the shot's telemetry file. */
+  idx: number
   name: string
   run: string
   t0: number
@@ -50,8 +53,7 @@ interface Telemetry {
 
 const work = process.argv[2]
 if (!work) throw new Error('usage: audio-main.ts <work dir>')
-const plan = JSON.parse(readFileSync(join(work, 'plan.json'), 'utf8')) as PlanFile
-const BPM = 124
+const plan = JSON.parse(readFileSync(join(work, process.argv[3] ?? 'plan.json'), 'utf8')) as PlanFile
 const LEN = plan.length
 const N = Math.ceil(LEN * SR)
 const C_SOUND = 343
@@ -132,7 +134,7 @@ class Tel {
 // ------------------------------------------------------------------ one shot
 
 function renderShot(i: number, s: ShotPlan): Stereo {
-  const tel = new Tel(JSON.parse(readFileSync(join(work, `shot-${pad(i)}.json`), 'utf8')) as Telemetry)
+  const tel = new Tel(JSON.parse(readFileSync(join(work, `shot-${pad(s.idx)}.json`), 'utf8')) as Telemetry)
   const n = Math.ceil(s.dur * SR)
   const out = stereo(n)
   const verb = new Float32Array(n)
