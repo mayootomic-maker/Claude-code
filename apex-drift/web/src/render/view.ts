@@ -17,10 +17,15 @@ import { CameraShake } from './shake'
 export type Tier = 'low' | 'medium' | 'high'
 export type CamMode = 'chase' | 'near' | 'bonnet' | 'cockpit'
 
-const TIERS: Record<Tier, Quality & { post: boolean; samples: number; pixel: number; maxPixels: number; shadowMap: number; propShadows: boolean }> = {
-  low: { radius: 260, density: 0.5, shadows: false, aniso: 1, surfaces: false, post: false, samples: 0, pixel: 0.8, maxPixels: 1.0e6, shadowMap: 0, propShadows: false },
-  medium: { radius: 340, density: 0.8, shadows: true, aniso: 4, surfaces: true, post: true, samples: 2, pixel: 1, maxPixels: 2.1e6, shadowMap: 1024, propShadows: false },
-  high: { radius: 420, density: 1, shadows: true, aniso: 8, surfaces: true, post: true, samples: 4, pixel: 1.5, maxPixels: 3.7e6, shadowMap: 2048, propShadows: true },
+/**
+ * Graphics tiers. `radius` is the detailed world around the camera, `far` the
+ * coarse far terrain out to the haze; `bloom` is how many blur levels the
+ * film pass gets (0: none, and no film pass at all on Low).
+ */
+const TIERS: Record<Tier, Quality & { post: boolean; bloom: number; samples: number; pixel: number; maxPixels: number; shadowMap: number; propShadows: boolean }> = {
+  low: { radius: 240, far: 560, terrain: [2, 4, 4], density: 0.5, shadows: false, aniso: 1, surfaces: false, cards: false, rich: false, blobs: false, wet: false, post: false, bloom: 0, samples: 0, pixel: 0.8, maxPixels: 1.0e6, shadowMap: 0, propShadows: false },
+  medium: { radius: 340, far: 560, terrain: [2, 2, 4], density: 0.8, shadows: true, aniso: 4, surfaces: true, cards: true, rich: false, blobs: false, wet: true, post: true, bloom: 1, samples: 2, pixel: 1, maxPixels: 2.1e6, shadowMap: 1024, propShadows: false },
+  high: { radius: 440, far: 1250, terrain: [1, 2, 4], density: 1, shadows: true, aniso: 8, surfaces: true, cards: true, rich: true, blobs: true, wet: true, post: true, bloom: 2, samples: 4, pixel: 1.5, maxPixels: 3.7e6, shadowMap: 2048, propShadows: true },
 }
 
 /** Owns the WebGL context for the app's lifetime; stages come and go. */
@@ -72,7 +77,7 @@ export class Renderer {
     this.gl.setSize(w, h, false)
     if (t.post) {
       const W = Math.round(w * pr), H = Math.round(h * pr)
-      if (!this.grade) this.grade = new GradePass(W, H, t.samples)
+      if (!this.grade) this.grade = new GradePass(W, H, t.samples, t.bloom)
       else this.grade.setSize(W, H)
     }
   }
@@ -230,6 +235,8 @@ export class StageView {
       sc.left = -26; sc.right = 26; sc.top = 26; sc.bottom = -26; sc.near = 1; sc.far = 220
       this.sun.shadow.bias = -0.0008
       this.sun.shadow.normalBias = 0.04
+      // PCF spreads its taps by the radius: softer shadow edges where the map has the resolution for it.
+      this.sun.shadow.radius = spec.shadowMap >= 2048 ? 2.2 : 1.4
     }
     this.scene.add(this.sun, this.sun.target)
     // Environment for the car paint: the sky itself, prefiltered once per stage.
@@ -253,7 +260,8 @@ export class StageView {
       this.rivals.push(rig)
     }
     this.headlights = a.lights ? this.makeHeadlights() : null
-    this.dust = this.makeDust(rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
+    // Tarmac in the rain throws up spray instead of dust.
+    this.dust = this.makeDust(stage.weather === 'rain' && rally.surface === 'asphalt' ? 0xd4dadf : rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
     this.makeSoft()
     this.makeMarks()
@@ -666,7 +674,8 @@ export class StageView {
       const mesh = new THREE.InstancedMesh(geo[kind], mat[kind], list.length)
       mesh.castShadow = true
       list.forEach((item, i) => {
-        const y = sim.ground.height(item.x, item.z)
+        // On the drawn verge, so a bale or cone never hovers over a dip between grid points.
+        const y = this.world.surface.height(item.x, item.z)
         this.soft.push({ item, mesh, i, y, vx: 0, vy: 0, vz: 0, spin: 0, rx: 0, rz: 0, hit: false })
       })
       this.softMeshes.push(mesh)
@@ -782,7 +791,7 @@ export class StageView {
     const d = this.dust
     const car = this.sim.car
     const N = d.life.length
-    const loose = car.surface !== 'asphalt' && car.surface !== 'wet'
+    const loose = (car.surface !== 'asphalt' && car.surface !== 'wet') || (car.surface === 'wet' && this.sim.setup.stage.weather === 'rain')
     const speed = this.override ? this.override.speed : car.speed
     const rate = this.override
       ? (loose ? clamp(speed / 25, 0, 1.2) * 1.4 : 0)

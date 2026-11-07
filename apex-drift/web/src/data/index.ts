@@ -34,10 +34,28 @@ export interface RallyDef {
     switchbacks: number
     angle: [number, number]
     esses: number
+    /**
+     * Builds the stage from sections with a character each (fast, technical,
+     * mountain, straight) and phrases of corners; off, the older one-corner-
+     * at-a-time generator that the driving school's layout was found with.
+     */
+    rhythm?: number
+    /** Chance a technical corner is part of a linked phrase. */
+    linked?: number
+    /** Chance a technical corner tightens or opens. */
+    tighten?: number
+    /** Fast kinks in the flowing sections. */
+    kinks?: number
+    /** Hairpin ladders in the mountain sections. */
+    ladder?: number
+    /** Share of the stage walled in tight at the road edge, per km. */
+    narrow?: number
   }
   relief: {
     amp: number; scale: number; detail: number; grade: number; trend: number
     smooth: number; crest: number; jump: number; bumps: number; side: number
+    /** Uncalled dips and compressions on straights, per km (rhythm generator only). */
+    dips?: number
   }
   edge: { up: string; down: string; shoulder: number; soft?: boolean }
   patches?: { kind: string; every: number; len: [number, number]; p: number }
@@ -192,7 +210,7 @@ export const SCHOOL: RallyDef = (() => {
   return {
     ...fin,
     id: 'school',
-    style: { ...fin.style, hairpin: 0.18, switchbacks: 0, fast: 0.1, esses: 0.1 },
+    style: { ...fin.style, hairpin: 0.18, switchbacks: 0, fast: 0.1, esses: 0.1, rhythm: 0 },
     relief: { ...fin.relief, jump: 0, crest: 0 },
     spectators: 0.4,
     stages: [{ name: 'Driving school', km: 1.9, seed: 9628, look: 'morning', weather: 'clear' }],

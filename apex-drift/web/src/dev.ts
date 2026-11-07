@@ -107,6 +107,7 @@ if (q.get('mode') === 'zoo') {
   view.camera.fov = Number(q.get('fov') ?? 40)
   view.camera.updateProjectionMatrix()
   view.prewarm(view.camera.position)
+  ;(window as unknown as { __perf: unknown }).__perf = { r, view, sim }
   let last = performance.now()
   const loop = (now: number) => {
     view.frame(1, Math.min(0.1, (now - last) / 1000), 'fixed')
@@ -130,6 +131,8 @@ if (q.get('mode') === 'zoo') {
   view.syncCar(1)
   view.snapCamera()
   view.prewarm()
+  // For e2e/perf.mjs: frame times, draw calls and world streaming cost.
+  ;(window as unknown as { __perf: unknown }).__perf = { r, view, sim }
   // Optional HUD, exactly as in the game, for store screenshots.
   let hud: Hud | null = null
   let cd: CoDriver | null = null

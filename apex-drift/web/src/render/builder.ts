@@ -109,8 +109,71 @@ export class GeoBuilder {
   }
 }
 
+/**
+ * Alpha-tested foliage cards: leaf, needle and grass quads cut out of one
+ * atlas texture. A card is two triangles where a modelled clump would be
+ * forty, and its outline reads as leaves instead of a faceted ball. Normals
+ * point out from the crown centre, so a tree is lit as one rounded mass.
+ */
+export class CardBuilder {
+  private pos: number[] = []
+  private nor: number[] = []
+  private col: number[] = []
+  private uv: number[] = []
+  private sway: number[] = []
+  private readonly c = new THREE.Color()
+
+  get empty(): boolean {
+    return this.pos.length === 0
+  }
+
+  /**
+   * A card centred at (x, y, z), w wide and h tall, turned to `yaw` and leant
+   * back by `tilt`, showing atlas column `cell` (0 broadleaf, 1 needles, 2 grass).
+   * (nx, ny, nz) is the lighting normal; sway at the bottom and top edges.
+   */
+  card(x: number, y: number, z: number, w: number, h: number, yaw: number, tilt: number, cell: number, color: number, nx: number, ny: number, nz: number, swayBase: number, swayTop: number, shade = 0): void {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw)
+    const ct = Math.cos(tilt), st = Math.sin(tilt)
+    // Right runs across the card; up is vertical, leant toward the card's facing by tilt.
+    const rx = cy * w * 0.5, rz = -sy * w * 0.5
+    const ux = sy * st * h * 0.5, uy = ct * h * 0.5, uz = cy * st * h * 0.5
+    const l = Math.hypot(nx, ny, nz) || 1
+    this.c.setHex(color)
+    if (shade) this.c.offsetHSL(0, 0, shade)
+    const u0 = cell / 3 + 0.004, u1 = (cell + 1) / 3 - 0.004
+    const corners: [number, number, number, number][] = [[-1, -1, u0, 0], [1, -1, u1, 0], [1, 1, u1, 1], [-1, 1, u0, 1]]
+    for (const k of [0, 1, 2, 0, 2, 3]) {
+      const [a, b, u, v] = corners[k]
+      this.pos.push(x + rx * a + ux * b, y + uy * b, z + rz * a + uz * b)
+      this.nor.push(nx / l, ny / l, nz / l)
+      // Darker toward the bottom of each card: light gets in less underneath.
+      const ao = 0.86 + 0.14 * v
+      this.col.push(this.c.r * ao, this.c.g * ao, this.c.b * ao)
+      this.uv.push(u, v)
+      this.sway.push(v ? swayTop : swayBase)
+    }
+  }
+
+  build(): THREE.BufferGeometry {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3))
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2))
+    g.setAttribute('aSway', new THREE.Float32BufferAttribute(this.sway, 1))
+    g.computeBoundingSphere()
+    return g
+  }
+}
+
 /** Shared primitive shapes, built once. */
 export const PRIM = {
+  /** Eight-sided trunks: round enough up close, still cheap. */
+  cyl8: new THREE.CylinderGeometry(1, 1, 1, 8, 1).translate(0, 0.5, 0),
+  taper8: new THREE.CylinderGeometry(0.62, 1, 1, 8, 1).translate(0, 0.5, 0),
+  /** Root flare: wide at the ground, the trunk's width at the top, so a trunk grows out of the soil instead of standing on it. */
+  flare: new THREE.CylinderGeometry(1, 1.75, 1, 8, 1).translate(0, 0.5, 0),
   cone: new THREE.ConeGeometry(1, 1, 7, 1).translate(0, 0.5, 0),
   cone5: new THREE.ConeGeometry(1, 1, 5, 1).translate(0, 0.5, 0),
   /** A conifer tier: a cone whose rim alternates in and out and droops at the tips, so it reads as branches. */

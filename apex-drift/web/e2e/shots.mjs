@@ -22,10 +22,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 page.on('pageerror', (e) => console.log('pageerror', e.message))
 page.on('console', (m) => m.type() === 'error' && console.log('console', m.text()))
 for (const [name, q] of pairs) {
-  await page.goto(`http://localhost:4180/dev.html?t=high&${q}`, { timeout: 120000 })
+  await page.goto(`http://localhost:${process.env.PORT ?? 4180}/dev.html?t=high&${q}`, { timeout: 120000 })
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 120000 })
   await page.waitForTimeout(2500)
-  await page.screenshot({ path: `${out}/${name}.png`, timeout: 180000 })
+  await page.screenshot({ path: `${out}/${name}.png`, timeout: 600000 })
   console.log('shot', name)
 }
 await browser.close()
