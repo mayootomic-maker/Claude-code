@@ -10,8 +10,19 @@ export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c)
 }
 
+const layouts = new WeakMap<HTMLElement, string>()
+
 export function html(el: HTMLElement, markup: string): HTMLElement {
   el.innerHTML = markup
+  // Menu screens redraw whole on every tab, toggle or pick. When the layout is
+  // the same as last time it is a redraw, not a new screen: mark it so the
+  // entrance animations play on arrival only, not on every tap.
+  const view = el.querySelector(':scope > .view')
+  if (view) {
+    const layout = Array.from(view.children, (c) => `${c.tagName}.${c.className}`).join('|')
+    el.classList.toggle('redraw', layouts.get(el) === layout)
+    layouts.set(el, layout)
+  }
   return el
 }
 
