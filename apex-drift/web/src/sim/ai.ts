@@ -79,6 +79,9 @@ export function raceLine(route: Route, surface: string, wet: boolean, p: CarPhys
     nx[i] = Math.cos(route.heading[i])
     nz[i] = -Math.sin(route.heading[i])
   }
+  // Walled sections: the wall stands just off the tarmac, so keep a little more off the edge there.
+  const lim = new Float32Array(n).fill(room)
+  for (const nr of route.narrow ?? []) for (let i = Math.max(0, Math.floor(nr.s0 / STEP) - 4); i <= Math.min(n - 1, Math.ceil(nr.s1 / STEP) + 4); i++) lim[i] = Math.max(0.3, room - 0.35)
   const tight = new Float32Array(n)
   for (const [k, iters] of [[14, 40], [7, 40], [3, 30]] as const) {
     for (let it = 0; it < iters; it++) {
@@ -87,7 +90,7 @@ export function raceLine(route: Route, surface: string, wet: boolean, p: CarPhys
         const mx = (route.x[a] + nx[a] * tight[a] + route.x[b] + nx[b] * tight[b]) / 2
         const mz = (route.z[a] + nz[a] * tight[a] + route.z[b] + nz[b] * tight[b]) / 2
         const want = (mx - route.x[i]) * nx[i] + (mz - route.z[i]) * nz[i]
-        tight[i] = clamp(tight[i] + (want - tight[i]) * 0.6, -room, room)
+        tight[i] = clamp(tight[i] + (want - tight[i]) * 0.6, -lim[i], lim[i])
       }
     }
   }
@@ -95,7 +98,7 @@ export function raceLine(route: Route, surface: string, wet: boolean, p: CarPhys
   // turns in tighter and straightens the exit. An early one the reverse.
   const shift = Math.round(style.apex * 3)
   const off = new Float32Array(n)
-  for (let i = 0; i < n; i++) off[i] = clamp(tight[clamp(i - shift, 0, n - 1)] * style.lineUse, -room, room)
+  for (let i = 0; i < n; i++) off[i] = clamp(tight[clamp(i - shift, 0, n - 1)] * style.lineUse, -lim[i], lim[i])
   // Curvature of the line itself, from the heading change across a few samples.
   const px = new Float32Array(n), pz = new Float32Array(n), hd = new Float32Array(n)
   for (let i = 0; i < n; i++) {
@@ -371,7 +374,9 @@ export class AiDriver {
         // Brake-checked or a car stopped in the road: time to contact under a second.
         const ttc = closing > 0.5 ? (gap - 4) / closing : Infinity
         const faster = lineSpeed(line, s + 10) * this.skill > o.speed + 0.5 || closing > 1
-        if (gap > 40 || !faster) {
+        // Between walls there is no room to go two abreast: wait for the road to open.
+        const walledAhead = route.narrow?.some((nr) => nr.s0 < s + 60 && nr.s1 > s)
+        if (gap > 40 || !faster || walledAhead) {
           cap = Math.min(cap, follow)
           continue
         }
@@ -423,7 +428,9 @@ export class AiDriver {
     const ra = route.at(sa)
     // Running wide: the line it actually holds drifts out toward, and past, the edge.
     const wideK = m?.kind === 'wide' ? m.amount * Math.min(1, (m.t0 - m.t) * 1.5) : 0
-    const edgeOut = m ? m.at * (route.half + 0.8) : 0
+    // Onto the verge, or up to the wall in a walled section: nobody aims at a wall.
+    const walled = route.narrow?.some((nr) => s > nr.s0 - 30 && s < nr.s1)
+    const edgeOut = m ? m.at * (walled ? route.half - 0.9 : route.half + 0.8) : 0
     const oa = lerp(clamp(lineOffset(line, sa) + this.shift, -room, room), edgeOut, wideK)
     const tx = ra.x + Math.cos(ra.heading) * oa, tz = ra.z - Math.sin(ra.heading) * oa
     const beta = Math.atan2(car.vy, Math.max(2, Math.abs(car.vx)))
@@ -458,6 +465,10 @@ export class AiDriver {
     let target = this.brakeTarget(s, v, commit, m)
     // Sliding when it didn't mean to: lift until the tyres bite again.
     if (unasked && ab > 0.18) target = Math.min(target, v * (1 - clamp((ab - 0.18) * 0.6, 0, 0.12)))
+    // Running wide of its line on the outside of a bend: lift, and the nose tucks back in.
+    const kHere = line.curv[Math.min(line.curv.length - 1, Math.max(0, Math.floor(s / STEP)))]
+    const outside = Math.abs(kHere) > 1 / 120 ? Math.max(0, (here - car.d) * Math.sign(kHere) - 0.5) : 0
+    if (outside > 0 && unasked) target *= 1 - Math.min(0.15, 0.06 * outside)
     target = Math.min(target, cap)
     if (this.recover > 0) target = Math.min(target, 9 + (1.6 - this.recover) * 6)
     this.target = target
@@ -561,7 +572,7 @@ export class AiDriver {
     const r = this.rnd()
     this.mistakes++
     // The worse the driver, the more of its mistakes are big ones.
-    const big = R.severity * 0.35
+    const big = R.severity * R.severity * 0.3
     let kind: MistakeKind = 'twitch', t = 0.5 + 0.4 * sev, amount = 0.15 + 0.35 * sev, at = this.rnd() < 0.5 ? -1 : 1
     if (r < big && v > 8) {
       kind = 'spin'
