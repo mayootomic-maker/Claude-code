@@ -2,7 +2,8 @@
 .ps-stage { min-height: calc(100dvh - 140px); touch-action: none; cursor: grab; position: relative; }
 .ps-stage:active { cursor: grabbing; }
 .ps-stage .ps-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; color: var(--dim); font-size: 12px; pointer-events: none; }
-.ps-stage .ps-view { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); }
+.ps-stage .ps-view { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); flex-wrap: nowrap; white-space: nowrap; }
+.ps-stage .ps-view .btn { min-height: 38px; padding: 0 14px; font-size: 13px; }
 .ps-sec { margin: 14px 0 6px; }
 .ps-sec:first-of-type { margin-top: 4px; }
 .ps-pats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
@@ -26,3 +27,4 @@
 .ps-actions .btn { min-height: 42px; padding: 0 10px; }
 .ps-list .swatch small b { color: var(--good); font-weight: 600; }
 .ps-empty { color: var(--dim); font-size: 13px; margin: 6px 0; }
+@media (max-width: 700px) { .ps-stage { min-height: 42vh; } .ps-pats { grid-template-columns: repeat(4, 1fr); } }

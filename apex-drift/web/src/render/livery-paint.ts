@@ -501,7 +501,8 @@ function decals(b: Brush, m: Marks, lv: LiveryDef, d: Decals, c: Inks): void {
       b.text(lv.bonnet ?? lv.sponsor, zb, 0, 20, col, { maxW: m.hw * 1.3, outline: col === '#16181b' ? '#f6f4ee' : '#16181b', outlineW: 1.2 })
     }
     if (d.roof) {
-      const zc = (m.zF1 + m.zR1) / 2
+      // Behind the roof vent, which sits just aft of the windscreen.
+      const zc = m.zR1 + 0.36 * (m.zF1 - m.zR1)
       b.round(zc - 22, -26, 44, 52, 3, '#f4f2ec')
       number(b, lv.num, zc, 0, 34, font, '#16181b', '#f4f2ec', hex(lv.stripe))
     }

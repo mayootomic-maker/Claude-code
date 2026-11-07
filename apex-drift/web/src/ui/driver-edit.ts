@@ -31,6 +31,8 @@ export function openDriverEditor(ctx: GarageCtx): void {
     requestAnimationFrame(() => {
       queued = false
       ctx.showcase().setDriver(clone(look), s.name)
+      const dirty = document.querySelector<HTMLElement>('[data-dirty]')
+      if (dirty) dirty.hidden = JSON.stringify(look) === JSON.stringify(s.driver)
     })
   }
   const hchips = () => ({ base: look.helmet.base, secondary: look.helmet.secondary, accent: look.helmet.accent })
@@ -77,6 +79,7 @@ export function openDriverEditor(ctx: GarageCtx): void {
           <button class="btn ghost" data-surprise>${pt('surprise')}</button>
           <button class="btn ghost" data-dreset>${pt('reset')}</button>
         </div>
+        <p class="muted" data-dirty ${JSON.stringify(look) === JSON.stringify(s.driver) ? 'hidden' : ''}>${pt('unsaved')}</p>
       </div>
     </div>`
 
@@ -152,6 +155,8 @@ export function openDriverEditor(ctx: GarageCtx): void {
       s.driver = clone(look)
       ctx.store.write()
       toast(pt('driverSaved'))
+      const dirty = root.querySelector<HTMLElement>('[data-dirty]')
+      if (dirty) dirty.hidden = true
     })
     root.querySelector('[data-surprise]')?.addEventListener('click', () => {
       look = rivalLook((Math.random() * 1e9) | 0)

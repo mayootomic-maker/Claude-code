@@ -49,7 +49,9 @@ if (!only || only === 'liveries') {
 }
 
 if (!only || only === 'app') {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  const page = await browser.newPage({ viewport: { width: 1152, height: 648 } })
+  // SwiftShader draws the physical paint slowly: a click can wait a long time for the next frame.
+  page.setDefaultTimeout(600000)
   watch(page)
   // A returning player: tutorial done, a custom paint job on the Kestrel and a customised driver.
   await page.addInitScript(() => {
@@ -90,11 +92,12 @@ if (!only || only === 'app') {
     await tap('[data-seg="slot"] [data-v="stripe"]')
     await tap('[data-col="paint"] [data-c="16734751"]')
     await tap('[data-seg="finish"] [data-v="metallic"]')
+    await tap('[data-spin]')
     const st = await page.locator('[data-stage]').boundingBox()
     if (st) {
       await page.mouse.move(st.x + st.width / 2, st.y + st.height / 2)
       await page.mouse.down()
-      await page.mouse.move(st.x + st.width / 2 - 160, st.y + st.height / 2 - 30, { steps: 6 })
+      await page.mouse.move(st.x + st.width / 2 - 70, st.y + st.height / 2 - 20, { steps: 6 })
       await page.mouse.up()
     }
     await settle(5000)
@@ -112,7 +115,15 @@ if (!only || only === 'app') {
     await settle(7000)
     await page.screenshot({ path: `${OUT}paint-driver.png`, timeout: 600000 })
     await tap('[data-tog="helmetOn"]')
-    await settle(4000)
+    // Round to his right a little, so the helmet's sides show.
+    const st = await page.locator('[data-stage]').boundingBox()
+    if (st) {
+      await page.mouse.move(st.x + st.width / 2, st.y + st.height / 3)
+      await page.mouse.down()
+      await page.mouse.move(st.x + st.width / 2 + 60, st.y + st.height / 3, { steps: 5 })
+      await page.mouse.up()
+    }
+    await settle(5000)
     await page.screenshot({ path: `${OUT}paint-driver-helmet.png`, timeout: 600000 })
     await tap('[data-dsave]')
     await tap('[data-back]')
