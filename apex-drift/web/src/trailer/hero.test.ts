@@ -21,12 +21,13 @@ describe('trailer tape', () => {
 })
 
 describe('trailer hero', () => {
-  it('drives a clean run faster than the Pro AI', () => {
+  it('drives a clean run faster than the Pro AI and the top rung on the same car', () => {
     const { run, report } = bestRun({ rally: RALLIES[0], stageIdx: 3, race: false, style: 'fast', until: 900 })
     expect(report.clean).toBe(true)
     expect(run.offSteps).toBe(0)
     expect(report.heroTime).toBeLessThan(report.proTime)
-  })
+    expect(report.heroTime).toBeLessThan(report.topTime)
+  }, 120000)
 })
 
 describe('trailer edit', () => {

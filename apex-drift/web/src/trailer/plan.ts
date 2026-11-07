@@ -170,7 +170,7 @@ export function makePlan(log: (s: string) => void): Plan {
     const { run, report } = bestRun(specs[key], log)
     runs[key] = run
     reports.push(report)
-    log(`  hero ${report.heroTime.toFixed(2)} s, pro AI ${report.proTime.toFixed(2)} s over ${report.metres} m (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
+    log(`  hero ${report.heroTime.toFixed(2)} s, pro ${report.proTime.toFixed(2)} s, top rung ${report.topTime.toFixed(2)} s over ${report.metres} m (${((performance.now() - t0) / 1000).toFixed(1)} s)`)
   }
   const shots: Shot[] = []
   // One claim list for the race across both acts, so the finish never reuses a stretch from the start.
@@ -291,7 +291,7 @@ export function makePlan(log: (s: string) => void): Plan {
     const c2 = m.curv[mid2] || m.curv[k2 + 60]
     add({
       name: 'snow-tele', run: 'snow', t0: k2 * DT, dur: 3.4,
-      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[mid2] + 18, side: c2 > 0 ? -1 : 1, back: 1.5, h: 1.5, frame: 15 }) },
+      cam: { kind: 'free', fn: post(e, { ci: 0, s: m.s[mid2] + 18, side: c2 > 0 ? -1 : 1, back: 3, h: 2.7, frame: 15 }) },
       audio: 'outside', out: { type: 'hblur', dur: 0.3 },
       note: 'roadside telephoto from the outside of a drift, snow spray',
     }, m)

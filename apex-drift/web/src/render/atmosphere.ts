@@ -35,6 +35,12 @@ export interface Atmos {
   fogDensity: number
   exposure: number
   grade: Grade
+  /**
+   * How much light reaches anything drawn unlit (the distant ranges, dust),
+   * 1 in daylight. Those carry their colour baked in, so without this a snow
+   * cap or a dust cloud would glow at full daylight brightness in the dark.
+   */
+  dim: number
   /** Headlights matter: dusk and night. */
   lights: boolean
   stars: boolean
@@ -47,42 +53,42 @@ export interface Atmos {
 const LOOKS: Record<Look, Atmos> = {
   morning: {
     sunEl: 14, sunAz: 70, sun: 0xffd7a8, sunI: 2.6, skyTop: 0x6d9fd6, skyHorizon: 0xf3dcc0, ground: 0x5b5240, hemiI: 1.05,
-    fog: 0xe8d6bf, fogDensity: 0.0013, exposure: 1.05, lights: false, stars: false,
+    fog: 0xe8d6bf, fogDensity: 0.0013, exposure: 1.05, dim: 1, lights: false, stars: false,
     grade: { lift: [0.025, 0.018, 0.02], gain: [1.04, 1.0, 0.95], saturation: 0.97, contrast: 1.05, vignette: 0.32, shadowTint: [-0.006, 0.0, 0.012], highTint: [0.018, 0.008, -0.01], bloom: 0.28 },
   },
   noon: {
     sunEl: 58, sunAz: 160, sun: 0xfff3e2, sunI: 2.9, skyTop: 0x4f8ed6, skyHorizon: 0xcfe0ee, ground: 0x6a5f49, hemiI: 1.1,
-    fog: 0xd2dfe8, fogDensity: 0.001, exposure: 0.95, lights: false, stars: false,
+    fog: 0xd2dfe8, fogDensity: 0.001, exposure: 0.95, dim: 1, lights: false, stars: false,
     grade: { lift: [0.02, 0.02, 0.025], gain: [1.02, 1.0, 0.97], saturation: 0.95, contrast: 1.07, vignette: 0.26, shadowTint: [-0.008, 0.0, 0.01], highTint: [0.01, 0.006, -0.004], bloom: 0.22 },
   },
   golden: {
     sunEl: 9, sunAz: 245, sun: 0xffb46a, sunI: 3.0, skyTop: 0x5a7fbf, skyHorizon: 0xffc58a, ground: 0x5a4632, hemiI: 0.95,
-    fog: 0xf0c493, fogDensity: 0.0014, exposure: 1.08, lights: false, stars: false,
+    fog: 0xf0c493, fogDensity: 0.0014, exposure: 1.08, dim: 1, lights: false, stars: false,
     grade: { lift: [0.035, 0.022, 0.015], gain: [1.08, 1.0, 0.88], saturation: 1.02, contrast: 1.06, vignette: 0.36, shadowTint: [-0.012, 0.0, 0.016], highTint: [0.025, 0.01, -0.012], bloom: 0.34 },
   },
   sunset: {
     sunEl: 3, sunAz: 255, sun: 0xff8f4f, sunI: 2.4, skyTop: 0x47578f, skyHorizon: 0xff9c63, ground: 0x4a3328, hemiI: 0.8,
-    fog: 0xe39a6c, fogDensity: 0.0016, exposure: 1.12, lights: false, stars: false,
+    fog: 0xe39a6c, fogDensity: 0.0016, exposure: 1.12, dim: 0.72, lights: false, stars: false,
     grade: { lift: [0.04, 0.02, 0.025], gain: [1.1, 0.97, 0.88], saturation: 1.04, contrast: 1.07, vignette: 0.4, shadowTint: [-0.01, -0.004, 0.02], highTint: [0.03, 0.008, -0.014], bloom: 0.38 },
   },
   dusk: {
     sunEl: -3, sunAz: 265, sun: 0xb6a0ff, sunI: 0.55, skyTop: 0x253263, skyHorizon: 0xd88a76, ground: 0x2a2530, hemiI: 0.75,
-    fog: 0x7b6f86, fogDensity: 0.0018, exposure: 1.35, lights: true, stars: true,
+    fog: 0x7b6f86, fogDensity: 0.0018, exposure: 1.35, dim: 0.36, lights: true, stars: true,
     grade: { lift: [0.03, 0.025, 0.045], gain: [1.02, 0.97, 1.02], saturation: 0.92, contrast: 1.04, vignette: 0.42, shadowTint: [-0.004, 0.004, 0.02], highTint: [0.02, 0.008, -0.006], bloom: 0.45 },
   },
   night: {
     sunEl: 35, sunAz: 120, sun: 0x9fb4ff, sunI: 0.32, skyTop: 0x0b1226, skyHorizon: 0x26304f, ground: 0x15171f, hemiI: 0.55,
-    fog: 0x1f2639, fogDensity: 0.002, exposure: 1.55, lights: true, stars: true,
+    fog: 0x1f2639, fogDensity: 0.002, exposure: 1.55, dim: 0.07, lights: true, stars: true,
     grade: { lift: [0.02, 0.025, 0.045], gain: [0.98, 1.0, 1.06], saturation: 0.84, contrast: 1.03, vignette: 0.45, shadowTint: [-0.004, 0.004, 0.016], highTint: [0.016, 0.01, 0.0], bloom: 0.55 },
   },
   overcast: {
     sunEl: 40, sunAz: 150, sun: 0xe9ecef, sunI: 0.9, skyTop: 0x9aa6b2, skyHorizon: 0xd5d9dc, ground: 0x5b5a52, hemiI: 1.45,
-    fog: 0xc3c9cd, fogDensity: 0.0019, exposure: 1.02, lights: false, stars: false,
+    fog: 0xc3c9cd, fogDensity: 0.0019, exposure: 1.02, dim: 1, lights: false, stars: false,
     grade: { lift: [0.03, 0.03, 0.032], gain: [1.03, 1.0, 0.97], saturation: 0.88, contrast: 1.05, vignette: 0.3, shadowTint: [-0.006, 0.002, 0.008], highTint: [0.006, 0.004, 0.0], bloom: 0.2 },
   },
   mist: {
     sunEl: 22, sunAz: 110, sun: 0xf3e9da, sunI: 0.8, skyTop: 0xb5bcc2, skyHorizon: 0xdcdcd6, ground: 0x5f5e55, hemiI: 1.4,
-    fog: 0xd3d4cd, fogDensity: 0.0052, exposure: 1.05, lights: false, stars: false,
+    fog: 0xd3d4cd, fogDensity: 0.0052, exposure: 1.05, dim: 1, lights: false, stars: false,
     grade: { lift: [0.035, 0.034, 0.03], gain: [1.03, 1.0, 0.96], saturation: 0.82, contrast: 1.02, vignette: 0.3, shadowTint: [-0.004, 0.002, 0.008], highTint: [0.008, 0.005, 0.0], bloom: 0.25 },
   },
 }
@@ -90,6 +96,7 @@ export function atmosphere(look: Look, weather: Weather): Atmos {
   const a: Atmos = { ...LOOKS[look], grade: { ...LOOKS[look].grade } }
   if (weather === 'rain') {
     a.sunI *= 0.45
+    a.dim *= 0.8
     a.hemiI *= 1.1
     a.fogDensity *= 1.9
     a.fog = mix(a.fog, 0x8f989f, 0.6)
@@ -98,6 +105,7 @@ export function atmosphere(look: Look, weather: Weather): Atmos {
     a.grade.saturation *= 0.88
   } else if (weather === 'snow') {
     a.sunI *= 0.55
+    a.dim *= 0.9
     a.hemiI *= 1.2
     a.fogDensity *= 1.7
     a.fog = mix(a.fog, 0xdfe4ea, 0.6)

@@ -1,12 +1,11 @@
 import { clamp, wrapAngle } from '../core/math'
 import { carPhys, type RallyDef } from '../data'
-import { AiDriver, raceLine, type Traffic } from '../sim/ai'
-import { RUNGS } from '../sim/levels'
+import { AiDriver, raceLine, styleFor, type Traffic } from '../sim/ai'
+import { RUNGS, type Difficulty } from '../sim/levels'
 import { NEUTRAL, type Personality } from '../sim/personality'
 import { DT, type Assists, type Car, type Input } from '../sim/car'
 import { raceGrid } from '../sim/race'
 import { idealTime, StageSim } from '../sim/stage'
-import { STEP } from '../sim/route'
 
 /**
  * The trailer's hero driver and its recorded runs. Everything here is plain
@@ -20,10 +19,29 @@ export const HERO_CAR = 'apex'
 export const HERO_LIVERY = 'works'
 /** Same help the AI rivals get: traction control and a light stability aid, no steering help. */
 const HERO_ASSISTS: Assists = { steer: 0, traction: true, abs: true, stability: 0.4, autoBrake: false, forgive: 0 }
-/** For drift footage the stability aid is mostly off, so the rear can be held out. */
-const DRIFT_ASSISTS: Assists = { steer: 0, traction: false, abs: true, stability: 0.15, autoBrake: false, forgive: 0 }
+/**
+ * For the snow footage traction control is off and the stability aid low, so
+ * the power can hold the rear out through the fast sweepers.
+ */
+const DRIFT_ASSISTS: Assists = { steer: 0, traction: false, abs: true, stability: 0.3, autoBrake: false, forgive: 0 }
 /** Pace profile resolution along the stage, metres. */
 const BIN = 10
+/**
+ * Seconds of the drift run spent visibly sideways (past ~11 degrees) that the
+ * search must keep: enough for three shots of it. Without a floor it would
+ * straighten the car out wherever that is a hundredth quicker.
+ */
+const MIN_SLIDE = 10
+/**
+ * The pace search: first push every stretch of this length by this share,
+ * then shorter stretches by less. Each step keeps a change only if the whole
+ * run is still clean and quicker.
+ */
+const PASSES: [number, number][] = [[160, 0.05], [80, 0.03], [160, 0.03], [40, 0.02]]
+/** Where the search starts: a shade under the top rung's own commitment, so the first run is nearly clean. */
+const START = 0.97
+/** Then, in a race, a lighter retune of that pace for the traffic. */
+const RACE_PASSES: [number, number][] = [[160, 0.04], [80, 0.03], [40, 0.02]]
 
 export type Style = 'fast' | 'drift'
 
@@ -115,17 +133,13 @@ export class Tape {
 // ------------------------------------------------------------------ driver
 
 /**
- * The race AI at the limit, with a pace multiplier that varies along the
- * stage: high everywhere, trimmed only where a run left the road. In drift
- * style it adds a Scandinavian flick into tight corners: a dab of opposite
- * lock to load the outside, then the lever and full lock into the turn.
+ * The top rung of the race AI on the player's own car (no works engine):
+ * the top rung's line and hands, with a pace multiplier that varies along the
+ * stage, set by the search in `bestRun`. In drift style every slide is one it
+ * chose, so it holds the angle on the power instead of lifting.
  */
 class HeroDriver {
   readonly ai: AiDriver
-  private flick = 0
-  private flickDir = 0
-  private lastFlick = -1e9
-
   private readonly straightJumps: { s0: number; s1: number }[]
 
   constructor(private readonly sim: StageSim, private readonly pace: Float32Array, readonly style: Style) {
@@ -137,10 +151,12 @@ class HeroDriver {
       return true
     })
     const { rally, stage } = sim.setup
-    const line = raceLine(sim.route, rally.surface, stage.weather === 'rain', carPhys(sim.setup.car))
-    // The top rung's hands (no wobble, no lag, no mistakes) on the hero's own car: no works engine.
-    const persona: Personality = { ...NEUTRAL, consistency: 1, aggression: 0.8, lateBrake: 0.8, drift: style === 'drift' ? 1 : 0.3 }
+    // No lever on tarmac or in fast corners: on a clean run a slide only costs time unless it is the point.
+    const persona: Personality = { ...NEUTRAL, consistency: 1, aggression: 0.8, lateBrake: 0.8, drift: style === 'drift' ? 0.5 : 0 }
+    // The line is planned the way the top rung plans it: more of the tyres, later braking, closer to the edge.
+    const line = raceLine(sim.route, rally.surface, stage.weather === 'rain', carPhys(sim.setup.car), styleFor(RUNGS.unbeatable, persona))
     this.ai = new AiDriver(sim.car, line, RUNGS.unbeatable, persona, 1)
+    this.ai.meantSlides = style === 'drift'
   }
 
   /**
@@ -158,34 +174,22 @@ class HeroDriver {
     const car = this.sim.car
     const bin = clamp(Math.floor(car.s / BIN), 0, this.pace.length - 1)
     this.ai.skill = this.pace[bin]
-    const inp = this.ai.drive(traffic)
+    const inp = this.ai.drive(focus(traffic, car.s))
     if (this.style === 'fast' && !car.airborne && this.flatOut(car.s, car.speed)) return { ...inp, throttle: 1, brake: 0 }
-    if (this.style !== 'drift' || car.airborne) return inp
-    if (this.flick > 0) {
-      // 0.0-0.22 s: opposite lock; then lever and full lock into the corner, on the power.
-      const t = 0.62 - this.flick
-      this.flick -= DT
-      if (t < 0.22) return { steer: -this.flickDir * 0.75, throttle: 0.5, brake: 0.2, handbrake: false }
-      if (t < 0.5) return { steer: this.flickDir, throttle: 0.6, brake: 0, handbrake: true }
-      return { ...inp, steer: clamp(inp.steer + this.flickDir * 0.3, -1, 1), throttle: Math.max(inp.throttle, 0.7) }
-    }
-    const v = car.speed
-    if (v > 12 && v < 30 && car.s - this.lastFlick > 120) {
-      const line = this.ai.line
-      const i0 = Math.floor((car.s + v * 0.55) / STEP), i1 = Math.floor((car.s + v * 0.95) / STEP)
-      for (let i = i0; i <= i1 && i < line.curv.length; i++) {
-        const k = line.curv[i]
-        if (Math.abs(k) > 1 / 30) {
-          // Positive curvature turns left, and positive steer input is right.
-          this.flickDir = -Math.sign(k)
-          this.flick = 0.62
-          this.lastFlick = car.s
-          break
-        }
-      }
-    }
     return inp
   }
+}
+
+/**
+ * What the hero races against: the nearest car ahead, and anything alongside
+ * or behind. The race AI weighs every car within 70 m, so behind a train of
+ * three it lines up a pass on each at once, the moves cancel out and it sits
+ * in the queue; a driver takes the cars one at a time.
+ */
+function focus(traffic: readonly Traffic[], s: number): Traffic[] {
+  let ahead: Traffic | null = null
+  for (const o of traffic) if (o.s - s > 3.5 && (!ahead || o.s < ahead.s)) ahead = o
+  return traffic.filter((o) => o === ahead || o.s - s <= 3.5)
 }
 
 // ------------------------------------------------------------------ runs
@@ -214,12 +218,11 @@ export interface Run {
   slide: number
 }
 
-function simulate(spec: RunSpec, pace: Float32Array, rivalsToo = true): Run {
+function simulate(spec: RunSpec, pace: Float32Array): Run {
   const { rally, stageIdx } = spec
   const stage = rally.stages[stageIdx]
   const race = spec.race ? raceGrid(rally, stageIdx, 'pro', HERO_CAR, HERO_LIVERY) : undefined
-  const sim = new StageSim({ rally, stage, car: HERO_CAR, difficulty: 'pro', race: rivalsToo ? race : undefined })
-  ;(sim as unknown as { assists: Assists }).assists = spec.style === 'drift' ? DRIFT_ASSISTS : HERO_ASSISTS
+  const sim = new StageSim({ rally, stage, car: HERO_CAR, difficulty: 'pro', race, assists: spec.style === 'drift' ? DRIFT_ASSISTS : HERO_ASSISTS })
   // Rivals run their full physics wherever they are: the tape must hold real driving.
   for (const o of sim.field) o.lod = false
   // A longer wait on the grid than the game's three seconds, so the trailer can open on it.
@@ -289,8 +292,14 @@ export interface HeroReport {
   race: boolean
   metres: number
   heroTime: number
+  /** The hero over the same distance alone, in a race: the race time carries the traffic. */
+  soloTime: number | null
+  /** The Pro rung on its own over the same distance, same car and power. */
   proTime: number
   proFaults: string
+  /** The top rung on the same car, without the works engine it gets in the game. */
+  topTime: number
+  topFaults: string
   idealTime: number | null
   place: number
   iterations: number
@@ -299,69 +308,126 @@ export interface HeroReport {
 }
 
 /**
- * The fastest clean run: start well above the AI's own limit everywhere and,
- * each time the run leaves the road, trim the pace over the stretch leading up
- * to where it happened, then run again. What is left is the limit corner by
- * corner, no more cautious anywhere than it had to be. A few starting levels
- * are tried and the quickest clean result is kept.
+ * The fastest clean run. First one at a shade under the top rung's pace,
+ * trimmed wherever it leaves the road until it doesn't. Then, stretch by
+ * stretch along the stage, push harder (or, where that is what pays, ease
+ * off) and keep the change only if the whole run is still clean, places no
+ * worse in a race, and is quicker; then again over shorter stretches. What is
+ * left is the limit corner by corner, found by driving it.
+ *
+ * A race is searched with the road to itself first: traffic makes a run
+ * chaotic (a hundredth here changes who is where at the next corner), so the
+ * driving is found alone and then only tuned for the overtakes.
  */
+function search(spec: RunSpec, start: Float32Array, passes: [number, number][], log: (s: string) => void): { best: Run | null; pace: Float32Array; iterations: number } {
+  const bins = start.length
+  const drift = spec.style === 'drift'
+  let iterations = 0
+  let pace = start.slice()
+  let best: Run | null = null
+  for (let it = 0; it < 40; it++) {
+    iterations++
+    const run = simulate(spec, pace)
+    const fault = firstFault(run)
+    if (fault === null && run.resets === 0) {
+      best = run
+      break
+    }
+    if (fault === null) break
+    for (let s = fault - 170; s <= fault + 20; s += BIN) {
+      const b = clamp(Math.floor(s / BIN), 0, bins - 1)
+      // Hardest trim right before the fault, where the corner was entered too fast.
+      pace[b] = Math.max(0.85, pace[b] * (s > fault - 70 ? 0.975 : 0.99))
+    }
+  }
+  if (!best) return { best, pace, iterations }
+  log(`  ${spec.race ? 'race' : 'alone'}: first clean run ${best.time.toFixed(2)} s${spec.race ? `, place ${best.place}` : ''}`)
+  const s0 = best.sim.start - 20, s1 = best.tape.get(0, 's', best.end)
+  for (const [seg, step] of passes) {
+    const was = best.time
+    for (let a = s0; a < s1; a += seg) {
+      for (const dir of [1, -1]) {
+        const cand = pace.slice()
+        for (let x = a; x < a + seg; x += BIN) {
+          const b = clamp(Math.floor(x / BIN), 0, bins - 1)
+          cand[b] = clamp(cand[b] * (1 + dir * step), 0.85, 1.35)
+        }
+        iterations++
+        const run: Run = simulate(spec, cand)
+        const better = run.place < best.place || (run.place === best.place && run.time < best.time - 0.005)
+        if (firstFault(run) === null && run.resets === 0 && better && (!drift || run.slide >= Math.min(MIN_SLIDE, best.slide))) {
+          best = run
+          pace = cand
+          break
+        }
+      }
+    }
+    log(`  ${seg} m stretches x${step}: ${best.time.toFixed(2)} s (${(best.time - was).toFixed(2)})${spec.race ? `, place ${best.place}` : ''}`)
+  }
+  return { best, pace, iterations }
+}
+
 export function bestRun(spec: RunSpec, log: (s: string) => void = () => {}): { run: Run; report: HeroReport } {
   const probe = new StageSim({ rally: spec.rally, stage: spec.rally.stages[spec.stageIdx], car: HERO_CAR, difficulty: 'pro' })
   const bins = Math.ceil(probe.route.length / BIN) + 2
-  let best: Run | null = null
-  let iterations = 0
-  const levels = spec.style === 'drift' ? [1.08, 1.02] : [1.2, 1.14, 1.08]
-  for (const level of levels) {
-    const pace = new Float32Array(bins).fill(level)
-    let run: Run | null = null
-    for (let it = 0; it < 40; it++) {
-      iterations++
-      run = simulate(spec, pace)
-      const fault = firstFault(run)
-      const won = !spec.race || run.place === 1
-      if (fault === null && run.resets === 0 && won) break
-      if (fault === null) {
-        // Clean but beaten: nothing to trim, this level cannot win.
-        break
-      }
-      for (let s = fault - 170; s <= fault + 20; s += BIN) {
-        const b = clamp(Math.floor(s / BIN), 0, bins - 1)
-        // Hardest trim right before the fault, where the corner was entered too fast.
-        const w = s > fault - 70 ? 0.965 : 0.985
-        pace[b] = Math.max(0.85, pace[b] * w)
-      }
-      run = null
-    }
-    if (run && run.offSteps === 0 && run.resets === 0 && (!spec.race || run.place === 1)) {
-      log(`  level ${level}: clean ${run.time.toFixed(2)} s`)
-      if (!best || run.time < best.time) best = run
-    } else log(`  level ${level}: no clean run`)
+  const clean = (r: Run) => firstFault(r) === null && r.resets === 0 && (!spec.race || r.place === 1)
+  const alone = search({ ...spec, race: false }, new Float32Array(bins).fill(START), PASSES, log)
+  let { best, pace, iterations } = alone
+  if (spec.race) {
+    const raced = search(spec, alone.pace, RACE_PASSES, log)
+    ;({ best, pace } = raced)
+    iterations += raced.iterations
   }
-  const clean = !!best
-  if (!best) {
-    // Every level failed: fall back to the AI's own pace, which is what the game ships.
-    best = simulate(spec, new Float32Array(bins).fill(1))
-  }
-  // The Pro AI on its own over the same distance, for comparison.
-  const pro = simulate({ ...spec, race: false, style: 'fast' }, new Float32Array(1).fill(1), false)
-  const proDist = best.tape.get(0, 's', best.end) - best.sim.start
-  let proEnd = pro.go
-  while (proEnd < pro.tape.steps - 1 && pro.tape.get(0, 's', proEnd) - pro.sim.start < proDist) proEnd++
+  const found = !!best && clean(best)
+  // Nothing clean: fall back to the AI's own pace, which is what the game ships.
+  const run = best && found ? best : simulate(spec, new Float32Array(bins).fill(1))
+  const dist = run.tape.get(0, 's', run.end) - run.sim.start
+  const pro = rung(spec, 'pro', dist)
+  const top = rung(spec, 'unbeatable', dist)
   const report: HeroReport = {
     stage: `${spec.rally.name} / ${spec.rally.stages[spec.stageIdx].name}`,
     style: spec.style,
     race: spec.race,
-    metres: Math.round(proDist),
-    heroTime: best.time,
-    proTime: (proEnd - pro.go) * DT,
-    proFaults: `${(pro.offSteps * DT).toFixed(1)} s off-road, ${pro.resets} resets`,
-    idealTime: spec.until === undefined ? idealTime(best.sim) : null,
-    place: best.place,
+    metres: Math.round(dist),
+    heroTime: run.time,
+    soloTime: spec.race ? simulate({ ...spec, race: false }, pace).time : null,
+    proTime: pro.time,
+    proFaults: `${pro.off.toFixed(1)} s off-road, ${pro.resets} resets`,
+    topTime: top.time,
+    topFaults: `${top.off.toFixed(1)} s off-road, ${top.resets} resets`,
+    idealTime: spec.until === undefined ? idealTime(run.sim) : null,
+    place: run.place,
     iterations,
-    clean,
-    slide: best.slide,
+    clean: found,
+    slide: run.slide,
   }
-  return { run: best, report }
+  return { run, report }
+}
+
+/**
+ * One rung of the race AI alone over the first `dist` metres of the stage:
+ * the hero's car at the player's power, the rivals' assists, a neutral
+ * character. What the hero is measured against.
+ */
+function rung(spec: RunSpec, level: Difficulty, dist: number): { time: number; off: number; resets: number } {
+  const { rally, stageIdx } = spec
+  const stage = rally.stages[stageIdx]
+  const sim = new StageSim({ rally, stage, car: HERO_CAR, difficulty: 'pro', assists: HERO_ASSISTS })
+  const r = RUNGS[level]
+  const line = raceLine(sim.route, rally.surface, stage.weather === 'rain', carPhys(HERO_CAR), styleFor(r, NEUTRAL))
+  const ai = new AiDriver(sim.car, line, r, NEUTRAL, 1234, 1)
+  const until = Math.min(sim.finish, sim.start + dist)
+  let go = -1, off = 0
+  const max = Math.ceil((sim.length / 4 + 60) / DT)
+  for (let k = 0; k < max; k++) {
+    const clock = go < 0 ? 0 : (k - go) * DT
+    sim.step(sim.phase === 'running' ? ai.drive([], clock) : { steer: 0, throttle: 0, brake: 1, handbrake: false })
+    if (sim.phase === 'countdown') continue
+    if (go < 0) go = k
+    if (sim.car.offRoad) off += DT
+    if (sim.car.s >= until || sim.phase === 'finished') return { time: (k - go) * DT, off, resets: sim.resets }
+  }
+  return { time: Infinity, off, resets: sim.resets }
 }
 
 /** Body slip angle of car `ci` at step k, radians. */

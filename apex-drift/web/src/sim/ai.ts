@@ -277,6 +277,11 @@ export class AiDriver {
   private defending = false
   /** 0.93..1: trust in the tyres, lost in a slide and won back over clean corners. */
   private feel = 1
+  /**
+   * Every slide is one it chose: it holds the angle instead of lifting, and
+   * keeps its trust in the tyres. Only the trailer's hero drives like this.
+   */
+  meantSlides = false
 
   constructor(readonly car: Car, readonly line: RaceLine, readonly rung: Rung, readonly persona: Personality, seed: number, skill = 1) {
     this.skill = skill
@@ -439,7 +444,7 @@ export class AiDriver {
     const gain = 1 / (1 + v / 30)
     // Catch a slide past a few degrees; a held angle in a hairpin or a drift is fine.
     // Drifters let it hang out further before catching it; past 0.45 rad everyone catches it hard.
-    const holdAngle = this.flick || car.drift > 0.5 ? 0.1 + 0.2 * P.drift : 0.1
+    const holdAngle = this.flick || car.drift > 0.5 || this.meantSlides ? 0.1 + 0.2 * P.drift : 0.1
     const ab = Math.abs(beta)
     const catchSlide = -Math.sign(beta) * (Math.max(0, ab - holdAngle) * 2.6 + Math.max(0, ab - 0.45) * 4)
     // How fast it's moving across the road: damps the weave a pure pursuit sets up at speed.
@@ -458,7 +463,7 @@ export class AiDriver {
     // Risk: a few percent either way, more for those who live on it.
     // Feeling for the limit: a slide it didn't ask for, or a wheel off the
     // road, and it trusts the tyres a little less; clean corners win it back.
-    const unasked = !this.flick && car.drift < 0.5 && !m
+    const unasked = !this.meantSlides && !this.flick && car.drift < 0.5 && !m
     if ((unasked && ab > 0.28) || car.offRoad) this.feel = Math.max(0.93, this.feel - 0.6 * DT)
     else this.feel = Math.min(1, this.feel + 0.004 * DT)
     const commit = R.pace * this.skill * this.feel * (1 + this.risk * 0.012 * (0.5 + P.aggression)) * shiftCost

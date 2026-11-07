@@ -271,6 +271,11 @@ export class StageView {
     this.snapCamera()
   }
 
+  /** The trailer draws its own dust behind every car. */
+  set dustOn(on: boolean) {
+    this.dust.points.visible = on
+  }
+
   /** The racing-line assist: a ribbon on the road, only drawn for the stretch just ahead. */
   private hint: THREE.Mesh | null = null
 
@@ -758,7 +763,8 @@ export class StageView {
       transparent: true,
       depthWrite: false,
       fog: true,
-      uniforms: { col: { value: new THREE.Color(color) }, ...THREE.UniformsLib.fog },
+      // Drawn unlit, so it takes the light of the hour: full colour at dusk would glow.
+      uniforms: { col: { value: new THREE.Color(color).multiplyScalar(0.3 + 0.7 * this.atmos.dim) }, ...THREE.UniformsLib.fog },
       vertexShader: /* glsl */ `
         attribute float aLife; attribute float aSize; varying float vLife; varying float vDepth;
         #include <fog_pars_vertex>

@@ -50,10 +50,48 @@ function viewFor(key: RunKey): { view: StageView; fx: Fx; run: Run } {
   const t0 = performance.now()
   const view = new StageView(run.sim, r, LIVERIES.find((l) => l.id === HERO_LIVERY) ?? LIVERIES[0])
   view.resize(innerWidth, innerHeight)
-  const fx = new Fx(view.scene, run)
+  const look = run.spec.rally.stages[run.spec.stageIdx].look
+  if (look === 'sunset') sunsetGrade(view)
+  if (look === 'night') nightGrade(view)
+  // Fx draws the dust behind every car, the hero's too.
+  view.dustOn = false
+  const fx = new Fx(view.scene, run, view.atmos)
+  fx.setViewport(canvas.height)
   cur = { key, view, fx }
   log(`built ${key} in ${((performance.now() - t0) / 1000).toFixed(1)} s`)
   return { view, fx, run }
+}
+
+/**
+ * The sunset look is tuned for play, where the low sun behind the driver
+ * lights the road ahead. The trailer's cameras look every way, often into
+ * the sun with the scene in its own shadow, and there the game's grade (cool
+ * shadows, a purple sky fill) comes out dark and violet. For the film: more
+ * exposure, warm shadows, and a sky fill that carries the sunset's colour.
+ */
+function sunsetGrade(view: StageView): void {
+  const a = view.atmos
+  a.exposure *= 1.2
+  a.grade = { ...a.grade, lift: [0.03, 0.018, 0.008], gain: [1.1, 1.0, 0.85], saturation: 1.08, contrast: 1.1, vignette: 0.34, shadowTint: [0.008, 0.0, -0.006], highTint: [0.032, 0.012, -0.018] }
+  view.scene.traverse((o) => {
+    if (o instanceof THREE.HemisphereLight) {
+      o.color.lerp(new THREE.Color(0xd9a27c), 0.6)
+      o.groundColor.lerp(new THREE.Color(0x6b4a33), 0.5)
+      o.intensity *= 1.2
+    }
+  })
+}
+
+/**
+ * At night the game lights the road ahead of the player and little else. The
+ * trailer's helicopter and roadside cameras see the whole valley, so the
+ * moonlight fill is raised to where the land reads as shapes in blue.
+ */
+function nightGrade(view: StageView): void {
+  view.atmos.exposure *= 1.15
+  view.scene.traverse((o) => {
+    if (o instanceof THREE.HemisphereLight) o.intensity *= 1.7
+  })
 }
 
 function rig(view: StageView): Rig {
