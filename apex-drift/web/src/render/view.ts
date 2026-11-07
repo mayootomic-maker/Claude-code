@@ -3,6 +3,8 @@ import { clamp, damp, lerp, rng, wrapAngle } from '../core/math'
 import { LIVERIES, type LiveryDef } from '../data'
 import type { Pose } from '../sim/car'
 import type { StageSim } from '../sim/stage'
+import type { RaceLine } from '../sim/ai'
+import { STEP } from '../sim/route'
 import { atmosphere, cloudCover, skyDome, sunDirection, type Atmos } from './atmosphere'
 import { buildCar, type CarRig } from './car-model'
 import { GradePass } from './post'
@@ -10,9 +12,10 @@ import { World, type Quality } from './world'
 import { planSoft, type Soft } from './placement'
 import { ghostPose, type Ghost } from '../game/ghost'
 import { noise2 } from '../core/math'
+import { CameraShake } from './shake'
 
 export type Tier = 'low' | 'medium' | 'high'
-export type CamMode = 'chase' | 'near' | 'bonnet'
+export type CamMode = 'chase' | 'near' | 'bonnet' | 'cockpit'
 
 const TIERS: Record<Tier, Quality & { post: boolean; samples: number; pixel: number; maxPixels: number; shadowMap: number; propShadows: boolean }> = {
   low: { radius: 260, density: 0.5, shadows: false, aniso: 1, surfaces: false, post: false, samples: 0, pixel: 0.8, maxPixels: 1.0e6, shadowMap: 0, propShadows: false },
@@ -151,6 +154,9 @@ export class StageView {
   /** Landing dust: decays from 1 to 0 after a big landing. */
   private burst = 0
   private ghost: { rig: CarRig; data: Ghost } | null = null
+  /** Rival cars in a race, one rig per `sim.field` entry. */
+  private readonly rivals: CarRig[] = []
+  private readonly rivalPose: Pose = { x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0, steer: 0, spin: 0 }
   private dirt = 0
   /** Tyre marks: one ribbon buffer, two quads (rear wheels) written per step of travel. */
   private marks: { mesh: THREE.Mesh; pos: Float32Array; col: Float32Array; next: number; last: (THREE.Vector3 | null)[] } | null = null
@@ -192,6 +198,16 @@ export class StageView {
   private fov = 60
   private time = 0
   shake = 1
+  /** Near plane for every outside camera; a fixed shot placed against the bodywork (trailer close-ups) sets it lower. */
+  outsideNear = 0.8
+  private readonly shaker = new CameraShake()
+  /** Smoothed lateral g for the driver's head, smoothed body roll and pitch for the chase camera's lag. */
+  private latG = 0
+  private lagRoll = 0
+  private lagPitch = 0
+  private inside = false
+  private readonly tmpQ = new THREE.Quaternion()
+  private readonly tmpV = new THREE.Vector3()
 
   constructor(readonly sim: StageSim, readonly r: Renderer, livery: LiveryDef = LIVERIES[0], labels?: { start: string; finish: string }) {
     const { rally, stage } = sim.setup
@@ -230,13 +246,69 @@ export class StageView {
     this.car = buildCar(sim.setup.car, livery)
     this.scene.add(this.car.root)
     if (!spec.shadowMap) this.car.root.traverse((o) => (o.castShadow = false))
+    for (const o of sim.field) {
+      const rig = buildCar(o.slot.car, LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0])
+      if (!spec.shadowMap) rig.root.traverse((m) => (m.castShadow = false))
+      this.scene.add(rig.root)
+      this.rivals.push(rig)
+    }
     this.headlights = a.lights ? this.makeHeadlights() : null
     this.dust = this.makeDust(rally.surface === 'snow' ? 0xf4f6f8 : rally.biome === 'savannah' ? 0xc0764a : rally.surface === 'asphalt' ? 0xc8c8c8 : (rally.gravel?.[0] ?? 0xb8a58a))
     this.weather = stage.weather === 'rain' || stage.weather === 'snow' ? this.makeWeather(stage.weather) : null
     this.makeSoft()
     this.makeMarks()
+    this.hint = sim.hint ? this.makeHint(sim.hint) : null
     this.syncCar(1)
     this.snapCamera()
+  }
+
+  /** The racing-line assist: a ribbon on the road, only drawn for the stretch just ahead. */
+  private hint: THREE.Mesh | null = null
+
+  /**
+   * Green where the line is flat out, amber at the apex of a corner, red
+   * where the speed it can carry is falling: where to brake.
+   */
+  private makeHint(line: RaceLine): THREE.Mesh {
+    const n = line.off.length
+    const route = line.route
+    const pos = new Float32Array(n * 2 * 3), col = new Float32Array(n * 2 * 3)
+    const W = 0.22
+    for (let i = 0; i < n; i++) {
+      const h = route.heading[i]
+      const lx = Math.cos(h), lz = -Math.sin(h)
+      const x = route.x[i] + lx * line.off[i], z = route.z[i] + lz * line.off[i]
+      const y = this.sim.ground.height(x, z) + 0.07
+      const braking = i + 2 < n && line.vmax[i + 2] < line.vmax[i] - 0.25
+      const apex = !braking && line.vmax[i] < line.vcorner[i] + 0.3 && Math.abs(line.curv[i]) > 1 / 80
+      const c = braking ? [0.95, 0.2, 0.15] : apex ? [1, 0.75, 0.15] : [0.25, 0.9, 0.35]
+      for (let k = 0; k < 2; k++) {
+        const sgn = k === 0 ? -1 : 1
+        pos.set([x + lx * W * sgn, y, z + lz * W * sgn], (i * 2 + k) * 3)
+        col.set(c, (i * 2 + k) * 3)
+      }
+    }
+    const idx = new Uint32Array((n - 1) * 6)
+    for (let i = 0; i < n - 1; i++) idx.set([i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2], i * 6)
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    g.setIndex(new THREE.BufferAttribute(idx, 1))
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 })
+    const mesh = new THREE.Mesh(g, m)
+    mesh.frustumCulled = false
+    mesh.renderOrder = 2
+    this.scene.add(mesh)
+    return mesh
+  }
+
+  private syncHint(): void {
+    const h = this.hint
+    if (!h) return
+    const s = this.sim.car.s
+    const i0 = Math.max(0, Math.floor((s - 4) / STEP)), i1 = Math.min(Math.floor((s + 170) / STEP), (h.geometry.index?.count ?? 0) / 6)
+    h.geometry.setDrawRange(i0 * 6, Math.max(0, i1 - i0) * 6)
+    h.visible = !this.override
   }
 
   dispose(): void {
@@ -245,6 +317,11 @@ export class StageView {
       ;(this.marks.mesh.material as THREE.Material).dispose()
     }
     this.ghost?.rig.dispose()
+    if (this.hint) {
+      this.hint.geometry.dispose()
+      ;(this.hint.material as THREE.Material).dispose()
+    }
+    for (const rig of this.rivals) rig.dispose()
     for (const m of this.softMeshes) {
       m.geometry.dispose()
       ;(m.material as THREE.Material).dispose()
@@ -291,6 +368,31 @@ export class StageView {
       w.pivot.rotation.y = w.front ? p.steer : 0
       w.spin.rotation.x = p.spin
     }
+    this.car.steer?.(p.steer, o ? 0 : this.latG)
+    this.syncRivals(alpha)
+  }
+
+  /** Rivals are posed like the player's car; past the scenery radius, or during a replay of your run, they're hidden. */
+  private syncRivals(alpha: number): void {
+    const far = this.r.spec.radius
+    this.sim.field.forEach((o, i) => {
+      const rig = this.rivals[i]
+      const q = o.car.pose(alpha, this.rivalPose)
+      const d = Math.hypot(q.x - this.camPos.x, q.z - this.camPos.z)
+      rig.root.visible = !this.override && d < far
+      if (!rig.root.visible) return
+      rig.root.position.set(q.x, q.y, q.z)
+      rig.root.rotation.set(0, q.heading, 0)
+      rig.body.rotation.set(q.pitch, 0, q.roll, 'YXZ')
+      rig.body.position.y = 0.02
+      // Wheel detail can't be seen beyond a hundred metres; skip the updates.
+      if (d > 120) return
+      for (const w of rig.wheels) {
+        w.pivot.rotation.y = w.front ? q.steer : 0
+        w.spin.rotation.x = q.spin
+      }
+      rig.steer?.(q.steer, 0)
+    })
   }
 
   private copyPose(o: Pose): Pose {
@@ -311,7 +413,23 @@ export class StageView {
   /** Per frame: interpolate the car, move the camera, stream the world, draw. */
   frame(alpha: number, dt: number, mode: 'drive' | 'intro' | 'orbit' | 'fixed', introT = 0): void {
     this.time += dt
+    // Lateral g, smoothed: the driver's head leans out of corners a beat late.
+    const ay = this.override ? 0 : this.sim.car.ay / 9.81
+    this.latG += (ay - this.latG) * (1 - Math.exp(-dt * 5))
     this.syncCar(alpha)
+    this.syncHint()
+    const inside = mode === 'drive' && this.camMode === 'cockpit'
+    if (inside !== this.inside) {
+      this.inside = inside
+      this.car.interior?.(inside)
+    }
+    if (mode !== 'drive' || (this.camMode !== 'cockpit' && this.camMode !== 'bonnet')) {
+      if (this.camera.near !== this.outsideNear) {
+        this.camera.near = this.outsideNear
+        this.camera.updateProjectionMatrix()
+      }
+      this.camera.up.set(0, 1, 0)
+    }
     if (mode === 'intro') this.introCamera(introT)
     else if (mode === 'orbit') this.orbitCamera(dt)
     else if (mode === 'drive') this.chaseCamera(dt)
@@ -328,7 +446,7 @@ export class StageView {
     this.updateWeather(dt)
     if (this.headlights) this.headlights.intensity = 60
     this.r.sun(this.camera, this.sunDir, this.atmos)
-    this.r.speedBlur(mode === 'drive' && this.camMode !== 'bonnet' ? THREE.MathUtils.clamp((this.sim.car.speed - 22) / 25, 0, 1) * this.shake : 0)
+    this.r.speedBlur(mode === 'drive' && this.camMode !== 'bonnet' && this.camMode !== 'cockpit' ? THREE.MathUtils.clamp((this.sim.car.speed - 22) / 25, 0, 1) * this.shake : 0)
     this.r.render(this.scene, this.camera, this.atmos, this.time)
   }
 
@@ -336,17 +454,42 @@ export class StageView {
     const p = this.pose
     const car = this.sim.car
     const speed = car.speed
+    const mode = this.camMode
     const fx = Math.sin(p.heading), fz = Math.cos(p.heading)
-    // Follow the direction of travel a little, not just the nose, so slides read as slides.
-    const travel = Math.atan2(fx * car.vx + Math.cos(p.heading) * car.vy, fz * car.vx - Math.sin(p.heading) * car.vy)
-    const look = speed > 3 ? p.heading + wrapAngle(travel - p.heading) * 0.35 : p.heading
-    const lx = Math.sin(look), lz = Math.cos(look)
-    const [dist, height, ahead] = this.camMode === 'chase' ? [6.4, 2.3, 4] : this.camMode === 'near' ? [4.6, 1.6, 4] : [-0.2, 1.15, 12]
-    const want = new THREE.Vector3(p.x - lx * dist, p.y + height, p.z - lz * dist)
-    if (this.camMode === 'bonnet') {
-      this.camPos.set(p.x + fx * 0.3, p.y + height, p.z + fz * 0.3)
-      this.camLook.set(p.x + fx * ahead, p.y + 0.9, p.z + fz * ahead)
+    const onboard = mode === 'bonnet' || mode === 'cockpit'
+    this.lagRoll = damp(this.lagRoll, p.roll, 3.5, dt)
+    this.lagPitch = damp(this.lagPitch, p.pitch, 3.5, dt)
+    if (onboard) {
+      // Mounted to the body: the view pitches and rolls with the car, the way
+      // a cage camera does; a quarter of the roll is levelled out, as a
+      // driver's eyes keep the horizon steadier than the shell.
+      const body = this.car.body
+      this.car.root.updateMatrixWorld(true)
+      const mount = (mode === 'cockpit' ? this.car.eye : this.car.bonnet) ?? this.tmpV.set(0, 1.15, 0.3)
+      this.camPos.copy(mount).applyMatrix4(body.matrixWorld)
+      body.getWorldQuaternion(this.tmpQ)
+      const ahead = new THREE.Vector3(0, 0, 20).applyQuaternion(this.tmpQ)
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.tmpQ).lerp(new THREE.Vector3(0, 1, 0), 0.25).normalize()
+      if (mode === 'cockpit') {
+        // Head pushed outward by cornering load.
+        const side = new THREE.Vector3(1, 0, 0).applyQuaternion(this.tmpQ)
+        this.camPos.addScaledVector(side, -THREE.MathUtils.clamp(this.latG, -2, 2) * 0.025)
+        // Look a little into the corner, as drivers do.
+        ahead.applyAxisAngle(up, THREE.MathUtils.clamp(p.steer, -0.6, 0.6) * 0.25)
+        ahead.y -= 2.6
+      } else ahead.y -= 0.6
+      this.camLook.copy(this.camPos).add(ahead)
+      this.camera.up.copy(up)
+      // The cabin is centimetres from the eye: pull the near plane in only while inside.
+      const near = mode === 'cockpit' ? 0.05 : 0.12
+      if (this.camera.near !== near) this.camera.near = near
     } else {
+      // Follow the direction of travel a little, not just the nose, so slides read as slides.
+      const travel = Math.atan2(fx * car.vx + Math.cos(p.heading) * car.vy, fz * car.vx - Math.sin(p.heading) * car.vy)
+      const look = speed > 3 ? p.heading + wrapAngle(travel - p.heading) * 0.35 : p.heading
+      const lx = Math.sin(look), lz = Math.cos(look)
+      const [dist, height, ahead] = mode === 'chase' ? [6.4, 2.3, 4] : [4.6, 1.6, 4]
+      const want = new THREE.Vector3(p.x - lx * dist, p.y + height, p.z - lz * dist)
       // Critically damped spring on the offset from the car, not on the world
       // position: a world-space spring falls further behind the faster you go.
       const k = 30, c = 2 * Math.sqrt(k)
@@ -360,23 +503,30 @@ export class StageView {
       this.camPos.copy(this.car.root.position).add(rel)
       const g = this.sim.ground.height(this.camPos.x, this.camPos.z) + 0.9
       if (this.camPos.y < g) this.camPos.y = g
-      this.camLook.set(p.x + fx * ahead, p.y + 1.0, p.z + fz * ahead)
+      // The aim point rides the body's pitch a beat late, so dives and squats show.
+      this.camLook.set(p.x + fx * ahead, p.y + 1.0 - this.lagPitch * ahead * 0.5, p.z + fz * ahead)
     }
-    // Gentle shake on rough surfaces and landings only.
-    const rough = (car.offRoad ? 0.5 : car.surface === 'rough' ? 0.25 : car.surface === 'gravel' ? 0.06 : 0.02) * clamp(speed / 30, 0, 1)
-    const land = car.events.landed > 2 ? 0.25 : 0
     if (car.events.landed > 3) {
-      this.camera.fov += Math.min(8, car.events.landed)
+      this.camera.fov += Math.min(8, car.events.landed) * (onboard ? 0.4 : 1)
       this.burst = 1
     }
-    const amt = (rough + land) * this.shake
     this.camera.position.copy(this.camPos)
-    if (amt > 0) {
-      this.camera.position.x += (Math.random() - 0.5) * amt * 0.12
-      this.camera.position.y += (Math.random() - 0.5) * amt * 0.12
-    }
     this.camera.lookAt(this.camLook)
-    const fovT = this.fov + clamp(speed / 40, 0, 1) * 9
+    // Chase cameras lean a little with the body's roll, lagging behind it.
+    if (!onboard) this.camera.rotateZ(-this.lagRoll * 0.3)
+    const gain = this.shake * (mode === 'cockpit' ? 1.7 : mode === 'bonnet' ? 1.25 : mode === 'near' ? 0.9 : 0.7)
+    const o = this.shaker.update({
+      dt, speed, surface: car.surface, offRoad: car.offRoad, airborne: car.airborne, vyUp: car.vyUp,
+      rpm: car.rpm, idle: car.idle, redline: car.redline, throttle: car.throttleOut, gear: car.gear,
+      impact: car.events.impact, landed: car.events.landed, ax: car.ax, ay: car.ay,
+    }, gain)
+    this.camera.translateX(o.x)
+    this.camera.translateY(o.y)
+    this.camera.translateZ(o.z)
+    this.camera.rotateX(o.pitch)
+    this.camera.rotateY(o.yaw)
+    this.camera.rotateZ(o.roll)
+    const fovT = (mode === 'cockpit' ? this.fov + 8 : this.fov) + clamp(speed / 40, 0, 1) * (onboard ? 4 : 9)
     this.camera.fov = damp(this.camera.fov, fovT, 3, dt)
     this.camera.updateProjectionMatrix()
   }
@@ -417,6 +567,7 @@ export class StageView {
     this.camRel.set(-Math.sin(p.heading) * 6.4, 2.3, -Math.cos(p.heading) * 6.4)
     this.camPos.set(p.x, p.y, p.z).add(this.camRel)
     this.camVel.set(0, 0, 0)
+    this.shaker.reset()
     this.camera.position.copy(this.camPos)
     this.camera.lookAt(p.x + Math.sin(p.heading) * 4, p.y + 1, p.z + Math.cos(p.heading) * 4)
   }

@@ -1,9 +1,9 @@
 import { Audio, engineProfileFor, haptic } from './audio/audio'
 import { asset } from './core/assets'
 import { clamp } from './core/math'
-import { CARS, LIVERIES, RALLIES, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
+import { CARS, LIVERIES, RALLIES, RIVALS, SCHOOL, carPhys, type LiveryDef, type RallyDef } from './data'
 import { CoDriver } from './game/codriver'
-import { level, medalFor, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
+import { level, medalFor, raceReward, rallyReward, stageMedals, stageReward, standings, unlocked, type Medal } from './game/career'
 import { setLang, subtitle, t, type TKey } from './game/i18n'
 import { Controls } from './game/input'
 import { paceNotes } from './game/pacenotes'
@@ -15,7 +15,11 @@ import { CHEATS, findCheat, OWNER, unlockAll, type CheatState } from './game/own
 import { Showcase } from './render/showcase'
 import { Renderer, StageView, type Tier } from './render/view'
 import { DT, type Pose } from './sim/car'
+import { raceGrid } from './sim/race'
 import { autopilot, StageSim, type Difficulty } from './sim/stage'
+import { RUNGS } from './sim/levels'
+import { assistPreset, toSim } from './game/assists'
+import { aiPickerHtml, assistsHtml, bindAiPicker, bindAssists, rivalsHtml, rivalTag } from './ui/drivers-ui'
 import { BODY } from './sim/terrain'
 import { $, CHEVRON, esc, fmtTime, html, toast } from './ui/dom'
 import { Hud } from './ui/hud'
@@ -27,7 +31,7 @@ type RacePhase = 'intro' | 'countdown' | 'running' | 'finished' | 'results' | 'r
 interface RaceCtx {
   rally: RallyDef
   stageIdx: number
-  mode: 'career' | 'free' | 'school' | 'daily'
+  mode: 'career' | 'free' | 'school' | 'daily' | 'race'
   sim: StageSim
   view: StageView
   hud: Hud
@@ -84,7 +88,6 @@ function restore(o: object, s: Snap): void {
   }
 }
 
-const REWINDS: Record<string, number> = { rookie: 5, driver: 3, pro: 1 }
 const REWIND_PENALTY = 2
 
 interface School {
@@ -273,6 +276,7 @@ export class App {
       <div class="home">
         <button class="tile big" data-go="career" style="background-image:url('${asset(`img/c-${nextRally?.id ?? 'finland'}.jpg`)}')"><span class="kicker">${esc(careerSub)}</span><span class="t display">${t('career')}</span></button>
         <button class="tile" data-go="free" style="background-image:url('${asset(`img/free.jpg`)}')"><span class="t display">${t('quickStage')}</span><span class="s">${t('quickSub')}</span></button>
+        <button class="tile" data-go="race" style="background-image:url('${asset(`img/c-kenya.jpg`)}')"><span class="t display">${t('race')}</span><span class="s">${t('raceSub')}</span></button>
         <button class="tile" data-go="daily" style="background-image:url('${asset(`img/c-${daily.base}.jpg`)}')"><span class="kicker">${s.daily.best[daily.key] ? t('dailyBest', { time: fmtTime(s.daily.best[daily.key]) }) : streakN ? t('streak', { n: streakN }) : ''}</span><span class="t display">${t('daily')}</span><span class="s">${t('dailySub', { rally: esc(daily.rally.name), car: esc(CARS.find((c) => c.id === daily.car)?.name ?? '') })}</span></button>
         <button class="tile" data-go="school" style="background-image:url('${asset(`img/c-finland.jpg`)}')"><span class="t display">${t('school')}</span><span class="s">${t('schoolSub')}</span></button>
         <button class="tile" data-go="garage" style="background-image:url('${asset(`img/garage.jpg`)}')"><span class="t display">${t('garage')}</span><span class="s">${t('garageSub')}</span></button>
@@ -284,6 +288,7 @@ export class App {
         const go = b.dataset.go
         if (go === 'career') this.careerList('career')
         else if (go === 'free') this.careerList('free')
+        else if (go === 'race') this.careerList('race')
         else if (go === 'school') this.startSchool()
         else if (go === 'daily') this.load(daily.rally, 0, 'daily', daily.car)
         else if (go === 'garage') this.garage()
@@ -294,11 +299,11 @@ export class App {
     }, asset('img/garage.jpg'))
   }
 
-  private careerList(mode: 'career' | 'free'): void {
+  private careerList(mode: 'career' | 'free' | 'race'): void {
     const s = this.store.save
     this.menu(() => `
       <button class="back" data-back>${t('back')}</button>
-      <h1 class="display">${mode === 'career' ? t('career') : t('quickStage')}</h1>
+      <h1 class="display">${mode === 'career' ? t('career') : mode === 'race' ? t('race') : t('quickStage')}</h1>
       <div class="rallies">${RALLIES.map((r, i) => {
         const open = unlocked(s, i)
         const medals = r.stages.map((_, k) => s.best[`${r.id}:${k}:${s.settings.difficulty}`]?.medal ?? null)
@@ -320,7 +325,7 @@ export class App {
     })
   }
 
-  private rallyDetail(r: RallyDef, mode: 'career' | 'free', sel = 0): void {
+  private rallyDetail(r: RallyDef, mode: 'career' | 'free' | 'race', sel = 0): void {
     const s = this.store.save
     const d = s.settings.difficulty
     const ev = s.event && s.event.rally === r.id ? s.event : null
@@ -331,9 +336,7 @@ export class App {
           <p class="kicker">${esc(r.nation)} · ${t(`surface_${r.surface}` as TKey)}</p>
           <h1 class="display">${esc(r.name)}</h1>
           <p class="muted">${esc(r.blurb)}</p>
-          <p class="kicker" style="margin-top:16px">${t('difficulty')}</p>
-          <div class="seg" role="radiogroup">${(['rookie', 'driver', 'pro'] as Difficulty[]).map((x) => `<button class="${x === d ? 'on' : ''}" data-d="${x}" role="radio" aria-checked="${x === d}">${t(x)}</button>`).join('')}</div>
-          <p class="muted" style="font-size:0.88em">${t(`${d}Sub` as TKey)}</p>
+          ${this.setupHtml(r, mode, sel)}
           ${mode === 'career' ? `<div class="row" style="margin-top:14px">
             <button class="btn" data-start>${ev ? t('resumeRally', { n: ev.times.length + 1 }) : t('startRally')}</button>
             ${ev ? `<button class="btn ghost" data-abandon>${t('abandon')}</button>` : ''}</div>` : ''}
@@ -341,23 +344,22 @@ export class App {
         <div class="card stagelist">${r.stages.map((st, k) => {
           const best = s.best[`${r.id}:${k}:${d}`]
           const done = ev && k < ev.times.length
-          return `<button class="stagerow ${mode === 'free' && k === sel ? 'sel' : ''}" data-k="${k}">
+          return `<button class="stagerow ${mode !== 'career' && k === sel ? 'sel' : ''}" data-k="${k}">
             <span class="n">${k + 1}</span>
             <span class="meta">${esc(st.name)}${st.power ? ` · <b style="color:var(--amber)">${t('power')}</b>` : ''}
               <small>${st.km.toFixed(1)} km · ${t(`look_${st.look}` as TKey)} · ${t(`weather_${st.weather}` as TKey)}${done ? ` · ${fmtTime(ev.times[k])}` : ''}</small></span>
             <span class="medal ${best?.medal ?? ''}" title="${best ? t('best', { time: fmtTime(best.time) }) : t('noTime')}"></span>
           </button>`
         }).join('')}
-        ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}</div>
+        ${mode === 'free' ? `<button class="btn wide" data-drive style="margin-top:8px">${t('driveStage')}</button>` : ''}
+        ${mode !== 'career' ? `<button class="btn wide ${mode === 'race' ? '' : 'ghost'}" data-race style="margin-top:8px">${t('raceStage')}</button>` : ''}</div>
       </div>`, (root) => {
-      root.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => b.addEventListener('click', () => {
-        this.store.save.settings.difficulty = b.dataset.d as Difficulty
-        this.store.write()
+      this.bindSetup(root, () => {
         this.menuStack.pop()
         this.rallyDetail(r, mode, sel)
-      }))
+      })
       root.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
-        if (mode !== 'free') return
+        if (mode === 'career') return
         this.menuStack.pop()
         this.rallyDetail(r, mode, Number(b.dataset.k))
       }))
@@ -374,7 +376,35 @@ export class App {
         this.rallyDetail(r, mode)
       })
       root.querySelector('[data-drive]')?.addEventListener('click', () => this.load(r, sel, 'free'))
+      root.querySelector('[data-race]')?.addEventListener('click', () => this.load(r, sel, 'race'))
     }, asset(`img/c-${r.id}.jpg`))
+  }
+
+  /**
+   * Race setup on the rally screen: the AI rung, the assist preset, and in a
+   * race the three rivals the chosen stage will bring, with who they are.
+   */
+  private setupHtml(r: RallyDef, mode: 'career' | 'free' | 'race', sel: number): string {
+    const s = this.store.save
+    const ev = mode === 'career' && s.event && s.event.rally === r.id ? s.event : null
+    // A rally under way keeps the rung it was started on.
+    const picker = ev ? `<p class="muted">${t('aiLevel')} · <b>${t(ev.difficulty)}</b></p>` : aiPickerHtml(s.settings.difficulty)
+    const rivals = mode === 'race' ? raceGrid(r, sel, s.settings.difficulty, s.car, s.livery) : null
+    return `${picker}${assistsHtml(s.settings.assists, false)}
+      ${rivals ? `<p class="kicker" style="margin-top:12px">${t('rivalsTitle')}</p>${rivalsHtml(rivals, rivals.map((x) => RIVALS[x.rival]?.id ?? ''), true)}` : ''}`
+  }
+
+  private bindSetup(root: HTMLElement, redraw: () => void): void {
+    const st = this.store.save.settings
+    bindAiPicker(root, () => st.difficulty, (d: Difficulty) => {
+      st.difficulty = d
+      this.store.write()
+      redraw()
+    })
+    bindAssists(root, st.assists, () => {
+      this.store.write()
+      redraw()
+    })
   }
 
   private garage(carSel?: string): void {
@@ -490,7 +520,7 @@ export class App {
     const tog = (key: keyof Settings) => `<button class="toggle ${st[key] ? 'on' : ''}" data-tog="${key}" role="switch" aria-checked="${!!st[key]}"></button>`
     const range = (key: keyof Settings, min: number, max: number, step: number) => `<input type="range" min="${min}" max="${max}" step="${step}" value="${st[key]}" data-range="${key}">`
     const opt = (label: string, ctl: string) => `<div class="opt"><label>${label}</label>${ctl}</div>`
-    const body: Record<OptTab, () => string> = {
+    const body: Record<Exclude<OptTab, 'assists'>, () => string> & Partial<Record<'assists', () => string>> = {
       controls: () => (isTouch() ? [
         opt(t('steering'), seg('steering', ['buttons', 'tilt'] as const, (v) => t(`steer_${v}` as TKey))),
         opt(t('autoGas'), tog('autoGas')),
@@ -515,7 +545,7 @@ export class App {
       ].join(''),
       display: () => [
         opt(t('quality'), seg('quality', ['auto', 'low', 'medium', 'high'] as const, (v) => t(`q_${v}` as TKey))),
-        opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet'] as const, (v) => t(`camera_${v}` as TKey))),
+        opt(t('camera'), seg('camera', ['chase', 'near', 'bonnet', 'cockpit'] as const, (v) => t(`camera_${v}` as TKey))),
         ...(canFullscreen() ? [opt(t('fullscreen'), `<button class="toggle ${document.fullscreenElement ? 'on' : ''}" data-full role="switch" aria-checked="${!!document.fullscreenElement}"></button>`)] : []),
         opt(t('shake'), tog('shake')),
         opt(t('units'), seg('units', ['kmh', 'mph'] as const, (v) => (v === 'kmh' ? 'km/h' : 'mph'))),
@@ -523,7 +553,7 @@ export class App {
         opt(t('lang'), seg('lang', ['en', 'de'] as const, (v) => (v === 'en' ? 'English' : 'Deutsch'))),
       ].join(''),
       gameplay: () => [
-        opt(t('difficulty'), seg('difficulty', ['rookie', 'driver', 'pro'] as const, (v) => t(v))),
+        aiPickerHtml(st.difficulty),
         opt(t('name'), `<input type="text" maxlength="20" value="${esc(this.store.save.name)}" data-name>`),
         opt(t('replaySchool'), `<button class="btn ghost" data-school>${t('school')}</button>`),
       ].join(''),
@@ -538,11 +568,12 @@ export class App {
         `<p class="muted">${this.cheat.turbo ? 'TURBO: on' : 'TURBO: off'}</p>`,
       ].join(''),
     }
-    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'data', ...(OWNER ? ['cheats' as const] : [])]
+    body.assists = () => assistsHtml(st.assists, true)
+    const tabs: OptTab[] = inRace ? ['controls', 'audio', 'display'] : ['controls', 'audio', 'display', 'gameplay', 'assists', 'data', ...(OWNER ? ['cheats' as const] : [])]
     const htmlOut = `
       <div class="options">
         <div class="seg tabs">${tabs.map((x) => `<button class="${x === tab ? 'on' : ''}" data-tab="${x}">${t(x)}</button>`).join('')}</div>
-        ${body[tab]()}
+        ${body[tab]?.() ?? ''}
       </div>`
     return { html: htmlOut, bind: (root) => {
       const redraw = () => show(tab)
@@ -556,6 +587,15 @@ export class App {
         redraw()
       }))
       root.querySelector('[data-full]')?.addEventListener('click', () => void toggleFullscreen().then(redraw))
+      bindAiPicker(root, () => st.difficulty, (d) => {
+        st.difficulty = d
+        this.settingsChanged('difficulty')
+        redraw()
+      })
+      bindAssists(root, st.assists, () => {
+        this.settingsChanged('assists')
+        redraw()
+      })
       root.querySelectorAll<HTMLElement>('[data-tog]').forEach((b) => b.addEventListener('click', () => {
         const key = b.dataset.tog as keyof Settings
         ;(st as unknown as Record<string, unknown>)[key] = !st[key]
@@ -695,7 +735,11 @@ export class App {
     let sim: StageSim | null = null
     let view: StageView | null = null
     steps.push(() => {
-      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty: mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty, power: OWNER && this.cheat.turbo ? 2 : 1 })
+      const difficulty = mode === 'school' ? 'rookie' : s.event && mode === 'career' ? s.event.difficulty : s.settings.difficulty
+      const race = mode === 'race' ? raceGrid(rally, stageIdx, difficulty, car ?? s.car, s.livery) : undefined
+      // The school teaches with every aid on, whatever the player has chosen for later.
+      const aids = mode === 'school' ? assistPreset('full') : s.settings.assists
+      sim = new StageSim({ rally, stage: st, car: car ?? s.car, difficulty, assists: toSim(aids), lineHint: aids.line, power: OWNER && this.cheat.turbo ? 2 : 1, race })
     })
     steps.push(() => {
       if (!sim) return
@@ -729,7 +773,8 @@ export class App {
     this.controls.bindTouch(this.ui.hud)
     this.ui.hud.querySelectorAll<HTMLElement>('[data-act]').forEach((b) => b.addEventListener('click', () => this.action(b.dataset.act as 'pause')))
     const notes = paceNotes(sim.route, sim.start, sim.finish)
-    const gold = mode === 'school' ? null : stageMedals(rally, stageIdx, sim.setup.difficulty).gold
+    const gold = mode === 'school' || mode === 'race' ? null : stageMedals(rally, stageIdx, sim.setup.difficulty).gold
+    if (sim.racing) hud.setRivals(sim.field.map((o) => (LIVERIES.find((l) => l.id === o.slot.livery) ?? LIVERIES[0]).base))
     const hairpin = notes.find((n) => n.kind === 'corner' && n.grade === 0)?.s ?? sim.finish
     this.race = {
       rally, stageIdx, mode, sim, view, hud, phase: 'intro', introT: 0, finishT: 0, paused: false, gold,
@@ -737,7 +782,8 @@ export class App {
       school: mode === 'school' ? { step: 0, shownAt: 0, hairpin, firstCall: null } : null,
       cheered: new Set(),
       history: [],
-      rewinds: mode === 'school' ? 9 : REWINDS[sim.setup.difficulty] ?? 3,
+      // Rewinding a race would have to rewind the rivals too.
+      rewinds: mode === 'school' ? 9 : mode === 'race' ? 0 : RUNGS[sim.setup.difficulty].rewinds,
       sectors: 0,
       recorder: new GhostRecorder(),
       tape: new ReplayRecorder(),
@@ -746,7 +792,7 @@ export class App {
       benchmark: s.settings.quality === 'auto' && !s.tier ? [] : null,
     }
     this.race.hud.rewinds(this.race.rewinds)
-    if (mode !== 'school') {
+    if (mode !== 'school' && mode !== 'race') {
       const g = loadGhost(this.storage, `${rally.id}:${stageIdx}`)
       if (g) view.setGhost(g, LIVERIES.find((l) => l.id === g.livery) ?? LIVERIES[0])
     }
@@ -866,7 +912,7 @@ export class App {
       return
     }
     this.acc += dt * scale
-    const input = this.controls.read(dt)
+    const input = this.controls.read(dt, sim.car.speed)
     while (this.acc >= DT) {
       sim.step(r.phase === 'running' ? input : { steer: 0, throttle: 0, brake: 0, handbrake: false })
       this.acc -= DT
@@ -929,7 +975,7 @@ export class App {
     this.audio.updateCar({
       rpm: car.rpm, throttle: live ? car.throttleOut : 0, load: live ? car.engineLoad : 0, gear: car.gear, shifting: car.shifting,
       boost: car.boost, speed: car.speed, surface: car.surface, slip: Math.min(1, car.slipR * 3), wheelSpin: car.wheelSpin,
-      onGround: !car.airborne, impact: car.events.impact, landed: car.events.landed, camera: r.view.camMode,
+      onGround: !car.airborne, impact: car.events.impact, landed: car.events.landed, camera: r.view.camMode === 'cockpit' ? 'bonnet' : r.view.camMode,
     })
     r.hud.update(sim, r.gold)
   }
@@ -1052,6 +1098,7 @@ export class App {
       $('[data-menu]', o).addEventListener('click', () => this.toMenu())
       return
     }
+    if (r.mode === 'race') return this.raceResults(r)
     saveGhost(this.storage, `${r.rally.id}:${r.stageIdx}`, { car: sim.setup.car, livery: s.livery, time, frames: r.recorder.frames() })
     if (r.mode === 'daily') {
       // The daily stage keeps its own record: today's best and the streak, no career or garage effects.
@@ -1142,6 +1189,44 @@ export class App {
     o.querySelector('[data-next]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'career'))
     o.querySelector('[data-retry]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx, 'free'))
     o.querySelector('[data-freenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'free'))
+    $('[data-menu]', o).addEventListener('click', () => this.toMenu())
+  }
+
+  /** Finishing order of a race; rivals still on the road are placed by their projected time. */
+  private raceResults(r: RaceCtx): void {
+    const s = this.store.save
+    const sim = r.sim
+    const o = this.ui.overlay
+    const rows = sim.result()
+    const pos = rows.findIndex((x) => x.you) + 1
+    const winner = rows[0].total
+    const reward = raceReward(pos, sim.setup.difficulty)
+    const before = level(s.xp).level
+    s.credits += reward.credits
+    s.xp += reward.xp
+    const after = level(s.xp).level
+    this.store.write()
+    if (pos === 1) this.audio.say(s.settings.voiceLang, ['wellDone'])
+    const carName = (id: string) => esc(CARS.find((c) => c.id === id)?.name ?? '')
+    const table = `<table class="table order">${rows.map((x, i) => `<tr class="${x.you ? 'you' : ''}"><td>P${i + 1}</td><td>${x.you ? esc(s.name) : esc(x.name)}<br><small class="muted">${carName(x.car)}</small>${x.you ? '' : rivalTag(RIVALS[sim.field[x.idx].slot.rival]?.id ?? '')}</td><td>${i === 0 ? fmtTime(x.total) : `+${fmtTime(x.total - winner)}`}${x.finished ? '' : `<br><small class="muted">${t('raceEst')}</small>`}</td></tr>`).join('')}</table>`
+    const last = r.stageIdx + 1 >= r.rally.stages.length
+    html(o, `<div class="results"><div class="card">
+        <p class="kicker">${esc(r.rally.name)} · ${esc(r.rally.stages[r.stageIdx].name)} · ${t(sim.setup.difficulty)}</p>
+        <h2 class="display" style="font-size:30px;margin:4px 0">${pos === 1 ? t('raceWon') : t('racePlace', { pos, n: rows.length })}</h2>
+        <p class="muted">${t('yourTime')}</p>
+        <div class="bigtime">${fmtTime(sim.total)}</div>
+        ${sim.penalty ? `<p class="muted">${t('penalty', { s: sim.penalty })}</p>` : ''}
+        <p>${t('earned', { credits: reward.credits.toLocaleString(), xp: reward.xp.toLocaleString() })}${after > before ? ` · <b style="color:var(--amber)">${t('levelUp', { n: after })}</b>` : ''}</p>
+      </div><div class="card"><p class="kicker">${t('raceResult')}</p>${table}
+        <div class="col">
+          ${last ? '' : `<button class="btn" data-racenext>${t('nextStage')}</button>`}
+          <button class="btn ${last ? '' : 'ghost'}" data-retry>${t('retry')}</button>
+          <button class="btn ghost" data-replay>${t('watchReplay')}</button>
+          <button class="btn ghost" data-menu>${t('menu')}</button>
+        </div></div></div>`)
+    $('[data-replay]', o).addEventListener('click', () => this.startReplay(r))
+    $('[data-retry]', o).addEventListener('click', () => this.load(r.rally, r.stageIdx, 'race', sim.setup.car))
+    o.querySelector('[data-racenext]')?.addEventListener('click', () => this.load(r.rally, r.stageIdx + 1, 'race', sim.setup.car))
     $('[data-menu]', o).addEventListener('click', () => this.toMenu())
   }
 
@@ -1355,7 +1440,7 @@ export class App {
       this.audio.clearCalls()
     }
     if (a === 'camera') {
-      const order = ['chase', 'near', 'bonnet'] as const
+      const order = ['chase', 'near', 'bonnet', 'cockpit'] as const
       r.view.camMode = order[(order.indexOf(r.view.camMode) + 1) % order.length]
       this.store.save.settings.camera = r.view.camMode
       this.store.write()
@@ -1502,7 +1587,7 @@ export class App {
   }
 }
 
-type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'data' | 'cheats'
+type OptTab = 'controls' | 'audio' | 'display' | 'gameplay' | 'assists' | 'data' | 'cheats'
 
 const isTouch = (): boolean => document.body.classList.contains('touch')
 

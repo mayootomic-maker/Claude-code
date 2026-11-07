@@ -1,5 +1,6 @@
 import { clamp } from '../core/math'
 import type { Input } from '../sim/car'
+import { steerRamp, steerScale } from './assists'
 import type { Settings } from './save'
 
 type Ctl = 'left' | 'right' | 'gas' | 'brake' | 'hand'
@@ -7,7 +8,10 @@ type Ctl = 'left' | 'right' | 'gas' | 'brake' | 'hand'
 /**
  * Merges touch buttons, tilt, keyboard and gamepad into one smoothed input.
  * Digital steering ramps rather than snapping, so a tap is a small correction
- * and a hold is a full turn.
+ * and a hold is a full turn. The ramp is quick at town speeds and gentler on
+ * a fast road, where the same press asks far more of the tyres; letting go or
+ * switching sides returns through the centre at once, so a correction never
+ * waits for the last one to unwind.
  */
 export class Controls {
   private held = new Set<Ctl>()
@@ -77,7 +81,8 @@ export class Controls {
     this.steer = 0
   }
 
-  read(dt: number): Input {
+  /** `speed` (m/s) sets how fast a held steering key ramps in. */
+  read(dt: number, speed = 0): Input {
     const s = this.settings()
     const k = this.keys
     const pad = navigator.getGamepads?.().find((p) => p && p.connected) ?? null
@@ -100,7 +105,13 @@ export class Controls {
       // Analog steering: a gentle curve near the centre for fine control.
       this.steer = Math.sign(analog) * Math.pow(Math.abs(analog), 1.4) * s.sensitivity
     } else {
-      const rate = (target === 0 ? 7 : 3.2) * s.sensitivity
+      const reversing = target !== 0 && this.steer * target < 0
+      // Full lock in about 0.12 s around hairpins, 0.25 s at 150 km/h (more
+      // or less, by the speed-sensitive steering assist).
+      const build = steerRamp(speed, s.assists.speedSteer)
+      const rate = (target === 0 ? 11 : reversing ? 16 : build) * s.sensitivity
+      // A fresh press starts from a small bite rather than from nothing, so a tap always does something.
+      if (target !== 0 && Math.abs(this.steer) < 0.15) this.steer = target * 0.15
       this.steer += clamp(target - this.steer, -rate * dt, rate * dt)
     }
     const brake = this.held.has('brake') || k.has('ArrowDown') || k.has('KeyS') || (pad?.buttons[6]?.value ?? 0) > 0.2
@@ -108,7 +119,7 @@ export class Controls {
     const gasHeld = this.held.has('gas') || k.has('ArrowUp') || k.has('KeyW') || (pad?.buttons[7]?.value ?? 0) > 0.2
     const gas = gasHeld || (s.autoGas && !brake && !hand)
     return {
-      steer: clamp(this.steer, -1, 1),
+      steer: clamp(this.steer, -1, 1) * steerScale(speed, s.assists.speedSteer),
       throttle: gas ? (pad?.buttons[7]?.value && !this.held.has('gas') ? pad.buttons[7].value : 1) : 0,
       brake: brake ? (pad?.buttons[6]?.value || 1) : 0,
       handbrake: hand,

@@ -50,6 +50,7 @@
   --i-gear: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3.2'/><path d='M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1'/></svg>");
   --i-star: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z'/></svg>");
   --i-power: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3v8M7 6.5a7 7 0 1 0 10 0'/></svg>");
+  --i-flag: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M5 21V4M5 4h13l-2.5 4L18 12H5'/><path d='M9 4v8M13 4v8M5 8h13'/></svg>");
   --i-lock: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='5' y='11' width='14' height='9.5' rx='2'/><path d='M8 11V8a4 4 0 0 1 8 0v3'/></svg>");
   --i-go: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 12h14M12 5l7 7-7 7'/></svg>");
   --i-back: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M15 5l-7 7 7 7'/></svg>");
@@ -147,7 +148,7 @@ p.kicker::before { content: ''; width: 18px; height: 3px; flex: none; background
 .view > * { animation: rise 0.34s var(--ease) both; }
 .view > *:nth-child(2) { animation-delay: 40ms; }
 .view > *:nth-child(3) { animation-delay: 80ms; }
-#menu.redraw .view > *, #menu.redraw .tile, #menu.redraw .garage > .card, #menu.redraw .order li { animation: none; }
+#menu.redraw .view > *, #menu.redraw .tile, #menu.redraw .garage > .card, #menu.redraw ol.order li { animation: none; }
 .view h1 { font-size: clamp(32px, 6vw, 52px); margin: 4px 0 14px; transform: skewX(-6deg); transform-origin: left; }
 .view > h1.display::after { content: ''; display: block; width: 64px; height: 4px; margin-top: 8px; background: var(--grad); transform: skewX(var(--skew)); }
 .back { display: inline-flex; align-items: center; gap: 6px; padding: 7px 18px 7px 12px; margin: 0 0 4px; color: var(--paper); font: 700 14px var(--display); letter-spacing: 0.16em; text-transform: uppercase; transition: transform 0.15s var(--ease); }
@@ -173,7 +174,7 @@ p.kicker::before { content: ''; width: 18px; height: 3px; flex: none; background
 .tile:hover > .t::before, .tile:focus-visible > .t::before { opacity: 1; transform: skewX(var(--skew)); }
 .tile .badge { position: absolute; top: 12px; right: 12px; }
 
-.home { display: grid; grid-template-columns: 1.35fr 1fr 1fr; grid-template-rows: 1fr 1fr auto; gap: 10px; max-width: 1480px; min-height: 100%; }
+.home { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; grid-template-rows: 1fr 1fr auto; gap: 10px; max-width: 1480px; min-height: 100%; }
 .home .tile[data-go='career'] { grid-row: span 2; --i: var(--i-trophy); padding: 22px 24px; }
 .home .tile[data-go='career'] .t { font-size: clamp(44px, 7vw, 76px); }
 .home .tile[data-go='career']::before { background: linear-gradient(200deg, rgba(7, 9, 12, 0) 25%, rgba(7, 9, 12, 0.5) 60%, rgba(7, 9, 12, 0.95)), linear-gradient(90deg, rgba(255, 140, 20, 0.18), transparent 50%); }
@@ -187,7 +188,8 @@ p.kicker::before { content: ''; width: 18px; height: 3px; flex: none; background
 .home .tile[data-go='free'] { --i: var(--i-watch); }
 .home .tile[data-go='daily'] { --i: var(--i-cal); }
 .home .tile[data-go='school'] { --i: var(--i-cone); }
-.home .tile[data-go='garage'] { --i: var(--i-wrench); }
+.home .tile[data-go='garage'] { --i: var(--i-wrench); grid-column: span 2; }
+.home .tile[data-go='race'] { --i: var(--i-flag); box-shadow: inset 0 0 0 1px var(--line-2), inset 0 -3px 0 var(--orange); }
 .home .tile[data-go='options'], .home .tile[data-go='credits'], .home .tile[data-go='exit'] { min-height: 54px; padding: 0 18px 0 52px; justify-content: center; background: var(--glass); }
 .home .tile[data-go='options']::before, .home .tile[data-go='credits']::before, .home .tile[data-go='exit']::before { background: linear-gradient(90deg, rgba(255, 184, 28, 0.08), transparent 60%); }
 .home .tile[data-go='options']::after, .home .tile[data-go='credits']::after, .home .tile[data-go='exit']::after { top: 50%; margin-top: -11px; }
@@ -195,7 +197,8 @@ p.kicker::before { content: ''; width: 18px; height: 3px; flex: none; background
 .home .tile[data-go='options'] { --i: var(--i-gear); }
 .home .tile[data-go='credits'] { --i: var(--i-star); }
 .home .tile[data-go='exit'] { --i: var(--i-power); }
-.home .tile[data-go='credits']:last-child { grid-column: span 2; }
+.home .tile[data-go='credits'] { grid-column: span 2; }
+.home .tile[data-go='credits']:last-child { grid-column: span 3; }
 .home .tile:nth-child(2) { animation-delay: 40ms; }
 .home .tile:nth-child(3) { animation-delay: 70ms; }
 .home .tile:nth-child(4) { animation-delay: 100ms; }
@@ -523,25 +526,6 @@ body:not(.touch) #minimap { bottom: calc(22px + var(--sb)); left: calc(22px + va
 body:not(.touch) .h-say { bottom: calc(52px + var(--sb)); }
 
 /* ---------------------------------------------------- race mode (AI rivals) */
-/* Position badge: <div class="pos"><b>2</b><small>/4</small></div>, sits under the clock. */
-#hud .pos, .pos { top: calc(92px + var(--st)); left: calc(14px + var(--sl)); display: inline-flex; align-items: baseline; gap: 2px; padding: 2px 18px 4px 14px; font: 800 italic 34px / 1 var(--display); color: #170e02; isolation: isolate; }
-.pos::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: var(--grad); box-shadow: 0 6px 18px -6px rgba(255, 140, 30, 0.8); }
-.pos b { font-weight: 800; }
-.pos b::before { content: 'P'; font-size: 0.7em; margin-right: 1px; }
-.pos small { font: 800 italic 18px / 1 var(--display); opacity: 0.7; }
-.pos.up { animation: pop 0.4s var(--ease); }
-/* Gaps: <ol class="gaps"><li class="ahead|you|behind"><span class="p">1</span><span class="who">Name</span><span class="d">−1.24</span></li></ol> */
-#hud .gaps, .gaps { top: calc(134px + var(--st)); left: calc(14px + var(--sl)); margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; min-width: 168px; font: 700 13px / 1 var(--display); letter-spacing: 0.04em; }
-.gaps li { position: relative; isolation: isolate; display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 8px; font-variant-numeric: tabular-nums; }
-.gaps li::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: rgba(8, 10, 14, 0.62); }
-.gaps .p { width: 14px; color: var(--dim); text-align: center; }
-.gaps .who { flex: 1; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gaps .d { color: var(--dim); }
-.gaps .ahead .d { color: var(--bad); }
-.gaps .behind .d { color: var(--good); }
-.gaps .you { color: #170e02; }
-.gaps .you::before { background: var(--grad); }
-.gaps .you .p, .gaps .you .d { color: inherit; }
 /* Mode toggle in stage select: <div class="mode-toggle" role="radiogroup"><button class="on" data-mode="solo">…</button><button data-mode="race">…</button></div> */
 .mode-toggle { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin: 6px 0 8px; max-width: 420px; }
 .mode-toggle button { position: relative; isolation: isolate; min-height: 50px; padding: 6px 22px; color: var(--dim); font: 800 18px / 1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; transition: color 0.15s, transform 0.15s var(--ease); }
@@ -552,21 +536,21 @@ body:not(.touch) .h-say { bottom: calc(52px + var(--sb)); }
 .mode-toggle button.on::after, .mode-toggle button[aria-checked='true']::after { opacity: 1; }
 .mode-toggle button:active { transform: scale(0.97); }
 .mode-toggle small { display: block; font: 500 11px Inter, sans-serif; letter-spacing: 0; text-transform: none; opacity: 0.75; }
-/* Finishing order in results: <ol class="order"><li class="you"><span class="p">1</span><span class="n">Name</span><span class="t">+0.00</span></li></ol> */
-.order { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
-.order li { position: relative; isolation: isolate; display: flex; align-items: center; gap: 12px; padding: 7px 14px 7px 8px; font-weight: 600; animation: slide-r 0.4s var(--ease) both; }
-.order li:nth-child(2) { animation-delay: 60ms; }
-.order li:nth-child(3) { animation-delay: 120ms; }
-.order li:nth-child(n+4) { animation-delay: 180ms; }
-.order li::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px var(--line); }
-.order .p { width: 30px; height: 26px; display: grid; place-items: center; font: 800 italic 18px / 1 var(--display); color: var(--ink); background: rgba(245, 241, 232, 0.5); transform: skewX(var(--skew)); }
-.order li:nth-child(1) .p { background: radial-gradient(circle at 35% 30%, #fff3b8, #f2c037 60%); }
-.order li:nth-child(2) .p { background: radial-gradient(circle at 35% 30%, #fff, #c9ced6 60%); }
-.order li:nth-child(3) .p { background: radial-gradient(circle at 35% 30%, #ffd9b0, #c98a52 60%); }
-.order .n { flex: 1; }
-.order .t { color: var(--dim); }
-.order li.you { color: var(--amber); }
-.order li.you::before { background: var(--grad-soft); box-shadow: inset 0 0 0 1px rgba(255, 184, 28, 0.6), inset 4px 0 0 var(--amber); }
+/* Finishing order as a list: <ol class="order"><li class="you"><span class="p">1</span><span class="n">Name</span><span class="t">+0.00</span></li></ol> */
+ol.order { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
+ol.order li { position: relative; isolation: isolate; display: flex; align-items: center; gap: 12px; padding: 7px 14px 7px 8px; font-weight: 600; animation: slide-r 0.4s var(--ease) both; }
+ol.order li:nth-child(2) { animation-delay: 60ms; }
+ol.order li:nth-child(3) { animation-delay: 120ms; }
+ol.order li:nth-child(n+4) { animation-delay: 180ms; }
+ol.order li::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px var(--line); }
+ol.order .p { width: 30px; height: 26px; display: grid; place-items: center; font: 800 italic 18px / 1 var(--display); color: var(--ink); background: rgba(245, 241, 232, 0.5); transform: skewX(var(--skew)); }
+ol.order li:nth-child(1) .p { background: radial-gradient(circle at 35% 30%, #fff3b8, #f2c037 60%); }
+ol.order li:nth-child(2) .p { background: radial-gradient(circle at 35% 30%, #fff, #c9ced6 60%); }
+ol.order li:nth-child(3) .p { background: radial-gradient(circle at 35% 30%, #ffd9b0, #c98a52 60%); }
+ol.order .n { flex: 1; }
+ol.order .t { color: var(--dim); }
+ol.order li.you { color: var(--amber); }
+ol.order li.you::before { background: var(--grad-soft); box-shadow: inset 0 0 0 1px rgba(255, 184, 28, 0.6), inset 4px 0 0 var(--amber); }
 
 /* =============================================================== overlays */
 .overlay { background: radial-gradient(ellipse at 50% 40%, rgba(6, 7, 9, 0.45), rgba(6, 7, 9, 0.78)); backdrop-filter: blur(8px) saturate(120%); -webkit-backdrop-filter: blur(8px) saturate(120%); display: grid; place-items: center; padding: calc(14px + var(--st)) calc(16px + var(--sr)) calc(14px + var(--sb)) calc(16px + var(--sl)); z-index: 20; }
@@ -698,8 +682,6 @@ body:not(.touch) input:focus-visible { outline: 2px solid var(--amber); outline-
   .h-note svg { width: 38px; height: 38px; }
   .h-note .g { font-size: 34px; }
   .h-tools button { height: 38px; min-width: 46px; padding: 0 10px; }
-  #hud .pos { top: calc(84px + var(--st)); font-size: 28px; }
-  #hud .gaps { top: calc(120px + var(--st)); }
   .home { grid-template-rows: 1fr 1fr 50px; gap: 8px; }
   .home .tile[data-go='options'], .home .tile[data-go='credits'], .home .tile[data-go='exit'] { min-height: 48px; }
   .tile { min-height: 100px; padding: 12px 16px; }
@@ -733,7 +715,7 @@ body:not(.touch) input:focus-visible { outline: 2px solid var(--amber); outline-
   .home, .detail, .garage, .results { grid-template-columns: 1fr; }
   .home { grid-template-rows: none; }
   .home .tile[data-go='career'] { grid-row: auto; min-height: 200px; }
-  .home .tile[data-go='credits']:last-child { grid-column: auto; }
+  .home .tile[data-go='credits'], .home .tile[data-go='credits']:last-child, .home .tile[data-go='garage'] { grid-column: auto; }
   .garage > div[aria-hidden] { height: 40vh; }
   .options { grid-template-columns: 1fr; background: rgba(10, 12, 16, 0.74); }
   .options > * { grid-column: 1; }
@@ -745,3 +727,45 @@ body:not(.touch) input:focus-visible { outline: 2px solid var(--amber); outline-
   *, *::before, *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important; }
   #menu::before, #title .tap::before, #title .tap::after, #replaybar .rec::before, .h-warn, .speedo.shift i, .coach[data-wait]::after, #loading .progress i::after { animation: none !important; }
 }
+
+/* Race: position and gaps under the stage clock (.h-race in the HUD). */
+.h-race { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.h-race .pos { position: relative; isolation: isolate; padding: 3px 12px 2px 10px; font: 800 italic 28px / 1 var(--display); color: #170e02; }
+.h-race .pos::before { content: ''; position: absolute; inset: 0; z-index: -1; transform: skewX(var(--skew)); background: var(--grad); }
+.h-race.lead .pos::before { background: linear-gradient(100deg, #7be8ab, var(--good)); }
+.h-race .of { font: 800 italic 18px / 1 var(--display); color: var(--dim); }
+.h-race .gaps { flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font: 700 13px / 1.25 var(--display); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.h-race .gaps:empty { display: none; }
+.h-race .gaps span { padding-left: 8px; border-left: 3px solid currentColor; }
+/* .behind is the car in front of you (you are behind it), .ahead the one you lead. */
+.h-race .gaps .behind { color: #ff8a7e; }
+.h-race .gaps .ahead { color: var(--good); }
+
+/* Race results: the finishing order is a .table.order; rival lines carry style and catchphrase. */
+.table.order td { vertical-align: middle; padding: 7px 8px; }
+.table.order td:first-child { width: 38px; font-size: 19px; }
+.table.order td:nth-child(2) { font-weight: 600; line-height: 1.25; }
+.table.order small { font-weight: 400; font-size: 11.5px; }
+.table.order small i { color: var(--paper); opacity: 0.7; }
+.table.order tr { animation: slide-l 0.4s var(--ease) both; }
+.table.order tr:nth-child(2) { animation-delay: 60ms; }
+.table.order tr:nth-child(3) { animation-delay: 120ms; }
+.table.order tr:nth-child(n+4) { animation-delay: 180ms; }
+
+/* AI level picker: − slider + in one strip. */
+[data-ai-pick] .seg { display: inline-flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
+[data-ai-pick] .seg button { width: 44px; padding: 0; font-size: 22px; color: var(--paper); }
+[data-ai-pick] .seg button[disabled] { opacity: 0.35; }
+[data-ai-pick] input[type='range'] { width: min(200px, 34vw); }
+[data-ai-pick] label b { color: var(--amber); font: 800 18px var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.opt label small { display: inline-block; margin-top: 2px; font-weight: 400; line-height: 1.3; }
+.seg button[disabled].on { opacity: 1; cursor: default; }
+
+/* Rival cards in race setup: <p class="rival"><b>flag name</b> · <span class="kicker">style</span><br><small>bio <i>quote</i></small></p> */
+.rival { position: relative; margin: 6px 0; padding: 9px 14px 9px 16px; background: rgba(255, 255, 255, 0.04); box-shadow: inset 0 0 0 1px var(--line), inset 3px 0 0 var(--orange); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%); animation: slide-r 0.35s var(--ease) both; }
+.rival:nth-of-type(2) { animation-delay: 50ms; }
+.rival:nth-of-type(3) { animation-delay: 100ms; }
+.rival b { font: 800 18px / 1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.rival .kicker { display: inline; font-size: 12px; }
+.rival small { display: block; margin-top: 3px; line-height: 1.35; }
+.rival small i { color: var(--paper); opacity: 0.85; }

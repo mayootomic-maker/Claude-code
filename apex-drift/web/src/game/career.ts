@@ -1,5 +1,6 @@
 import { rng } from '../core/math'
 import { RALLIES, RIVALS, type RallyDef } from '../data'
+import { RUNGS } from '../sim/levels'
 import { DIFFICULTY_SCALE, idealTime, medals, StageSim, type Difficulty } from '../sim/stage'
 import type { Save } from './save'
 
@@ -27,6 +28,7 @@ export function medalFor(time: number, rally: RallyDef, stageIdx: number, d: Dif
   return time <= m.gold ? 'gold' : time <= m.silver ? 'silver' : time <= m.bronze ? 'bronze' : null
 }
 
+
 /**
  * A rival's time on a stage. Their pace is relative to the difficulty's gold
  * time, a little faster on surfaces they like, with a small seeded spread so
@@ -37,8 +39,9 @@ export function rivalTime(rivalIdx: number, rally: RallyDef, stageIdx: number, d
   const base = stageIdeal(rally, stageIdx) * DIFFICULTY_SCALE[d]
   const spread = rng(rally.stages[stageIdx].seed * 31 + rivalIdx * 977)() - 0.5
   const likes = r.likes.includes(rally.surface) ? 0.99 : 1.0
-  // The field is centred a little slower than gold, so a gold-medal run is a podium.
-  return base * r.pace * likes * (1.035 + spread * 0.025)
+  // The field is centred a little slower than gold on Rookie, so a gold-medal
+  // run is a podium; on Pro the leaders run at gold pace and gold only just wins.
+  return base * r.pace * likes * (RUNGS[d].field + spread * 0.025)
 }
 
 export interface Standing {
@@ -84,6 +87,13 @@ export function stageReward(medal: Medal, clean: boolean): Reward {
 export function rallyReward(position: number): Reward {
   const c = [3000, 2000, 1400, 1000, 800][position - 1] ?? 500
   return { credits: c, xp: Math.round(c * 0.8) }
+}
+
+/** Prize for a finishing position in a head-to-head race; a win against better rivals is worth more. */
+export function raceReward(position: number, d: Difficulty): Reward {
+  const base = [900, 550, 350, 250][position - 1] ?? 250
+  const k = RUNGS[d].reward
+  return { credits: Math.round(base * k), xp: Math.round(base * k * 0.9) }
 }
 
 /** A rally is open once the one before it in the career has been finished. */

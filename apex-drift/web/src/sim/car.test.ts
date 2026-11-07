@@ -48,7 +48,7 @@ function sprint(id: string, surface = 'asphalt') {
   const c = standing(id, surface)
   let t100 = Infinity, top = 0
   for (let i = 0; i < 60 * 80; i++) {
-    c.step(FLAT_OUT, hands('driver'))
+    c.step(FLAT_OUT, hands('medium'))
     if (t100 === Infinity && c.vx >= 100 * KMH) t100 = (i + 1) * DT
     top = Math.max(top, c.vx)
   }
@@ -67,7 +67,7 @@ function skidpad(surface: string): number {
     let st = 0, sum = 0, n = 0
     for (let i = 0; i < 60 * 12; i++) {
       st = clamp(st - (c.speed / R - c.r) * 0.08, -1, 1)
-      c.step({ steer: st, throttle: clamp((v - c.speed) * 0.6 + 0.25, 0, 1), brake: 0, handbrake: false }, hands('pro'))
+      c.step({ steer: st, throttle: clamp((v - c.speed) * 0.6 + 0.25, 0, 1), brake: 0, handbrake: false }, hands('off'))
       if (i > 60 * 8) {
         sum += Math.abs(c.speed * c.r)
         n++
@@ -91,25 +91,25 @@ describe('car: grip', () => {
   }
 
   it('stops from 100 km/h on tarmac in 35-45 m with ABS, and further on locked wheels', () => {
-    const stop = (id: string, d: 'driver' | 'pro') => {
+    const stop = (id: string, d: 'medium' | 'off') => {
       const c = rolling(id, 'asphalt', 100 * KMH, 4)
       for (let i = 0; i < 600 && c.vx > 0.05; i++) c.step({ steer: 0, throttle: 0, brake: 1, handbrake: false }, hands(d))
       expect(Math.abs(c.x), `${id} ${d} stays straight`).toBeLessThan(0.5)
       return c.z
     }
     for (const { id } of CARS) {
-      const abs = stop(id, 'driver')
+      const abs = stop(id, 'medium')
       expect(abs, id).toBeGreaterThan(35)
       expect(abs, id).toBeLessThan(45)
       // Pro has no ABS assist; cars without their own lock up and slide further.
-      const pro = stop(id, 'pro')
+      const pro = stop(id, 'off')
       expect(pro, id).toBeGreaterThan(abs - 1)
       expect(pro, id).toBeLessThan(55)
     }
   })
 
   it('locks the fronts under hard braking without ABS, not with it', () => {
-    const peak = (id: string, d: 'driver' | 'pro') => {
+    const peak = (id: string, d: 'medium' | 'off') => {
       const c = rolling(id, 'gravel', 20, 3)
       let slip = 0
       for (let i = 0; i < 30; i++) {
@@ -118,10 +118,10 @@ describe('car: grip', () => {
       }
       return slip
     }
-    expect(peak('kestrel', 'pro')).toBeGreaterThan(0.4)
-    expect(peak('kestrel', 'driver')).toBeLessThan(0.15)
+    expect(peak('kestrel', 'off')).toBeGreaterThan(0.4)
+    expect(peak('kestrel', 'medium')).toBeLessThan(0.15)
     // A 90s car has ABS of its own.
-    expect(peak('apex', 'pro')).toBeLessThan(0.15)
+    expect(peak('apex', 'off')).toBeLessThan(0.15)
   })
 })
 
@@ -152,7 +152,7 @@ describe('car: engine and gearbox', () => {
       const c = standing(id)
       let gear = c.gear, downs = 0, minRpm = Infinity, maxRpm = 0, cut = 0
       for (let i = 0; i < 60 * 70; i++) {
-        c.step(FLAT_OUT, hands('driver'))
+        c.step(FLAT_OUT, hands('medium'))
         if (c.gear < gear) downs++
         gear = c.gear
         if (c.shifting) cut++
@@ -172,10 +172,10 @@ describe('car: engine and gearbox', () => {
 
   it('shifts down when braking and brakes on the engine when lifting', () => {
     const c = rolling('kestrel', 'asphalt', 30, 4)
-    for (let i = 0; i < 30; i++) c.step({ steer: 0, throttle: 0, brake: 0, handbrake: false }, hands('driver'))
+    for (let i = 0; i < 30; i++) c.step({ steer: 0, throttle: 0, brake: 0, handbrake: false }, hands('medium'))
     expect(c.engineLoad).toBeLessThan(0)
     expect(c.throttleOut).toBe(0)
-    for (let i = 0; i < 150; i++) c.step({ steer: 0, throttle: 0, brake: 0.8, handbrake: false }, hands('driver'))
+    for (let i = 0; i < 150; i++) c.step({ steer: 0, throttle: 0, brake: 0.8, handbrake: false }, hands('medium'))
     expect(c.gear).toBeLessThanOrEqual(2)
     expect(c.rpm).toBeGreaterThanOrEqual(c.idle)
   })
@@ -184,13 +184,13 @@ describe('car: engine and gearbox', () => {
     const c = rolling('boxer', 'asphalt', 15, 2)
     const boost: number[] = []
     for (let i = 0; i < 90; i++) {
-      c.step(FLAT_OUT, hands('driver'))
+      c.step(FLAT_OUT, hands('medium'))
       boost.push(c.boost)
     }
     expect(boost[8]).toBeLessThan(0.4)
     expect(Math.max(...boost.slice(50))).toBeGreaterThan(0.9)
     const n = rolling('kestrel', 'asphalt', 15, 2)
-    for (let i = 0; i < 90; i++) n.step(FLAT_OUT, hands('driver'))
+    for (let i = 0; i < 90; i++) n.step(FLAT_OUT, hands('medium'))
     expect(n.boost).toBe(0)
     expect(n.turbo).toBe(false)
   })
@@ -211,12 +211,12 @@ describe('car: engine and gearbox', () => {
 
   it('reverses when the brake is held at a standstill and drives off again on throttle', () => {
     const c = standing('kestrel', 'gravel')
-    for (let i = 0; i < 120; i++) c.step({ steer: 0, throttle: 0, brake: 1, handbrake: true }, hands('rookie'))
+    for (let i = 0; i < 120; i++) c.step({ steer: 0, throttle: 0, brake: 1, handbrake: true }, hands('full'))
     expect(Math.abs(c.vx)).toBeLessThan(0.01)
-    for (let i = 0; i < 240; i++) c.step({ steer: 0, throttle: 0, brake: 1, handbrake: false }, hands('rookie'))
+    for (let i = 0; i < 240; i++) c.step({ steer: 0, throttle: 0, brake: 1, handbrake: false }, hands('full'))
     expect(c.gear).toBe(-1)
     expect(c.vx).toBeLessThan(-3)
-    for (let i = 0; i < 180; i++) c.step(FLAT_OUT, hands('rookie'))
+    for (let i = 0; i < 180; i++) c.step(FLAT_OUT, hands('full'))
     expect(c.gear).toBeGreaterThan(0)
     expect(c.vx).toBeGreaterThan(3)
   })
@@ -224,7 +224,7 @@ describe('car: engine and gearbox', () => {
 
 describe('car: handling', () => {
   it('spins the driven wheels on gravel when floored without traction control, rear drive most', () => {
-    const spin = (id: string, d: 'driver' | 'pro') => {
+    const spin = (id: string, d: 'medium' | 'off') => {
       const c = standing(id, 'gravel')
       let m = 0
       for (let i = 0; i < 60; i++) {
@@ -233,13 +233,13 @@ describe('car: handling', () => {
       }
       return m
     }
-    expect(spin('ruska', 'pro')).toBeGreaterThan(0.8)
-    expect(spin('ruska', 'driver')).toBeLessThan(0.15)
-    expect(spin('ruska', 'pro')).toBeGreaterThan(spin('kestrel', 'pro'))
+    expect(spin('ruska', 'off')).toBeGreaterThan(0.8)
+    expect(spin('ruska', 'medium')).toBeLessThan(0.15)
+    expect(spin('ruska', 'off')).toBeGreaterThan(spin('kestrel', 'off'))
   })
 
   it('turns harder with the handbrake in a hairpin, on every difficulty', () => {
-    for (const d of ['rookie', 'driver', 'pro'] as const)
+    for (const d of ['full', 'medium', 'off'] as const)
       for (const surface of ['gravel', 'asphalt', 'snow']) {
         const turn = (hb: boolean) => {
           const c = rolling('kestrel', surface, 14, 2)
@@ -251,7 +251,7 @@ describe('car: handling', () => {
   })
 
   it('oversteers on power in a rear-driven car on Pro, and the assists keep it tidy on Rookie', () => {
-    const slide = (d: 'rookie' | 'pro') => {
+    const slide = (d: 'full' | 'off') => {
       const c = rolling('ruska', 'gravel', 12, 2)
       let m = 0
       for (let i = 0; i < 120; i++) {
@@ -260,8 +260,8 @@ describe('car: handling', () => {
       }
       return m
     }
-    expect(slide('pro')).toBeGreaterThan(0.35)
-    expect(slide('rookie')).toBeLessThan(0.2)
+    expect(slide('off')).toBeGreaterThan(0.35)
+    expect(slide('full')).toBeLessThan(0.2)
   })
 
   it('holds a throttle drift on gravel on Pro without spinning', () => {
@@ -272,7 +272,7 @@ describe('car: handling', () => {
       const b = Math.atan2(c.vy, Math.max(1, c.vx))
       const e = b - target
       const inp = i < 30 ? { steer: 1, throttle: 0.5, brake: 0, handbrake: i > 10 && i < 24 } : { steer: clamp(-0.15 - 3 * e, -1, 1), throttle: clamp(0.6 - 3 * e, 0, 1), brake: 0, handbrake: false }
-      c.step(inp, hands('pro'))
+      c.step(inp, hands('off'))
       if (i > 60 * 2) beta.push(b)
     }
     expect(Math.min(...beta)).toBeGreaterThan(0.15)
@@ -280,8 +280,64 @@ describe('car: handling', () => {
     expect(c.speed).toBeGreaterThan(4)
   })
 
+  it('kicks the tail out on a 2 s handbrake pull at 25 m/s and carries the speed into the slide', () => {
+    for (const id of ['kestrel', 'ruska', 'apex'])
+      for (const surface of ['gravel', 'asphalt', 'snow'])
+        for (const d of ['medium', 'off'] as const) {
+          const c = rolling(id, surface, 25, 3)
+          let slip = 0, worst = 0
+          for (let i = 0; i < 120; i++) {
+            c.step({ steer: -1, throttle: 0.4, brake: 0, handbrake: true }, hands(d))
+            const b = Math.abs(Math.atan2(c.vy, c.vx))
+            slip = Math.max(slip, b)
+            worst = Math.max(worst, b)
+          }
+          const label = `${id} ${surface} ${d}`
+          expect(c.speed, label).toBeGreaterThan(25 * 0.8)
+          expect(slip * 180 / Math.PI, label).toBeGreaterThan(20)
+          expect(worst * 180 / Math.PI, `${label} spun`).toBeLessThan(120)
+        }
+  })
+
+  it('holds a long drift on throttle and countersteer without bleeding speed or spinning', () => {
+    for (const id of ['kestrel', 'ruska', 'apex'])
+      for (const surface of ['gravel', 'asphalt'])
+        for (const d of ['medium', 'off'] as const) {
+          const c = rolling(id, surface, 20, 3)
+          const target = 0.45
+          let held = 0, minV = Infinity, worst = 0, prev = 0
+          for (let i = 0; i < 60 * 7; i++) {
+            const b = Math.atan2(c.vy, c.vx)
+            const e = b - target, rate = (b - prev) / DT
+            prev = b
+            // Flick it in with a tug of the lever, then hold the angle with the
+            // throttle and a little countersteer, as a player would.
+            const inp = i < 40
+              ? { steer: 1, throttle: 0.6, brake: 0, handbrake: i < 25 }
+              : { steer: clamp(-0.05 - 2 * e - 0.6 * rate, -1, 1), throttle: clamp(0.8 - 2 * e, 0, 1), brake: 0, handbrake: false }
+            c.step(inp, hands(d))
+            if (i > 60) {
+              minV = Math.min(minV, c.speed)
+              worst = Math.max(worst, Math.abs(b))
+              if (Math.abs(b) > (15 * Math.PI) / 180) held += DT
+            }
+          }
+          const label = `${id} ${surface} ${d}`
+          expect(held, label).toBeGreaterThanOrEqual(4)
+          expect(minV, label).toBeGreaterThan(20 * 0.6)
+          expect(worst * 180 / Math.PI, `${label} spun`).toBeLessThan(120)
+        }
+  })
+
+  it('a grip driver stays tidy: no drift without the lever or power through a slide', () => {
+    const c = rolling('kestrel', 'gravel', 22, 3)
+    for (let i = 0; i < 180; i++) c.step({ steer: -0.5, throttle: 0.5, brake: 0, handbrake: false }, hands('medium'))
+    expect(c.drift).toBeLessThan(0.2)
+    expect(Math.abs(Math.atan2(c.vy, c.vx))).toBeLessThan(0.15)
+  })
+
   it('lands from a jump with a nose dip and without a spin', () => {
-    for (const d of ['rookie', 'pro'] as const) {
+    for (const d of ['full', 'off'] as const) {
       const c = rolling('apex', 'gravel', 30, 4)
       c.y = 3
       c.vyUp = 3
@@ -304,13 +360,13 @@ describe('car: handling', () => {
 
   it('dives under braking, squats on throttle and rolls out of a turn', () => {
     const brake = rolling('kestrel', 'asphalt', 25, 3)
-    for (let i = 0; i < 30; i++) brake.step({ steer: 0, throttle: 0, brake: 1, handbrake: false }, hands('driver'))
+    for (let i = 0; i < 30; i++) brake.step({ steer: 0, throttle: 0, brake: 1, handbrake: false }, hands('medium'))
     expect(brake.pitch).toBeGreaterThan(0.02)
     const gas = standing('kestrel')
-    for (let i = 0; i < 30; i++) gas.step(FLAT_OUT, hands('driver'))
+    for (let i = 0; i < 30; i++) gas.step(FLAT_OUT, hands('medium'))
     expect(gas.pitch).toBeLessThan(-0.01)
     const turn = rolling('kestrel', 'asphalt', 18, 3)
-    for (let i = 0; i < 60; i++) turn.step({ steer: -0.6, throttle: 0.3, brake: 0, handbrake: false }, hands('driver'))
+    for (let i = 0; i < 60; i++) turn.step({ steer: -0.6, throttle: 0.3, brake: 0, handbrake: false }, hands('medium'))
     // Turning left (ay > 0) leans the body to the outside.
     expect(turn.ay).toBeGreaterThan(2)
     expect(turn.roll).toBeGreaterThan(0.02)
@@ -320,7 +376,7 @@ describe('car: handling', () => {
     const r = rng(7)
     const surfaces = ['asphalt', 'gravel', 'snow', 'ice', 'mud', 'grass', 'water', 'wet']
     for (const id of ['piccola', 'ruska', 'kestrel', 'apex']) {
-      for (const d of ['rookie', 'driver', 'pro'] as const) {
+      for (const d of ['full', 'medium', 'off'] as const) {
         const c = standing(id, surfaces[Math.floor(r() * surfaces.length)])
         let inp: Input = FLAT_OUT
         for (let i = 0; i < 10000; i++) {

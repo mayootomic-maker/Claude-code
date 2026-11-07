@@ -12,7 +12,8 @@
     "verify": "npm run typecheck && npm test && vite build && node scripts/check-release.mjs",
     "single": "vite build && node scripts/single-file.mjs",
     "single:owner": "npm run build:owner && node scripts/single-file.mjs dist-owner apex-drift-owner.html",
-    "build:owner": "VITE_OWNER=1 vite build --outDir dist-owner"
+    "build:owner": "VITE_OWNER=1 vite build --outDir dist-owner",
+    "trailer": "node scripts/trailer.mjs"
   },
   "dependencies": {
     "three": "^0.170.0"

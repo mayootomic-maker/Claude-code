@@ -9,7 +9,7 @@ import { CoDriver } from './game/codriver'
 import { paceNotes } from './game/pacenotes'
 import { stageMedals } from './game/career'
 import './styles.css'
-import { Renderer, StageView, type Tier } from './render/view'
+import { Renderer, StageView, type CamMode, type Tier } from './render/view'
 import { DT } from './sim/car'
 import { autopilot, StageSim } from './sim/stage'
 
@@ -51,7 +51,9 @@ if (q.get('mode') === 'zoo') {
   gl.shadowMap.enabled = true
   gl.outputColorSpace = THREE.SRGBColorSpace
   const sc = new Showcase(gl)
+  const t0 = performance.now()
   sc.setCar(q.get('car') ?? 'kestrel', LIVERIES.find((l) => l.id === q.get('livery')) ?? LIVERIES[0])
+  console.log(`[car] built in ${(performance.now() - t0).toFixed(0)} ms`)
   sc.angle = Number(q.get('a') ?? 0.6)
   sc.spin = Number(q.get('spin') ?? 0)
   sc.resize(innerWidth, innerHeight)
@@ -60,6 +62,24 @@ if (q.get('mode') === 'zoo') {
     sc.camera.position.set(0, 0.6 + Math.sin(el) * d, Math.cos(el) * d)
     sc.camera.lookAt(0, 0.6, 0)
   }
+  // Exact framing for close-ups: ?cam=x,y,z&look=x,y,z&fov=n (turntable at a=0 faces +z).
+  if (q.has('cam')) {
+    const [cx, cy, cz] = (q.get('cam') ?? '').split(',').map(Number)
+    const [lx, ly, lz] = (q.get('look') ?? '0,0.6,0').split(',').map(Number)
+    sc.camera.position.set(cx, cy, cz)
+    sc.camera.lookAt(lx, ly, lz)
+    if (q.has('fov')) sc.camera.fov = Number(q.get('fov'))
+    sc.camera.near = 0.02
+    sc.camera.updateProjectionMatrix()
+  }
+  let tris = 0, calls = 0
+  sc.scene.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !o.parent || o.parent === sc.scene) return
+    calls++
+    const g = o.geometry as THREE.BufferGeometry
+    tris += (g.index ? g.index.count : g.getAttribute('position').count) / 3
+  })
+  console.log(`[car] ${tris | 0} triangles, ${calls} meshes`)
   let last = performance.now()
   const loop = (n: number) => {
     sc.render((n - last) / 1000)
@@ -103,6 +123,8 @@ if (q.get('mode') === 'zoo') {
   const view = new StageView(sim, r, LIVERIES.find((l) => l.id === q.get('livery')) ?? LIVERIES[0])
   view.resize(innerWidth, innerHeight)
   if (q.has('nohorizon')) view.world.group.children[0].visible = false
+  const cm = q.get('cam') ?? ''
+  if (['chase', 'near', 'bonnet', 'cockpit'].includes(cm)) view.camMode = cm as CamMode
   if (q.has('nosky')) view.scene.children[0].visible = false
   for (let i = 0; i < Number(q.get('skip') ?? 0) * 60; i++) sim.step(autopilot(sim, 0.85))
   view.syncCar(1)

@@ -39,3 +39,6 @@ project/previews/*
 project/assets/hdri/
 dist-single/
 dist-owner/
+
+# Apex Drift trailer renders (npm run trailer)
+apex-drift/web/trailer/

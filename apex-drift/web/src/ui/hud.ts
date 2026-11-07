@@ -3,7 +3,7 @@ import type { Note } from '../game/pacenotes'
 import { t } from '../game/i18n'
 import type { StageSim } from '../sim/stage'
 import { STEP } from '../sim/route'
-import { $, fmtDelta, fmtTime, html } from './dom'
+import { $, esc, fmtDelta, fmtTime, html } from './dom'
 
 // Arrows draw in currentColor so the card's severity tint reaches them.
 const ARROWS: Record<string, string> = {
@@ -60,10 +60,13 @@ export class Hud {
   private mapScale = 1
   private mapCx = 0
   private mapCz = 0
+  private raceTick = 0
+  /** Minimap colours of the rivals, from their liveries. */
+  private rivalColors: string[] = []
 
   constructor(root: HTMLElement, private readonly mph: boolean) {
     this.root = html(root, `
-      <div class="h-stage"><div class="name"></div><div class="time" aria-live="off">0:00.00</div><div class="split"></div><div class="h-prog"><i></i></div></div>
+      <div class="h-stage"><div class="name"></div><div class="time" aria-live="off">0:00.00</div><div class="split"></div><div class="h-prog"><i></i></div><div class="h-race hidden" aria-live="off"><b class="pos">P1</b><span class="of"></span><div class="gaps"></div></div></div>
       <div class="h-note" style="opacity:0"></div>
       <div class="h-tools">
         <button data-act="rewind" aria-label="${t('rewind')}">${ICONS.rewind}<span class="rw-n"></span></button>
@@ -145,9 +148,34 @@ export class Hud {
     this.gear.textContent = car.gear < 0 ? "R" : String(car.gear)
     this.arc.style.strokeDasharray = `${((Math.min(car.rpm, car.redline) / car.redline) * 245).toFixed(0)} 400`
     this.tacho.classList.toggle('shift', car.rpm > car.redline * 0.94)
+    if (sim.racing) this.racePanel(sim)
     this.warn.textContent = t('wrongWay')
     this.warn.classList.toggle('hidden', !sim.isWrongWay)
     this.drawMap(sim)
+  }
+
+  /** Rival colours for the minimap, in the order of `sim.field`. */
+  setRivals(colors: number[]): void {
+    this.rivalColors = colors.map((c) => `#${c.toString(16).padStart(6, '0')}`)
+  }
+
+  /** Race position and the gaps to the cars either side, refreshed a few times a second. */
+  private racePanel(sim: StageSim): void {
+    if (this.raceTick++ % 10) return
+    const el = this.root.querySelector('.h-race') as HTMLElement | null
+    if (!el) return
+    const order = sim.order()
+    const pos = order.findIndex((e) => e.you) + 1
+    const g = sim.gaps()
+    el.classList.remove('hidden')
+    el.classList.toggle('lead', pos === 1)
+    $('.pos', el).textContent = `P${pos}`
+    $('.of', el).textContent = `/${order.length}`
+    const fmt = (v: number) => `${v.toFixed(1)}s`
+    $('.gaps', el).innerHTML = [
+      g.ahead !== null && pos > 1 ? `<span class="behind">▲ ${esc(order[pos - 2].name)} ${fmt(g.ahead)}</span>` : '',
+      g.behind !== null && pos < order.length ? `<span class="ahead">▼ ${esc(order[pos].name)} ${fmt(g.behind)}</span>` : '',
+    ].join('')
   }
 
   rewinds(n: number): void {
@@ -259,6 +287,7 @@ export class Hud {
     }
     dot(sim.start, '#4fd18b', 7)
     dot(sim.finish, '#ff5a4e', 7)
+    sim.field.forEach((o, i) => dot(o.car.s, this.rivalColors[i] ?? '#9fb4c8', 6))
     // The car as an arrowhead pointing where it is heading (X mirrored, as in toMap).
     const [cx, cy] = this.toMap(sim.car.x, sim.car.z)
     const h = sim.car.heading
