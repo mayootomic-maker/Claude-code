@@ -196,6 +196,8 @@ export class StageView {
   private fov = 60
   private time = 0
   shake = 1
+  /** Near plane for every outside camera; a fixed shot placed against the bodywork (trailer close-ups) sets it lower. */
+  outsideNear = 0.8
   private readonly shaker = new CameraShake()
   /** Smoothed lateral g for the driver's head, smoothed body roll and pitch for the chase camera's lag. */
   private latG = 0
@@ -365,8 +367,8 @@ export class StageView {
       this.car.interior?.(inside)
     }
     if (mode !== 'drive' || (this.camMode !== 'cockpit' && this.camMode !== 'bonnet')) {
-      if (this.camera.near !== 0.8) {
-        this.camera.near = 0.8
+      if (this.camera.near !== this.outsideNear) {
+        this.camera.near = this.outsideNear
         this.camera.updateProjectionMatrix()
       }
       this.camera.up.set(0, 1, 0)
