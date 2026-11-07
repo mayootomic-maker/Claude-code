@@ -4,7 +4,7 @@ import { RALLIES, SCHOOL } from '../data'
 import { StageSim } from '../sim/stage'
 import { asLand, BODY } from '../sim/terrain'
 import { streamSurface } from './lakes'
-import { baseFor, edgePoint, planSegment, planTile, type PlanCtx } from './placement'
+import { baseFor, bridgeSupports, edgePoint, lowUnder, planSegment, planTile, type PlanCtx } from './placement'
 import { FAR_RES, planTileRes, splitAD, Surface, TILE, triHeight } from './surface'
 
 /** The terrain grid spacings of the tier with the coarsest corridor (Low); the finest is checked separately. */
@@ -59,6 +59,32 @@ describe('the surface read back is the terrain that is drawn', () => {
   })
 })
 
+describe('the land has no cliffs where legs of road meet', () => {
+  it('rises no more than a terrace riser between any two points a metre apart, out to the far terrain', () => {
+    for (let ri = 0; ri < RALLIES.length; ri++) {
+      const { sim, land } = setup(ri, 0, [2, 2, 4])
+      let worst = 0, where = ''
+      for (let s = 400; s < sim.route.length - 400; s += 700) {
+        const a = sim.route.at(s)
+        for (const side of [1, -1]) {
+          const lx = Math.cos(a.heading) * side, lz = -Math.sin(a.heading) * side
+          let prev = land.mesh(a.x + lx * 8, a.z + lz * 8)
+          for (let d = 9; d < 440; d++) {
+            const h = land.mesh(a.x + lx * d, a.z + lz * d)
+            if (Math.abs(h - prev) > worst) {
+              worst = Math.abs(h - prev)
+              where = `${RALLIES[ri].id} s=${s} side=${side} d=${d}`
+            }
+            prev = h
+          }
+        }
+      }
+      // Terrace risers and banks between ladder legs are steep; the jumps this guards against were 15-40 m.
+      expect(worst, where).toBeLessThan(4)
+    }
+  }, 120000)
+})
+
 describe('everything stands on the drawn ground: no hovering on slopes, nothing buried', () => {
   const rallies = [...RALLIES.map((_, i) => i), -1]
   for (const ri of rallies) {
@@ -104,6 +130,24 @@ describe('everything stands on the drawn ground: no hovering on slopes, nothing 
             expect(Math.min(a.y, g) - 0.3).toBeLessThanOrEqual(g)
             expect(sim.route.closest(e.x, e.z)!.dist).toBeGreaterThanOrEqual(land.limitAt(sim.route.closest(e.x, e.z)!.s) + BODY - 0.05)
           }
+        // Bridges: every abutment and pier reaches below the lowest drawn
+        // ground under its footprint (the gorge floor, or the riverbed under
+        // the water), and up to the deck.
+        for (const f of sim.route.features) {
+          if (f.kind !== 'bridge') continue
+          const sup = bridgeSupports(sim.route, surf, f.s0, f.s1, land.water)
+          expect(sup.filter((p) => p.kind === 'abutment').length).toBe(2)
+          for (const p of sup) {
+            const lo = lowUnder(surf, p.x, p.z, p.yaw, p.across, p.along)
+            if (p.bottom > lo - 0.5) throw new Error(`${id} stage ${si + 1}: bridge ${p.kind} at s=${f.s0.toFixed(0)} stops ${(p.bottom - lo).toFixed(2)} m above the ground`)
+            const w = land.water(p.x, p.z)
+            if (w !== null) expect(p.bottom).toBeLessThan(w - 0.5)
+            // Footings break the surface, so the pier is seen to stand in the river.
+            if (p.kind === 'footing') expect(p.top).toBeGreaterThan(Math.max(w ?? lo, lo))
+            expect(p.top).toBeGreaterThan(p.bottom)
+            expect(p.top).toBeLessThanOrEqual(sim.route.closest(p.x, p.z)!.y - 0.85)
+          }
+        }
         // Streams and rivers: their fading edges tuck under the drawn bank,
         // and they stay below every road they pass (a ford's water may cover
         // its own dipped road, which is what makes it a ford).

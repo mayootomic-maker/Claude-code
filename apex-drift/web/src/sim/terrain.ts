@@ -133,34 +133,76 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Land {
     return h
   }
 
-  const natural0 = (x: number, z: number, c: Closest | null): number => {
-    if (!c) return land(x, z)
-    const off = Math.max(0, c.dist - edge)
+  /** The land as seen from one leg of road: its height, its hillside, its ditch. */
+  const fromLeg = (x: number, z: number, off: number, roadY: number, slope: number, terraces: number): number => {
     // The road is cut into a hillside whose fall line changes slowly along the
     // stage: one side climbs (rock walls, banks), the other drops away. The
     // slope eases off with distance, where the open landscape takes over.
-    const fall = sideN(c.s / 400, 0.3) * rel.side * 0.42 * STEEP
-    const sat = 60 * Math.log1p(off / 60)
-    let side = Math.sign(c.d) * fall * sat
+    // Steep beside the road, easing off further out where neighbouring legs and the open land take over.
+    const sat = 60 * Math.log1p(off / 60) * (1 - 0.45 * smoothstep(40, 180, off))
+    let side = slope * sat
     // Mediterranean and Andean hillsides are farmed in terraces.
     // Only on the hillside beside the road: far out, terraces would stack into cliffs.
-    if (TERRACED && Math.abs(side) > 1.5 && off < 90) {
+    if (TERRACED && terraces > 0 && Math.abs(side) > 1.5 && off < 90) {
       const t = Math.sign(side) * (Math.floor(Math.abs(side) / 2.6) * 2.6 + smoothstep(0.75, 1, (Math.abs(side) / 2.6) % 1) * 2.6)
-      side = t + (side - t) * smoothstep(50, 90, off)
+      side = t + (side - t) * (1 - (1 - smoothstep(50, 90, off)) * terraces)
     }
     const rough = fbm2(n, x / 90, z / 90, 4) * Math.min(14, rel.amp * 0.08) * smoothstep(0, 40, off)
     // Hummocks and hollows at a few metres, only away from the verge.
     const fine = fbm2(n, x / 23 + 11, z / 23, 2) * Math.min(1.6, 0.35 + rel.amp * 0.008) * smoothstep(6, 26, off)
     const ditch = -0.45 * smoothstep(0, 1.5, off) * (1 - smoothstep(2.5, 6, off))
-    const near = c.y + side + rough + fine + ditch - 0.06
+    const near = roadY + side + rough + fine + ditch - 0.06
     // Ridges come up gradually beside the road; far out the land is all its own.
     const ridgeNear = (ridged(ridgeN, x / 210, z / 210, 4) - 0.32) * ridgeAmp * 2 * smoothstep(25, 120, off) * 0.6
     const w = smoothstep(70, LAND_REACH - 40, off)
     let h = w > 0 ? near + ridgeNear + (land(x, z) - near - ridgeNear) * w : near + ridgeNear
     // Lakes: basins in the low, flat country, well back from the road.
     const lk = lake(x, z, off)
-    if (lk > 0) h = h * (1 - lk) + (c.y - 3.2) * lk
+    if (lk > 0) h = h * (1 - lk) + (roadY - 3.2) * lk
     return h
+  }
+
+  // The hillside's fall at every sample along the road, signed for the left side.
+  const fallAt = new Float32Array(route.n)
+  for (let i = 0; i < route.n; i++) fallAt[i] = sideN((i * STEP) / 400, 0.3) * rel.side * 0.42 * STEEP
+
+  /**
+   * The road as the land beside a point sees it: its height and the signed
+   * slope of the hillside it is cut into. Right beside the road that is just
+   * the nearest point; further out it is averaged over every stretch of road
+   * within a few metres (more further out) of the nearest, so where two legs meet (hairpins,
+   * ladders, a bend sweeping round) the land is blended between them instead
+   * of jumping by their difference in height, a cliff in the middle of a field.
+   */
+  const roadAround = (x: number, z: number, c: Closest): { y: number; slope: number; terraces: number } => {
+    const y0 = c.y, s0 = Math.sign(c.d) * (fallAt[c.i] + (fallAt[Math.min(route.n - 1, c.i + 1)] - fallAt[c.i]) * c.t)
+    const a = smoothstep(edge + 1, edge + 4, c.dist)
+    if (a <= 0 || c.dist > LAND_REACH - 30) return { y: y0, slope: s0, terraces: 1 }
+    let wy = 0, wyy = 0, ws = 0, wsum = 0
+    // Narrow beside the road, so a verge never leans toward the next leg; wider out in the fields.
+    const blend = 8 + c.dist * 0.6
+    route.forEachNear(x, z, c.dist + blend, (i, t, d, side) => {
+      const w = 1 - smoothstep(0, blend, d - c.dist)
+      if (w <= 0) return
+      const j = Math.min(route.n - 1, i + 1)
+      const ry = route.y[i] + (route.y[j] - route.y[i]) * t
+      wy += w * ry
+      wyy += w * ry * ry
+      ws += w * Math.sign(side) * (fallAt[i] + (fallAt[j] - fallAt[i]) * t)
+      wsum += w
+    })
+    if (wsum <= 0) return { y: y0, slope: s0, terraces: 1 }
+    // Where legs at different heights are being blended, the hillside is a
+    // bank between them; terraces there would stack into a cliff.
+    const my = wy / wsum
+    const spread = Math.sqrt(Math.max(0, wyy / wsum - my * my))
+    return { y: y0 + (my - y0) * a, slope: s0 + (ws / wsum - s0) * a, terraces: 1 - smoothstep(0.4, 1.5, spread * a) }
+  }
+
+  const natural0 = (x: number, z: number, c: Closest | null): number => {
+    if (!c) return land(x, z)
+    const r = roadAround(x, z, c)
+    return fromLeg(x, z, Math.max(0, c.dist - edge), r.y, r.slope, r.terraces)
   }
 
   const lakeN = noise2(seed * 5 + 11)
@@ -256,17 +298,17 @@ export function makeGround(route: Route, rally: RallyDef, seed: number): Land {
     const ch = channel(x, z)
     if (ch && ch.p > 0.3 && (!c || c.dist > route.half + 0.5 || route.featureAt(c.s, 'bridge'))) return ch.level
     if (!c) return null
-    return lake(x, z, c.dist - edge) > 0.35 ? c.y - 1.6 : null
+    return lake(x, z, c.dist - edge) > 0.35 ? roadAround(x, z, c).y - 1.6 : null
   }
   const mesh = (x: number, z: number): number => meshAt(x, z, closest(x, z))
   const water = (x: number, z: number): number | null => waterAt(x, z, closest(x, z))
   const lakeLevel = (x: number, z: number): number | null => {
     const c = closest(x, z)
-    return c && lake(x, z, c.dist - edge) > 0.35 ? c.y - 1.6 : null
+    return c && lake(x, z, c.dist - edge) > 0.35 ? roadAround(x, z, c).y - 1.6 : null
   }
   const sample = (x: number, z: number): GroundSample => {
     const c = closest(x, z)
-    const lk = c && lake(x, z, c.dist - edge) > 0.35 ? c.y - 1.6 : null
+    const lk = c && lake(x, z, c.dist - edge) > 0.35 ? roadAround(x, z, c).y - 1.6 : null
     return { mesh: meshAt(x, z, c), dist: c ? c.dist : 999, water: waterAt(x, z, c), lake: lk, roadY: c ? c.y : null }
   }
 
@@ -345,6 +387,13 @@ function makeCrossings(route: Route, edge: number, nat: (x: number, z: number) =
         const atFord = !bridge && Math.abs(c.s - s) < hw + 4 && c.dist < edge
         if (!atFord) level[k] = Math.min(level[k], c.y - (bridge ? 5.5 : 0.5))
       }
+    }
+    // A river runs on through the gorge at an even fall: never a flat pool
+    // under the deck that tips over a waterfall just downstream of it.
+    if (bridge) {
+      const span = Math.min(30, len - 2)
+      const k0 = Math.round((len - span) / STEP), k1 = Math.round((len + span) / STEP)
+      for (let k = k0 + 1; k < k1; k++) level[k] = Math.min(level[k], level[k0] + ((level[k1] - level[k0]) * (k - k0)) / (k1 - k0))
     }
     out.push({ kind: f.kind, s, x: a.x, z: a.z, ux, uz, hw, len, level, depth: bridge ? 1.6 : 0.55 })
   }

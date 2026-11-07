@@ -4,7 +4,7 @@ import type { RallyDef, StageDef } from '../data'
 import { STEP, type Route } from '../sim/route'
 import { asLand, BODY, type Crossing, type Ground, type Land } from '../sim/terrain'
 import { CardBuilder, GeoBuilder, PRIM } from './builder'
-import { baseFor, edgePoint, planSegment, planTile, type DrawnGround, type PlanCtx, type Placed } from './placement'
+import { baseFor, bridgeSupports, edgePoint, planSegment, planTile, type DrawnGround, type PlanCtx, type Placed } from './placement'
 import { LAKE_BELOW_ROAD, lakeSurface, streamSurface } from './lakes'
 import { addAnimal, addBale, addFence, addFlowers, addGrassCards, addHouse, addLandmark, addPole, addRock, addSpectator, addTree, addTuft, crownRadius, treeLook } from './props'
 import { FAR_RES, planTileRes, splitAD, Surface, TILE, triHeight } from './surface'
@@ -504,7 +504,7 @@ export class World {
         pos[sv * 3 + 2] = pos[k * 3 + 2]
         for (let q = 0; q < 3; q++) {
           nor[sv * 3 + q] = nor[k * 3 + q]
-          col[sv * 3 + q] = col[k * 3 + q] * 0.85
+          col[sv * 3 + q] = col[k * 3 + q]
         }
         uv[sv * 2] = uv[k * 2]
         uv[sv * 2 + 1] = uv[k * 2 + 1] + drop / 5
@@ -640,8 +640,8 @@ export class World {
           nor.push(-hx / l, (2 * CRES) / l, -hz / l)
           uv.push(x / 5, z / 5 + (pass ? drop / 5 : 0))
           this.terrainColor(cc, x, z, hgt[k], Math.hypot(hx, hz) / (2 * CRES), dist[k], wet[k] === 1, smoothstep(30, 120, dist[k]))
-          const s = pass ? 0.85 : 1
-          col.push(cc.r * s, cc.g * s, cc.b * s)
+          // Skirts keep the surface colour: a darker skirt peeking at a seam reads as a crack.
+          col.push(cc.r, cc.g, cc.b)
         }
     // Distant forest: cones and domes, enough to give far hillsides texture.
     const blobs = new Int32Array(CELLS * CELLS * 2)
@@ -1108,20 +1108,11 @@ export class World {
       if (s + 2 > s1 + 3 + 1e-6) ends()
       prev = sec
     }
-    // Abutments: the deck's ends rest on masonry that goes down into the banks.
-    for (const s of [s0 + 1, s1 - 1]) {
-      const a = route.at(s)
-      const foot = Math.min(this.surf.height(a.x, a.z), a.y - 1) - 1.5
-      b.add(PRIM.box, stone.getHex(), a.x, foot, a.z, W * 2 + 0.6, a.y - 0.9 - foot, 4, a.heading, 0, 0, 0, 0, 0.5, Math.random)
-    }
-    // Piers on the gorge floor: one for a short bridge, two for a long one.
-    const piers = s1 - s0 > 30 ? [1 / 3, 2 / 3] : [0.5]
-    for (const f of piers) {
-      const a = route.at(s0 + (s1 - s0) * f)
-      const floor = this.land.mesh(a.x, a.z) - 1
-      if (a.y - 1.1 - floor < 0.5) continue
-      // Long across the road, along the flow of the water; thin along the road.
-      b.add(PRIM.taper8, stone.getHex(), a.x, floor, a.z, half + 0.4, a.y - 1.0 - floor, 1.3, a.heading)
+    // Abutments down into both banks and piers on the gorge floor, each reaching below the lowest ground under it.
+    for (const sp of bridgeSupports(route, this.surf, s0, s1, this.land.water)) {
+      if (sp.kind !== 'pier') b.add(PRIM.box, stone.getHex(), sp.x, sp.bottom, sp.z, sp.across, sp.top - sp.bottom, sp.along, sp.yaw, 0, 0, 0, 0, 0.5, Math.random)
+      // Long across the road, along the flow of the water; thin along the road. The primitive's radius is half its size.
+      else b.add(PRIM.taper8, stone.getHex(), sp.x, sp.bottom, sp.z, sp.across / 2, sp.top - sp.bottom, sp.along / 2, sp.yaw)
     }
     b.surface = 0
   }
@@ -1132,7 +1123,7 @@ export class World {
    * caps, lit from the side the sun is on. The haze turns them blue.
    */
   private horizon(): THREE.Mesh {
-    const pts: number[] = [], cols: number[] = [], idx: number[] = []
+    const pts: number[] = [], cols: number[] = [], haze: number[] = [], idx: number[] = []
     const seg = 320
     const n2 = noise2(this.stage.seed + 3)
     const rel = this.rally.relief
@@ -1167,7 +1158,7 @@ export class World {
         // Faces toward one side of the ring are lit, the other in shade: the
         // ranges get relief instead of being flat cut-outs.
         const slope = Math.pow(Math.min(1.2, ridged(Math.cos(a + 0.01) * 6.5 + layer * 7, Math.sin(a + 0.01) * 6.5)), 2) - peak
-        const lit = THREE.MathUtils.clamp(0.85 + slope * 30 * Math.cos(a - sunAz), 0.6, 1.15)
+        const lit = THREE.MathUtils.clamp(0.95 + slope * 12 * Math.cos(a - sunAz), 0.85, 1.08)
         const x = Math.cos(a) * R, z = Math.sin(a) * R
         const rows: [number, THREE.Color][] = [
           [-260, cForest],
@@ -1175,11 +1166,15 @@ export class World {
           [h * 0.7, cForest.clone().lerp(cRock, 0.85)],
           [h, snowy && peak > 0.45 ? cSnow : cRock.clone().lerp(cSnow, snowy ? 0.25 : 0)],
         ]
-        for (const [y, c] of rows) {
+        rows.forEach(([y, c], row) => {
           pts.push(x, y, z)
           const k = y > h * 0.5 ? lit : 1
           cols.push(c.r * k, c.g * k, c.b * k)
-        }
+          // Haze by range, not by the camera's height fog: that thins looking
+          // up, so the tall far range would come out darker than the near
+          // one in front of it and hang from the sky as dark teeth.
+          haze.push(0.5 + layer * 0.14 - row * 0.03)
+        })
         if (i) for (let k = 0; k < 3; k++) {
           const p0 = off + (i - 1) * 4 + k, p1 = off + i * 4 + k
           idx.push(p0, p1, p0 + 1, p0 + 1, p1, p1 + 1)
@@ -1190,8 +1185,18 @@ export class World {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3))
+    g.setAttribute('aHaze', new THREE.Float32BufferAttribute(haze, 1))
     g.setIndex(idx)
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }))
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aHaze;\nvarying float vHaze;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHaze = aHaze;')
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vHaze;')
+        .replace('#include <fog_fragment>', '#ifdef USE_FOG\n  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, vHaze);\n#endif')
+    }
+    const m = new THREE.Mesh(g, mat)
     m.frustumCulled = false
     // After the terrain: only the sky gaps between hills pay for it.
     m.renderOrder = 2
@@ -1225,11 +1230,12 @@ function blob(pos: number[], nor: number[], col: number[], uv: number[], idx: nu
   } else {
     for (let k = 0; k < 5; k++) {
       const a = rot + (k / 5) * Math.PI * 2
-      push(x + Math.cos(a) * rad, y + h * 0.5, z + Math.sin(a) * rad, Math.cos(a), 0.3, Math.sin(a), 0.85)
+      push(x + Math.cos(a) * rad, y + h * 0.45, z + Math.sin(a) * rad, Math.cos(a), 0.3, Math.sin(a), 0.85)
     }
     for (let k = 0; k < 5; k++) {
       const a = rot + (k / 5) * Math.PI * 2 + 0.6
-      push(x + Math.cos(a) * rad * 0.4, y - 0.6, z + Math.sin(a) * rad * 0.4, Math.cos(a), -0.2, Math.sin(a), 0.5)
+      // A broad foot sunk into the ground: a narrow one made the mass look like a box floating over the hill.
+      push(x + Math.cos(a) * rad * 0.9, y - 0.8, z + Math.sin(a) * rad * 0.9, Math.cos(a), 0.1, Math.sin(a), 0.6)
     }
     for (let k = 0; k < 5; k++) {
       const m0 = v0 + 1 + k, m1 = v0 + 1 + ((k + 1) % 5), b0 = v0 + 6 + k, b1 = v0 + 6 + ((k + 1) % 5)
