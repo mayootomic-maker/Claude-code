@@ -167,6 +167,39 @@ export class Route {
   }
 
   /**
+   * Calls `fn` once for every segment within `maxDist` of the point, with
+   * where along it the point projects (t), how far it is, and which side
+   * (positive = left of travel).
+   */
+  forEachNear(px: number, pz: number, maxDist: number, fn: (i: number, t: number, dist: number, side: number) => void): void {
+    const seen = new Set<number>()
+    const r = Math.ceil(maxDist / GRID)
+    const cx = Math.floor(px / GRID), cz = Math.floor(pz / GRID)
+    for (let gx = cx - r; gx <= cx + r; gx++)
+      for (let gz = cz - r; gz <= cz + r; gz++) {
+        const list = this.grid.get(key(gx, gz))
+        if (!list) continue
+        for (const i of list) {
+          if (seen.has(i)) continue
+          seen.add(i)
+          const ax = this.x[i], az = this.z[i]
+          const dx = this.x[i + 1] - ax, dz = this.z[i + 1] - az
+          const t = clamp(((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz || 1), 0, 1)
+          const d = Math.hypot(ax + dx * t - px, az + dz * t - pz)
+          if (d > maxDist) continue
+          // Side from the smoothed heading at the foot, not the segment's own
+          // direction: at a joint both segments then agree on which side a
+          // point is, however the point sits off the corner.
+          let dh = this.heading[i + 1] - this.heading[i]
+          while (dh > Math.PI) dh -= 2 * Math.PI
+          while (dh < -Math.PI) dh += 2 * Math.PI
+          const h = this.heading[i] + dh * t
+          fn(i, t, d, (px - ax - dx * t) * Math.cos(h) - (pz - az - dz * t) * Math.sin(h))
+        }
+      }
+  }
+
+  /**
    * Distance from sample i to the nearest point of road that is *not* this
    * stretch (more than `skip` samples away along the route), up to maxDist.
    * Hairpin legs and crossings come close; this is how close.

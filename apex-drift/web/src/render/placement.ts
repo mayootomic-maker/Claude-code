@@ -284,6 +284,63 @@ export function planSoft(ctx: PlanCtx, start: number, finish: number): Soft[] {
   return out
 }
 
+/** A masonry block under a bridge: centred at (x, z), turned to the road, from `bottom` up to `top`. */
+export interface Support {
+  kind: 'abutment' | 'pier' | 'footing'
+  x: number
+  z: number
+  yaw: number
+  /** Size across the road and along it. */
+  across: number
+  along: number
+  bottom: number
+  top: number
+}
+
+/** Lowest drawn ground anywhere under a rectangle turned to `yaw`, sampled every metre or so. */
+export function lowUnder(g: DrawnGround, x: number, z: number, yaw: number, across: number, along: number): number {
+  const lx = Math.cos(yaw), lz = -Math.sin(yaw), fx = Math.sin(yaw), fz = Math.cos(yaw)
+  const na = Math.max(1, Math.ceil(across)), nl = Math.max(1, Math.ceil(along))
+  let m = Infinity
+  for (let i = 0; i <= na; i++)
+    for (let j = 0; j <= nl; j++) {
+      const u = (i / na - 0.5) * across, v = (j / nl - 0.5) * along
+      m = Math.min(m, g.height(x + lx * u + fx * v, z + lz * u + fz * v))
+    }
+  return m
+}
+
+/**
+ * What holds a bridge up: an abutment at each end and one or two piers.
+ * Each reaches a metre below the lowest drawn ground under its whole
+ * footprint, so none stops short of the gorge floor or the riverbed (the
+ * drawn terrain is the bed; the water lies on top of it).
+ */
+export function bridgeSupports(route: Route, g: DrawnGround, s0: number, s1: number, water: (x: number, z: number) => number | null = () => null): Support[] {
+  const out: Support[] = []
+  const W = route.half + 0.65
+  for (const s of [s0 + 1, s1 - 1]) {
+    const a = route.at(s)
+    const across = W * 2 + 0.6, along = 4
+    out.push({ kind: 'abutment', x: a.x, z: a.z, yaw: a.heading, across, along, bottom: Math.min(lowUnder(g, a.x, a.z, a.heading, across, along), a.y - 1) - 1, top: a.y - 0.9 })
+  }
+  for (const f of s1 - s0 > 30 ? [1 / 3, 2 / 3] : [0.5]) {
+    const a = route.at(s0 + (s1 - s0) * f)
+    const across = (route.half + 0.4) * 2, along = 2.6
+    // The gorge can fall away steeply either side of the road: read the ground a few metres
+    // beyond the pier as well, so it reaches down past any slope it is seen against.
+    const bottom = lowUnder(g, a.x, a.z, a.heading, across + 12, along + 2) - 1
+    if (a.y - 1.1 - bottom < 0.5) continue
+    out.push({ kind: 'pier', x: a.x, z: a.z, yaw: a.heading, across, along, bottom, top: a.y - 1.0 })
+    // A cutwater footing round its foot, standing just out of the river (or the gorge floor):
+    // the pier visibly meets the bed instead of vanishing into the water.
+    const bed = lowUnder(g, a.x, a.z, a.heading, across, along)
+    const w = water(a.x, a.z)
+    out.push({ kind: 'footing', x: a.x, z: a.z, yaw: a.heading, across: across + 1.6, along: along + 1.4, bottom, top: Math.min(a.y - 1.2, Math.max(w ?? bed, bed) + 0.7) })
+  }
+  return out
+}
+
 /** What a prop's height is read from: the drawn terrain (see Surface). */
 export interface DrawnGround {
   height(x: number, z: number): number
