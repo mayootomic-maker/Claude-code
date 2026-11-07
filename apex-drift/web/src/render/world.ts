@@ -504,7 +504,7 @@ export class World {
         pos[sv * 3 + 2] = pos[k * 3 + 2]
         for (let q = 0; q < 3; q++) {
           nor[sv * 3 + q] = nor[k * 3 + q]
-          col[sv * 3 + q] = col[k * 3 + q] * 0.85
+          col[sv * 3 + q] = col[k * 3 + q]
         }
         uv[sv * 2] = uv[k * 2]
         uv[sv * 2 + 1] = uv[k * 2 + 1] + drop / 5
@@ -640,8 +640,8 @@ export class World {
           nor.push(-hx / l, (2 * CRES) / l, -hz / l)
           uv.push(x / 5, z / 5 + (pass ? drop / 5 : 0))
           this.terrainColor(cc, x, z, hgt[k], Math.hypot(hx, hz) / (2 * CRES), dist[k], wet[k] === 1, smoothstep(30, 120, dist[k]))
-          const s = pass ? 0.85 : 1
-          col.push(cc.r * s, cc.g * s, cc.b * s)
+          // Skirts keep the surface colour: a darker skirt peeking at a seam reads as a crack.
+          col.push(cc.r, cc.g, cc.b)
         }
     // Distant forest: cones and domes, enough to give far hillsides texture.
     const blobs = new Int32Array(CELLS * CELLS * 2)
@@ -1230,11 +1230,12 @@ function blob(pos: number[], nor: number[], col: number[], uv: number[], idx: nu
   } else {
     for (let k = 0; k < 5; k++) {
       const a = rot + (k / 5) * Math.PI * 2
-      push(x + Math.cos(a) * rad, y + h * 0.5, z + Math.sin(a) * rad, Math.cos(a), 0.3, Math.sin(a), 0.85)
+      push(x + Math.cos(a) * rad, y + h * 0.45, z + Math.sin(a) * rad, Math.cos(a), 0.3, Math.sin(a), 0.85)
     }
     for (let k = 0; k < 5; k++) {
       const a = rot + (k / 5) * Math.PI * 2 + 0.6
-      push(x + Math.cos(a) * rad * 0.4, y - 0.6, z + Math.sin(a) * rad * 0.4, Math.cos(a), -0.2, Math.sin(a), 0.5)
+      // A broad foot sunk into the ground: a narrow one made the mass look like a box floating over the hill.
+      push(x + Math.cos(a) * rad * 0.9, y - 0.8, z + Math.sin(a) * rad * 0.9, Math.cos(a), 0.1, Math.sin(a), 0.6)
     }
     for (let k = 0; k < 5; k++) {
       const m0 = v0 + 1 + k, m1 = v0 + 1 + ((k + 1) % 5), b0 = v0 + 6 + k, b1 = v0 + 6 + ((k + 1) % 5)
