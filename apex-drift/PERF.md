@@ -42,3 +42,30 @@ Fill in this table and commit it:
 | Phone | Tier | Stage | p50 ms | p95 ms | worst ms | draws | scale |
 |---|---|---|---|---|---|---|---|
 | | | | | | | | |
+
+## The bigger world (3.1)
+
+Stages are 1.3-1.9x longer and the visible world reaches 560 / 560 / 1250 m (Battery saver / Balanced / Best) instead of ending at 260-420 m. What keeps that affordable:
+
+| Piece | Cost and how it is held down |
+|---|---|
+| Far terrain | 256 m chunks on a 16 m grid, one draw call each, built one per frame. Plain vertex-colour material (no textures), drawn after the near world so the depth test discards what tiles and trees cover. Which cells show is an index rewrite when a detailed tile comes or goes, never a rebuild |
+| Distant forest | Cones and domes merged into the chunk (no extra draw call); Best only |
+| Detailed tiles | Grid spacing per tile from its distance to the road: 1/2/4 m on Best, 2/2/4 on Balanced, 2/4/4 on Battery saver (coarser than 3.0 away from the road) |
+| Terrain sampling | One nearest-road search per vertex instead of four, and a 64 m distance map so far terrain skips the search entirely |
+| Foliage cards | Alpha-tested leaf and needle cards on Balanced and Best (they cast no shadows); grass cards on Best only (fill rate) |
+| Trees | The fuller models (more tiers and clumps, limbs, root flares) on Best only |
+| Film pass | Bloom is a bright pass and two blur passes at quarter resolution (plus an eighth-resolution level on Best), replacing a 16-tap ring at full resolution |
+
+Measured in this container (SwiftShader, 915x412, machine shared with other jobs at load 8-20, so treat every number as a rough before/after on the same machine). Balanced: minimum of 12 synchronous renders; Battery saver: best p50 frame of three interleaved runs.
+
+| Tier | Stage | 3.0 | 3.1 | 3.0 draws / tris | 3.1 draws / tris |
+|---|---|---|---|---|---|
+| Balanced | Finland 1 | 1391 ms | 1568 ms | 341 / 254k | 435 / 372k |
+| Balanced | Wales 1 | 1249 ms | 1300-2000 ms (noisy) | 340 / 389k | 419 / 444k |
+| Battery saver | Finland 1 | 199 ms | 267 ms | 191 / 139k | 203 / 127k |
+| Battery saver | Wales 1 | 217 ms | 300 ms | 186 / 182k | 182 / 156k |
+| Battery saver | Japan 1 | 250 ms | 217 ms | 206 / 256k | 190 / 162k |
+| Battery saver | Monte 1 | 217 ms | 274 ms | 166 / 112k | 226 / 213k |
+
+Title to the driving school's "running" phase on Balanced, same load: 3.0 124 s, 3.1 137 s. Building a 21 km stage (route and ground): about 100 ms.

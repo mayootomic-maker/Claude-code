@@ -410,13 +410,14 @@ export function foliageAtlas(aniso: number): THREE.Texture {
     for (let k = 0; k < 70; k++) {
       const t = k / 70
       const px = x0 + (s - 3) * 14 * t * t, py = y0 + len * t
-      const l = (1 - t * 0.6) * 22
+      // Uneven needle lengths and angles, so a spray never reads as a regular lattice.
+      const l = (1 - t * 0.6) * (14 + r() * 14)
       for (const side of [-1, 1]) {
-        g.strokeStyle = shade(140 + r() * 90)
+        g.strokeStyle = shade(170 + r() * 80)
         g.lineWidth = 1.6
         g.beginPath()
         g.moveTo(px, py)
-        g.lineTo(px + side * l * 0.9, py + l * 0.55)
+        g.lineTo(px + side * l * (0.7 + r() * 0.4), py + l * (0.35 + r() * 0.45))
         g.stroke()
       }
     }
