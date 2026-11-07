@@ -1,33 +1,27 @@
-import { clamp, rng, wrapAngle } from '../core/math'
+import { clamp, wrapAngle } from '../core/math'
 import { CARS, LIVERIES, RIVALS, carPhys, type CarPhys, type RallyDef } from '../data'
-import { AiDriver, lineOffset, lineSpeed, lineTime, raceLine, type RaceLine, type Traffic } from './ai'
-import { Car, DT, wheelForce, type Assists, type Input } from './car'
+import { AiDriver, lineOffset, lineRun, lineTime, raceLine, styleFor, type RaceLine, type Traffic } from './ai'
+import { Car, DT, type Assists, type Input } from './car'
+import { levelIndex, RUNGS, TOP_LEVEL, type Difficulty } from './levels'
+import { character, NEUTRAL, pickField, type Personality } from './personality'
 import type { Ground } from './terrain'
-
-type Difficulty = 'rookie' | 'driver' | 'pro'
 
 /** Cars on the grid, the player included. */
 export const FIELD = 4
-/**
- * Share of the race line's limit each difficulty's rivals drive at. Pro is
- * the line itself: on equal cars, beating it takes a cleaner run than the
- * AI's, which never misses a braking point.
- */
-export const RACE_SKILL: Record<Difficulty, number> = { rookie: 0.85, driver: 0.93, pro: 1.0 }
 /**
  * No steering or braking help. ABS and traction control, and the stability
  * aid, stand in for the feel a driver has for the pedals and for a rear
  * stepping out, which the AI's steering alone reacts to a step late.
  */
-const AI_ASSISTS: Assists = { steer: 0, traction: true, stability: 0.4, autoBrake: false }
+const AI_ASSISTS: Assists = { steer: 0, traction: true, abs: true, stability: 0.4, autoBrake: false, forgive: 0 }
 /** Rivals further than this from the player along the road are moved without the full physics. */
 export const LOD_DIST = 260
 /**
- * What a simulated driver gets out of the line compared with its ideal
- * speed profile; a gliding car runs at this share so it neither gains nor
- * loses on the ones that are being simulated.
+ * What a simulated driver gets out of its planned line before it has been
+ * watched long enough to know; after that a gliding car runs at the share it
+ * actually achieved, so it neither gains nor loses on the simulated ones.
  */
-const GLIDE_PACE = 0.93
+const GLIDE_PACE = 0.9
 const STUCK_PENALTY = 5
 
 export interface GridSlot {
@@ -37,38 +31,49 @@ export interface GridSlot {
   nat: string
   car: string
   livery: string
+  /** The AI rung it drives at. */
+  level: Difficulty
+  /** Personal pace on top of the rung: a rival who is quicker in general, or on a surface they like. */
   skill: number
-  /** 0..1: how readily it dives for a gap, and how hard it uses the handbrake. */
-  aggression: number
+  persona: Personality
+  /** Seeds its mistakes and moods. */
+  seed: number
+}
+
+export function personaOf(rival: number): Personality {
+  return character(RIVALS[rival]?.id ?? '')?.p ?? NEUTRAL
 }
 
 /**
- * Three rivals for a race. Harder difficulties draw from the front of the
- * field; each drives a car of the same era as the player's, tuned to the same
- * power-to-weight so the race is decided by driving, not by the garage.
+ * Three rivals for a race, all driving at the chosen rung, picked so their
+ * styles differ. Each drives a car of the same era as the player's, tuned to
+ * the same power-to-weight so the race is decided by driving, not by the garage.
  */
-export function raceGrid(rally: RallyDef, stageIdx: number, difficulty: Difficulty, playerCar: string, playerLivery: string): GridSlot[] {
+export function raceGrid(rally: RallyDef, stageIdx: number, level: Difficulty, playerCar: string, playerLivery: string): GridSlot[] {
   const seed = rally.stages[stageIdx]?.seed ?? 1
-  const r = rng(seed * 7 + 13)
-  const pool = difficulty === 'pro' ? [0, 1, 2, 3, 4] : difficulty === 'driver' ? [2, 3, 4, 5, 6, 7, 8] : [5, 6, 7, 8, 9, 10, 11]
-  const picked: number[] = []
-  while (picked.length < FIELD - 1 && pool.length) picked.push(pool.splice(Math.floor(r() * pool.length), 1)[0])
+  // Quicker rivals turn up for the harder rungs, but most of the field can be drawn on any.
+  const li = levelIndex(level) / TOP_LEVEL
+  const all = RIVALS.map((_, i) => i).sort((a, b) => RIVALS[a].pace - RIVALS[b].pace)
+  const lo = Math.round((1 - li) * (all.length - 7))
+  const picked = pickField(all.slice(lo, lo + 7), FIELD - 1, seed * 7 + 13, personaOf)
   const ci = Math.max(0, CARS.findIndex((c) => c.id === playerCar))
   const nearby = [ci, ci - 1, ci + 1, ci - 2, ci + 2].filter((i) => i >= 0 && i < CARS.length)
   // Rivals wear the regular team liveries, never the joke ones you unlock with secrets.
   const liveries = LIVERIES.filter((l) => l.id !== playerLivery && l.unlock.type !== 'secret' && l.unlock.type !== 'code')
   return picked.map((ri, k) => {
     const rv = RIVALS[ri]
-    const likes = rv.likes.includes(rally.surface) ? 1.006 : 1
+    const likes = rv.likes.includes(rally.surface) ? 1.004 : 1
     return {
       rival: ri,
       name: rv.name,
       nat: rv.nat,
       car: CARS[nearby[(k + 1) % nearby.length]].id,
       livery: liveries[(ri * 5 + seed) % liveries.length].id,
-      // RIVALS pace is a time multiple: 0.99 is a percent quicker than the field.
-      skill: RACE_SKILL[difficulty] * likes * (1 + (1.02 - rv.pace) * 0.6),
-      aggression: rng(ri * 101 + 7)() * 0.7 + 0.3,
+      level,
+      // RIVALS pace is a time multiple: 0.99 is a percent quicker than the field. Kept small: the rung decides.
+      skill: likes * (1 + (1.02 - rv.pace) * 0.25),
+      persona: personaOf(ri),
+      seed: seed * 131 + ri * 977 + k,
     }
   })
 }
@@ -105,22 +110,28 @@ export class Opponent {
   private lastGood: number
   private confidence = 1
   private wasOff = false
-  private glideV = 0
+  /** Share of its planned pace it has actually achieved while simulated (see GLIDE_PACE). */
+  private pace = GLIDE_PACE
+  private paceT = 0
+  private paceS = 0
 
   constructor(readonly slot: GridSlot, ground: Ground, surface: string, wet: boolean, playerCar: string, at: { s: number; d: number }, private readonly start: number, private readonly finish: number) {
-    const phys = rivalPhys(slot.car, playerCar)
+    const rung = RUNGS[slot.level]
+    const base = rivalPhys(slot.car, playerCar)
+    const phys = rung.power === 1 ? base : { ...base, power: base.power * rung.power, maxDriveForce: base.maxDriveForce * rung.power }
     this.car = new Car(phys, ground, surface, wet)
-    this.line = raceLine(ground.route, surface, wet, phys)
-    this.driver = new AiDriver(this.car, this.line, slot.skill, slot.aggression)
+    this.line = raceLine(ground.route, surface, wet, phys, styleFor(rung, slot.persona))
     this.car.place(at.s, at.d)
+    this.driver = new AiDriver(this.car, this.line, rung, slot.persona, slot.seed, slot.skill)
     this.lastGood = at.s
+    this.paceS = Math.max(at.s, start)
   }
 
   /** Total race time including penalties, or an estimate from the line if it hasn't finished. */
   total(clock: number): number {
     if (this.finishTime !== null) return this.finishTime + this.penalty
     const s = Math.min(this.car.s, this.finish)
-    return clock + this.penalty + lineTime(this.line, s, this.finish) / (this.driver.skill * GLIDE_PACE)
+    return clock + this.penalty + lineTime(this.line, s, this.finish) / this.pace
   }
 
   hold(): void {
@@ -145,11 +156,16 @@ export class Opponent {
     this.confidence = Math.min(1, this.confidence + DT / 900)
     this.driver.skill = this.slot.skill * band * this.confidence
     const far = this.lod && Math.abs(gap) > LOD_DIST && !done && car.s > this.start + 20
-    if (far) this.glide()
+    if (far) this.glide(band)
     else {
-      if (this.gliding) this.gliding = false
-      const input: Input = done ? { steer: this.driver.drive(traffic).steer, throttle: 0, brake: 0.5, handbrake: false } : this.driver.drive(traffic)
+      if (this.gliding) {
+        this.gliding = false
+        this.paceT = 0
+        this.paceS = car.s
+      }
+      const input: Input = done ? { steer: this.driver.drive(traffic, clock).steer, throttle: 0, brake: 0.5, handbrake: false } : this.driver.drive(traffic, clock)
       car.step(input, AI_ASSISTS)
+      if (!done && car.s > this.start) this.learnPace()
     }
     if (done) return
     if (!car.offRoad && !car.airborne && Math.abs(car.d) < car.p.halfW + this.line.room) this.lastGood = car.s
@@ -169,23 +185,32 @@ export class Opponent {
     if (car.s >= this.finish) this.finishTime = clock
   }
 
-  private glide(): void {
+  /**
+   * Every 15 s of full simulation, compares the distance covered with how
+   * long the plan says it takes: the share it achieves, mistakes and traffic
+   * included, which is the pace it glides at once out of sight.
+   */
+  private learnPace(): void {
+    this.paceT += DT
+    if (this.paceT < 15) return
+    const plan = lineTime(this.line, this.paceS, this.car.s)
+    if (plan > 3) this.pace = clamp(this.pace * 0.6 + (plan / this.paceT) * 0.4, 0.5, 1.1)
+    this.paceT = 0
+    this.paceS = this.car.s
+  }
+
+  private glide(band: number): void {
     const car = this.car
     const line = this.line
-    if (!this.gliding) {
-      this.gliding = true
-      this.glideV = car.speed
-    }
-    const p = car.p
-    const v = Math.max(1, this.glideV)
-    const accel = (Math.min(wheelForce(p, v), p.maxDriveForce * 1.4) - p.dragCd * 2.2 * v * v) / p.mass
-    const target = lineSpeed(line, car.s + 2) * this.driver.skill * GLIDE_PACE
-    this.glideV = Math.min(target, v + Math.max(0, accel) * DT)
-    const s = car.s + this.glideV * DT
+    this.gliding = true
+    const target = lineRun(line, car.s + 1) * this.pace * band
+    // Ease from the speed it had when it went out of sight.
+    const v = Math.max(1, car.speed + clamp(target - car.speed, -6 * DT, 4 * DT))
+    const s = car.s + v * DT
     const d = lineOffset(line, s)
     const a = line.route.at(s)
     const slope = (lineOffset(line, s + 2) - lineOffset(line, s - 2)) / 4
-    car.glide(s, d, a.heading + Math.atan(slope), this.glideV)
+    car.glide(s, d, a.heading + Math.atan(slope), v)
   }
 }
 

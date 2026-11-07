@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { carPhys, RALLIES, SCHOOL } from '../data'
+import { carPhys, RALLIES, RIVALS, SCHOOL } from '../data'
 import { Car, DT, type Input } from './car'
-import { collide, FIELD, RACE_SKILL, raceGrid } from './race'
+import { raceLine, styleFor } from './ai'
+import { LEVELS, RUNGS } from './levels'
+import { CHARACTERS, character, NEUTRAL, styleDistance, type Personality } from './personality'
+import { collide, FIELD, raceGrid } from './race'
 import { autopilot, idealTime, StageSim, type Difficulty } from './stage'
 import type { Route } from './route'
 import type { Ground } from './terrain'
@@ -9,20 +12,21 @@ import type { Ground } from './terrain'
 const IDLE: Input = { steer: 0, throttle: 0, brake: 0, handbrake: false }
 
 /** One rival alone on a stage, the player parked on the grid, simulated in full all the way. */
-function solo(rallyIdx: number, stageIdx: number, d: Difficulty, car = 'kestrel') {
+function solo(rallyIdx: number, stageIdx: number, d: Difficulty, car = 'kestrel', persona: Personality = NEUTRAL, seed = 1234) {
   const rally = RALLIES[rallyIdx]
-  const slot = { ...raceGrid(rally, stageIdx, d, car, 'works')[0], car, skill: RACE_SKILL[d] }
+  const slot = { ...raceGrid(rally, stageIdx, d, car, 'works')[0], car, skill: 1, persona, seed }
   const sim = new StageSim({ rally, stage: rally.stages[stageIdx], car, difficulty: d, race: [slot] })
   const o = sim.field[0]
   o.lod = false
-  let off = 0, steps = 0
-  while (o.finishTime === null && steps < 60 * 60 * 15) {
+  let off = 0, steps = 0, verge = 0
+  while (o.finishTime === null && steps < 60 * 60 * 20) {
     sim.step(IDLE)
     steps++
     if (o.car.offRoad) off += DT
+    if (Math.abs(o.car.d) > sim.route.half) verge += DT
     if (!Number.isFinite(o.car.x + o.car.z + o.car.vx)) throw new Error(`NaN at step ${steps}`)
   }
-  return { sim, o, off, ideal: idealTime(sim) }
+  return { sim, o, off, verge, t: o.finishTime! + o.penalty, ideal: idealTime(sim) }
 }
 
 describe('AI driver', () => {
@@ -65,18 +69,130 @@ describe('AI driver', () => {
   }, 60000)
 })
 
+describe('AI skill ladder', () => {
+  it('has thirteen rungs, each planning harder than the one below, the old three among them', () => {
+    expect(LEVELS).toHaveLength(13)
+    for (const d of ['rookie', 'driver', 'pro'] as const) expect(LEVELS).toContain(d)
+    for (let i = 1; i < LEVELS.length; i++) {
+      const a = RUNGS[LEVELS[i - 1]], b = RUNGS[LEVELS[i]]
+      expect(b.grip * b.pace, LEVELS[i]).toBeGreaterThanOrEqual(a.grip * a.pace)
+      expect(b.mistakes, LEVELS[i]).toBeLessThanOrEqual(a.mistakes)
+      expect(b.target, LEVELS[i]).toBeLessThan(a.target)
+    }
+    expect(RUNGS.unbeatable.mistakes).toBe(0)
+  })
+
+  for (const [ri, si] of [[0, 3], [7, 3]] as const) {
+    it(`${RALLIES[ri].id} stage ${si + 1}: every few rungs is quicker, and the top beats the old Pro clearly`, () => {
+      const pick = ['bad', 'casual', 'rookie', 'driver', 'pro', 'champion', 'unbeatable'] as const
+      const times = pick.map((d) => solo(ri, si, d).t)
+      for (let i = 1; i < times.length; i++) expect(times[i], pick[i]).toBeLessThan(times[i - 1])
+      // Bad is a long way off the pace; the top is a few seconds a stage quicker than Pro.
+      expect(times[0] / times[4]).toBeGreaterThan(1.3)
+      expect(times[6] / times[4]).toBeLessThan(0.975)
+    }, 120000)
+  }
+
+  it('the bottom rungs make visible mistakes, the top makes none', () => {
+    const bad = solo(7, 3, 'bad')
+    const d = bad.o.driver
+    expect(d.mistakes).toBeGreaterThanOrEqual(5)
+    expect(d.kinds.spin + d.kinds.wide).toBeGreaterThan(0)
+    expect(bad.verge).toBeGreaterThan(1)
+    const top = solo(7, 3, 'unbeatable')
+    expect(top.o.driver.mistakes).toBe(0)
+    expect(top.off).toBe(0)
+  }, 60000)
+})
+
+describe('AI personalities', () => {
+  it('twelve fictional characters, every one with a distinct style, bio and catchphrase in both languages', () => {
+    expect(CHARACTERS.length).toBeGreaterThanOrEqual(10)
+    expect(new Set(CHARACTERS.map((c) => c.style.en)).size).toBe(CHARACTERS.length)
+    for (const c of CHARACTERS) {
+      expect(RIVALS.some((r) => r.id === c.id), c.id).toBe(true)
+      for (const t of [c.style, c.bio, c.quote]) expect(t.en.length * t.de.length, c.id).toBeGreaterThan(0)
+    }
+    for (let i = 0; i < CHARACTERS.length; i++)
+      for (let k = i + 1; k < CHARACTERS.length; k++) expect(styleDistance(CHARACTERS[i].p, CHARACTERS[k].p)).toBeGreaterThan(0.3)
+  })
+
+  it('a late-apex driver takes a different line from an early-apex one', () => {
+    const rally = RALLIES[0]
+    const sim = new StageSim({ rally, stage: rally.stages[3], car: 'kestrel', difficulty: 'pro' })
+    const late = raceLine(sim.route, 'gravel', false, carPhys('kestrel'), styleFor(RUNGS.pro, character('r2')!.p))
+    const early = raceLine(sim.route, 'gravel', false, carPhys('kestrel'), styleFor(RUNGS.pro, character('r6')!.p))
+    let diff = 0
+    for (let i = 0; i < late.off.length; i++) diff = Math.max(diff, Math.abs(late.off[i] - early.off[i]))
+    expect(diff).toBeGreaterThan(0.8)
+  })
+
+  it('the drifter goes in sideways far more often than the surgeon, and they finish at different times', () => {
+    const drifter = solo(2, 3, 'pro', 'kestrel', character('r3')!.p)
+    const surgeon = solo(2, 3, 'pro', 'kestrel', character('r5')!.p)
+    expect(drifter.o.driver.drifts).toBeGreaterThan(surgeon.o.driver.drifts + 2)
+    expect(Math.abs(drifter.t - surgeon.t)).toBeGreaterThan(0.3)
+  }, 60000)
+
+  it('a nervous driver makes more mistakes with someone on its bumper than a steady one does', () => {
+    const run = (id: string) => {
+      const rally = RALLIES[7]
+      const grid = raceGrid(rally, 3, 'rookie', 'kestrel', 'works')
+      // A quick, aggressive chaser right behind a rookie-level driver of each character.
+      const lead = { ...grid[0], car: 'kestrel', skill: 1, persona: character(id)!.p, seed: 9 }
+      const chase = { ...grid[1], car: 'kestrel', skill: 1, level: 'elite' as const, persona: character('r7')!.p, seed: 5 }
+      const sim = new StageSim({ rally, stage: rally.stages[3], car: 'kestrel', difficulty: 'rookie', race: [lead, chase] })
+      for (const o of sim.field) o.lod = false
+      let pressure = 0
+      for (let i = 0; i < 60 * 90; i++) {
+        sim.step(IDLE)
+        pressure = Math.max(pressure, sim.field[0].driver.pressure)
+      }
+      return { mistakes: sim.field[0].driver.mistakes, pressure }
+    }
+    const nervous = run('r11'), steady = run('r1')
+    expect(nervous.pressure).toBeGreaterThan(0.3)
+    expect(nervous.mistakes).toBeGreaterThan(steady.mistakes)
+  }, 60000)
+})
+
 describe('race', () => {
-  it('picks three different rivals, quicker ones on harder difficulties, in other cars and liveries', () => {
-    const avg = (d: Difficulty) => {
-      const g = raceGrid(RALLIES[0], 0, d, 'kestrel', 'works')
+  it('picks three different characters at the chosen rung, in other cars and liveries, with styles that differ', () => {
+    for (const d of LEVELS) for (let st = 0; st < 4; st++) {
+      const g = raceGrid(RALLIES[st * 3], st, d, 'kestrel', 'works')
       expect(g).toHaveLength(FIELD - 1)
       expect(new Set(g.map((x) => x.rival)).size).toBe(FIELD - 1)
-      expect(g.every((x) => x.livery !== 'works')).toBe(true)
-      return g.reduce((a, x) => a + x.skill, 0) / g.length
+      expect(g.every((x) => x.livery !== 'works' && x.level === d)).toBe(true)
+      for (let i = 0; i < g.length; i++) for (let k = i + 1; k < g.length; k++) expect(styleDistance(g[i].persona, g[k].persona)).toBeGreaterThan(0.3)
     }
-    expect(avg('pro')).toBeGreaterThan(avg('driver'))
-    expect(avg('driver')).toBeGreaterThan(avg('rookie'))
   })
+
+  it('is deterministic: the same race run twice finishes in exactly the same times', () => {
+    const run = () => {
+      const sim = new StageSim({ rally: SCHOOL, stage: SCHOOL.stages[0], car: 'kestrel', difficulty: 'club', race: raceGrid(SCHOOL, 0, 'club', 'kestrel', 'works') })
+      for (let i = 0; i < 60 * 70; i++) sim.step(autopilot(sim, 0.8))
+      return sim.field.map((o) => `${o.car.s.toFixed(4)}:${o.driver.mistakes}:${o.driver.drifts}`).join(',')
+    }
+    expect(run()).toBe(run())
+  }, 60000)
+
+  it('a fast rival behind a slow one picks a side on a straight and gets past without hitting it', () => {
+    const rally = RALLIES[0]
+    const grid = raceGrid(rally, 3, 'pro', 'kestrel', 'works')
+    const slow = { ...grid[0], car: 'kestrel', skill: 1, level: 'bad' as const, persona: NEUTRAL, seed: 3 }
+    const fast = { ...grid[1], car: 'kestrel', skill: 1, level: 'unbeatable' as const, persona: character('r7')!.p, seed: 4 }
+    // The slow car starts in front.
+    const sim = new StageSim({ rally, stage: rally.stages[3], car: 'kestrel', difficulty: 'pro', race: [slow, fast] })
+    for (const o of sim.field) o.lod = false
+    let hard = 0
+    for (let i = 0; i < 60 * 80; i++) {
+      sim.step(IDLE)
+      if (sim.field[0].car.events.impact > 4) hard++
+    }
+    expect(sim.field[1].car.s).toBeGreaterThan(sim.field[0].car.s + 20)
+    expect(sim.field[1].driver.passes).toBeGreaterThan(0)
+    expect(hard).toBe(0)
+  }, 60000)
 
   it('starts four cars on a staggered grid, the player at the back, none overlapping', () => {
     const rally = RALLIES[0]

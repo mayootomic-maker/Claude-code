@@ -1,4 +1,5 @@
-import type { Difficulty } from '../sim/stage'
+import { LEVELS, type Difficulty } from '../sim/levels'
+import { assistPreset, sanitizeAssists, type AssistSettings } from './assists'
 import { OWNER } from './owner'
 import { CARS } from '../data'
 import { defaultLook, sanitizeCarLivery, sanitizeCustoms, sanitizeLook, type CustomLivery, type DriverLook } from './paint'
@@ -16,7 +17,10 @@ export type Lang = 'en' | 'de'
 export type Notes = 'full' | 'corners' | 'off'
 
 export interface Settings {
+  /** The AI rung (see sim/levels.ts): rivals, medal targets and prizes. */
   difficulty: Difficulty
+  /** The player's driving aids, chosen separately from the AI. */
+  assists: AssistSettings
   steering: Steering
   autoGas: boolean
   sensitivity: number
@@ -92,7 +96,7 @@ export function defaults(): Save {
     postcards: [],
     daily: { days: [], best: {} },
     settings: {
-      difficulty: 'rookie', steering: 'buttons', autoGas: true, sensitivity: 1, tiltInvert: false,
+      difficulty: 'rookie', assists: assistPreset('full'), steering: 'buttons', autoGas: true, sensitivity: 1, tiltInvert: false,
       camera: 'chase', quality: 'auto', master: 0.9, music: 0.5, sfx: 0.9, engine: 0.8, voice: 1,
       notes: 'full', voiceLang: 'en', lang: navigator.language?.startsWith('de') ? 'de' : 'en',
       haptics: true, units: 'kmh', shake: true, subtitles: true, textSize: 1,
@@ -126,7 +130,7 @@ export function sanitize(raw: unknown): Save {
     for (const [k, v] of Object.entries(raw.best))
       if (isObj(v) && typeof v.time === 'number' && v.time > 0) best[k] = { time: v.time, medal: v.medal === 'gold' || v.medal === 'silver' || v.medal === 'bronze' ? v.medal : null }
   const ev = isObj(raw.event) && typeof raw.event.rally === 'string' && Array.isArray(raw.event.times)
-    ? { rally: raw.event.rally, times: raw.event.times.filter((t): t is number => typeof t === 'number' && t > 0).slice(0, 4), difficulty: pick(raw.event.difficulty, ['rookie', 'driver', 'pro'] as const, 'rookie') }
+    ? { rally: raw.event.rally, times: raw.event.times.filter((t): t is number => typeof t === 'number' && t > 0).slice(0, 4), difficulty: pick(raw.event.difficulty, LEVELS, 'rookie') }
     : null
   const customs = sanitizeCustoms(raw.customLiveries, CARS.map((c) => c.id))
   return {
@@ -152,7 +156,10 @@ export function sanitize(raw: unknown): Save {
       return { days: strs(dv.days, []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(-60), best }
     })(),
     settings: {
-      difficulty: pick(s.difficulty, ['rookie', 'driver', 'pro'] as const, ds.difficulty),
+      difficulty: pick(s.difficulty, LEVELS, ds.difficulty),
+      // Saves from before assists were their own setting had them tied to the
+      // difficulty: Rookie drove with full help, Driver with some, Pro with none.
+      assists: sanitizeAssists(s.assists, assistPreset(s.difficulty === 'pro' ? 'off' : s.difficulty === 'driver' ? 'medium' : 'full')),
       steering: pick(s.steering, ['buttons', 'tilt', 'wheel'] as const, ds.steering),
       autoGas: typeof s.autoGas === 'boolean' ? s.autoGas : ds.autoGas,
       sensitivity: num(s.sensitivity, ds.sensitivity, 0.5, 2),
