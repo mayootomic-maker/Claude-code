@@ -1,6 +1,8 @@
 import { clamp, wrapAngle } from '../core/math'
 import { carPhys, type RallyDef } from '../data'
 import { AiDriver, raceLine, type Traffic } from '../sim/ai'
+import { RUNGS } from '../sim/levels'
+import { NEUTRAL, type Personality } from '../sim/personality'
 import { DT, type Assists, type Car, type Input } from '../sim/car'
 import { raceGrid } from '../sim/race'
 import { idealTime, StageSim } from '../sim/stage'
@@ -17,9 +19,9 @@ import { STEP } from '../sim/route'
 export const HERO_CAR = 'apex'
 export const HERO_LIVERY = 'works'
 /** Same help the AI rivals get: traction control and a light stability aid, no steering help. */
-const HERO_ASSISTS: Assists = { steer: 0, traction: true, stability: 0.4, autoBrake: false }
+const HERO_ASSISTS: Assists = { steer: 0, traction: true, abs: true, stability: 0.4, autoBrake: false, forgive: 0 }
 /** For drift footage the stability aid is mostly off, so the rear can be held out. */
-const DRIFT_ASSISTS: Assists = { steer: 0, traction: false, stability: 0.15, autoBrake: false }
+const DRIFT_ASSISTS: Assists = { steer: 0, traction: false, abs: true, stability: 0.15, autoBrake: false, forgive: 0 }
 /** Pace profile resolution along the stage, metres. */
 const BIN = 10
 
@@ -136,7 +138,9 @@ class HeroDriver {
     })
     const { rally, stage } = sim.setup
     const line = raceLine(sim.route, rally.surface, stage.weather === 'rain', carPhys(sim.setup.car))
-    this.ai = new AiDriver(sim.car, line, 1, style === 'drift' ? 1 : 0.8)
+    // The top rung's hands (no wobble, no lag, no mistakes) on the hero's own car: no works engine.
+    const persona: Personality = { ...NEUTRAL, consistency: 1, aggression: 0.8, lateBrake: 0.8, drift: style === 'drift' ? 1 : 0.3 }
+    this.ai = new AiDriver(sim.car, line, RUNGS.unbeatable, persona, 1)
   }
 
   /**
